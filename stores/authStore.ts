@@ -15,7 +15,7 @@ type AuthState = {
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   username: null,
-  baseUrl: "",
+  baseUrl: "https://frigate.plexserver525.com",
   isLoading: true,
 
   initialize: async () => {
@@ -27,7 +27,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({
       token,
       username,
-      baseUrl: baseUrl ?? "",
+      baseUrl: baseUrl ?? "https://frigate.plexserver525.com",
       isLoading: false,
     });
   },

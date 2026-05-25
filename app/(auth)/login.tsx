@@ -20,7 +20,7 @@ export default function LoginScreen() {
   const { setAuth, setBaseUrl, baseUrl } = useAuthStore();
   const { isAvailable: biometricsAvailable, biometricType, authenticate } = useBiometrics();
 
-  const [url, setUrl] = useState(baseUrl || "");
+  const [url, setUrl] = useState(baseUrl || "https://frigate.plexserver525.com");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
