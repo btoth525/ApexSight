@@ -40,7 +40,13 @@ export default function LoginScreen() {
         user: username,
         password,
       });
-      const token = res.data?.token;
+      // Token may be in body or in Set-Cookie header
+      let token = res.data?.token;
+      if (!token) {
+        const setCookie = res.headers?.["set-cookie"]?.join?.("") ?? res.headers?.["set-cookie"] ?? "";
+        const match = typeof setCookie === "string" ? setCookie.match(/frigate_token=([^;]+)/) : null;
+        token = match?.[1] ?? null;
+      }
       const name = res.data?.user?.name ?? username;
       if (token) {
         setAuth(token, name);
