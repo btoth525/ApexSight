@@ -1,13 +1,15 @@
 import { useState } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, RefreshControl
+  Alert, ActivityIndicator, RefreshControl,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useFrigateApi } from "@/hooks/useFrigateApi";
 import { apiClient } from "@/utils/apiClient";
 import { VLMMonitor } from "@/types/api";
 import { formatRelativeTime } from "@/utils/timeUtil";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { haptic } from "@/utils/haptics";
 
 export function TriggersTab() {
   const { data: monitors, isLoading, mutate } = useFrigateApi<VLMMonitor[]>("/vlm/monitors");
@@ -18,18 +20,20 @@ export function TriggersTab() {
 
   const handleCreate = async () => {
     if (!newCamera.trim() || !newPrompt.trim()) {
-      Alert.alert("Error", "Camera name and prompt are required.");
+      haptic.warning();
+      Alert.alert("Required", "Camera name and prompt are required.");
       return;
     }
+    haptic.medium();
     setSubmitting(true);
     try {
       await apiClient.post("/vlm/monitor", { camera: newCamera, prompt: newPrompt });
-      setNewCamera("");
-      setNewPrompt("");
-      setCreating(false);
+      setNewCamera(""); setNewPrompt(""); setCreating(false);
+      haptic.success();
       mutate();
     } catch {
-      Alert.alert("Error", "Could not create monitor.");
+      haptic.error();
+      Alert.alert("Error", "Could not create monitor. VLM may not be configured.");
     } finally {
       setSubmitting(false);
     }
@@ -37,48 +41,56 @@ export function TriggersTab() {
 
   return (
     <ScrollView
-      className="flex-1"
       contentContainerStyle={{ paddingBottom: 24 }}
-      refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => mutate()} tintColor="#00b4d8" />}
+      refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => mutate()} tintColor="#00d4ff" />}
     >
-      {/* Create new monitor */}
-      <View className="mx-4 mt-4 bg-surface rounded-2xl p-4">
-        <View className="flex-row items-center justify-between mb-3">
-          <Text className="text-text-primary font-semibold">Watch Triggers</Text>
+      {/* Create card */}
+      <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: "#1e293b", borderRadius: 14, padding: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: creating ? 12 : 0 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="flash" size={18} color="#a855f7" />
+            <Text style={{ color: "#f1f5f9", fontWeight: "700", fontSize: 15 }}>Watch Triggers</Text>
+          </View>
           <TouchableOpacity
-            onPress={() => setCreating(!creating)}
-            className="bg-primary rounded-lg px-3 py-1.5"
+            onPress={() => { haptic.tap(); setCreating(!creating); }}
+            style={{ backgroundColor: creating ? "#0a0f1e" : "#a855f7", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 4 }}
           >
-            <Text className="text-white text-sm font-medium">{creating ? "Cancel" : "+ New"}</Text>
+            <Ionicons name={creating ? "close" : "add"} size={14} color={creating ? "#94a3b8" : "#fff"} />
+            <Text style={{ color: creating ? "#94a3b8" : "#fff", fontWeight: "700", fontSize: 13 }}>{creating ? "Cancel" : "New"}</Text>
           </TouchableOpacity>
         </View>
 
         {creating && (
-          <View className="gap-3 border-t border-border pt-3">
-            <TextInput
-              className="bg-surface-2 rounded-xl px-4 py-3 text-text-primary"
-              placeholder="Camera name"
-              placeholderTextColor="#94a3b8"
-              value={newCamera}
-              onChangeText={setNewCamera}
-              autoCapitalize="none"
-            />
-            <TextInput
-              className="bg-surface-2 rounded-xl px-4 py-3 text-text-primary"
-              placeholder="What to watch for (e.g. person near gate)"
-              placeholderTextColor="#94a3b8"
-              value={newPrompt}
-              onChangeText={setNewPrompt}
-              multiline
-              numberOfLines={3}
-            />
+          <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: "#0a0f1e", paddingTop: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#0a0f1e", borderRadius: 10, paddingHorizontal: 12 }}>
+              <Ionicons name="videocam-outline" size={16} color="#475569" />
+              <TextInput
+                style={{ flex: 1, paddingVertical: 11, color: "#f1f5f9", fontSize: 14 }}
+                placeholder="Camera name (e.g. driveway)"
+                placeholderTextColor="#475569"
+                value={newCamera}
+                onChangeText={setNewCamera}
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#0a0f1e", borderRadius: 10, paddingHorizontal: 12, paddingTop: 4 }}>
+              <Ionicons name="eye-outline" size={16} color="#475569" style={{ marginTop: 10 }} />
+              <TextInput
+                style={{ flex: 1, paddingVertical: 10, color: "#f1f5f9", fontSize: 14, minHeight: 60 }}
+                placeholder="What to watch for (e.g. person carrying a package)"
+                placeholderTextColor="#475569"
+                value={newPrompt}
+                onChangeText={setNewPrompt}
+                multiline
+              />
+            </View>
             <TouchableOpacity
               onPress={handleCreate}
               disabled={submitting}
-              className="bg-primary rounded-xl py-3 items-center"
+              style={{ backgroundColor: "#a855f7", borderRadius: 10, paddingVertical: 12, alignItems: "center" }}
             >
               {submitting ? <ActivityIndicator color="#fff" size="small" /> : (
-                <Text className="text-white font-semibold">Create Monitor</Text>
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Create Monitor</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -87,35 +99,43 @@ export function TriggersTab() {
 
       {/* Monitor list */}
       {isLoading ? (
-        <View className="mx-4 mt-4 gap-3">
-          {[1, 2, 3].map(i => <Skeleton key={i} height={80} borderRadius={16} />)}
+        <View style={{ marginHorizontal: 16, marginTop: 12, gap: 10 }}>
+          {[1, 2, 3].map(i => <Skeleton key={i} height={80} borderRadius={14} />)}
         </View>
       ) : monitors && monitors.length > 0 ? (
-        <View className="mx-4 mt-4 gap-3">
+        <View style={{ marginHorizontal: 16, marginTop: 12, gap: 10 }}>
           {monitors.map((monitor) => (
-            <View key={monitor.id} className="bg-surface rounded-2xl p-4 border border-border">
-              <View className="flex-row items-center justify-between mb-1">
-                <Text className="text-text-primary font-semibold">📷 {monitor.camera}</Text>
-                <View className={`px-2 py-0.5 rounded-full ${monitor.active ? "bg-success/20" : "bg-surface-2"}`}>
-                  <Text className={`text-xs font-medium ${monitor.active ? "text-success" : "text-text-secondary"}`}>
-                    {monitor.active ? "Active" : "Inactive"}
+            <View key={monitor.id} style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: monitor.active ? "#22c55e44" : "#1e293b" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="videocam" size={14} color="#94a3b8" />
+                  <Text style={{ color: "#f1f5f9", fontWeight: "700", textTransform: "capitalize" }}>
+                    {monitor.camera.replace(/_/g, " ")}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: monitor.active ? "#22c55e22" : "#0a0f1e", borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: monitor.active ? "#22c55e" : "#475569" }} />
+                  <Text style={{ color: monitor.active ? "#22c55e" : "#64748b", fontSize: 11, fontWeight: "700" }}>
+                    {monitor.active ? "ACTIVE" : "INACTIVE"}
                   </Text>
                 </View>
               </View>
-              <Text className="text-text-secondary text-sm mb-2">{monitor.prompt}</Text>
+              <Text style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}>{monitor.prompt}</Text>
               {monitor.last_triggered && (
-                <Text className="text-text-secondary text-xs">
-                  Last: {formatRelativeTime(monitor.last_triggered)}
+                <Text style={{ color: "#64748b", fontSize: 11 }}>
+                  Last triggered {formatRelativeTime(monitor.last_triggered)}
                 </Text>
               )}
             </View>
           ))}
         </View>
       ) : (
-        <View className="items-center py-12">
-          <Text className="text-3xl mb-3">👁</Text>
-          <Text className="text-text-primary">No watch triggers yet</Text>
-          <Text className="text-text-secondary text-sm mt-1">Create one to monitor specific activity</Text>
+        <View style={{ alignItems: "center", paddingTop: 60, paddingHorizontal: 32 }}>
+          <Ionicons name="eye-off-outline" size={48} color="#334155" />
+          <Text style={{ color: "#f1f5f9", fontSize: 15, fontWeight: "600", marginTop: 14 }}>No triggers yet</Text>
+          <Text style={{ color: "#64748b", fontSize: 12, marginTop: 4, textAlign: "center" }}>
+            Create a VLM monitor to watch for specific activity
+          </Text>
         </View>
       )}
     </ScrollView>

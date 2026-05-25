@@ -1,64 +1,89 @@
 import { useState } from "react";
 import {
   View, Text, TouchableOpacity, TextInput, Switch,
-  ScrollView, Alert, ActivityIndicator, Image
+  ScrollView, Alert, ActivityIndicator, Image, StatusBar,
 } from "react-native";
-import { haptic } from "@/utils/haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
+import CookieManager from "@react-native-cookies/cookies";
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFrigateApi } from "@/hooks/useFrigateApi";
-import { apiClient } from "@/utils/apiClient";
 import { useBiometrics } from "@/hooks/useBiometrics";
+import { haptic } from "@/utils/haptics";
 
-type Section = { title: string; children: React.ReactNode };
-
-function SettingsSection({ title, children }: Section) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View className="mx-4 mb-4">
-      <Text className="text-text-secondary text-xs font-semibold uppercase tracking-wide mb-2 ml-1">
+    <View style={{ marginHorizontal: 16, marginBottom: 18 }}>
+      <Text style={{ color: "#475569", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, marginLeft: 4 }}>
         {title}
       </Text>
-      <View className="bg-surface rounded-2xl overflow-hidden border border-border">
+      <View style={{ backgroundColor: "#1e293b", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "#1e293b" }}>
         {children}
       </View>
     </View>
   );
 }
 
-function SettingsRow({ label, children, onPress, last }: {
-  label: string; children?: React.ReactNode; onPress?: () => void; last?: boolean;
+function Row({
+  icon, iconColor = "#00d4ff", label, sublabel, children, onPress, last, danger,
+}: {
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
+  iconColor?: string;
+  label: string;
+  sublabel?: string;
+  children?: React.ReactNode;
+  onPress?: () => void;
+  last?: boolean;
+  danger?: boolean;
 }) {
-  const Row = onPress ? TouchableOpacity : View;
+  const Comp: any = onPress ? TouchableOpacity : View;
   return (
-    <Row
-      onPress={onPress}
-      className={`flex-row items-center justify-between px-4 py-3.5 ${!last ? "border-b border-surface-2" : ""}`}
+    <Comp
+      onPress={onPress ? () => { haptic.tap(); onPress(); } : undefined}
       activeOpacity={0.7}
+      style={{
+        flexDirection: "row", alignItems: "center",
+        paddingHorizontal: 14, paddingVertical: 13,
+        borderBottomWidth: last ? 0 : 1, borderBottomColor: "#0a0f1e",
+        gap: 12,
+      }}
     >
-      <Text className="text-text-primary">{label}</Text>
+      {icon && (
+        <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: danger ? "#ef444422" : `${iconColor}22`, alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name={icon} size={17} color={danger ? "#ef4444" : iconColor} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: danger ? "#ef4444" : "#f1f5f9", fontSize: 15, fontWeight: "500" }}>{label}</Text>
+        {sublabel && <Text style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>{sublabel}</Text>}
+      </View>
       {children}
-    </Row>
+      {onPress && !children && <Ionicons name="chevron-forward" size={16} color="#475569" />}
+    </Comp>
   );
 }
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { logout, username, baseUrl, setBaseUrl } = useAuthStore();
+  const { logout, username, baseUrl, setBaseUrl, token } = useAuthStore();
   const { notificationsEnabled, setNotificationsEnabled } = useSettingsStore();
-  const { biometricType, isAvailable: biometricsAvailable } = useBiometrics();
+  const { biometricType, isAvailable: biometricsAvailable, hasStoredCredentials, clearCredentials } = useBiometrics();
   const { data: versionData } = useFrigateApi<{ version: string }>("/version");
+  const { data: config } = useFrigateApi<{ cameras: Record<string, any> }>("/config");
 
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft] = useState(baseUrl);
-  const [registeringPasskey, setRegisteringPasskey] = useState(false);
+
+  const cameraCount = config?.cameras ? Object.keys(config.cameras).length : 0;
 
   const handleSaveUrl = () => {
     const trimmed = urlDraft.replace(/\/$/, "");
     setBaseUrl(trimmed);
     setEditingUrl(false);
+    haptic.success();
   };
 
   const handleLogout = () => {
@@ -66,9 +91,30 @@ export default function SettingsScreen() {
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign Out", style: "destructive",
-        onPress: () => { logout(); router.replace("/(auth)/login"); }
+        onPress: async () => {
+          haptic.medium();
+          if (baseUrl) await CookieManager.clearAll();
+          await clearCredentials();
+          logout();
+          router.replace("/(auth)/login");
+        }
       },
     ]);
+  };
+
+  const handleDisableBiometric = () => {
+    Alert.alert(
+      `Disable ${biometricType ?? "Biometric"} Login`,
+      "You'll need to enter your password to sign in next time.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Disable", style: "destructive", onPress: async () => {
+            await clearCredentials();
+            haptic.warning();
+          }
+        },
+      ]
+    );
   };
 
   const handleToggleNotifications = async (value: boolean) => {
@@ -76,7 +122,7 @@ export default function SettingsScreen() {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== "granted") {
         haptic.error();
-        Alert.alert("Permission Required", "Enable notifications in iOS Settings.");
+        Alert.alert("Permission Required", "Enable notifications in iOS Settings → Apex Sight.");
         return;
       }
     }
@@ -84,128 +130,128 @@ export default function SettingsScreen() {
     setNotificationsEnabled(value);
   };
 
-  const handleRegisterPasskey = async () => {
-    setRegisteringPasskey(true);
-    try {
-      await apiClient.post("/auth/webauthn/register/begin", {});
-      Alert.alert("Success", `${biometricType ?? "Biometric"} registered for login.`);
-    } catch {
-      Alert.alert("Error", "Could not register passkey. Try again.");
-    } finally {
-      setRegisteringPasskey(false);
-    }
+  const sendTestNotification = async () => {
+    haptic.tap();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🔔 Apex Sight Test",
+        body: "Notifications are working. Alerts from Frigate will appear here.",
+        sound: "default",
+      },
+      trigger: null,
+    });
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0a0f1e" }} edges={["top"]}>
+      <StatusBar barStyle="light-content" />
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <View className="px-4 py-4 border-b border-surface-2 mb-4 flex-row items-center gap-3">
+
+        {/* Header */}
+        <View style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#1e293b", flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
           <Image
             source={require("@/assets/icon.png")}
-            style={{ width: 40, height: 40, borderRadius: 9 }}
+            style={{ width: 42, height: 42, borderRadius: 10 }}
             resizeMode="cover"
           />
-          <Text className="text-text-primary text-xl font-bold">Settings</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#f1f5f9", fontSize: 20, fontWeight: "700" }}>Settings</Text>
+            <Text style={{ color: "#64748b", fontSize: 12 }}>Apex Sight · v1.0.0</Text>
+          </View>
         </View>
 
-        {/* Account */}
-        <SettingsSection title="Account">
-          <SettingsRow label="Signed in as" last>
-            <Text className="text-text-secondary">{username ?? "—"}</Text>
-          </SettingsRow>
-        </SettingsSection>
+        <Section title="Account">
+          <Row icon="person-circle" label="Signed in" sublabel={username ?? "—"} last />
+        </Section>
 
-        {/* Server */}
-        <SettingsSection title="Server">
+        <Section title="Server">
           {editingUrl ? (
-            <View className="px-4 py-3">
+            <View style={{ padding: 14 }}>
               <TextInput
-                className="bg-surface-2 rounded-xl px-3 py-2.5 text-text-primary mb-3"
+                style={{ backgroundColor: "#0a0f1e", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: "#f1f5f9", marginBottom: 12 }}
                 value={urlDraft}
                 onChangeText={setUrlDraft}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
               />
-              <View className="flex-row gap-3">
-                <TouchableOpacity
-                  onPress={() => { setUrlDraft(baseUrl); setEditingUrl(false); }}
-                  className="flex-1 bg-surface-2 rounded-xl py-2.5 items-center"
-                >
-                  <Text className="text-text-secondary">Cancel</Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity onPress={() => { setUrlDraft(baseUrl); setEditingUrl(false); }} style={{ flex: 1, backgroundColor: "#0a0f1e", borderRadius: 10, paddingVertical: 10, alignItems: "center" }}>
+                  <Text style={{ color: "#94a3b8" }}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleSaveUrl}
-                  className="flex-1 bg-primary rounded-xl py-2.5 items-center"
-                >
-                  <Text className="text-white font-semibold">Save</Text>
+                <TouchableOpacity onPress={handleSaveUrl} style={{ flex: 1, backgroundColor: "#00d4ff", borderRadius: 10, paddingVertical: 10, alignItems: "center" }}>
+                  <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save</Text>
                 </TouchableOpacity>
               </View>
             </View>
           ) : (
-            <SettingsRow label="Server URL" onPress={() => setEditingUrl(true)} last>
-              <Text className="text-text-secondary text-sm" numberOfLines={1} style={{ maxWidth: 180 }}>
-                {baseUrl || "Not set"}
-              </Text>
-            </SettingsRow>
+            <Row icon="server" label="Server URL" sublabel={baseUrl} onPress={() => setEditingUrl(true)} last />
           )}
-        </SettingsSection>
+        </Section>
 
-        {/* Security */}
         {biometricsAvailable && (
-          <SettingsSection title="Security">
-            <SettingsRow
-              label={`Register ${biometricType ?? "Biometric"}`}
-              onPress={handleRegisterPasskey}
-              last
-            >
-              {registeringPasskey ? (
-                <ActivityIndicator color="#00b4d8" size="small" />
-              ) : (
-                <Text className="text-primary text-sm">Set up →</Text>
-              )}
-            </SettingsRow>
-          </SettingsSection>
+          <Section title="Security">
+            {hasStoredCredentials ? (
+              <Row
+                icon={biometricType === "Face ID" ? "scan-circle" : "finger-print"}
+                label={`${biometricType} Login`}
+                sublabel="Enabled — tap to disable"
+                onPress={handleDisableBiometric}
+                last
+              >
+                <View style={{ backgroundColor: "#00d4ff22", borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ color: "#00d4ff", fontSize: 11, fontWeight: "700" }}>ON</Text>
+                </View>
+              </Row>
+            ) : (
+              <Row
+                icon={biometricType === "Face ID" ? "scan-circle" : "finger-print"}
+                label={`Enable ${biometricType} Login`}
+                sublabel="Sign in once with password to set up"
+                last
+              >
+                <Text style={{ color: "#64748b", fontSize: 12 }}>Off</Text>
+              </Row>
+            )}
+          </Section>
         )}
 
-        {/* Notifications */}
-        <SettingsSection title="Notifications">
-          <SettingsRow label="Enable Notifications" last>
+        <Section title="Notifications">
+          <Row icon="notifications" label="Push Alerts" sublabel="Get notified on motion alerts">
             <Switch
               value={notificationsEnabled}
               onValueChange={handleToggleNotifications}
-              trackColor={{ false: "#334155", true: "#00b4d8" }}
+              trackColor={{ false: "#334155", true: "#00d4ff" }}
               thumbColor="#fff"
+              ios_backgroundColor="#334155"
             />
-          </SettingsRow>
-        </SettingsSection>
+          </Row>
+          <Row
+            icon="paper-plane"
+            iconColor="#a855f7"
+            label="Send Test Notification"
+            sublabel="Verify alerts are working"
+            onPress={sendTestNotification}
+            last
+          />
+        </Section>
 
-        {/* Camera Tour */}
-        <SettingsSection title="Features">
-          <SettingsRow label="Camera Tour" onPress={() => router.push("/camera-tour")} last>
-            <Text className="text-primary text-sm">Open →</Text>
-          </SettingsRow>
-        </SettingsSection>
+        <Section title="Features">
+          <Row icon="play-circle" iconColor="#22c55e" label="Camera Tour" sublabel={`${cameraCount} cameras · landscape slideshow`} onPress={() => router.push("/camera-tour")} last />
+        </Section>
 
-        {/* About */}
-        <SettingsSection title="About">
-          <SettingsRow label="App Version">
-            <Text className="text-text-secondary text-sm">1.0.0</Text>
-          </SettingsRow>
-          <SettingsRow label="Frigate Version" last>
-            <Text className="text-text-secondary text-sm">{versionData?.version ?? "—"}</Text>
-          </SettingsRow>
-        </SettingsSection>
+        <Section title="About">
+          <Row icon="phone-portrait" label="App Version">
+            <Text style={{ color: "#64748b", fontSize: 13 }}>1.0.0</Text>
+          </Row>
+          <Row icon="hardware-chip" label="Frigate Version" last>
+            <Text style={{ color: "#64748b", fontSize: 13 }}>{versionData?.version ?? "—"}</Text>
+          </Row>
+        </Section>
 
-        {/* Sign out */}
-        <View className="mx-4 mt-2">
-          <TouchableOpacity
-            onPress={handleLogout}
-            className="bg-danger/20 border border-danger/40 rounded-2xl py-4 items-center"
-          >
-            <Text className="text-danger font-semibold">Sign Out</Text>
-          </TouchableOpacity>
-        </View>
+        <Section title="Danger Zone">
+          <Row icon="log-out" label="Sign Out" onPress={handleLogout} danger last />
+        </Section>
       </ScrollView>
     </SafeAreaView>
   );

@@ -55,14 +55,12 @@ export default function AIHubScreen() {
           </View>
         </View>
 
+        {activeTab === "insights" && <InsightsTab onEventPress={(id) => console.log("event", id)} />}
         {activeTab === "guard" && (
-          <View style={{ marginTop: 16, marginBottom: 8 }}>
+          <View style={{ marginTop: 16 }}>
             <GuardStatusCard status={guardStatus} onToggle={() => mutateGuard()} />
           </View>
         )}
-
-        {activeTab === "insights" && <InsightsTab onEventPress={(id) => console.log("event", id)} />}
-        {activeTab === "guard" && <TriggersTab />}
         {activeTab === "triggers" && <TriggersTab />}
       </SafeAreaView>
     </GestureHandlerRootView>
