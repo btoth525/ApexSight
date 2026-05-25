@@ -120,7 +120,7 @@ utils/                      # apiClient, haptics, labelUtil, timeUtil
 
 Built and distributed via **TestFlight** / **App Store Connect**.
 
-- Bundle ID: `com.brandontoth.apexsight`
+- Bundle ID: `com.apexsight.app`
 - Platform: iOS only
 
 ---
