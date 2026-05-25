@@ -16,44 +16,57 @@ export type LoginResponse = {
 };
 
 export type AIInsights = {
+  days: number;
+  total_events: number;
+  today_count: number;
+  yesterday_count: number;
+  after_hours_count: number;
   cameras: Array<{
-    name: string;
-    total_events: number;
-    top_labels: string[];
-    thumbnail?: string;
+    camera: string;
+    count: number;
   }>;
   labels: Array<{
     label: string;
     count: number;
-    percentage: number;
   }>;
-  heatmap?: number[][];
-  recent_events: Array<{
+  sub_labels: Array<{ sub_label: string; count: number }>;
+  zones: Array<{ zone: string; count: number }>;
+  hours: Array<{ hour: number; count: number }>;
+  daily: Array<{ date: string; count: number }>;
+  recent_alerts: Array<{
     id: string;
     camera: string;
-    label: string;
     start_time: number;
-    thumbnail_path?: string;
+    end_time: number;
+    event_id: string;
+    objects: string[];
+    zones: string[];
+    threat_level: 0 | 1 | 2;
+    title: string;
   }>;
-  stats: {
-    total_events_today: number;
-    total_events_week: number;
-    active_cameras: number;
-    detection_rate: number;
-  };
 };
 
 export type GuardStatus = {
   active: boolean;
+  started_at?: number;
   start_time?: number;
-  cameras: string[];
+  camera_count?: number;
+  cameras?: string[];
 };
 
 export type VLMMonitor = {
   id: string;
   camera: string;
-  prompt: string;
-  active: boolean;
-  created_at: number;
-  last_triggered?: number;
+  camera_friendly: string;
+  condition: string;
+  status: string;
+  start_time?: number;
+  end_time?: number;
+  auto_renew: boolean;
+  iteration_count: number;
+  last_reasoning?: string;
+};
+
+export type VLMMonitorsResponse = {
+  watches: VLMMonitor[];
 };

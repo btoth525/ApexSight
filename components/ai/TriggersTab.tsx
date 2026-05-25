@@ -6,13 +6,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFrigateApi } from "@/hooks/useFrigateApi";
 import { apiClient } from "@/utils/apiClient";
-import { VLMMonitor } from "@/types/api";
+import { VLMMonitor, VLMMonitorsResponse } from "@/types/api";
 import { formatRelativeTime } from "@/utils/timeUtil";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { haptic } from "@/utils/haptics";
 
 export function TriggersTab() {
-  const { data: monitors, isLoading, mutate } = useFrigateApi<VLMMonitor[]>("/vlm/monitors");
+  const { data: monitorsResponse, isLoading, mutate } = useFrigateApi<VLMMonitorsResponse>("/vlm/monitors");
+  const monitors = monitorsResponse?.watches;
   const [creating, setCreating] = useState(false);
   const [newCamera, setNewCamera] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
@@ -27,7 +28,7 @@ export function TriggersTab() {
     haptic.medium();
     setSubmitting(true);
     try {
-      await apiClient.post("/vlm/monitor", { camera: newCamera, prompt: newPrompt });
+      await apiClient.post("/vlm/monitor", { camera: newCamera, condition: newPrompt });
       setNewCamera(""); setNewPrompt(""); setCreating(false);
       haptic.success();
       mutate();
@@ -77,7 +78,7 @@ export function TriggersTab() {
               <Ionicons name="eye-outline" size={16} color="#475569" style={{ marginTop: 10 }} />
               <TextInput
                 style={{ flex: 1, paddingVertical: 10, color: "#f1f5f9", fontSize: 14, minHeight: 60 }}
-                placeholder="What to watch for (e.g. person carrying a package)"
+                placeholder="Condition to watch for (e.g. person carrying a package)"
                 placeholderTextColor="#475569"
                 value={newPrompt}
                 onChangeText={setNewPrompt}
@@ -104,30 +105,34 @@ export function TriggersTab() {
         </View>
       ) : monitors && monitors.length > 0 ? (
         <View style={{ marginHorizontal: 16, marginTop: 12, gap: 10 }}>
-          {monitors.map((monitor) => (
-            <View key={monitor.id} style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: monitor.active ? "#22c55e44" : "#1e293b" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Ionicons name="videocam" size={14} color="#94a3b8" />
-                  <Text style={{ color: "#f1f5f9", fontWeight: "700", textTransform: "capitalize" }}>
-                    {monitor.camera.replace(/_/g, " ")}
-                  </Text>
+          {monitors.map((monitor) => {
+            const isActive = monitor.status === "active" || monitor.status === "running";
+            return (
+              <View key={monitor.id} style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: isActive ? "#22c55e44" : "#1e293b" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="videocam" size={14} color="#94a3b8" />
+                    <Text style={{ color: "#f1f5f9", fontWeight: "700", textTransform: "capitalize" }}>
+                      {(monitor.camera_friendly || monitor.camera).replace(/_/g, " ")}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: isActive ? "#22c55e22" : "#0a0f1e", borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 }}>
+                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: isActive ? "#22c55e" : "#475569" }} />
+                    <Text style={{ color: isActive ? "#22c55e" : "#64748b", fontSize: 11, fontWeight: "700" }}>
+                      {isActive ? "ACTIVE" : monitor.status?.toUpperCase() ?? "INACTIVE"}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: monitor.active ? "#22c55e22" : "#0a0f1e", borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 }}>
-                  <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: monitor.active ? "#22c55e" : "#475569" }} />
-                  <Text style={{ color: monitor.active ? "#22c55e" : "#64748b", fontSize: 11, fontWeight: "700" }}>
-                    {monitor.active ? "ACTIVE" : "INACTIVE"}
+                <Text style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}>{monitor.condition}</Text>
+                {monitor.iteration_count > 0 && (
+                  <Text style={{ color: "#64748b", fontSize: 11 }}>
+                    {monitor.iteration_count} check{monitor.iteration_count !== 1 ? "s" : ""} run
+                    {monitor.auto_renew ? " · auto-renews" : ""}
                   </Text>
-                </View>
+                )}
               </View>
-              <Text style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}>{monitor.prompt}</Text>
-              {monitor.last_triggered && (
-                <Text style={{ color: "#64748b", fontSize: 11 }}>
-                  Last triggered {formatRelativeTime(monitor.last_triggered)}
-                </Text>
-              )}
-            </View>
-          ))}
+            );
+          })}
         </View>
       ) : (
         <View style={{ alignItems: "center", paddingTop: 60, paddingHorizontal: 32 }}>

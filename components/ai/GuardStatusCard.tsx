@@ -44,9 +44,10 @@ export function GuardStatusCard({ status, onToggle }: Props) {
           <Text style={{ color: active ? "#00d4ff" : "#94a3b8", fontSize: 13, fontWeight: "600", marginLeft: 40 }}>
             {active ? "● Active — monitoring" : "○ Inactive"}
           </Text>
-          {active && status?.start_time && (
+          {active && (status?.started_at || status?.start_time) && (
             <Text style={{ color: "#64748b", fontSize: 11, marginTop: 2, marginLeft: 40 }}>
-              Started {formatRelativeTime(status.start_time)}
+              Started {formatRelativeTime((status.started_at ?? status.start_time)!)}
+              {status.camera_count ? ` · ${status.camera_count} camera${status.camera_count !== 1 ? "s" : ""}` : ""}
             </Text>
           )}
         </View>
