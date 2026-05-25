@@ -46,7 +46,7 @@ export default function LoginScreen() {
         setAuth(token, name);
         router.replace("/(tabs)/");
       } else {
-        setError("Login failed — no token returned.");
+        setError(`No token in response: ${JSON.stringify(res.data)}`);
       }
     } catch (e: unknown) {
       const err = e as { response?: { status?: number } };
