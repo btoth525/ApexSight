@@ -7,12 +7,11 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const { token, baseUrl } = useAuthStore.getState();
+  const { baseUrl } = useAuthStore.getState();
   config.baseURL = `${baseUrl}/api`;
-  if (token) {
-    config.headers["Cookie"] = `frigate_token=${token}`;
-    config.headers["X-CSRF-TOKEN"] = "1";
-  }
+  // iOS manages the frigate_token cookie automatically after login.
+  // X-CSRF-TOKEN is required by Frigate for all mutating requests.
+  config.headers["X-CSRF-TOKEN"] = "1";
   return config;
 });
 

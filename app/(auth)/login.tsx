@@ -40,19 +40,14 @@ export default function LoginScreen() {
         user: username,
         password,
       });
-      // Token may be in body or in Set-Cookie header
-      let token = res.data?.token;
-      if (!token) {
-        const setCookie = res.headers?.["set-cookie"]?.join?.("") ?? res.headers?.["set-cookie"] ?? "";
-        const match = typeof setCookie === "string" ? setCookie.match(/frigate_token=([^;]+)/) : null;
-        token = match?.[1] ?? null;
-      }
-      const name = res.data?.user?.name ?? username;
-      if (token) {
-        setAuth(token, name);
+      // iOS stores the frigate_token cookie automatically from the Set-Cookie
+      // header — we cannot read it from JS. A 200 response means login succeeded.
+      if (res.status === 200) {
+        const name = res.data?.user?.name ?? username;
+        setAuth("session", name);
         router.replace("/(tabs)/");
       } else {
-        setError(`No token in response: ${JSON.stringify(res.data)}`);
+        setError("Login failed. Please try again.");
       }
     } catch (e: unknown) {
       const err = e as { response?: { status?: number } };
