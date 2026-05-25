@@ -1,13 +1,15 @@
 #!/bin/sh
 set -e
 
-# Install Node via Homebrew (Xcode Cloud doesn't include it by default)
-brew install node@20
-brew link node@20
+echo "Installing Node.js..."
+brew install node || brew upgrade node
 
-# Install dependencies
-cd "$CI_WORKSPACE"
+echo "Node version: $(node -v)"
+echo "npm version: $(npm -v)"
+
+echo "Installing npm dependencies..."
+cd "$CI_PRIMARY_REPOSITORY_PATH"
 npm install
 
-# Run Expo prebuild to generate the ios/ native project
+echo "Running expo prebuild..."
 npx expo prebuild --platform ios --non-interactive
