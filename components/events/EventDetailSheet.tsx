@@ -2,11 +2,13 @@ import { useRef, useCallback, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, Share, Alert, Dimensions } from "react-native";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { VideoView, useVideoPlayer } from "expo-video";
+import * as ExpoSharing from "expo-sharing";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/apiClient";
 import { ReviewItem, FrigateEvent } from "@/types/event";
 import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
 import { formatRelativeTime, formatDuration, formatTimestamp } from "@/utils/timeUtil";
+import { haptic } from "@/utils/haptics";
 
 type EventDetailSheetProps = {
   event: ReviewItem | FrigateEvent | null;
@@ -52,20 +54,27 @@ export function EventDetailSheet({ event, onClose, onReviewed, onOpenExplore }: 
     try {
       const id = isReviewItem(event) ? event.id : event.id;
       await apiClient.post("/reviews/viewed", { ids: [id] });
+      haptic.success();
       onReviewed?.();
       onClose();
     } catch {
+      haptic.error();
       Alert.alert("Error", "Could not mark as reviewed.");
     }
   }, [event, onReviewed, onClose]);
 
   const handleShare = useCallback(async () => {
-    if (!snapshotUrl) return;
-    await Share.share({
-      url: snapshotUrl,
-      message: `Frigate alert: ${formatLabel(label)} on ${camera}`,
-    });
-  }, [snapshotUrl, label, camera]);
+    haptic.medium();
+    // Share the clip URL if available, otherwise snapshot
+    const shareUrl = clipUrl ?? snapshotUrl;
+    if (!shareUrl) return;
+    const canShare = await ExpoSharing.isAvailableAsync();
+    if (canShare) {
+      await Share.share({ url: shareUrl, message: `${formatLabel(label)} detected on ${camera}` });
+    } else {
+      await Share.share({ message: `${formatLabel(label)} on ${camera}: ${shareUrl}` });
+    }
+  }, [clipUrl, snapshotUrl, label, camera]);
 
   const duration = startTime && endTime ? endTime - startTime : null;
 
@@ -135,13 +144,13 @@ export function EventDetailSheet({ event, onClose, onReviewed, onOpenExplore }: 
               className="flex-1 bg-surface-2 rounded-xl py-3.5 items-center"
               onPress={handleShare}
             >
-              <Text className="text-text-primary font-medium">↑ Share</Text>
+              <Text className="text-text-primary font-medium">↑ Share {clipUrl ? "Clip" : "Snapshot"}</Text>
             </TouchableOpacity>
 
             {onOpenExplore && eventId && (
               <TouchableOpacity
                 className="flex-1 bg-surface-2 rounded-xl py-3.5 items-center"
-                onPress={() => { onOpenExplore(eventId); onClose(); }}
+                onPress={() => { haptic.tap(); onOpenExplore(eventId); onClose(); }}
               >
                 <Text className="text-text-primary font-medium">🔍 Explore</Text>
               </TouchableOpacity>
@@ -150,7 +159,7 @@ export function EventDetailSheet({ event, onClose, onReviewed, onOpenExplore }: 
 
           <TouchableOpacity
             className="bg-surface rounded-xl py-3.5 items-center border border-border"
-            onPress={onClose}
+            onPress={() => { haptic.tap(); onClose(); }}
           >
             <Text className="text-text-secondary font-medium">Close</Text>
           </TouchableOpacity>

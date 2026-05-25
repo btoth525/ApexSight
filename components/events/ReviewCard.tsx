@@ -1,35 +1,71 @@
+import { useState } from "react";
 import { TouchableOpacity, View, Text, Image } from "react-native";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { ReviewItem } from "@/types/event";
 import { useAuthStore } from "@/stores/authStore";
 import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
 import { formatRelativeTime, formatDuration } from "@/utils/timeUtil";
+import { haptic } from "@/utils/haptics";
 
 type ReviewCardProps = {
   item: ReviewItem;
   onPress: () => void;
 };
 
+function ClipPreview({ clipUrl, thumbUrl, label }: { clipUrl: string; thumbUrl: string | null; label: string }) {
+  const [playing, setPlaying] = useState(false);
+  const player = useVideoPlayer(clipUrl, (p) => { p.loop = true; p.muted = true; });
+
+  const toggle = () => {
+    haptic.tap();
+    if (playing) { player.pause(); setPlaying(false); }
+    else { player.play(); setPlaying(true); }
+  };
+
+  return (
+    <TouchableOpacity onPress={toggle} activeOpacity={0.9}
+      style={{ width: 72, height: 54, borderRadius: 10, overflow: "hidden", backgroundColor: "#0f172a" }}>
+      {playing ? (
+        <VideoView player={player} style={{ width: 72, height: 54 }} contentFit="cover" nativeControls={false} />
+      ) : thumbUrl ? (
+        <Image source={{ uri: thumbUrl }} style={{ width: 72, height: 54 }} resizeMode="cover" />
+      ) : (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontSize: 24 }}>{getLabelEmoji(label)}</Text>
+        </View>
+      )}
+      {!playing && (
+        <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" }}>
+          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 9, color: "#fff", marginLeft: 2 }}>▶</Text>
+          </View>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 export function ReviewCard({ item, onPress }: ReviewCardProps) {
   const { baseUrl } = useAuthStore();
   const label = item.data?.objects?.[0] ?? "motion";
   const duration = item.end_time ? item.end_time - item.start_time : null;
-  const thumbUrl = item.data?.detections?.[0]
-    ? `${baseUrl}/api/events/${item.data.detections[0]}/thumbnail.webp`
-    : null;
+  const eventId = item.data?.detections?.[0];
+  const thumbUrl = eventId ? `${baseUrl}/api/events/${eventId}/thumbnail.webp` : null;
+  const clipUrl = eventId ? `${baseUrl}/api/events/${eventId}/clip.mp4` : null;
 
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => { haptic.tap(); onPress(); }}
       className={`flex-row items-center bg-surface rounded-xl p-3 mb-2 mx-4 border ${item.has_been_reviewed ? "border-border opacity-60" : "border-border"}`}
       activeOpacity={0.8}
     >
-      {/* Thumbnail */}
-      <View className="w-16 h-12 rounded-lg overflow-hidden bg-surface-2 mr-3">
-        {thumbUrl ? (
-          <Image source={{ uri: thumbUrl }} className="w-full h-full" resizeMode="cover" />
+      {/* Tap to preview clip inline, hold full card to open detail */}
+      <View className="mr-3">
+        {clipUrl ? (
+          <ClipPreview clipUrl={clipUrl} thumbUrl={thumbUrl} label={label} />
         ) : (
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-2xl">{getLabelEmoji(label)}</Text>
+          <View style={{ width: 72, height: 54, borderRadius: 10, overflow: "hidden", backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 24 }}>{getLabelEmoji(label)}</Text>
           </View>
         )}
       </View>

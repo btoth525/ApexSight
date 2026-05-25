@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/apiClient";
 import { useBiometrics } from "@/hooks/useBiometrics";
+import { haptic } from "@/utils/haptics";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -45,12 +46,15 @@ export default function LoginScreen() {
       // header — we cannot read it from JS. A 200 response means login succeeded.
       if (res.status === 200) {
         const name = res.data?.user?.name ?? username;
+        haptic.success();
         setAuth("session", name);
         router.replace("/(tabs)/");
       } else {
+        haptic.error();
         setError("Login failed. Please try again.");
       }
     } catch (e: unknown) {
+      haptic.error();
       const err = e as { response?: { status?: number } };
       if (err.response?.status === 401) {
         setError("Invalid username or password.");

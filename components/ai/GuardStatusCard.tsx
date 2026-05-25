@@ -3,6 +3,7 @@ import { useState } from "react";
 import { apiClient } from "@/utils/apiClient";
 import { GuardStatus } from "@/types/api";
 import { formatRelativeTime } from "@/utils/timeUtil";
+import { haptic } from "@/utils/haptics";
 
 type GuardStatusCardProps = {
   status: GuardStatus | undefined;
@@ -13,6 +14,7 @@ export function GuardStatusCard({ status, onToggle }: GuardStatusCardProps) {
   const [toggling, setToggling] = useState(false);
 
   const handleToggle = async () => {
+    haptic.heavy();
     setToggling(true);
     try {
       if (status?.active) {
@@ -20,9 +22,11 @@ export function GuardStatusCard({ status, onToggle }: GuardStatusCardProps) {
       } else {
         await apiClient.post("/guard/start");
       }
+      haptic.success();
       onToggle();
-    } catch {}
-    finally { setToggling(false); }
+    } catch {
+      haptic.error();
+    } finally { setToggling(false); }
   };
 
   return (

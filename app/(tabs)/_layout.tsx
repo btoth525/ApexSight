@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { View, Text } from "react-native";
+import { OfflineBanner } from "@/components/ui/OfflineBanner";
 
 function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
   return (
@@ -14,6 +15,8 @@ function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focu
 
 export default function TabsLayout() {
   return (
+    <View style={{ flex: 1 }}>
+      <OfflineBanner />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -68,5 +71,6 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    </View>
   );
 }

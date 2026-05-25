@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, TextInput, Switch,
   ScrollView, Alert, ActivityIndicator, Image
 } from "react-native";
+import { haptic } from "@/utils/haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
@@ -74,10 +75,12 @@ export default function SettingsScreen() {
     if (value) {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== "granted") {
+        haptic.error();
         Alert.alert("Permission Required", "Enable notifications in iOS Settings.");
         return;
       }
     }
+    haptic.medium();
     setNotificationsEnabled(value);
   };
 
