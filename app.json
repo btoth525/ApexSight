@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Frigate",
+    "slug": "frigate-ios",
+    "version": "1.0.0",
+    "platforms": ["ios"],
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "bundleIdentifier": "com.brandontoth.frigate",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used for live camera viewing",
+        "NSFaceIDUsageDescription": "Used for Face ID login",
+        "UIBackgroundModes": ["fetch", "remote-notification"]
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#00b4d8"
+        }
+      ],
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "DEFAULT"
+        }
+      ]
+    ],
+    "scheme": "frigate",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
