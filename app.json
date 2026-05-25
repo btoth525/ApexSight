@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Frigate",
-    "slug": "frigate-ios",
+    "name": "Apex Sight",
+    "slug": "apexsight",
     "version": "1.0.0",
     "platforms": ["ios"],
     "orientation": "default",
@@ -13,7 +13,7 @@
       "backgroundColor": "#0f172a"
     },
     "ios": {
-      "bundleIdentifier": "com.brandontoth.frigate",
+      "bundleIdentifier": "com.brandontoth.apexsight",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Used for live camera viewing",
@@ -39,7 +39,7 @@
         }
       ]
     ],
-    "scheme": "frigate",
+    "scheme": "apexsight",
     "experiments": {
       "typedRoutes": true
     }

@@ -114,8 +114,8 @@ export default function LoginScreen() {
           {/* Logo / Header */}
           <View className="items-center mb-10">
             <Text className="text-5xl mb-3">📷</Text>
-            <Text className="text-3xl font-bold text-text-primary">Frigate</Text>
-            <Text className="text-text-secondary mt-1">NVR Mobile Client</Text>
+            <Text className="text-3xl font-bold text-text-primary">Apex Sight</Text>
+            <Text className="text-text-secondary mt-1">Frigate NVR Mobile Client</Text>
           </View>
 
           {/* Form */}
