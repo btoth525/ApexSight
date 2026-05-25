@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/stores/authStore";
@@ -114,7 +115,11 @@ export default function LoginScreen() {
         <View className="flex-1 justify-center px-6 py-12">
           {/* Logo / Header */}
           <View className="items-center mb-10">
-            <Text className="text-5xl mb-3">📷</Text>
+            <Image
+              source={require("@/assets/icon.png")}
+              style={{ width: 110, height: 110, borderRadius: 24, marginBottom: 16 }}
+              resizeMode="cover"
+            />
             <Text className="text-3xl font-bold text-text-primary">Apex Sight</Text>
             <Text className="text-text-secondary mt-1">Frigate NVR Mobile Client</Text>
           </View>

@@ -1,4 +1,4 @@
-import { View, ScrollView, Text, RefreshControl, Dimensions } from "react-native";
+import { View, ScrollView, Text, Image, RefreshControl, Dimensions } from "react-native";
 import { CameraCard } from "./CameraCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFrigateApi } from "@/hooks/useFrigateApi";
@@ -38,7 +38,11 @@ export function CameraGrid({ onCameraPress, displayNames = {} }: CameraGridProps
   if (!cameras.length) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
-        <Text className="text-4xl mb-4">📷</Text>
+        <Image
+          source={require("@/assets/icon.png")}
+          style={{ width: 90, height: 90, borderRadius: 20, marginBottom: 16, opacity: 0.75 }}
+          resizeMode="cover"
+        />
         <Text className="text-text-primary text-lg">No cameras found</Text>
         <Text className="text-text-secondary text-sm mt-2">Check your Frigate server URL</Text>
       </View>

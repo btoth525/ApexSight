@@ -49,7 +49,11 @@ export function CameraCard({ name, displayName, onPress, width }: CameraCardProp
           />
         ) : (
           <View className="flex-1 items-center justify-center">
-            <Text className="text-3xl">📷</Text>
+            <Image
+              source={require("@/assets/icon.png")}
+              style={{ width: 48, height: 48, borderRadius: 10, opacity: 0.6 }}
+              resizeMode="cover"
+            />
           </View>
         )}
         {loading && !imgError && (

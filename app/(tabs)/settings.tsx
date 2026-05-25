@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   View, Text, TouchableOpacity, TextInput, Switch,
-  ScrollView, Alert, ActivityIndicator
+  ScrollView, Alert, ActivityIndicator, Image
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -96,7 +96,12 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <View className="px-4 py-3 border-b border-surface-2 mb-4">
+        <View className="px-4 py-4 border-b border-surface-2 mb-4 flex-row items-center gap-3">
+          <Image
+            source={require("@/assets/icon.png")}
+            style={{ width: 40, height: 40, borderRadius: 9 }}
+            resizeMode="cover"
+          />
           <Text className="text-text-primary text-xl font-bold">Settings</Text>
         </View>
 
