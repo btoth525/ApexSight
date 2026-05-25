@@ -1,20 +1,21 @@
 import { useState, useCallback } from "react";
-import { View, Modal, FlatList, Dimensions, TouchableOpacity, Text } from "react-native";
+import { View, Modal, FlatList, Dimensions, TouchableOpacity, Text, StatusBar } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { CameraGrid } from "@/components/camera/CameraGrid";
 import { LivePlayer } from "@/components/camera/LivePlayer";
 import { useFrigateApi } from "@/hooks/useFrigateApi";
 import { FrigateConfig } from "@/types/camera";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { haptic } from "@/utils/haptics";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function LiveScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams<{ camera?: string }>();
-  const [selectedCamera, setSelectedCamera] = useState<string | null>(
-    params.camera ?? null
-  );
+  const [selectedCamera, setSelectedCamera] = useState<string | null>(params.camera ?? null);
   const [fullscreenCameraIndex, setFullscreenCameraIndex] = useState(0);
   const [showFullscreen, setShowFullscreen] = useState(false);
 
@@ -26,6 +27,7 @@ export default function LiveScreen() {
   ) : [];
 
   const openFullscreen = useCallback((name: string) => {
+    haptic.medium();
     const idx = cameras.indexOf(name);
     setFullscreenCameraIndex(idx >= 0 ? idx : 0);
     setSelectedCamera(name);
@@ -33,53 +35,56 @@ export default function LiveScreen() {
   }, [cameras]);
 
   const closeFullscreen = useCallback(() => {
+    haptic.tap();
     setShowFullscreen(false);
     setSelectedCamera(null);
   }, []);
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0a0f1e" }} edges={["top"]}>
+      <StatusBar barStyle="light-content" />
       {/* Header */}
-      <View className="px-4 py-3 flex-row items-center justify-between border-b border-surface-2">
-        <Text className="text-text-primary text-xl font-bold">Live</Text>
-        <View className="flex-row items-center gap-2 bg-surface rounded-full px-3 py-1">
-          <View className="w-2 h-2 rounded-full bg-red-500" />
-          <Text className="text-text-secondary text-xs">{cameras.length} cameras</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#1e293b" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Ionicons name="videocam" size={20} color="#00d4ff" />
+          <Text style={{ color: "#f1f5f9", fontSize: 20, fontWeight: "700", letterSpacing: -0.3 }}>Live</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {cameras.length > 0 && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#1e293b", borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#ef4444" }} />
+              <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600" }}>{cameras.length} cameras</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={() => { haptic.tap(); router.push("/camera-tour"); }}
+            style={{ backgroundColor: "#1e293b", borderRadius: 8, padding: 7 }}
+          >
+            <Ionicons name="play-circle-outline" size={18} color="#00d4ff" />
+          </TouchableOpacity>
         </View>
       </View>
 
-      <CameraGrid
-        onCameraPress={openFullscreen}
-        displayNames={cameraDisplayNames}
-      />
+      <CameraGrid onCameraPress={openFullscreen} displayNames={cameraDisplayNames} />
 
-      {/* Fullscreen player modal with swipe between cameras */}
       <Modal
         visible={showFullscreen}
         animationType="fade"
         supportedOrientations={["portrait", "landscape"]}
         onRequestClose={closeFullscreen}
       >
-        <View className="flex-1 bg-black">
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
           <FlatList
             data={cameras}
             keyExtractor={(item) => item}
             horizontal
             pagingEnabled
             initialScrollIndex={fullscreenCameraIndex}
-            getItemLayout={(_, index) => ({
-              length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
-              index,
-            })}
+            getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
             showsHorizontalScrollIndicator={false}
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH }}>
-                <LivePlayer
-                  cameraName={item}
-                  isFullscreen
-                  onClose={closeFullscreen}
-                />
+              <View style={{ width: SCREEN_WIDTH, flex: 1, justifyContent: "center" }}>
+                <LivePlayer cameraName={item} isFullscreen onClose={closeFullscreen} />
               </View>
             )}
           />

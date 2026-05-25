@@ -19,22 +19,23 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
 
   initialize: async () => {
-    const [username, baseUrl] = await Promise.all([
+    const [token, username, baseUrl] = await Promise.all([
+      SecureStore.getItemAsync("frigate_token"),
       SecureStore.getItemAsync("frigate_username"),
       SecureStore.getItemAsync("frigate_base_url"),
     ]);
-    // token is used only as a truthy "logged in" flag; iOS holds the real cookie.
     set({
-      token: username ? "session" : null,
+      token,
       username,
       baseUrl: baseUrl ?? "https://frigate.plexserver525.com",
       isLoading: false,
     });
   },
 
-  setAuth: (_token, username) => {
+  setAuth: (token, username) => {
+    SecureStore.setItemAsync("frigate_token", token);
     SecureStore.setItemAsync("frigate_username", username);
-    set({ token: "session", username });
+    set({ token, username });
   },
 
   setBaseUrl: (url) => {

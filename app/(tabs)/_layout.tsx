@@ -1,14 +1,21 @@
 import { Tabs } from "expo-router";
-import { View, Text } from "react-native";
+import { View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 
-function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
+type IconProps = { name: React.ComponentProps<typeof Ionicons>["name"]; focused: boolean };
+
+function TabIcon({ name, focused }: IconProps) {
   return (
-    <View className="items-center">
-      <Text className="text-xl">{emoji}</Text>
-      <Text className={`text-xs mt-0.5 ${focused ? "text-primary" : "text-text-secondary"}`}>
-        {label}
-      </Text>
+    <View style={{ alignItems: "center", justifyContent: "center", paddingTop: 4 }}>
+      <Ionicons
+        name={name}
+        size={24}
+        color={focused ? "#00d4ff" : "#475569"}
+      />
+      {focused && (
+        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: "#00d4ff", marginTop: 3 }} />
+      )}
     </View>
   );
 }
@@ -17,60 +24,40 @@ export default function TabsLayout() {
   return (
     <View style={{ flex: 1 }}>
       <OfflineBanner />
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: "#0f172a",
-          borderTopColor: "#334155",
-          borderTopWidth: 1,
-          paddingBottom: 4,
-          height: 60,
-        },
-        tabBarShowLabel: false,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📹" label="Live" focused={focused} />
-          ),
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: "#0a0f1e",
+            borderTopColor: "#1e293b",
+            borderTopWidth: 1,
+            height: 64,
+            paddingBottom: 8,
+          },
+          tabBarShowLabel: false,
         }}
-      />
-      <Tabs.Screen
-        name="review"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🔔" label="Review" focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🔍" label="Explore" focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="ai-hub"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🛡️" label="AI Hub" focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="⚙️" label="Settings" focused={focused} />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{ tabBarIcon: ({ focused }) => <TabIcon name={focused ? "videocam" : "videocam-outline"} focused={focused} /> }}
+        />
+        <Tabs.Screen
+          name="review"
+          options={{ tabBarIcon: ({ focused }) => <TabIcon name={focused ? "notifications" : "notifications-outline"} focused={focused} /> }}
+        />
+        <Tabs.Screen
+          name="explore"
+          options={{ tabBarIcon: ({ focused }) => <TabIcon name={focused ? "search" : "search-outline"} focused={focused} /> }}
+        />
+        <Tabs.Screen
+          name="ai-hub"
+          options={{ tabBarIcon: ({ focused }) => <TabIcon name={focused ? "shield" : "shield-outline"} focused={focused} /> }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{ tabBarIcon: ({ focused }) => <TabIcon name={focused ? "settings" : "settings-outline"} focused={focused} /> }}
+        />
+      </Tabs>
     </View>
   );
 }

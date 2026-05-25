@@ -16,6 +16,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/apiClient";
 import { useBiometrics } from "@/hooks/useBiometrics";
 import { haptic } from "@/utils/haptics";
+import CookieManager from "@react-native-cookies/cookies";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -45,9 +46,12 @@ export default function LoginScreen() {
       // iOS stores the frigate_token cookie automatically from the Set-Cookie
       // header — we cannot read it from JS. A 200 response means login succeeded.
       if (res.status === 200) {
+        // Read the actual JWT from the iOS cookie store so we can use it for streaming
+        const cookies = await CookieManager.get(trimmedUrl);
+        const token = cookies["frigate_token"]?.value ?? "session";
         const name = res.data?.user?.name ?? username;
         haptic.success();
-        setAuth("session", name);
+        setAuth(token, name);
         router.replace("/(tabs)/");
       } else {
         haptic.error();
