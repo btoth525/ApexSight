@@ -11,6 +11,7 @@ import { useRouter } from "expo-router";
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAlertNotifications } from "@/hooks/useAlertNotifications";
+import { useExpoPushRegistration } from "@/hooks/useExpoPushRegistration";
 import { haptic } from "@/utils/haptics";
 import * as Notifications from "expo-notifications";
 
@@ -24,8 +25,10 @@ export default function BrowserScreen() {
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Run the native notification service
+  // Run the native notification service (works when app is open)
   useAlertNotifications();
+  // Register Expo Push token for true background notifications (app killed)
+  useExpoPushRegistration();
 
   // Inject auth cookie before WebView loads
   useEffect(() => {
