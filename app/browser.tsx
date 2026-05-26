@@ -155,12 +155,17 @@ export default function BrowserScreen() {
     }).catch(() => {});
   }, [settingsOpen]);
 
+  const prevUrlRef = useRef<string | null>(null);
   const handleNavChange = useCallback((nav: WebViewNavigation) => {
-    // Only logout if Frigate explicitly redirects to its login page
-    // (handles /login?next=/ and similar variants)
-    if (nav.url.startsWith(`${baseUrl}/login`)) {
+    const isLoginUrl = nav.url.startsWith(`${baseUrl}/login`);
+    const prev = prevUrlRef.current;
+    // Only auto-logout when Frigate redirects us TO /login from somewhere else
+    // mid-session (real session expiry). Don't fire on initial loads or
+    // already-on-login-page nav, which would cause a login → loop scenario.
+    if (isLoginUrl && prev && !prev.startsWith(`${baseUrl}/login`)) {
       logout();
     }
+    prevUrlRef.current = nav.url;
   }, [baseUrl, logout]);
 
   const handleSaveUrl = async () => {
