@@ -86,7 +86,7 @@ export default function BrowserScreen() {
   const [availCameras, setAvailCameras] = useState<string[]>([]);
 
   useAlertNotifications();
-  useExpoPushRegistration();
+  const { retryRegister } = useExpoPushRegistration();
 
   // Inject auth cookie before WebView loads
   useEffect(() => {
@@ -519,6 +519,14 @@ export default function BrowserScreen() {
                     icon="notifications-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
                     label="Send Test Notification"
                     sub="Fires a local notification immediately"
+                  />
+                </TouchableOpacity>
+                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <TouchableOpacity onPress={() => { haptic.tap(); retryRegister(); }}>
+                  <Row
+                    icon="cloud-upload-outline" iconColor="#10b981" iconBg="#10b98122"
+                    label="Re-register Push Token"
+                    sub="Force re-send token to Frigate server"
                   />
                 </TouchableOpacity>
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
