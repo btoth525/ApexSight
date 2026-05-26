@@ -99,13 +99,41 @@ class NotificationService: UNNotificationServiceExtension {
         content: UNMutableNotificationContent,
         completion: @escaping (UNNotificationContent) -> Void
     ) {
-        var req = URLRequest(url: url, timeoutInterval: 25)
+        // Tight URLSession config so notification delivery isn't bottlenecked
+        // by snapshot download. Notifications must feel instant, like Home
+        // Assistant — never wait 25 seconds for an image.
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 3
+        config.timeoutIntervalForResource = 3
+        config.waitsForConnectivity = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpMaximumConnectionsPerHost = 2
+        let session = URLSession(configuration: config)
+
+        var req = URLRequest(url: url, timeoutInterval: 3)
         if let t = token, !t.isEmpty {
             req.setValue("frigate_token=\(t)", forHTTPHeaderField: "Cookie")
         }
 
-        URLSession.shared.downloadTask(with: req) { localUrl, response, error in
-            defer { completion(content) }
+        // Completion must fire exactly once. The safety timer guarantees the
+        // notification displays within 3 seconds even if URLSession ignores
+        // its own timeout (which it occasionally does during DNS/TLS setup).
+        let lock = NSLock()
+        var fired = false
+        let fireOnce: () -> Void = {
+            lock.lock()
+            let shouldFire = !fired
+            fired = true
+            lock.unlock()
+            if shouldFire { completion(content) }
+        }
+
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 3) {
+            fireOnce()
+        }
+
+        session.downloadTask(with: req) { localUrl, response, error in
+            defer { fireOnce() }
             guard error == nil, let localUrl = localUrl else { return }
             // Don't attach error pages
             if let http = response as? HTTPURLResponse, http.statusCode >= 400 { return }

@@ -19,7 +19,14 @@ async function downloadSnapshot(snapshotUrl: string, token: string | null): Prom
     const dest = `${FileSystem.cacheDirectory}${filename}`;
     const headers: Record<string, string> = {};
     if (token && token !== "session") headers["Cookie"] = `frigate_token=${token}`;
-    const result = await FileSystem.downloadAsync(snapshotUrl, dest, { headers });
+    // Race the download against a 2-second timeout so notifications never
+    // wait on a slow/missing snapshot. If the image isn't ready in 2s the
+    // notification fires without it — speed > pretty.
+    const result = await Promise.race([
+      FileSystem.downloadAsync(snapshotUrl, dest, { headers }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+    ]);
+    if (!result) return null;
     return result.status === 200 ? result.uri : null;
   } catch {
     return null;
