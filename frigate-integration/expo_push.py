@@ -126,11 +126,13 @@ class ExpoPushClient:
                     "_displayInForeground": True,
                     "categoryId": category,
                 }
-                # Attach snapshot image using the app's registered Cloudflare URL
+                # Attach snapshot image using the app's registered Cloudflare URL.
+                # Must go in data{} — Expo maps data → body in the APNs payload,
+                # so the extension reads userInfo["body"]["image"].
+                # The notification-thumb endpoint is public (no auth required).
                 if thumb_id and base_url:
-                    image_url = f"{base_url}/api/notification-thumb/{thumb_id}"
-                    msg["richContent"] = {"image": image_url}
-                    msg["attachments"] = [{"url": image_url, "type": "image"}]
+                    image_url = f"{base_url}/notification-thumb/{thumb_id}"
+                    msg["data"]["image"] = image_url
                 messages.append(msg)
             self.queue.put(messages)
 
