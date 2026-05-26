@@ -1,14 +1,17 @@
 import { useEffect } from "react";
 import { useRouter, useSegments } from "expo-router";
 import { useAuthStore } from "@/stores/authStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function useAuth() {
   const { token, isLoading, initialize } = useAuthStore();
+  const initSettings = useSettingsStore((s) => s.initialize);
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     initialize();
+    initSettings();
   }, []);
 
   useEffect(() => {

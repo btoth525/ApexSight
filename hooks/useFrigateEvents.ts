@@ -1,11 +1,13 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useAuthStore } from "@/stores/authStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 type EventHandler = (data: unknown) => void;
 
 export function useFrigateEvents(onEvent: EventHandler) {
   const wsRef = useRef<WebSocket | null>(null);
   const { baseUrl } = useAuthStore();
+  const setWsConnected = useSettingsStore((s) => s.setWsConnected);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
@@ -16,7 +18,7 @@ export function useFrigateEvents(onEvent: EventHandler) {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => console.log("[WS] Connected");
+    ws.onopen = () => { setWsConnected(true); };
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -25,12 +27,12 @@ export function useFrigateEvents(onEvent: EventHandler) {
         // ignore parse errors
       }
     };
-    ws.onerror = (e) => console.warn("[WS] Error", e);
+    ws.onerror = () => { setWsConnected(false); };
     ws.onclose = () => {
-      console.log("[WS] Closed, reconnecting in 3s...");
+      setWsConnected(false);
       setTimeout(connect, 3000);
     };
-  }, [baseUrl]);
+  }, [baseUrl, setWsConnected]);
 
   useEffect(() => {
     connect();

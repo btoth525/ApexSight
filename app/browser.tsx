@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  Alert, Switch, Modal,
+  Alert, Switch, Modal, ScrollView, TextInput,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,22 +12,80 @@ import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAlertNotifications } from "@/hooks/useAlertNotifications";
 import { useExpoPushRegistration } from "@/hooks/useExpoPushRegistration";
+import { useBiometrics } from "@/hooks/useBiometrics";
 import { haptic } from "@/utils/haptics";
 import * as Notifications from "expo-notifications";
+import { apiClient } from "@/utils/apiClient";
+
+// Common Frigate object labels with emojis
+const KNOWN_LABELS: { id: string; emoji: string; name: string }[] = [
+  { id: "person",       emoji: "🚶", name: "Person"    },
+  { id: "car",          emoji: "🚗", name: "Car"       },
+  { id: "dog",          emoji: "🐕", name: "Dog"       },
+  { id: "cat",          emoji: "🐈", name: "Cat"       },
+  { id: "package",      emoji: "📦", name: "Package"   },
+  { id: "bicycle",      emoji: "🚲", name: "Bicycle"   },
+  { id: "motorcycle",   emoji: "🏍️", name: "Motorcycle"},
+  { id: "bird",         emoji: "🐦", name: "Bird"      },
+  { id: "bear",         emoji: "🐻", name: "Bear"      },
+  { id: "fire",         emoji: "🔥", name: "Fire"      },
+];
+
+function Row({
+  icon, iconColor, iconBg, label, sub, right,
+}: {
+  icon: string; iconColor: string; iconBg: string;
+  label: string; sub?: string; right?: React.ReactNode;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 4 }}>
+      <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: iconBg, alignItems: "center", justifyContent: "center" }}>
+        <Ionicons name={icon as any} size={17} color={iconColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: "#f1f5f9", fontSize: 15, fontWeight: "500" }}>{label}</Text>
+        {sub ? <Text style={{ color: "#64748b", fontSize: 12, marginTop: 1 }}>{sub}</Text> : null}
+      </View>
+      {right}
+    </View>
+  );
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <Text style={{ color: "#475569", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 8, marginBottom: 4 }}>
+      {title}
+    </Text>
+  );
+}
 
 export default function BrowserScreen() {
-  const { baseUrl, token, logout } = useAuthStore();
-  const { notificationsEnabled, setNotificationsEnabled } = useSettingsStore();
+  const { baseUrl, token, setBaseUrl, logout } = useAuthStore();
+  const {
+    notificationsEnabled, setNotificationsEnabled,
+    allowedCameras, setAllowedCameras,
+    allowedLabels, setAllowedLabels,
+    faceIdEnabled, setFaceIdEnabled,
+    wsConnected, pushTokenRegistered,
+  } = useSettingsStore();
+
+  const { isAvailable: biometricsAvail, biometricType, hasStoredCredentials, clearCredentials } = useBiometrics();
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
+
   const [cookieReady, setCookieReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Run the native notification service (works when app is open)
+  // Server editing
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(baseUrl);
+
+  // Camera list for filter (fetched from Frigate when settings open)
+  const [availCameras, setAvailCameras] = useState<string[]>([]);
+
   useAlertNotifications();
-  // Register Expo Push token for true background notifications (app killed)
   useExpoPushRegistration();
 
   // Inject auth cookie before WebView loads
@@ -52,12 +110,99 @@ export default function BrowserScreen() {
     inject();
   }, [baseUrl, token]);
 
+  // Fetch camera list when settings open
+  useEffect(() => {
+    if (!settingsOpen) return;
+    apiClient.get("/config").then((res) => {
+      const cameras = Object.keys(res.data?.cameras ?? {});
+      if (cameras.length > 0) setAvailCameras(cameras);
+    }).catch(() => {});
+  }, [settingsOpen]);
+
   const handleNavChange = useCallback((nav: WebViewNavigation) => {
-    // Frigate redirected to login — token expired
     if (nav.url.includes("/login") && nav.url !== `${baseUrl}/login`) {
       logout();
     }
   }, [baseUrl, logout]);
+
+  const handleSaveUrl = () => {
+    const clean = urlDraft.trim().replace(/\/$/, "");
+    if (!clean) return;
+    setBaseUrl(clean);
+    setEditingUrl(false);
+    setTimeout(() => webviewRef.current?.reload(), 300);
+  };
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (value) {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== "granted") {
+        haptic.error();
+        Alert.alert("Permission Required", "Enable notifications in Settings → Apex Sight.");
+        return;
+      }
+    }
+    haptic.medium();
+    setNotificationsEnabled(value);
+  };
+
+  const handleToggleFaceId = async (value: boolean) => {
+    haptic.medium();
+    if (!value && hasStoredCredentials) {
+      Alert.alert(
+        `Disable ${biometricType ?? "Face ID"}?`,
+        "You'll need to sign in with your password next time.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Disable", style: "destructive",
+            onPress: async () => {
+              await clearCredentials();
+              setFaceIdEnabled(false);
+              haptic.success();
+            },
+          },
+        ]
+      );
+    } else {
+      setFaceIdEnabled(value);
+      if (value && !hasStoredCredentials) {
+        Alert.alert(
+          `Enable ${biometricType ?? "Face ID"}`,
+          "Sign out and back in — you'll be prompted to save your credentials with Face ID.",
+          [{ text: "OK" }]
+        );
+      }
+    }
+  };
+
+  const handleToggleCamera = (camera: string) => {
+    haptic.tap();
+    const next = allowedCameras.includes(camera)
+      ? allowedCameras.filter((c) => c !== camera)
+      : [...allowedCameras, camera];
+    setAllowedCameras(next);
+  };
+
+  const handleToggleLabel = (label: string) => {
+    haptic.tap();
+    const next = allowedLabels.includes(label)
+      ? allowedLabels.filter((l) => l !== label)
+      : [...allowedLabels, label];
+    setAllowedLabels(next);
+  };
+
+  const handleTestNotification = async () => {
+    haptic.success();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🛡️ Apex Sight",
+        body: "Notifications are working!",
+        sound: "default",
+      },
+      trigger: null,
+    });
+  };
 
   const handleLogout = () => {
     haptic.medium();
@@ -75,19 +220,6 @@ export default function BrowserScreen() {
     ]);
   };
 
-  const handleToggleNotifications = async (value: boolean) => {
-    if (value) {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== "granted") {
-        haptic.error();
-        Alert.alert("Permission Required", "Enable notifications in Settings → Apex Sight.");
-        return;
-      }
-    }
-    haptic.medium();
-    setNotificationsEnabled(value);
-  };
-
   if (!cookieReady) {
     return (
       <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
@@ -96,9 +228,17 @@ export default function BrowserScreen() {
     );
   }
 
+  const cameraFilterSub = allowedCameras.length === 0
+    ? "All cameras"
+    : allowedCameras.map((c) => c.replace(/_/g, " ")).join(", ");
+
+  const labelFilterSub = allowedLabels.length === 0
+    ? "All labels"
+    : allowedLabels.map((l) => KNOWN_LABELS.find((k) => k.id === l)?.name ?? l).join(", ");
+
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
-      {/* Respect safe areas so Frigate PWA content isn't hidden behind status bar or home indicator */}
+      {/* Safe-area inset so Frigate PWA content clears status bar and home indicator */}
       <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#000" }}>
         <WebView
           ref={webviewRef}
@@ -116,7 +256,7 @@ export default function BrowserScreen() {
         />
       </View>
 
-      {/* Loading overlay — covers full screen including safe areas */}
+      {/* Loading overlay — full screen */}
       {loading && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
           <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
@@ -127,7 +267,7 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Floating settings button — bottom-right above home indicator, avoids Frigate's top UI */}
+      {/* Floating settings button — bottom-right, above Frigate nav bar */}
       <TouchableOpacity
         onPress={() => { haptic.tap(); setSettingsOpen(true); }}
         style={{
@@ -147,7 +287,7 @@ export default function BrowserScreen() {
         <Ionicons name="ellipsis-horizontal" size={16} color="#94a3b8" />
       </TouchableOpacity>
 
-      {/* Settings modal */}
+      {/* ── Settings modal ─────────────────────────────────────────────────── */}
       <Modal
         visible={settingsOpen}
         transparent
@@ -160,65 +300,251 @@ export default function BrowserScreen() {
           onPress={() => setSettingsOpen(false)}
         />
         <SafeAreaView style={{ backgroundColor: "#0f172a" }} edges={["bottom"]}>
-          <View style={{ backgroundColor: "#0f172a", borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1, borderColor: "#1e293b", padding: 20, gap: 14 }}>
+          <View style={{ backgroundColor: "#0f172a", borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1, borderColor: "#1e293b", maxHeight: "82%" }}>
 
-            {/* Handle */}
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: "#334155", alignSelf: "center", marginBottom: 4 }} />
-
-            {/* Header */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="shield" size={18} color="#00d4ff" />
-              <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700" }}>Apex Sight</Text>
-            </View>
-
-            {/* Server */}
-            <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 4 }}>
-              <Text style={{ color: "#475569", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8 }}>Connected Server</Text>
-              <Text style={{ color: "#94a3b8", fontSize: 13 }} numberOfLines={1}>{baseUrl}</Text>
-            </View>
-
-            {/* Notifications toggle */}
-            <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#00d4ff22", alignItems: "center", justifyContent: "center" }}>
-                  <Ionicons name="notifications" size={16} color="#00d4ff" />
-                </View>
-                <View>
-                  <Text style={{ color: "#f1f5f9", fontSize: 15, fontWeight: "500" }}>Push Alerts</Text>
-                  <Text style={{ color: "#64748b", fontSize: 12 }}>Rich notifications with snapshots</Text>
-                </View>
+            {/* Handle + header */}
+            <View style={{ padding: 20, paddingBottom: 0 }}>
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: "#334155", alignSelf: "center", marginBottom: 16 }} />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <Ionicons name="shield" size={18} color="#00d4ff" />
+                <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700" }}>Apex Sight Settings</Text>
               </View>
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={handleToggleNotifications}
-                trackColor={{ false: "#334155", true: "#00d4ff" }}
-                thumbColor="#fff"
-                ios_backgroundColor="#334155"
-              />
             </View>
 
-            {/* Reload */}
-            <TouchableOpacity
-              onPress={() => { haptic.tap(); webviewRef.current?.reload(); setSettingsOpen(false); }}
-              style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}
+            <ScrollView
+              style={{ paddingHorizontal: 20 }}
+              contentContainerStyle={{ paddingBottom: 20, gap: 0 }}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#a855f722", alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="refresh" size={16} color="#a855f7" />
-              </View>
-              <Text style={{ color: "#f1f5f9", fontSize: 15, fontWeight: "500" }}>Reload</Text>
-            </TouchableOpacity>
 
-            {/* Sign out */}
-            <TouchableOpacity
-              onPress={handleLogout}
-              style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}
-            >
-              <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#ef444422", alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="log-out" size={16} color="#ef4444" />
+              {/* ── SERVER ─────────────────────────────────────── */}
+              <SectionHeader title="Server" />
+              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 10 }}>
+                {editingUrl ? (
+                  <>
+                    <TextInput
+                      style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#334155" }}
+                      value={urlDraft}
+                      onChangeText={setUrlDraft}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                      placeholder="https://your-frigate-host.com"
+                      placeholderTextColor="#475569"
+                    />
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TouchableOpacity onPress={() => setEditingUrl(false)} style={{ flex: 1, backgroundColor: "#334155", borderRadius: 8, paddingVertical: 10, alignItems: "center" }}>
+                        <Text style={{ color: "#94a3b8", fontWeight: "600" }}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleSaveUrl} style={{ flex: 1, backgroundColor: "#00d4ff", borderRadius: 8, paddingVertical: 10, alignItems: "center" }}>
+                        <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save & Reload</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <Row
+                    icon="globe-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
+                    label={baseUrl.replace("https://", "")}
+                    sub="Tap to change server URL"
+                    right={
+                      <TouchableOpacity onPress={() => { setUrlDraft(baseUrl); setEditingUrl(true); }}>
+                        <Ionicons name="pencil-outline" size={18} color="#475569" />
+                      </TouchableOpacity>
+                    }
+                  />
+                )}
               </View>
-              <Text style={{ color: "#ef4444", fontSize: 15, fontWeight: "500" }}>Sign Out</Text>
-            </TouchableOpacity>
 
+              {/* ── NOTIFICATIONS ─────────────────────────────── */}
+              <SectionHeader title="Notifications" />
+              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 14 }}>
+
+                {/* Master toggle */}
+                <Row
+                  icon="notifications" iconColor="#00d4ff" iconBg="#00d4ff22"
+                  label="Push Alerts"
+                  sub="Rich notifications with snapshots"
+                  right={
+                    <Switch
+                      value={notificationsEnabled}
+                      onValueChange={handleToggleNotifications}
+                      trackColor={{ false: "#334155", true: "#00d4ff" }}
+                      thumbColor="#fff"
+                      ios_backgroundColor="#334155"
+                    />
+                  }
+                />
+
+                {notificationsEnabled && (
+                  <>
+                    <View style={{ height: 1, backgroundColor: "#334155" }} />
+
+                    {/* Camera filter */}
+                    <View>
+                      <Row
+                        icon="videocam-outline" iconColor="#a855f7" iconBg="#a855f722"
+                        label="Camera Filter"
+                        sub={cameraFilterSub}
+                      />
+                      {availCameras.length > 0 && (
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                          {availCameras.map((cam) => {
+                            const on = allowedCameras.length === 0 || allowedCameras.includes(cam);
+                            const selected = allowedCameras.includes(cam);
+                            return (
+                              <TouchableOpacity
+                                key={cam}
+                                onPress={() => handleToggleCamera(cam)}
+                                style={{
+                                  paddingHorizontal: 12, paddingVertical: 6,
+                                  borderRadius: 8, borderWidth: 1,
+                                  backgroundColor: selected ? "#a855f722" : "transparent",
+                                  borderColor: selected ? "#a855f7" : "#334155",
+                                }}
+                              >
+                                <Text style={{ color: selected ? "#a855f7" : "#64748b", fontSize: 13, fontWeight: "500" }}>
+                                  {cam.replace(/_/g, " ")}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                          {allowedCameras.length > 0 && (
+                            <TouchableOpacity
+                              onPress={() => { haptic.tap(); setAllowedCameras([]); }}
+                              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#ef4444" }}
+                            >
+                              <Text style={{ color: "#ef4444", fontSize: 13, fontWeight: "500" }}>Clear (all)</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={{ height: 1, backgroundColor: "#334155" }} />
+
+                    {/* Label filter */}
+                    <View>
+                      <Row
+                        icon="pricetag-outline" iconColor="#f59e0b" iconBg="#f59e0b22"
+                        label="Object Filter"
+                        sub={labelFilterSub}
+                      />
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                        {KNOWN_LABELS.map(({ id, emoji, name }) => {
+                          const selected = allowedLabels.includes(id);
+                          return (
+                            <TouchableOpacity
+                              key={id}
+                              onPress={() => handleToggleLabel(id)}
+                              style={{
+                                paddingHorizontal: 12, paddingVertical: 6,
+                                borderRadius: 8, borderWidth: 1,
+                                backgroundColor: selected ? "#f59e0b22" : "transparent",
+                                borderColor: selected ? "#f59e0b" : "#334155",
+                              }}
+                            >
+                              <Text style={{ color: selected ? "#f59e0b" : "#64748b", fontSize: 13, fontWeight: "500" }}>
+                                {emoji} {name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                        {allowedLabels.length > 0 && (
+                          <TouchableOpacity
+                            onPress={() => { haptic.tap(); setAllowedLabels([]); }}
+                            style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#ef4444" }}
+                          >
+                            <Text style={{ color: "#ef4444", fontSize: 13, fontWeight: "500" }}>Clear (all)</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  </>
+                )}
+              </View>
+
+              {/* ── FACE ID ───────────────────────────────────── */}
+              {biometricsAvail && (
+                <>
+                  <SectionHeader title="Security" />
+                  <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14 }}>
+                    <Row
+                      icon={biometricType === "Face ID" ? "scan-circle-outline" : "finger-print-outline"}
+                      iconColor="#10b981" iconBg="#10b98122"
+                      label={biometricType ?? "Biometric Login"}
+                      sub={hasStoredCredentials ? "Auto-signs you in on launch" : "Sign in once to enable"}
+                      right={
+                        <Switch
+                          value={faceIdEnabled && hasStoredCredentials}
+                          onValueChange={handleToggleFaceId}
+                          trackColor={{ false: "#334155", true: "#10b981" }}
+                          thumbColor="#fff"
+                          ios_backgroundColor="#334155"
+                        />
+                      }
+                    />
+                  </View>
+                </>
+              )}
+
+              {/* ── STATUS ────────────────────────────────────── */}
+              <SectionHeader title="Status" />
+              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 14 }}>
+                <Row
+                  icon={wsConnected ? "wifi" : "wifi-outline"}
+                  iconColor={wsConnected ? "#10b981" : "#ef4444"}
+                  iconBg={wsConnected ? "#10b98122" : "#ef444422"}
+                  label="Live Events"
+                  sub={wsConnected ? "WebSocket connected" : "WebSocket disconnected"}
+                />
+                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <Row
+                  icon={pushTokenRegistered ? "cloud-done-outline" : "cloud-offline-outline"}
+                  iconColor={pushTokenRegistered ? "#10b981" : "#f59e0b"}
+                  iconBg={pushTokenRegistered ? "#10b98122" : "#f59e0b22"}
+                  label="Background Push"
+                  sub={
+                    pushTokenRegistered
+                      ? "Token registered with Frigate"
+                      : "Not registered — background alerts won't work"
+                  }
+                />
+              </View>
+
+              {/* ── ACTIONS ───────────────────────────────────── */}
+              <SectionHeader title="Actions" />
+              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 14 }}>
+                <TouchableOpacity onPress={handleTestNotification}>
+                  <Row
+                    icon="notifications-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
+                    label="Send Test Notification"
+                    sub="Fires a local notification immediately"
+                  />
+                </TouchableOpacity>
+                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <TouchableOpacity onPress={() => { haptic.tap(); webviewRef.current?.reload(); setSettingsOpen(false); }}>
+                  <Row
+                    icon="refresh" iconColor="#a855f7" iconBg="#a855f722"
+                    label="Reload"
+                    sub="Refresh the Frigate web app"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* ── SIGN OUT ──────────────────────────────────── */}
+              <View style={{ marginTop: 8 }}>
+                <TouchableOpacity
+                  onPress={handleLogout}
+                  style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14 }}
+                >
+                  <Row
+                    icon="log-out" iconColor="#ef4444" iconBg="#ef444422"
+                    label="Sign Out"
+                  />
+                </TouchableOpacity>
+              </View>
+
+            </ScrollView>
           </View>
         </SafeAreaView>
       </Modal>

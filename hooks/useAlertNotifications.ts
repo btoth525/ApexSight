@@ -30,7 +30,7 @@ async function downloadSnapshot(snapshotUrl: string, token: string | null): Prom
 
 export function useAlertNotifications() {
   const { baseUrl, token } = useAuthStore();
-  const { notificationsEnabled } = useSettingsStore();
+  const { notificationsEnabled, allowedCameras, allowedLabels } = useSettingsStore();
   const recentIds = useRef<Set<string>>(new Set());
 
   const onEvent = useCallback(async (event: unknown) => {
@@ -44,6 +44,9 @@ export function useAlertNotifications() {
     // Only alert severity → push notification
     const isAlert = after.severity === "alert" || after.data?.severity === "alert";
     if (!isAlert) return;
+    // Camera and label filters (empty array = allow all)
+    if (allowedCameras.length > 0 && !allowedCameras.includes(after.camera)) return;
+    if (allowedLabels.length > 0 && !allowedLabels.includes(after.label)) return;
     // Dedupe by event id
     if (recentIds.current.has(after.id)) return;
     recentIds.current.add(after.id);
@@ -68,7 +71,7 @@ export function useAlertNotifications() {
       },
       trigger: null,
     });
-  }, [baseUrl, token, notificationsEnabled]);
+  }, [baseUrl, token, notificationsEnabled, allowedCameras, allowedLabels]);
 
   useFrigateEvents(onEvent);
 }

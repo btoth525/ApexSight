@@ -13,7 +13,7 @@ import { apiClient } from "@/utils/apiClient";
  */
 export function useExpoPushRegistration() {
   const { token, baseUrl } = useAuthStore();
-  const { notificationsEnabled } = useSettingsStore();
+  const { notificationsEnabled, setPushTokenRegistered } = useSettingsStore();
   const lastRegistered = useRef<string | null>(null);
 
   useEffect(() => {
@@ -22,14 +22,12 @@ export function useExpoPushRegistration() {
 
     const register = async () => {
       try {
-        // Make sure we have permission
         let { status } = await Notifications.getPermissionsAsync();
         if (status !== "granted") {
           const req = await Notifications.requestPermissionsAsync();
           if (req.status !== "granted") return;
         }
 
-        // Get the Expo Push Token (looks like "ExponentPushToken[xxx]")
         const projectId =
           Constants.expoConfig?.extra?.eas?.projectId ??
           Constants.easConfig?.projectId;
@@ -39,7 +37,6 @@ export function useExpoPushRegistration() {
         const pushToken = tokenResp.data;
         if (!pushToken) return;
 
-        // Skip if we already registered the same token
         const fingerprint = `${baseUrl}::${pushToken}`;
         if (lastRegistered.current === fingerprint) return;
 
@@ -48,12 +45,13 @@ export function useExpoPushRegistration() {
             type: "expo",
             token: pushToken,
             platform: Platform.OS,
-            base_url: baseUrl,  // server uses this to build snapshot image URLs
+            base_url: baseUrl,
           },
         });
         lastRegistered.current = fingerprint;
+        setPushTokenRegistered(true);
       } catch {
-        // Silent — registration will retry on next mount
+        setPushTokenRegistered(false);
       }
     };
 
