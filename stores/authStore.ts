@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
+import CookieManager from "@react-native-cookies/cookies";
 import { appGroup } from "@/utils/appGroup";
 
 type AuthState = {
@@ -56,6 +57,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       SecureStore.deleteItemAsync("frigate_username"),
     ]);
     appGroup.remove("frigate_token");
+    // Clear the iOS URLSession cookie jar too. Without this, the WebView and
+    // axios (which both share URLSession) will keep sending the old stale
+    // frigate_token cookie on the next login, causing JWT bad_signature errors.
+    try { await CookieManager.clearAll(true); } catch {}
+    try { await CookieManager.clearAll(false); } catch {}
     set({ token: null, username: null });
   },
 }));
