@@ -27,12 +27,17 @@ export function useExpoPushRegistration() {
         if (req.status !== "granted") return;
       }
 
-      const projectId =
+      const projectId: string | undefined =
+        Constants.easConfig?.projectId ??
         Constants.expoConfig?.extra?.eas?.projectId ??
-        Constants.easConfig?.projectId;
-      const tokenResp = await Notifications.getExpoPushTokenAsync(
-        projectId ? { projectId } : undefined,
-      );
+        undefined;
+      if (!projectId) {
+        // Production builds require a projectId from `eas init`.
+        // Without it, push tokens cannot be issued — skip silently.
+        setPushTokenRegistered(false);
+        return;
+      }
+      const tokenResp = await Notifications.getExpoPushTokenAsync({ projectId });
       const pushToken = tokenResp.data;
       if (!pushToken) return;
 
