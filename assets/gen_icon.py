@@ -10,8 +10,8 @@ from PIL import Image, ImageDraw, ImageFilter
 import math
 
 SIZE = 1024
-BLUE  = (0, 180, 255)
-BLUE2 = (0, 130, 210)
+BLUE  = (30, 110, 255)
+BLUE2 = (10,  70, 200)
 BG    = (10, 14, 26, 255)
 
 img  = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
