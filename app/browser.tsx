@@ -97,23 +97,26 @@ export default function BrowserScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
-      <WebView
-        ref={webviewRef}
-        source={{ uri: baseUrl }}
-        style={{ flex: 1 }}
-        sharedCookiesEnabled={true}
-        allowsBackForwardNavigationGestures={true}
-        pullToRefreshEnabled={true}
-        allowsInlineMediaPlayback={true}
-        mediaPlaybackRequiresUserAction={false}
-        allowsFullscreenVideo={true}
-        onNavigationStateChange={handleNavChange}
-        onLoadStart={() => setLoading(true)}
-        onLoadEnd={() => setLoading(false)}
-      />
+    <View style={{ flex: 1, backgroundColor: "#000" }}>
+      {/* Respect safe areas so Frigate PWA content isn't hidden behind status bar or home indicator */}
+      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#000" }}>
+        <WebView
+          ref={webviewRef}
+          source={{ uri: baseUrl }}
+          style={{ flex: 1 }}
+          sharedCookiesEnabled={true}
+          allowsBackForwardNavigationGestures={true}
+          pullToRefreshEnabled={true}
+          allowsInlineMediaPlayback={true}
+          mediaPlaybackRequiresUserAction={false}
+          allowsFullscreenVideo={true}
+          onNavigationStateChange={handleNavChange}
+          onLoadStart={() => setLoading(true)}
+          onLoadEnd={() => setLoading(false)}
+        />
+      </View>
 
-      {/* Loading overlay */}
+      {/* Loading overlay — covers full screen including safe areas */}
       {loading && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
           <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
@@ -124,12 +127,12 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Floating settings button */}
+      {/* Floating settings button — bottom-right above home indicator, avoids Frigate's top UI */}
       <TouchableOpacity
         onPress={() => { haptic.tap(); setSettingsOpen(true); }}
         style={{
           position: "absolute",
-          top: insets.top + 10,
+          bottom: insets.bottom + 80,
           right: 14,
           width: 34,
           height: 34,
