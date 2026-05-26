@@ -85,6 +85,19 @@ export default function BrowserScreen() {
   useAlertNotifications();
   const { retryRegister } = useExpoPushRegistration();
 
+  // Validate the stored token once on mount. If Frigate was restarted its
+  // JWT secret changes, making old tokens invalid. A 401 here means the
+  // stored token is stale — log out cleanly so the user hits the login screen.
+  useEffect(() => {
+    if (!token || token === "session") {
+      logout();
+      return;
+    }
+    apiClient.get("/user").catch((err) => {
+      if (err.response?.status === 401) logout();
+    });
+  }, []);
+
   // Deep-link: tapping a push notification navigates WebView to that review
   useEffect(() => {
     // App already open — user tapped a notification banner
