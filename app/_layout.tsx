@@ -4,7 +4,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { useAuth } from "@/hooks/useAuth";
-import "../global.css";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -67,7 +66,7 @@ export default function RootLayout() {
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="browser" />
       </Stack>
     </GestureHandlerRootView>
   );

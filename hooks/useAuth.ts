@@ -17,7 +17,7 @@ export function useAuth() {
     if (!token && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (token && inAuthGroup) {
-      router.replace("/(tabs)/");
+      router.replace("/browser");
     }
   }, [token, isLoading, segments]);
 

@@ -18,7 +18,9 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Used for live camera viewing",
         "NSFaceIDUsageDescription": "Used for Face ID login",
-        "UIBackgroundModes": ["fetch", "remote-notification"]
+        "NSMicrophoneUsageDescription": "Used for live camera audio",
+        "UIBackgroundModes": ["fetch", "remote-notification"],
+        "BGTaskSchedulerPermittedIdentifiers": ["$(PRODUCT_BUNDLE_IDENTIFIER)"]
       }
     },
     "plugins": [
