@@ -16,12 +16,8 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-apiClient.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    if (err.response?.status === 401) {
-      useAuthStore.getState().logout();
-    }
-    return Promise.reject(err);
-  }
-);
+// No auto-logout on 401 — too aggressive. Frigate may return 401 for
+// endpoints that don't exist yet (e.g. /notifications/register on a server
+// that hasn't been patched), and we don't want background API calls to
+// kick the user out of the app. The user can manually sign out from
+// settings if their session actually expires.

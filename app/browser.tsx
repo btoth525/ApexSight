@@ -154,16 +154,13 @@ export default function BrowserScreen() {
 
   const prevUrlRef = useRef<string | null>(null);
   const handleNavChange = useCallback((nav: WebViewNavigation) => {
-    const isLoginUrl = nav.url.startsWith(`${baseUrl}/login`);
-    const prev = prevUrlRef.current;
-    // Only auto-logout when Frigate redirects us TO /login from somewhere else
-    // mid-session (real session expiry). Don't fire on initial loads or
-    // already-on-login-page nav, which would cause a login → loop scenario.
-    if (isLoginUrl && prev && !prev.startsWith(`${baseUrl}/login`)) {
-      logout();
-    }
+    // Track current URL — used for deep-link navigation only.
+    // We deliberately do NOT auto-logout when the WebView hits /login
+    // because Frigate's PWA can hit that URL during normal flow, and any
+    // false positive there would kick the user out of the app entirely.
+    // If the user wants to sign out they can do it from settings.
     prevUrlRef.current = nav.url;
-  }, [baseUrl, logout]);
+  }, []);
 
   const handleSaveUrl = async () => {
     const clean = urlDraft.trim().replace(/\/$/, "");
