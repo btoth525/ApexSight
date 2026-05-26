@@ -93,17 +93,11 @@ export default function BrowserScreen() {
   useAlertNotifications();
   const { retryRegister } = useExpoPushRegistration();
 
-  // Validate the stored token once on mount. If Frigate was restarted its
-  // JWT secret changes, making old tokens invalid. A 401 means stale token —
-  // log out so the user re-authenticates. We also handle token="session" here:
-  // that means we're relying on URLSession's cookie jar (no explicit JWT
-  // extracted), so we still probe /api/user to confirm the session is alive.
-  useEffect(() => {
-    if (!token) { logout(); return; }
-    apiClient.get("/user").catch((err) => {
-      if (err.response?.status === 401) logout();
-    });
-  }, []);
+  // NOTE: deliberately no auto-logout on token validation. If the stored
+  // token is stale (Frigate restarted, JWT secret rotated), the WebView
+  // will land on Frigate's login page and the user can manually sign out
+  // from Apex Settings to re-authenticate. Auto-logout from here previously
+  // caused login loops when token extraction fell back to "session".
 
   // Deep-link + action handling for push notifications
   useEffect(() => {
