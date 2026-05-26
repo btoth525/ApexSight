@@ -30,7 +30,7 @@ export default function LoginScreen() {
 
   const doLogin = async (loginUrl: string, loginUser: string, loginPass: string) => {
     const trimmedUrl = loginUrl.replace(/\/$/, "");
-    setBaseUrl(trimmedUrl);
+    await setBaseUrl(trimmedUrl);
     const res = await apiClient.post("/login", { user: loginUser, password: loginPass });
     if (res.status !== 200) throw new Error("Login failed");
     // Try Set-Cookie header first — more reliable with axios than CookieManager
@@ -48,7 +48,7 @@ export default function LoginScreen() {
       token = cookies["frigate_token"]?.value ?? "session";
     }
     const name = res.data?.user?.name ?? loginUser;
-    setAuth(token, name);
+    await setAuth(token, name);
     return { trimmedUrl, name };
   };
 

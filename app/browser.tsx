@@ -163,10 +163,10 @@ export default function BrowserScreen() {
     }
   }, [baseUrl, logout]);
 
-  const handleSaveUrl = () => {
+  const handleSaveUrl = async () => {
     const clean = urlDraft.trim().replace(/\/$/, "");
     if (!clean) return;
-    setBaseUrl(clean);
+    await setBaseUrl(clean);
     setEditingUrl(false);
     setTimeout(() => webviewRef.current?.reload(), 300);
   };
@@ -248,10 +248,10 @@ export default function BrowserScreen() {
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign Out", style: "destructive",
-        onPress: () => {
+        onPress: async () => {
           haptic.success();
           setSettingsOpen(false);
-          logout();
+          await logout();
           router.replace("/(auth)/login");
         },
       },
