@@ -48,12 +48,22 @@ def extract_expo_token(sub: Any) -> Optional[str]:
     return None
 
 
+def extract_base_url(sub: Any) -> Optional[str]:
+    """Pull the base_url sent by the app at registration time."""
+    if isinstance(sub, dict):
+        url = sub.get("base_url")
+        if isinstance(url, str) and url.startswith("http"):
+            return url.rstrip("/")
+    return None
+
+
 class ExpoPushClient:
     """Background sender for Expo Push notifications."""
 
     def __init__(self, stop_event: threading.Event):
         self.stop_event = stop_event
-        self.tokens_by_user: dict[str, list[str]] = {}
+        # Maps expo_token -> {"username": str, "base_url": str}
+        self.registrations: dict[str, dict] = {}
         self.queue: queue.Queue = queue.Queue()
         self.worker = threading.Thread(
             target=self._process, daemon=True, name="expo_push_worker"
@@ -62,44 +72,48 @@ class ExpoPushClient:
 
     # ------- token management -------
 
-    def register_token(self, username: str, token: str) -> None:
+    def register_token(
+        self, username: str, token: str, base_url: Optional[str] = None
+    ) -> None:
         if not token or not token.startswith(EXPO_TOKEN_PREFIXES):
             return
-        bucket = self.tokens_by_user.setdefault(username, [])
-        if token not in bucket:
-            bucket.append(token)
-            logger.info(
-                f"Registered Expo Push token for {username}: {token[:30]}…"
-            )
+        self.registrations[token] = {"username": username, "base_url": base_url}
+        logger.info(
+            f"Registered Expo Push token for {username} "
+            f"(base_url={base_url}): {token[:30]}…"
+        )
 
     def remove_token(self, token: str) -> None:
-        for tokens in self.tokens_by_user.values():
-            if token in tokens:
-                tokens.remove(token)
-                logger.info(f"Removed invalid Expo Push token: {token[:30]}…")
+        if token in self.registrations:
+            del self.registrations[token]
+            logger.info(f"Removed invalid Expo Push token: {token[:30]}…")
 
     def all_tokens(self) -> list[str]:
-        return [t for tokens in self.tokens_by_user.values() for t in tokens]
+        return list(self.registrations.keys())
+
+    def base_url_for(self, token: str) -> Optional[str]:
+        return self.registrations.get(token, {}).get("base_url")
 
     # ------- send -------
 
-    def send(
+    def send_alert(
         self,
         title: str,
         body: str,
         data: Optional[dict] = None,
-        image_url: Optional[str] = None,
-        category: Optional[str] = None,
+        thumb_id: Optional[str] = None,
+        category: str = "FRIGATE_ALERT",
     ) -> None:
-        """Queue a notification to all registered tokens."""
+        """Queue a rich alert notification to all registered tokens."""
         tokens = self.all_tokens()
         if not tokens:
             return
 
-        for i in range(0, len(tokens), 100):  # Expo accepts ≤100 per request
+        for i in range(0, len(tokens), 100):
             batch = tokens[i : i + 100]
             messages = []
             for token in batch:
+                base_url = self.base_url_for(token)
                 msg: dict[str, Any] = {
                     "to": token,
                     "title": title,
@@ -110,11 +124,11 @@ class ExpoPushClient:
                     "channelId": "alerts",
                     "mutableContent": True,
                     "_displayInForeground": True,
+                    "categoryId": category,
                 }
-                if category:
-                    msg["categoryId"] = category
-                if image_url:
-                    # iOS rich notification with image (lock-screen preview)
+                # Attach snapshot image using the app's registered Cloudflare URL
+                if thumb_id and base_url:
+                    image_url = f"{base_url}/api/notification-thumb/{thumb_id}"
                     msg["richContent"] = {"image": image_url}
                     msg["attachments"] = [{"url": image_url, "type": "image"}]
                 messages.append(msg)
@@ -166,3 +180,6 @@ class ExpoPushClient:
                 logger.warning(
                     f"Expo ticket error for {messages[i]['to'][:20]}…: {err}"
                 )
+
+    def stop(self) -> None:
+        self.stop_event.set()

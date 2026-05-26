@@ -48,6 +48,7 @@ export function useExpoPushRegistration() {
             type: "expo",
             token: pushToken,
             platform: Platform.OS,
+            base_url: baseUrl,  // server uses this to build snapshot image URLs
           },
         });
         lastRegistered.current = fingerprint;
