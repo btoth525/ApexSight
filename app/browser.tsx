@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  Alert, Switch, Modal, ScrollView,
+  Alert, Switch, Modal,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -115,7 +115,7 @@ export default function BrowserScreen() {
 
       {/* Loading overlay */}
       {loading && (
-        <View style={{ position: "absolute", inset: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
           <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
             <Ionicons name="shield" size={28} color="#00d4ff" />
           </View>

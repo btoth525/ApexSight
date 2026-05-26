@@ -56,7 +56,7 @@ export default function LoginScreen() {
           `Enable ${biometricType ?? "Biometric"} Login?`,
           `Sign in next time with ${biometricType ?? "your biometric"} instead of typing your password.`,
           [
-            { text: "Not Now", style: "cancel", onPress: () => router.replace("/(tabs)/") },
+            { text: "Not Now", style: "cancel", onPress: () => router.replace("/browser") },
             {
               text: "Enable",
               onPress: async () => {
@@ -66,13 +66,13 @@ export default function LoginScreen() {
                 } catch {
                   // user cancelled biometric prompt — that's fine
                 }
-                router.replace("/(tabs)/");
+                router.replace("/browser");
               },
             },
           ]
         );
       } else {
-        router.replace("/(tabs)/");
+        router.replace("/browser");
       }
     } catch (e: unknown) {
       haptic.error();
@@ -101,7 +101,7 @@ export default function LoginScreen() {
       }
       await doLogin(creds.url, creds.username, creds.password);
       haptic.success();
-      router.replace("/(tabs)/");
+      router.replace("/browser");
     } catch {
       haptic.error();
       setError(`${biometricType ?? "Biometric"} login failed. Try password.`);
