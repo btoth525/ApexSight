@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import * as Notifications from "expo-notifications";
 import * as FileSystem from "expo-file-system";
 import { useAuthStore } from "@/stores/authStore";
@@ -13,11 +13,9 @@ type FrigateWsEvent = {
              has_snapshot?: boolean; thumbnail?: string; data?: any };
 };
 
-// Download the snapshot to a local file so iOS can attach it to the notification.
 async function downloadSnapshot(snapshotUrl: string, token: string | null): Promise<string | null> {
   try {
-    const ext = ".jpg";
-    const filename = `apex_snap_${Date.now()}${ext}`;
+    const filename = `apex_snap_${Date.now()}.jpg`;
     const dest = `${FileSystem.cacheDirectory}${filename}`;
     const headers: Record<string, string> = {};
     if (token && token !== "session") headers["Cookie"] = `frigate_token=${token}`;
@@ -31,39 +29,52 @@ async function downloadSnapshot(snapshotUrl: string, token: string | null): Prom
 export function useAlertNotifications() {
   const { baseUrl, token } = useAuthStore();
   const { notificationsEnabled, allowedCameras, allowedLabels } = useSettingsStore();
-  const recentIds = useRef<Set<string>>(new Set());
+  const notifiedIds = useRef<Set<string>>(new Set());
 
   const onEvent = useCallback(async (event: unknown) => {
     if (!notificationsEnabled) return;
     const e = event as FrigateWsEvent;
-
-    // Trigger on new alert-severity events
     const after = e.after;
+
     if (!after?.id || !after.camera || !after.label) return;
-    if (e.type !== "new" && e.type !== "update") return;
-    // Only alert severity → push notification
+
+    // Only fire on the very first detection ("new") — not on every update.
+    // This guarantees exactly one notification per event regardless of how
+    // many WebSocket update frames arrive or how many times this hook remounts.
+    if (e.type !== "new") return;
+
+    // Alert severity only
     const isAlert = after.severity === "alert" || after.data?.severity === "alert";
     if (!isAlert) return;
-    // Camera and label filters (empty array = allow all)
+
+    // Camera and label filters (empty = all)
     if (allowedCameras.length > 0 && !allowedCameras.includes(after.camera)) return;
     if (allowedLabels.length > 0 && !allowedLabels.includes(after.label)) return;
-    // Dedupe by event id
-    if (recentIds.current.has(after.id)) return;
-    recentIds.current.add(after.id);
-    if (recentIds.current.size > 100) {
-      recentIds.current = new Set(Array.from(recentIds.current).slice(-50));
+
+    // Global dedup — survives remounts via ref, prevents double-fire
+    // if server APNs push and WebSocket both arrive for the same event
+    if (notifiedIds.current.has(after.id)) return;
+    notifiedIds.current.add(after.id);
+    if (notifiedIds.current.size > 200) {
+      notifiedIds.current = new Set(Array.from(notifiedIds.current).slice(-100));
     }
 
     const snapshotUrl = `${baseUrl}/api/events/${after.id}/snapshot.jpg`;
     const localPath = await downloadSnapshot(snapshotUrl, token);
 
-    const cameraLabel = after.camera.replace(/_/g, " ");
+    const cameraName = after.camera.replace(/_/g, " ");
+    const emoji = getLabelEmoji(after.label);
+    const label = formatLabel(after.label);
+
     await Notifications.scheduleNotificationAsync({
+      // Use the event ID as the iOS notification identifier.
+      // If a server APNs push arrives for the same event later, iOS will
+      // replace this notification rather than stacking a duplicate.
+      identifier: `alert-${after.id}`,
       content: {
-        title: `${getLabelEmoji(after.label)} ${formatLabel(after.label)} detected`,
-        body: `On ${cameraLabel}`,
+        title: `${emoji} ${label} · ${cameraName}`,
+        body: "Tap to review",
         data: { event_id: after.id, camera: after.camera, type: "alert" },
-        categoryIdentifier: "FRIGATE_ALERT",
         sound: "default",
         ...(localPath
           ? { attachments: [{ identifier: "snapshot", url: localPath, type: "image/jpeg" }] }
