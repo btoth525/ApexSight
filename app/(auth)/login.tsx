@@ -98,6 +98,7 @@ export default function LoginScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
+                  textContentType="URL"
                 />
               </View>
             </View>
@@ -114,6 +115,7 @@ export default function LoginScreen() {
                   onChangeText={setUsername}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  textContentType="username"
                 />
               </View>
             </View>
@@ -129,6 +131,7 @@ export default function LoginScreen() {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
+                  textContentType="password"
                 />
               </View>
             </View>
