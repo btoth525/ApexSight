@@ -16,10 +16,15 @@ export function useAuth() {
 
   useEffect(() => {
     if (isLoading) return;
-    const inAuthGroup = segments[0] === "(auth)";
+    const seg = segments[0] as string | undefined;
+    const inAuthGroup = seg === "(auth)";
+    const inBrowser   = seg === "browser";
+
     if (!token && !inAuthGroup) {
+      // Not logged in and not already on login screen → go to login
       router.replace("/(auth)/login");
-    } else if (token && inAuthGroup) {
+    } else if (token && !inBrowser) {
+      // Logged in but not on browser yet (e.g. still on splash/index) → go to browser
       router.replace("/browser");
     }
   }, [token, isLoading, segments]);
