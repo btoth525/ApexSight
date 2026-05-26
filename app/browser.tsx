@@ -64,6 +64,9 @@ export default function BrowserScreen() {
     notificationsEnabled, setNotificationsEnabled,
     allowedCameras, setAllowedCameras,
     allowedLabels, setAllowedLabels,
+    notifTitle, setNotifTitle,
+    notifBody, setNotifBody,
+    notifActionsEnabled, setNotifActionsEnabled,
     wsConnected, pushTokenRegistered,
   } = useSettingsStore();
 
@@ -79,6 +82,11 @@ export default function BrowserScreen() {
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft] = useState(baseUrl);
 
+  // Notification format editing
+  const [editingNotifFormat, setEditingNotifFormat] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(notifTitle);
+  const [bodyDraft, setBodyDraft] = useState(notifBody);
+
   // Camera list for filter (fetched from Frigate when settings open)
   const [availCameras, setAvailCameras] = useState<string[]>([]);
 
@@ -86,32 +94,49 @@ export default function BrowserScreen() {
   const { retryRegister } = useExpoPushRegistration();
 
   // Validate the stored token once on mount. If Frigate was restarted its
-  // JWT secret changes, making old tokens invalid. A 401 here means the
-  // stored token is stale — log out cleanly so the user hits the login screen.
+  // JWT secret changes, making old tokens invalid. A 401 means stale token —
+  // log out so the user re-authenticates. We also handle token="session" here:
+  // that means we're relying on URLSession's cookie jar (no explicit JWT
+  // extracted), so we still probe /api/user to confirm the session is alive.
   useEffect(() => {
-    if (!token || token === "session") {
-      logout();
-      return;
-    }
+    if (!token) { logout(); return; }
     apiClient.get("/user").catch((err) => {
       if (err.response?.status === 401) logout();
     });
   }, []);
 
-  // Deep-link: tapping a push notification navigates WebView to that review
+  // Deep-link + action handling for push notifications
   useEffect(() => {
-    // App already open — user tapped a notification banner
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as Record<string, string> | undefined;
+    const navigateToReview = (data: Record<string, string> | undefined) => {
       const reviewId = data?.review_id;
+      const eventId  = data?.event_id;
       const camera   = data?.camera;
       const url = reviewId
         ? `${baseUrl}/review?id=${reviewId}`
+        : eventId
+        ? `${baseUrl}/review?id=${eventId}`
         : camera
         ? `${baseUrl}/review?cameras=${camera}`
         : `${baseUrl}/review`;
       webviewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
       setSettingsOpen(false);
+    };
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      const action = response.actionIdentifier;
+
+      if (action === "MARK_REVIEWED") {
+        // Mark the event as reviewed in Frigate silently — no navigation needed
+        const eventId = data?.event_id ?? data?.review_id;
+        if (eventId) {
+          apiClient.post("/reviews/viewed", { ids: [eventId] }).catch(() => {});
+        }
+        return;
+      }
+
+      // Default tap or "View Clip" — navigate to the review
+      navigateToReview(data);
     });
 
     // App was killed — launched from notification tap
@@ -482,6 +507,104 @@ export default function BrowserScreen() {
                   </>
                 )}
               </View>
+
+              {/* ── NOTIFICATION FORMAT ───────────────────────── */}
+              {notificationsEnabled && (
+                <>
+                  <SectionHeader title="Notification Format" />
+                  <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 12 }}>
+
+                    {/* Action buttons toggle */}
+                    <Row
+                      icon="flash-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
+                      label="Action Buttons"
+                      sub="View Clip · Mark Reviewed on notification"
+                      right={
+                        <Switch
+                          value={notifActionsEnabled}
+                          onValueChange={(v) => { haptic.medium(); setNotifActionsEnabled(v); }}
+                          trackColor={{ false: "#334155", true: "#00d4ff" }}
+                          thumbColor="#fff"
+                          ios_backgroundColor="#334155"
+                        />
+                      }
+                    />
+
+                    <View style={{ height: 1, backgroundColor: "#334155" }} />
+
+                    {/* Format editor */}
+                    {editingNotifFormat ? (
+                      <>
+                        <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Title</Text>
+                        <TextInput
+                          style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#334155" }}
+                          value={titleDraft}
+                          onChangeText={setTitleDraft}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          placeholder="{emoji} {label} · {camera}"
+                          placeholderTextColor="#475569"
+                        />
+                        <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Body</Text>
+                        <TextInput
+                          style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#334155" }}
+                          value={bodyDraft}
+                          onChangeText={setBodyDraft}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          placeholder="Tap to review"
+                          placeholderTextColor="#475569"
+                        />
+
+                        {/* Variable reference chips */}
+                        <Text style={{ color: "#475569", fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Available variables</Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                          {["{emoji}", "{label}", "{camera}", "{score}"].map((v) => (
+                            <TouchableOpacity
+                              key={v}
+                              onPress={() => { haptic.tap(); setTitleDraft((t) => t + v); }}
+                              style={{ backgroundColor: "#0f172a", borderRadius: 6, borderWidth: 1, borderColor: "#334155", paddingHorizontal: 8, paddingVertical: 4 }}
+                            >
+                              <Text style={{ color: "#00d4ff", fontSize: 12, fontFamily: "monospace" }}>{v}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <TouchableOpacity
+                            onPress={() => { setTitleDraft(notifTitle); setBodyDraft(notifBody); setEditingNotifFormat(false); }}
+                            style={{ flex: 1, backgroundColor: "#334155", borderRadius: 8, paddingVertical: 10, alignItems: "center" }}
+                          >
+                            <Text style={{ color: "#94a3b8", fontWeight: "600" }}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              haptic.success();
+                              setNotifTitle(titleDraft || "{emoji} {label} · {camera}");
+                              setNotifBody(bodyDraft || "Tap to review");
+                              setEditingNotifFormat(false);
+                            }}
+                            style={{ flex: 1, backgroundColor: "#00d4ff", borderRadius: 8, paddingVertical: 10, alignItems: "center" }}
+                          >
+                            <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <Row
+                        icon="create-outline" iconColor="#a855f7" iconBg="#a855f722"
+                        label="Message Format"
+                        sub={`Title: ${notifTitle}`}
+                        right={
+                          <TouchableOpacity onPress={() => { setTitleDraft(notifTitle); setBodyDraft(notifBody); setEditingNotifFormat(true); }}>
+                            <Ionicons name="pencil-outline" size={18} color="#475569" />
+                          </TouchableOpacity>
+                        }
+                      />
+                    )}
+                  </View>
+                </>
+              )}
 
               {/* ── STATUS ────────────────────────────────────── */}
               <SectionHeader title="Status" />

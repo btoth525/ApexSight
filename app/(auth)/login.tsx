@@ -32,10 +32,15 @@ export default function LoginScreen() {
       const match = cookieStr.match(/frigate_token=([^;,\s]+)/);
       if (match?.[1]) token = match[1];
     }
+    // URLSession processes Set-Cookie asynchronously — retry up to 5x
+    // so we always capture the real JWT rather than falling back to "session"
     if (token === "session") {
-      await new Promise((r) => setTimeout(r, 150));
-      const cookies = await CookieManager.get(trimmedUrl);
-      token = cookies["frigate_token"]?.value ?? "session";
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        const cookies = await CookieManager.get(trimmedUrl);
+        const val = cookies["frigate_token"]?.value;
+        if (val && val.length > 10) { token = val; break; }
+      }
     }
     const name = res.data?.user?.name ?? loginUser;
     await setAuth(token, name);

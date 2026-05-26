@@ -1,13 +1,16 @@
 import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
+import { NOTIF_DEFAULTS } from "@/utils/notifTemplate";
 
-const STORAGE_KEY = "apex_settings_v1";
+const STORAGE_KEY = "apex_settings_v2";
 
 type SettingsState = {
   notificationsEnabled: boolean;
-  allowedCameras: string[];    // empty = all cameras
-  allowedLabels: string[];     // empty = all labels
-  faceIdEnabled: boolean;
+  allowedCameras: string[];
+  allowedLabels: string[];
+  notifTitle: string;
+  notifBody: string;
+  notifActionsEnabled: boolean;
   wsConnected: boolean;
   pushTokenRegistered: boolean;
 
@@ -15,7 +18,9 @@ type SettingsState = {
   setNotificationsEnabled: (v: boolean) => void;
   setAllowedCameras: (cameras: string[]) => void;
   setAllowedLabels: (labels: string[]) => void;
-  setFaceIdEnabled: (v: boolean) => void;
+  setNotifTitle: (v: string) => void;
+  setNotifBody: (v: string) => void;
+  setNotifActionsEnabled: (v: boolean) => void;
   setWsConnected: (v: boolean) => void;
   setPushTokenRegistered: (v: boolean) => void;
 };
@@ -27,7 +32,9 @@ function persist(state: SettingsState) {
       notificationsEnabled: state.notificationsEnabled,
       allowedCameras: state.allowedCameras,
       allowedLabels: state.allowedLabels,
-      faceIdEnabled: state.faceIdEnabled,
+      notifTitle: state.notifTitle,
+      notifBody: state.notifBody,
+      notifActionsEnabled: state.notifActionsEnabled,
     })
   ).catch(() => {});
 }
@@ -36,7 +43,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   notificationsEnabled: true,
   allowedCameras: [],
   allowedLabels: [],
-  faceIdEnabled: true,
+  notifTitle: NOTIF_DEFAULTS.title,
+  notifBody: NOTIF_DEFAULTS.body,
+  notifActionsEnabled: true,
   wsConnected: false,
   pushTokenRegistered: false,
 
@@ -49,7 +58,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           notificationsEnabled: saved.notificationsEnabled ?? true,
           allowedCameras: saved.allowedCameras ?? [],
           allowedLabels: saved.allowedLabels ?? [],
-          faceIdEnabled: saved.faceIdEnabled ?? true,
+          notifTitle: saved.notifTitle ?? NOTIF_DEFAULTS.title,
+          notifBody: saved.notifBody ?? NOTIF_DEFAULTS.body,
+          notifActionsEnabled: saved.notifActionsEnabled ?? true,
         });
       }
     } catch {}
@@ -58,7 +69,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setNotificationsEnabled: (v) => { set({ notificationsEnabled: v }); persist(get()); },
   setAllowedCameras: (cameras) => { set({ allowedCameras: cameras }); persist(get()); },
   setAllowedLabels: (labels) => { set({ allowedLabels: labels }); persist(get()); },
-  setFaceIdEnabled: (v) => { set({ faceIdEnabled: v }); persist(get()); },
+  setNotifTitle: (v) => { set({ notifTitle: v }); persist(get()); },
+  setNotifBody: (v) => { set({ notifBody: v }); persist(get()); },
+  setNotifActionsEnabled: (v) => { set({ notifActionsEnabled: v }); persist(get()); },
   setWsConnected: (v) => set({ wsConnected: v }),
   setPushTokenRegistered: (v) => set({ pushTokenRegistered: v }),
 }));

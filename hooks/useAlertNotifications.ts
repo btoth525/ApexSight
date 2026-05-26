@@ -1,10 +1,10 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import * as Notifications from "expo-notifications";
 import * as FileSystem from "expo-file-system";
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFrigateEvents } from "./useFrigateEvents";
-import { formatLabel, getLabelEmoji } from "@/utils/labelUtil";
+import { renderNotifTemplate } from "@/utils/notifTemplate";
 
 type FrigateWsEvent = {
   type?: string;
@@ -26,10 +26,39 @@ async function downloadSnapshot(snapshotUrl: string, token: string | null): Prom
   }
 }
 
+// Register iOS notification action categories once on mount.
+// "View Clip" opens the app, "Mark Reviewed" runs silently in the background.
+async function registerCategories(actionsEnabled: boolean) {
+  if (actionsEnabled) {
+    await Notifications.setNotificationCategoryAsync("FRIGATE_ALERT", [
+      {
+        identifier: "VIEW_CLIP",
+        buttonTitle: "View Clip",
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: "MARK_REVIEWED",
+        buttonTitle: "Mark Reviewed",
+        options: { opensAppToForeground: false },
+      },
+    ]);
+  } else {
+    await Notifications.deleteNotificationCategoryAsync("FRIGATE_ALERT").catch(() => {});
+  }
+}
+
 export function useAlertNotifications() {
   const { baseUrl, token } = useAuthStore();
-  const { notificationsEnabled, allowedCameras, allowedLabels } = useSettingsStore();
+  const {
+    notificationsEnabled, allowedCameras, allowedLabels,
+    notifTitle, notifBody, notifActionsEnabled,
+  } = useSettingsStore();
   const notifiedIds = useRef<Set<string>>(new Set());
+
+  // Re-register categories whenever the actions toggle changes
+  useEffect(() => {
+    registerCategories(notifActionsEnabled).catch(() => {});
+  }, [notifActionsEnabled]);
 
   const onEvent = useCallback(async (event: unknown) => {
     if (!notificationsEnabled) return;
@@ -38,43 +67,38 @@ export function useAlertNotifications() {
 
     if (!after?.id || !after.camera || !after.label) return;
 
-    // Only fire on the very first detection ("new") — not on every update.
-    // This guarantees exactly one notification per event regardless of how
-    // many WebSocket update frames arrive or how many times this hook remounts.
+    // One notification per event — only on first detection
     if (e.type !== "new") return;
 
     // Alert severity only
     const isAlert = after.severity === "alert" || after.data?.severity === "alert";
     if (!isAlert) return;
 
-    // Camera and label filters (empty = all)
+    // Camera and label filters
     if (allowedCameras.length > 0 && !allowedCameras.includes(after.camera)) return;
     if (allowedLabels.length > 0 && !allowedLabels.includes(after.label)) return;
 
-    // Global dedup — survives remounts via ref, prevents double-fire
-    // if server APNs push and WebSocket both arrive for the same event
+    // Global dedup — prevents double-fire from server push + WebSocket
     if (notifiedIds.current.has(after.id)) return;
     notifiedIds.current.add(after.id);
     if (notifiedIds.current.size > 200) {
       notifiedIds.current = new Set(Array.from(notifiedIds.current).slice(-100));
     }
 
+    const vars = { label: after.label, camera: after.camera };
+    const title = renderNotifTemplate(notifTitle, vars);
+    const body  = renderNotifTemplate(notifBody,  vars);
+
     const snapshotUrl = `${baseUrl}/api/events/${after.id}/snapshot.jpg`;
     const localPath = await downloadSnapshot(snapshotUrl, token);
 
-    const cameraName = after.camera.replace(/_/g, " ");
-    const emoji = getLabelEmoji(after.label);
-    const label = formatLabel(after.label);
-
     await Notifications.scheduleNotificationAsync({
-      // Use the event ID as the iOS notification identifier.
-      // If a server APNs push arrives for the same event later, iOS will
-      // replace this notification rather than stacking a duplicate.
       identifier: `alert-${after.id}`,
       content: {
-        title: `${emoji} ${label} · ${cameraName}`,
-        body: "Tap to review",
+        title,
+        body,
         data: { event_id: after.id, camera: after.camera, type: "alert" },
+        categoryIdentifier: notifActionsEnabled ? "FRIGATE_ALERT" : undefined,
         sound: "default",
         ...(localPath
           ? { attachments: [{ identifier: "snapshot", url: localPath, type: "image/jpeg" }] }
@@ -82,7 +106,8 @@ export function useAlertNotifications() {
       },
       trigger: null,
     });
-  }, [baseUrl, token, notificationsEnabled, allowedCameras, allowedLabels]);
+  }, [baseUrl, token, notificationsEnabled, allowedCameras, allowedLabels,
+      notifTitle, notifBody, notifActionsEnabled]);
 
   useFrigateEvents(onEvent);
 }
