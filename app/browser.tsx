@@ -174,7 +174,7 @@ export default function BrowserScreen() {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== "granted") {
         haptic.error();
-        Alert.alert("Permission Required", "Enable notifications in Settings → Apex Sight.");
+        Alert.alert("Permission Required", "Enable notifications in Settings → Apex.");
         return;
       }
     }
@@ -232,7 +232,7 @@ export default function BrowserScreen() {
     haptic.success();
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: "🛡️ Apex Sight",
+        title: "🛡️ Apex",
         body: "Notifications are working!",
         sound: "default",
       },
@@ -343,7 +343,7 @@ export default function BrowserScreen() {
               <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: "#334155", alignSelf: "center", marginBottom: 16 }} />
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <Ionicons name="shield" size={18} color="#00d4ff" />
-                <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700" }}>Apex Sight Settings</Text>
+                <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700" }}>Apex Settings</Text>
               </View>
             </View>
 

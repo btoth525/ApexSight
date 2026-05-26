@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Apex Sight",
-    "slug": "apexsight",
+    "name": "Apex",
+    "slug": "apex-frigate",
     "version": "1.0.0",
     "platforms": ["ios"],
     "orientation": "default",
@@ -42,7 +42,7 @@
         }
       ]
     ],
-    "scheme": "apexsight",
+    "scheme": "apex",
     "experiments": {
       "typedRoutes": true
     },

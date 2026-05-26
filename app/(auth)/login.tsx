@@ -136,7 +136,7 @@ export default function LoginScreen() {
               style={{ width: 120, height: 120, borderRadius: 28, marginBottom: 20 }}
               resizeMode="cover"
             />
-            <Text style={{ fontSize: 32, fontWeight: "800", color: "#f1f5f9", letterSpacing: -0.5 }}>Apex Sight</Text>
+            <Text style={{ fontSize: 32, fontWeight: "800", color: "#f1f5f9", letterSpacing: -0.5 }}>Apex</Text>
             <Text style={{ color: "#64748b", marginTop: 4, fontSize: 14 }}>Frigate NVR · Native iOS</Text>
           </View>
 
