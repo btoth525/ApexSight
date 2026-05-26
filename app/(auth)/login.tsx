@@ -1,26 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, ActivityIndicator,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, Image, StatusBar,
+  KeyboardAvoidingView, Platform, ScrollView, Image, StatusBar,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import CookieManager from "@react-native-cookies/cookies";
 import { useAuthStore } from "@/stores/authStore";
 import { apiClient } from "@/utils/apiClient";
-import { useBiometrics } from "@/hooks/useBiometrics";
 import { haptic } from "@/utils/haptics";
 
 export default function LoginScreen() {
   const router = useRouter();
   const { setAuth, setBaseUrl, baseUrl } = useAuthStore();
-  const {
-    isAvailable: biometricsAvailable,
-    biometricType,
-    hasStoredCredentials,
-    saveCredentials,
-    getCredentials,
-  } = useBiometrics();
 
   const [url, setUrl] = useState(baseUrl || "https://frigate.plexserver525.com");
   const [username, setUsername] = useState("");
@@ -33,7 +25,6 @@ export default function LoginScreen() {
     await setBaseUrl(trimmedUrl);
     const res = await apiClient.post("/login", { user: loginUser, password: loginPass });
     if (res.status !== 200) throw new Error("Login failed");
-    // Try Set-Cookie header first — more reliable with axios than CookieManager
     let token = "session";
     const rawCookie = res.headers?.["set-cookie"];
     if (rawCookie) {
@@ -41,7 +32,6 @@ export default function LoginScreen() {
       const match = cookieStr.match(/frigate_token=([^;,\s]+)/);
       if (match?.[1]) token = match[1];
     }
-    // Fallback: give cookie jar a moment to propagate then read it
     if (token === "session") {
       await new Promise((r) => setTimeout(r, 150));
       const cookies = await CookieManager.get(trimmedUrl);
@@ -60,32 +50,9 @@ export default function LoginScreen() {
     setLoading(true);
     setError("");
     try {
-      const { trimmedUrl } = await doLogin(url, username, password);
+      await doLogin(url, username, password);
       haptic.success();
-      // Offer to enable biometric login after successful sign-in
-      if (biometricsAvailable && !hasStoredCredentials) {
-        Alert.alert(
-          `Enable ${biometricType ?? "Biometric"} Login?`,
-          `Sign in next time with ${biometricType ?? "your biometric"} instead of typing your password.`,
-          [
-            { text: "Not Now", style: "cancel", onPress: () => router.replace("/browser") },
-            {
-              text: "Enable",
-              onPress: async () => {
-                try {
-                  await saveCredentials(trimmedUrl, username, password);
-                  haptic.success();
-                } catch {
-                  // user cancelled biometric prompt — that's fine
-                }
-                router.replace("/browser");
-              },
-            },
-          ]
-        );
-      } else {
-        router.replace("/browser");
-      }
+      router.replace("/browser");
     } catch (e: unknown) {
       haptic.error();
       const err = e as { response?: { status?: number } };
@@ -95,42 +62,6 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
-
-  const handleBiometricLogin = async () => {
-    if (!hasStoredCredentials) {
-      setError(`Sign in with password first, then enable ${biometricType ?? "biometric"} login.`);
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const creds = await getCredentials();
-      if (!creds) {
-        haptic.warning();
-        setError(`${biometricType ?? "Biometric"} cancelled.`);
-        setLoading(false);
-        return;
-      }
-      await doLogin(creds.url, creds.username, creds.password);
-      haptic.success();
-      router.replace("/browser");
-    } catch {
-      haptic.error();
-      setError(`${biometricType ?? "Biometric"} login failed. Try password.`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Auto-prompt for Face ID if credentials are stored
-  useEffect(() => {
-    if (biometricsAvailable && hasStoredCredentials && !loading) {
-      const t = setTimeout(() => { handleBiometricLogin(); }, 350);
-      return () => clearTimeout(t);
-    }
-  }, [biometricsAvailable, hasStoredCredentials]);
-
-  const bioIcon = biometricType === "Face ID" ? "scan-circle" : "finger-print";
 
   return (
     <KeyboardAvoidingView
@@ -220,19 +151,6 @@ export default function LoginScreen() {
                 <Text style={{ color: "#0a0f1e", fontWeight: "700", fontSize: 16, letterSpacing: 0.3 }}>Sign In</Text>
               )}
             </TouchableOpacity>
-
-            {biometricsAvailable && (
-              <TouchableOpacity
-                style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, backgroundColor: "#1e293b", borderWidth: 1, borderColor: "#334155", borderRadius: 12, paddingVertical: 14, marginTop: 2 }}
-                onPress={handleBiometricLogin}
-                disabled={loading}
-              >
-                <Ionicons name={bioIcon as any} size={20} color="#00d4ff" />
-                <Text style={{ color: "#f1f5f9", fontWeight: "600", fontSize: 15 }}>
-                  {hasStoredCredentials ? `Sign in with ${biometricType}` : `${biometricType} (sign in first)`}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           <Text style={{ color: "#475569", fontSize: 11, textAlign: "center", marginTop: 32 }}>

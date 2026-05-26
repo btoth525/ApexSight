@@ -12,7 +12,6 @@ import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAlertNotifications } from "@/hooks/useAlertNotifications";
 import { useExpoPushRegistration } from "@/hooks/useExpoPushRegistration";
-import { useBiometrics } from "@/hooks/useBiometrics";
 import { haptic } from "@/utils/haptics";
 import * as Notifications from "expo-notifications";
 import { apiClient } from "@/utils/apiClient";
@@ -65,11 +64,9 @@ export default function BrowserScreen() {
     notificationsEnabled, setNotificationsEnabled,
     allowedCameras, setAllowedCameras,
     allowedLabels, setAllowedLabels,
-    faceIdEnabled, setFaceIdEnabled,
     wsConnected, pushTokenRegistered,
   } = useSettingsStore();
 
-  const { isAvailable: biometricsAvail, biometricType, hasStoredCredentials, clearCredentials } = useBiometrics();
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
@@ -187,36 +184,6 @@ export default function BrowserScreen() {
     }
     haptic.medium();
     setNotificationsEnabled(value);
-  };
-
-  const handleToggleFaceId = async (value: boolean) => {
-    haptic.medium();
-    if (!value && hasStoredCredentials) {
-      Alert.alert(
-        `Disable ${biometricType ?? "Face ID"}?`,
-        "You'll need to sign in with your password next time.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Disable", style: "destructive",
-            onPress: async () => {
-              await clearCredentials();
-              setFaceIdEnabled(false);
-              haptic.success();
-            },
-          },
-        ]
-      );
-    } else {
-      setFaceIdEnabled(value);
-      if (value && !hasStoredCredentials) {
-        Alert.alert(
-          `Enable ${biometricType ?? "Face ID"}`,
-          "Sign out and back in — you'll be prompted to save your credentials with Face ID.",
-          [{ text: "OK" }]
-        );
-      }
-    }
   };
 
   const handleToggleCamera = (camera: string) => {
@@ -505,30 +472,6 @@ export default function BrowserScreen() {
                   </>
                 )}
               </View>
-
-              {/* ── FACE ID ───────────────────────────────────── */}
-              {biometricsAvail && (
-                <>
-                  <SectionHeader title="Security" />
-                  <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14 }}>
-                    <Row
-                      icon={biometricType === "Face ID" ? "scan-circle-outline" : "finger-print-outline"}
-                      iconColor="#10b981" iconBg="#10b98122"
-                      label={biometricType ?? "Biometric Login"}
-                      sub={hasStoredCredentials ? "Auto-signs you in on launch" : "Sign in once to enable"}
-                      right={
-                        <Switch
-                          value={faceIdEnabled && hasStoredCredentials}
-                          onValueChange={handleToggleFaceId}
-                          trackColor={{ false: "#334155", true: "#10b981" }}
-                          thumbColor="#fff"
-                          ios_backgroundColor="#334155"
-                        />
-                      }
-                    />
-                  </View>
-                </>
-              )}
 
               {/* ── STATUS ────────────────────────────────────── */}
               <SectionHeader title="Status" />
