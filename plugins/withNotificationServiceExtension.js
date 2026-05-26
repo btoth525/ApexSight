@@ -81,18 +81,53 @@ function withXcodeChanges(config) {
     // ── A. Inject ObjC native module into the main app ───────────────────────
     const mainAppDir = path.join(iosRoot, "ApexSight");
     const moduleFile = path.join(mainAppDir, MODULE_FILE);
-    // Always overwrite so updates to the source are picked up on each prebuild
     if (fs.existsSync(mainAppDir)) {
       fs.writeFileSync(moduleFile, OBJC_MODULE);
-      // Add to the main target's Sources build phase (first target = ApexSight)
-      const alreadyInProject = Object.values(
-        project.pbxFileReferenceSection()
-      ).some((ref) => ref && ref.path === `"ApexSight/${MODULE_FILE}"`);
+
+      // Only add to project if not already referenced
+      const fileRefs = project.pbxFileReferenceSection();
+      const alreadyInProject = Object.values(fileRefs).some(
+        (ref) => ref && typeof ref === "object" &&
+          (ref.path === `ApexSight/${MODULE_FILE}` || ref.path === `"ApexSight/${MODULE_FILE}"`)
+      );
+
       if (!alreadyInProject) {
-        project.addSourceFile(
-          `ApexSight/${MODULE_FILE}`,
-          { target: project.getFirstTarget().uuid }
-        );
+        const fileRefUuid  = project.generateUuid();
+        const buildFileUuid = project.generateUuid();
+        const mainTargetUuid = project.getFirstTarget().uuid;
+
+        // PBXFileReference
+        fileRefs[fileRefUuid] = {
+          isa: "PBXFileReference",
+          fileEncoding: 4,
+          lastKnownFileType: "sourcecode.c.objc",
+          name: MODULE_FILE,
+          path: `ApexSight/${MODULE_FILE}`,
+          sourceTree: '"<group>"',
+        };
+        fileRefs[`${fileRefUuid}_comment`] = MODULE_FILE;
+
+        // PBXBuildFile
+        const buildFiles = project.pbxBuildFileSection();
+        buildFiles[buildFileUuid] = {
+          isa: "PBXBuildFile",
+          fileRef: fileRefUuid,
+          fileRef_comment: MODULE_FILE,
+        };
+        buildFiles[`${buildFileUuid}_comment`] = `${MODULE_FILE} in Sources`;
+
+        // Add to the main target's existing PBXSourcesBuildPhase
+        const nativeTarget = project.pbxNativeTargetSection()[mainTargetUuid];
+        for (const phaseRef of (nativeTarget?.buildPhases ?? [])) {
+          const sourcesSec = project.hash.project.objects["PBXSourcesBuildPhase"];
+          if (sourcesSec && sourcesSec[phaseRef.value]) {
+            sourcesSec[phaseRef.value].files.push({
+              value: buildFileUuid,
+              comment: `${MODULE_FILE} in Sources`,
+            });
+            break;
+          }
+        }
       }
     }
 
