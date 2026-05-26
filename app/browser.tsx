@@ -88,6 +88,42 @@ export default function BrowserScreen() {
   useAlertNotifications();
   const { retryRegister } = useExpoPushRegistration();
 
+  // Deep-link: tapping a push notification navigates WebView to that review
+  useEffect(() => {
+    // App already open — user tapped a notification banner
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      const reviewId = data?.review_id;
+      const camera   = data?.camera;
+      const url = reviewId
+        ? `${baseUrl}/review?id=${reviewId}`
+        : camera
+        ? `${baseUrl}/review?cameras=${camera}`
+        : `${baseUrl}/review`;
+      webviewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
+      setSettingsOpen(false);
+    });
+
+    // App was killed — launched from notification tap
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      const reviewId = data?.review_id;
+      const camera   = data?.camera;
+      const url = reviewId
+        ? `${baseUrl}/review?id=${reviewId}`
+        : camera
+        ? `${baseUrl}/review?cameras=${camera}`
+        : `${baseUrl}/review`;
+      // Wait for WebView to finish its initial load before navigating
+      setTimeout(() => {
+        webviewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
+      }, 1500);
+    });
+
+    return () => sub.remove();
+  }, [baseUrl]);
+
   // Inject auth cookie before WebView loads
   useEffect(() => {
     const inject = async () => {
