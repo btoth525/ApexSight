@@ -33,8 +33,20 @@ export default function LoginScreen() {
     setBaseUrl(trimmedUrl);
     const res = await apiClient.post("/login", { user: loginUser, password: loginPass });
     if (res.status !== 200) throw new Error("Login failed");
-    const cookies = await CookieManager.get(trimmedUrl);
-    const token = cookies["frigate_token"]?.value ?? "session";
+    // Try Set-Cookie header first — more reliable with axios than CookieManager
+    let token = "session";
+    const rawCookie = res.headers?.["set-cookie"];
+    if (rawCookie) {
+      const cookieStr = Array.isArray(rawCookie) ? rawCookie.join("; ") : rawCookie;
+      const match = cookieStr.match(/frigate_token=([^;,\s]+)/);
+      if (match?.[1]) token = match[1];
+    }
+    // Fallback: give cookie jar a moment to propagate then read it
+    if (token === "session") {
+      await new Promise((r) => setTimeout(r, 150));
+      const cookies = await CookieManager.get(trimmedUrl);
+      token = cookies["frigate_token"]?.value ?? "session";
+    }
     const name = res.data?.user?.name ?? loginUser;
     setAuth(token, name);
     return { trimmedUrl, name };

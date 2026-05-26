@@ -156,7 +156,9 @@ export default function BrowserScreen() {
   }, [settingsOpen]);
 
   const handleNavChange = useCallback((nav: WebViewNavigation) => {
-    if (nav.url.includes("/login") && nav.url !== `${baseUrl}/login`) {
+    // Only logout if Frigate explicitly redirects to its login page
+    // (handles /login?next=/ and similar variants)
+    if (nav.url.startsWith(`${baseUrl}/login`)) {
       logout();
     }
   }, [baseUrl, logout]);
