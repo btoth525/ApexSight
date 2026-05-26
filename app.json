@@ -3,7 +3,9 @@
     "name": "Apex",
     "slug": "apex-frigate",
     "version": "1.0.0",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -19,8 +21,13 @@
         "NSCameraUsageDescription": "Used for live camera viewing",
         "NSFaceIDUsageDescription": "Used for Face ID login",
         "NSMicrophoneUsageDescription": "Used for live camera audio",
-        "UIBackgroundModes": ["fetch", "remote-notification"],
-        "BGTaskSchedulerPermittedIdentifiers": ["$(PRODUCT_BUNDLE_IDENTIFIER)"]
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "$(PRODUCT_BUNDLE_IDENTIFIER)"
+        ]
       }
     },
     "plugins": [
@@ -48,8 +55,12 @@
     },
     "extra": {
       "eas": {
-        "projectId": ""
+        "projectId": "da9915a4-4e63-40ba-a722-d57fcf07b251"
+      },
+      "router": {
+        "origin": false
       }
-    }
+    },
+    "owner": "btoth525"
   }
 }
