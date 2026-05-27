@@ -1,34 +1,52 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  Alert, Switch, Modal, ScrollView, TextInput,
+  Alert, Modal, ScrollView, TextInput,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import CookieManager from "@react-native-cookies/cookies";
 import { useRouter } from "expo-router";
+import * as Linking from "expo-linking";
+import { useKeepAwake } from "expo-keep-awake";
 import { useAuthStore } from "@/stores/authStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useAlertNotifications } from "@/hooks/useAlertNotifications";
-import { useExpoPushRegistration } from "@/hooks/useExpoPushRegistration";
 import { haptic } from "@/utils/haptics";
-import * as Notifications from "expo-notifications";
 import { apiClient } from "@/utils/apiClient";
 
-// Common Frigate object labels with emojis
-const KNOWN_LABELS: { id: string; emoji: string; name: string }[] = [
-  { id: "person",       emoji: "🚶", name: "Person"    },
-  { id: "car",          emoji: "🚗", name: "Car"       },
-  { id: "dog",          emoji: "🐕", name: "Dog"       },
-  { id: "cat",          emoji: "🐈", name: "Cat"       },
-  { id: "package",      emoji: "📦", name: "Package"   },
-  { id: "bicycle",      emoji: "🚲", name: "Bicycle"   },
-  { id: "motorcycle",   emoji: "🏍️", name: "Motorcycle"},
-  { id: "bird",         emoji: "🐦", name: "Bird"      },
-  { id: "bear",         emoji: "🐻", name: "Bear"      },
-  { id: "fire",         emoji: "🔥", name: "Fire"      },
-];
+// JS injected on every page load:
+// • Removes disablePictureInPicture from all video elements so iOS PiP works
+// • Watches for new video elements added dynamically (Frigate's live view)
+// • Requests PiP automatically when the app is sent to background
+const VIEWER_JS = `
+(function() {
+  function enhanceVideos() {
+    document.querySelectorAll('video').forEach(function(v) {
+      v.removeAttribute('disablePictureInPicture');
+      v.setAttribute('playsinline', '');
+      v.setAttribute('webkit-playsinline', '');
+      v.setAttribute('x-webkit-airplay', 'allow');
+    });
+  }
+  enhanceVideos();
+  var mo = new MutationObserver(enhanceVideos);
+  mo.observe(document.body, { childList: true, subtree: true });
+
+  // Auto-PiP when user backgrounds the app
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState !== 'hidden') return;
+    var vs = document.querySelectorAll('video');
+    for (var i = 0; i < vs.length; i++) {
+      var v = vs[i];
+      if (v.readyState >= 2 && document.pictureInPictureEnabled && !document.pictureInPictureElement) {
+        v.requestPictureInPicture().catch(function(){});
+        break;
+      }
+    }
+  });
+})();
+true;
+`;
 
 function Row({
   icon, iconColor, iconBg, label, sub, right,
@@ -58,102 +76,44 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+// Convert an apex:// deep-link to the corresponding Frigate web URL.
+// apex://cameras/driveway   → {baseUrl}/#/cameras/driveway
+// apex://review             → {baseUrl}/#/review
+// apex://clip/EVENT_ID      → {baseUrl}/#/clip/EVENT_ID
+function deeplinkToFrigateUrl(apexUrl: string, baseUrl: string): string | null {
+  try {
+    const parsed = Linking.parse(apexUrl);
+    const host = parsed.hostname ?? "";
+    const path = parsed.path ? parsed.path.replace(/^\//, "") : "";
+    if (!host) return null;
+    const route = path ? `${host}/${path}` : host;
+    const qs = parsed.queryParams
+      ? "?" + Object.entries(parsed.queryParams).map(([k, v]) => `${k}=${v}`).join("&")
+      : "";
+    return `${baseUrl}/#/${route}${qs}`;
+  } catch {
+    return null;
+  }
+}
+
 export default function BrowserScreen() {
   const { baseUrl, token, setBaseUrl, logout } = useAuthStore();
-  const {
-    notificationsEnabled, setNotificationsEnabled,
-    allowedCameras, setAllowedCameras,
-    allowedLabels, setAllowedLabels,
-    notifTitle, setNotifTitle,
-    notifBody, setNotifBody,
-    notifActionsEnabled, setNotifActionsEnabled,
-    wsConnected, pushTokenRegistered,
-  } = useSettingsStore();
-
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
+
+  // Keep the screen on while the user is watching live cameras
+  useKeepAwake();
 
   const [cookieReady, setCookieReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Server editing
+  // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft] = useState(baseUrl);
 
-  // Notification format editing
-  const [editingNotifFormat, setEditingNotifFormat] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(notifTitle);
-  const [bodyDraft, setBodyDraft] = useState(notifBody);
-
-  // Camera list for filter (fetched from Frigate when settings open)
-  const [availCameras, setAvailCameras] = useState<string[]>([]);
-
-  useAlertNotifications();
-  const { retryRegister } = useExpoPushRegistration();
-
-  // NOTE: deliberately no auto-logout on token validation. If the stored
-  // token is stale (Frigate restarted, JWT secret rotated), the WebView
-  // will land on Frigate's login page and the user can manually sign out
-  // from Apex Settings to re-authenticate. Auto-logout from here previously
-  // caused login loops when token extraction fell back to "session".
-
-  // Deep-link + action handling for push notifications
-  useEffect(() => {
-    const navigateToReview = (data: Record<string, string> | undefined) => {
-      const reviewId = data?.review_id;
-      const eventId  = data?.event_id;
-      const camera   = data?.camera;
-      const url = reviewId
-        ? `${baseUrl}/review?id=${reviewId}`
-        : eventId
-        ? `${baseUrl}/review?id=${eventId}`
-        : camera
-        ? `${baseUrl}/review?cameras=${camera}`
-        : `${baseUrl}/review`;
-      webviewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
-      setSettingsOpen(false);
-    };
-
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as Record<string, string> | undefined;
-      const action = response.actionIdentifier;
-
-      if (action === "MARK_REVIEWED") {
-        // Mark the event as reviewed in Frigate silently — no navigation needed
-        const eventId = data?.event_id ?? data?.review_id;
-        if (eventId) {
-          apiClient.post("/reviews/viewed", { ids: [eventId] }).catch(() => {});
-        }
-        return;
-      }
-
-      // Default tap or "View Clip" — navigate to the review
-      navigateToReview(data);
-    });
-
-    // App was killed — launched from notification tap
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (!response) return;
-      const data = response.notification.request.content.data as Record<string, string> | undefined;
-      const reviewId = data?.review_id;
-      const camera   = data?.camera;
-      const url = reviewId
-        ? `${baseUrl}/review?id=${reviewId}`
-        : camera
-        ? `${baseUrl}/review?cameras=${camera}`
-        : `${baseUrl}/review`;
-      // Wait for WebView to finish its initial load before navigating
-      setTimeout(() => {
-        webviewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
-      }, 1500);
-    });
-
-    return () => sub.remove();
-  }, [baseUrl]);
-
-  // Inject auth cookie before WebView loads
+  // ── Inject auth cookie before WebView loads ──────────────────────────────
   useEffect(() => {
     const inject = async () => {
       if (token && token !== "session" && baseUrl) {
@@ -175,25 +135,32 @@ export default function BrowserScreen() {
     inject();
   }, [baseUrl, token]);
 
-  // Fetch camera list when settings open
+  // ── Deep-link handler ────────────────────────────────────────────────────
+  // Handles apex:// URLs both when the app is already running and when it is
+  // cold-started from a Home Assistant notification tap.
+  const navigateDeeplink = useCallback((url: string) => {
+    const frigateUrl = deeplinkToFrigateUrl(url, baseUrl);
+    if (!frigateUrl) return;
+    setSettingsOpen(false);
+    // Small delay so the WebView has finished loading if this is a cold start
+    setTimeout(() => {
+      webviewRef.current?.injectJavaScript(
+        `window.location.href = ${JSON.stringify(frigateUrl)}; true;`
+      );
+    }, 500);
+  }, [baseUrl]);
+
   useEffect(() => {
-    if (!settingsOpen) return;
-    apiClient.get("/config").then((res) => {
-      const cameras = Object.keys(res.data?.cameras ?? {});
-      if (cameras.length > 0) setAvailCameras(cameras);
-    }).catch(() => {});
-  }, [settingsOpen]);
+    // App already open — listen for incoming links
+    const sub = Linking.addEventListener("url", ({ url }) => navigateDeeplink(url));
+    // App cold-started from a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) setTimeout(() => navigateDeeplink(url), 1500);
+    });
+    return () => sub.remove();
+  }, [navigateDeeplink]);
 
-  const prevUrlRef = useRef<string | null>(null);
-  const handleNavChange = useCallback((nav: WebViewNavigation) => {
-    // Track current URL — used for deep-link navigation only.
-    // We deliberately do NOT auto-logout when the WebView hits /login
-    // because Frigate's PWA can hit that URL during normal flow, and any
-    // false positive there would kick the user out of the app entirely.
-    // If the user wants to sign out they can do it from settings.
-    prevUrlRef.current = nav.url;
-  }, []);
-
+  // ── Server URL save ──────────────────────────────────────────────────────
   const handleSaveUrl = async () => {
     const clean = urlDraft.trim().replace(/\/$/, "");
     if (!clean) return;
@@ -202,47 +169,7 @@ export default function BrowserScreen() {
     setTimeout(() => webviewRef.current?.reload(), 300);
   };
 
-  const handleToggleNotifications = async (value: boolean) => {
-    if (value) {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== "granted") {
-        haptic.error();
-        Alert.alert("Permission Required", "Enable notifications in Settings → Apex.");
-        return;
-      }
-    }
-    haptic.medium();
-    setNotificationsEnabled(value);
-  };
-
-  const handleToggleCamera = (camera: string) => {
-    haptic.tap();
-    const next = allowedCameras.includes(camera)
-      ? allowedCameras.filter((c) => c !== camera)
-      : [...allowedCameras, camera];
-    setAllowedCameras(next);
-  };
-
-  const handleToggleLabel = (label: string) => {
-    haptic.tap();
-    const next = allowedLabels.includes(label)
-      ? allowedLabels.filter((l) => l !== label)
-      : [...allowedLabels, label];
-    setAllowedLabels(next);
-  };
-
-  const handleTestNotification = async () => {
-    haptic.success();
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "🛡️ Apex",
-        body: "Notifications are working!",
-        sound: "default",
-      },
-      trigger: null,
-    });
-  };
-
+  // ── Sign out ─────────────────────────────────────────────────────────────
   const handleLogout = () => {
     haptic.medium();
     Alert.alert("Sign Out", "Are you sure?", [
@@ -259,6 +186,8 @@ export default function BrowserScreen() {
     ]);
   };
 
+  const handleNavChange = useCallback((_nav: WebViewNavigation) => {}, []);
+
   if (!cookieReady) {
     return (
       <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
@@ -267,35 +196,32 @@ export default function BrowserScreen() {
     );
   }
 
-  const cameraFilterSub = allowedCameras.length === 0
-    ? "All cameras"
-    : allowedCameras.map((c) => c.replace(/_/g, " ")).join(", ");
-
-  const labelFilterSub = allowedLabels.length === 0
-    ? "All labels"
-    : allowedLabels.map((l) => KNOWN_LABELS.find((k) => k.id === l)?.name ?? l).join(", ");
-
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
-      {/* Safe-area inset so Frigate PWA content clears status bar and home indicator */}
+      {/* Safe-area so Frigate PWA clears status bar and home indicator */}
       <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#000" }}>
         <WebView
           ref={webviewRef}
           source={{ uri: baseUrl }}
           style={{ flex: 1 }}
+          // Cookie & media
           sharedCookiesEnabled={true}
-          allowsBackForwardNavigationGestures={true}
-          pullToRefreshEnabled={true}
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
           allowsFullscreenVideo={true}
+          allowsAirPlayForMediaPlayback={true}
+          // Navigation feel
+          allowsBackForwardNavigationGestures={true}
+          pullToRefreshEnabled={true}
+          // Inject PiP + AirPlay enablers once the page is ready
+          injectedJavaScript={VIEWER_JS}
           onNavigationStateChange={handleNavChange}
           onLoadStart={() => setLoading(true)}
           onLoadEnd={() => setLoading(false)}
         />
       </View>
 
-      {/* Loading overlay — full screen */}
+      {/* Loading overlay */}
       {loading && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
           <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
@@ -326,7 +252,7 @@ export default function BrowserScreen() {
         <Ionicons name="ellipsis-horizontal" size={16} color="#94a3b8" />
       </TouchableOpacity>
 
-      {/* ── Settings modal ─────────────────────────────────────────────────── */}
+      {/* ── Settings modal ──────────────────────────────────────────────── */}
       <Modal
         visible={settingsOpen}
         transparent
@@ -339,7 +265,7 @@ export default function BrowserScreen() {
           onPress={() => setSettingsOpen(false)}
         />
         <SafeAreaView style={{ backgroundColor: "#0f172a" }} edges={["bottom"]}>
-          <View style={{ backgroundColor: "#0f172a", borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1, borderColor: "#1e293b", maxHeight: "82%" }}>
+          <View style={{ backgroundColor: "#0f172a", borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1, borderColor: "#1e293b", maxHeight: "80%" }}>
 
             {/* Handle + header */}
             <View style={{ padding: 20, paddingBottom: 0 }}>
@@ -352,11 +278,11 @@ export default function BrowserScreen() {
 
             <ScrollView
               style={{ paddingHorizontal: 20 }}
-              contentContainerStyle={{ paddingBottom: 20, gap: 0 }}
+              contentContainerStyle={{ paddingBottom: 28, gap: 0 }}
               showsVerticalScrollIndicator={false}
             >
 
-              {/* ── SERVER ─────────────────────────────────────── */}
+              {/* ── SERVER ──────────────────────────────────────── */}
               <SectionHeader title="Server" />
               <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 10 }}>
                 {editingUrl ? (
@@ -383,7 +309,7 @@ export default function BrowserScreen() {
                 ) : (
                   <Row
                     icon="globe-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
-                    label={baseUrl.replace("https://", "")}
+                    label={baseUrl.replace(/^https?:\/\//, "")}
                     sub="Tap to change server URL"
                     right={
                       <TouchableOpacity onPress={() => { setUrlDraft(baseUrl); setEditingUrl(true); }}>
@@ -394,255 +320,38 @@ export default function BrowserScreen() {
                 )}
               </View>
 
-              {/* ── NOTIFICATIONS ─────────────────────────────── */}
-              <SectionHeader title="Notifications" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 14 }}>
-
-                {/* Master toggle */}
+              {/* ── HOME ASSISTANT DEEP LINKS ───────────────────── */}
+              <SectionHeader title="Home Assistant Deep Links" />
+              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 12 }}>
                 <Row
-                  icon="notifications" iconColor="#00d4ff" iconBg="#00d4ff22"
-                  label="Push Alerts"
-                  sub="Rich notifications with snapshots"
-                  right={
-                    <Switch
-                      value={notificationsEnabled}
-                      onValueChange={handleToggleNotifications}
-                      trackColor={{ false: "#334155", true: "#00d4ff" }}
-                      thumbColor="#fff"
-                      ios_backgroundColor="#334155"
-                    />
-                  }
-                />
-
-                {notificationsEnabled && (
-                  <>
-                    <View style={{ height: 1, backgroundColor: "#334155" }} />
-
-                    {/* Camera filter */}
-                    <View>
-                      <Row
-                        icon="videocam-outline" iconColor="#a855f7" iconBg="#a855f722"
-                        label="Camera Filter"
-                        sub={cameraFilterSub}
-                      />
-                      {availCameras.length > 0 && (
-                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                          {availCameras.map((cam) => {
-                            const on = allowedCameras.length === 0 || allowedCameras.includes(cam);
-                            const selected = allowedCameras.includes(cam);
-                            return (
-                              <TouchableOpacity
-                                key={cam}
-                                onPress={() => handleToggleCamera(cam)}
-                                style={{
-                                  paddingHorizontal: 12, paddingVertical: 6,
-                                  borderRadius: 8, borderWidth: 1,
-                                  backgroundColor: selected ? "#a855f722" : "transparent",
-                                  borderColor: selected ? "#a855f7" : "#334155",
-                                }}
-                              >
-                                <Text style={{ color: selected ? "#a855f7" : "#64748b", fontSize: 13, fontWeight: "500" }}>
-                                  {cam.replace(/_/g, " ")}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                          {allowedCameras.length > 0 && (
-                            <TouchableOpacity
-                              onPress={() => { haptic.tap(); setAllowedCameras([]); }}
-                              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#ef4444" }}
-                            >
-                              <Text style={{ color: "#ef4444", fontSize: 13, fontWeight: "500" }}>Clear (all)</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      )}
-                    </View>
-
-                    <View style={{ height: 1, backgroundColor: "#334155" }} />
-
-                    {/* Label filter */}
-                    <View>
-                      <Row
-                        icon="pricetag-outline" iconColor="#f59e0b" iconBg="#f59e0b22"
-                        label="Object Filter"
-                        sub={labelFilterSub}
-                      />
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                        {KNOWN_LABELS.map(({ id, emoji, name }) => {
-                          const selected = allowedLabels.includes(id);
-                          return (
-                            <TouchableOpacity
-                              key={id}
-                              onPress={() => handleToggleLabel(id)}
-                              style={{
-                                paddingHorizontal: 12, paddingVertical: 6,
-                                borderRadius: 8, borderWidth: 1,
-                                backgroundColor: selected ? "#f59e0b22" : "transparent",
-                                borderColor: selected ? "#f59e0b" : "#334155",
-                              }}
-                            >
-                              <Text style={{ color: selected ? "#f59e0b" : "#64748b", fontSize: 13, fontWeight: "500" }}>
-                                {emoji} {name}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                        {allowedLabels.length > 0 && (
-                          <TouchableOpacity
-                            onPress={() => { haptic.tap(); setAllowedLabels([]); }}
-                            style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#ef4444" }}
-                          >
-                            <Text style={{ color: "#ef4444", fontSize: 13, fontWeight: "500" }}>Clear (all)</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  </>
-                )}
-              </View>
-
-              {/* ── NOTIFICATION FORMAT ───────────────────────── */}
-              {notificationsEnabled && (
-                <>
-                  <SectionHeader title="Notification Format" />
-                  <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 12 }}>
-
-                    {/* Action buttons toggle */}
-                    <Row
-                      icon="flash-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
-                      label="Action Buttons"
-                      sub="View Clip · Mark Reviewed on notification"
-                      right={
-                        <Switch
-                          value={notifActionsEnabled}
-                          onValueChange={(v) => { haptic.medium(); setNotifActionsEnabled(v); }}
-                          trackColor={{ false: "#334155", true: "#00d4ff" }}
-                          thumbColor="#fff"
-                          ios_backgroundColor="#334155"
-                        />
-                      }
-                    />
-
-                    <View style={{ height: 1, backgroundColor: "#334155" }} />
-
-                    {/* Format editor */}
-                    {editingNotifFormat ? (
-                      <>
-                        <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Title</Text>
-                        <TextInput
-                          style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#334155" }}
-                          value={titleDraft}
-                          onChangeText={setTitleDraft}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          placeholder="{emoji} {label} · {camera}"
-                          placeholderTextColor="#475569"
-                        />
-                        <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Body</Text>
-                        <TextInput
-                          style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 8, padding: 10, borderWidth: 1, borderColor: "#334155" }}
-                          value={bodyDraft}
-                          onChangeText={setBodyDraft}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          placeholder="Tap to review"
-                          placeholderTextColor="#475569"
-                        />
-
-                        {/* Variable reference chips */}
-                        <Text style={{ color: "#475569", fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 }}>Available variables</Text>
-                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                          {["{emoji}", "{label}", "{camera}", "{score}"].map((v) => (
-                            <TouchableOpacity
-                              key={v}
-                              onPress={() => { haptic.tap(); setTitleDraft((t) => t + v); }}
-                              style={{ backgroundColor: "#0f172a", borderRadius: 6, borderWidth: 1, borderColor: "#334155", paddingHorizontal: 8, paddingVertical: 4 }}
-                            >
-                              <Text style={{ color: "#00d4ff", fontSize: 12, fontFamily: "monospace" }}>{v}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-
-                        <View style={{ flexDirection: "row", gap: 8 }}>
-                          <TouchableOpacity
-                            onPress={() => { setTitleDraft(notifTitle); setBodyDraft(notifBody); setEditingNotifFormat(false); }}
-                            style={{ flex: 1, backgroundColor: "#334155", borderRadius: 8, paddingVertical: 10, alignItems: "center" }}
-                          >
-                            <Text style={{ color: "#94a3b8", fontWeight: "600" }}>Cancel</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              haptic.success();
-                              setNotifTitle(titleDraft || "{emoji} {label} · {camera}");
-                              setNotifBody(bodyDraft || "Tap to review");
-                              setEditingNotifFormat(false);
-                            }}
-                            style={{ flex: 1, backgroundColor: "#00d4ff", borderRadius: 8, paddingVertical: 10, alignItems: "center" }}
-                          >
-                            <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    ) : (
-                      <Row
-                        icon="create-outline" iconColor="#a855f7" iconBg="#a855f722"
-                        label="Message Format"
-                        sub={`Title: ${notifTitle}`}
-                        right={
-                          <TouchableOpacity onPress={() => { setTitleDraft(notifTitle); setBodyDraft(notifBody); setEditingNotifFormat(true); }}>
-                            <Ionicons name="pencil-outline" size={18} color="#475569" />
-                          </TouchableOpacity>
-                        }
-                      />
-                    )}
-                  </View>
-                </>
-              )}
-
-              {/* ── STATUS ────────────────────────────────────── */}
-              <SectionHeader title="Status" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 14 }}>
-                <Row
-                  icon={wsConnected ? "wifi" : "wifi-outline"}
-                  iconColor={wsConnected ? "#10b981" : "#ef4444"}
-                  iconBg={wsConnected ? "#10b98122" : "#ef444422"}
-                  label="Live Events"
-                  sub={wsConnected ? "WebSocket connected" : "WebSocket disconnected"}
+                  icon="link-outline" iconColor="#f59e0b" iconBg="#f59e0b22"
+                  label="Open Apex from HA automations"
+                  sub="Use these URLs in notify.mobile_app actions"
                 />
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
-                <Row
-                  icon={pushTokenRegistered ? "cloud-done-outline" : "cloud-offline-outline"}
-                  iconColor={pushTokenRegistered ? "#10b981" : "#f59e0b"}
-                  iconBg={pushTokenRegistered ? "#10b98122" : "#f59e0b22"}
-                  label="Background Push"
-                  sub={
-                    pushTokenRegistered
-                      ? "Token registered with Frigate"
-                      : "Not registered — background alerts won't work"
-                  }
-                />
+                {[
+                  { route: "cameras/{name}", desc: "Live view for a camera" },
+                  { route: "review",         desc: "Event review page" },
+                  { route: "clip/{event_id}", desc: "Specific event clip" },
+                ].map(({ route, desc }) => (
+                  <View key={route} style={{ gap: 2 }}>
+                    <Text style={{ color: "#00d4ff", fontSize: 13, fontFamily: "monospace" }}>
+                      apex://{route}
+                    </Text>
+                    <Text style={{ color: "#64748b", fontSize: 12 }}>{desc}</Text>
+                  </View>
+                ))}
+                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <Text style={{ color: "#475569", fontSize: 11, lineHeight: 16 }}>
+                  In your HA automation, add{" "}
+                  <Text style={{ color: "#94a3b8", fontFamily: "monospace" }}>url: "apex://cameras/driveway"</Text>
+                  {" "}to the notify action data.
+                </Text>
               </View>
 
-              {/* ── ACTIONS ───────────────────────────────────── */}
+              {/* ── ACTIONS ─────────────────────────────────────── */}
               <SectionHeader title="Actions" />
               <View style={{ backgroundColor: "#1e293b", borderRadius: 12, padding: 14, gap: 14 }}>
-                <TouchableOpacity onPress={handleTestNotification}>
-                  <Row
-                    icon="notifications-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
-                    label="Send Test Notification"
-                    sub="Fires a local notification immediately"
-                  />
-                </TouchableOpacity>
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
-                <TouchableOpacity onPress={() => { haptic.tap(); retryRegister(); }}>
-                  <Row
-                    icon="cloud-upload-outline" iconColor="#10b981" iconBg="#10b98122"
-                    label="Re-register Push Token"
-                    sub="Force re-send token to Frigate server"
-                  />
-                </TouchableOpacity>
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
                 <TouchableOpacity onPress={() => { haptic.tap(); webviewRef.current?.reload(); setSettingsOpen(false); }}>
                   <Row
                     icon="refresh" iconColor="#a855f7" iconBg="#a855f722"
@@ -652,7 +361,7 @@ export default function BrowserScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* ── SIGN OUT ──────────────────────────────────── */}
+              {/* ── SIGN OUT ────────────────────────────────────── */}
               <View style={{ marginTop: 8 }}>
                 <TouchableOpacity
                   onPress={handleLogout}

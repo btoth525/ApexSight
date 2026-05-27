@@ -22,29 +22,12 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Used for live camera viewing",
-        "NSFaceIDUsageDescription": "Used for Face ID login",
-        "NSMicrophoneUsageDescription": "Used for live camera audio",
-        "UIBackgroundModes": [
-          "fetch",
-          "remote-notification"
-        ],
-        "BGTaskSchedulerPermittedIdentifiers": [
-          "$(PRODUCT_BUNDLE_IDENTIFIER)"
-        ]
+        "NSMicrophoneUsageDescription": "Used for live camera audio"
       }
     },
     "plugins": [
-      "./plugins/withNotificationServiceExtension",
       "expo-router",
       "expo-secure-store",
-      "expo-local-authentication",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#00b4d8"
-        }
-      ],
       [
         "expo-screen-orientation",
         {

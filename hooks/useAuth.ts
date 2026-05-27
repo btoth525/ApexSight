@@ -1,12 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useRouter, useSegments } from "expo-router";
 import { useAuthStore } from "@/stores/authStore";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { apiClient } from "@/utils/apiClient";
 
 export function useAuth() {
   const { token, isLoading, initialize } = useAuthStore();
-  const initSettings = useSettingsStore((s) => s.initialize);
   const router = useRouter();
   const segments = useSegments();
 
@@ -18,7 +16,6 @@ export function useAuth() {
 
   useEffect(() => {
     initialize();
-    initSettings();
   }, []);
 
   // One-time stored-token validation on cold start.
