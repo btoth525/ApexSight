@@ -134,22 +134,25 @@ export default function BrowserScreen() {
   const [credLoading, setCredLoading]     = useState(false);
   const [showPass, setShowPass]           = useState(false);
 
-  // ── Shake to reload ──────────────────────────────────────────────────────
+  // ── Shake to reload (defensive — never let a sensor issue crash the screen) ─
   useEffect(() => {
+    let sub: { remove: () => void } | null = null;
     let lastShake = 0;
-    Accelerometer.setUpdateInterval(200);
-    const sub = Accelerometer.addListener(({ x, y, z }) => {
-      const mag = Math.sqrt(x * x + y * y + z * z);
-      if (mag > 2.8) {
-        const now = Date.now();
-        if (now - lastShake > 3000) {
-          lastShake = now;
-          haptic.heavy();
-          webviewRef.current?.reload();
+    try {
+      Accelerometer.setUpdateInterval(200);
+      sub = Accelerometer.addListener(({ x, y, z }) => {
+        const mag = Math.sqrt(x * x + y * y + z * z);
+        if (mag > 2.8) {
+          const now = Date.now();
+          if (now - lastShake > 3000) {
+            lastShake = now;
+            haptic.heavy();
+            webviewRef.current?.reload();
+          }
         }
-      }
-    });
-    return () => sub.remove();
+      });
+    } catch {}
+    return () => { try { sub?.remove(); } catch {} };
   }, []);
 
   // ── Fetch camera list after server comes online ──────────────────────────
@@ -308,6 +311,27 @@ export default function BrowserScreen() {
   const appVersion = Constants.expoConfig?.version ?? "1.0";
   const buildNumber = (Constants.expoConfig?.ios as any)?.buildNumber ?? "1";
 
+  // Guard: missing server URL → kick back to login (prevents black WebView from empty URI)
+  if (!baseUrl || !baseUrl.startsWith("http")) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+          <Ionicons name="warning-outline" size={28} color="#f59e0b" />
+        </View>
+        <Text style={{ color: "#f1f5f9", fontSize: 16, fontWeight: "700", marginBottom: 8 }}>No server configured</Text>
+        <Text style={{ color: "#64748b", fontSize: 13, textAlign: "center", marginBottom: 20 }}>
+          Sign in again to enter your Frigate server URL.
+        </Text>
+        <TouchableOpacity
+          onPress={async () => { await logout(); router.replace("/(auth)/login"); }}
+          style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}
+        >
+          <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Go to Sign In</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (!cookieReady) {
     return (
       <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
@@ -317,14 +341,15 @@ export default function BrowserScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#000" }}>
+    <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
 
       {/* Frigate PWA */}
-      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#000" }}>
+      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#0a0f1e" }}>
         <WebView
           ref={webviewRef}
           source={{ uri: baseUrl }}
-          style={{ flex: 1 }}
+          style={{ flex: 1, backgroundColor: "#0a0f1e" }}
+          containerStyle={{ backgroundColor: "#0a0f1e" }}
           sharedCookiesEnabled={true}
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
@@ -345,13 +370,45 @@ export default function BrowserScreen() {
       </View>
 
       {/* Loading splash */}
-      {loading && (
+      {loading && serverStatus !== "offline" && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
           <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16, shadowColor: "#00d4ff", shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 0 } }}>
             <Ionicons name="shield" size={32} color="#00d4ff" />
           </View>
           <ActivityIndicator color="#00d4ff" />
           <Text style={{ color: "#64748b", marginTop: 12, fontSize: 13, letterSpacing: 0.3 }}>Connecting to Frigate…</Text>
+        </View>
+      )}
+
+      {/* Connection error overlay — replaces the bare black WebView when the server is unreachable */}
+      {serverStatus === "offline" && (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+            <Ionicons name="cloud-offline-outline" size={32} color="#ef4444" />
+          </View>
+          <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700", marginBottom: 6 }}>Can't reach Frigate</Text>
+          <Text style={{ color: "#64748b", fontSize: 13, textAlign: "center", marginBottom: 6 }}>
+            {baseUrl.replace(/^https?:\/\//, "")}
+          </Text>
+          <Text style={{ color: "#475569", fontSize: 12, textAlign: "center", marginBottom: 24, maxWidth: 280 }}>
+            Make sure your phone can reach this server (Wi-Fi, VPN, or Tailscale).
+          </Text>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => { haptic.tap(); setServerStatus("unknown"); setLoading(true); setTimeout(() => webviewRef.current?.reload(), 100); }}
+              style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 22, flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              <Ionicons name="refresh" size={16} color="#0a0f1e" />
+              <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Retry</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { haptic.tap(); setSettingsOpen(true); }}
+              style={{ backgroundColor: "#1e293b", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 22, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#334155" }}
+            >
+              <Ionicons name="settings-outline" size={16} color="#94a3b8" />
+              <Text style={{ color: "#94a3b8", fontWeight: "700" }}>Settings</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
