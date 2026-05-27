@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
   Alert, Modal, ScrollView, TextInput,
-  PanResponder, Animated, Share,
+  PanResponder, Animated, Share, useWindowDimensions,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,6 +13,7 @@ import * as Linking from "expo-linking";
 import { useKeepAwake } from "expo-keep-awake";
 import Constants from "expo-constants";
 import { Accelerometer } from "expo-sensors";
+import NetInfo from "@react-native-community/netinfo";
 import { useAuthStore } from "@/stores/authStore";
 import { haptic } from "@/utils/haptics";
 import { apiClient } from "@/utils/apiClient";
@@ -110,6 +111,8 @@ export default function BrowserScreen() {
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   useKeepAwake();
 
@@ -117,6 +120,7 @@ export default function BrowserScreen() {
   const [loading, setLoading]           = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
+  const [isOffline, setIsOffline]       = useState(false);
 
   // Camera quick-switcher
   const [cameras, setCameras]             = useState<string[]>([]);
@@ -154,6 +158,22 @@ export default function BrowserScreen() {
     } catch {}
     return () => { try { sub?.remove(); } catch {} };
   }, []);
+
+  // ── Network connectivity — show banner + auto-retry on reconnect ────────
+  useEffect(() => {
+    const unsub = NetInfo.addEventListener((state) => {
+      const connected = state.isConnected ?? true;
+      const wasOffline = !connected;
+      setIsOffline(!connected);
+      // Auto-retry WebView when connectivity returns
+      if (connected && serverStatus === "offline") {
+        setServerStatus("unknown");
+        setLoading(true);
+        setTimeout(() => webviewRef.current?.reload(), 500);
+      }
+    });
+    return () => unsub();
+  }, [serverStatus]);
 
   // ── Fetch camera list after server comes online ──────────────────────────
   useEffect(() => {
@@ -343,31 +363,38 @@ export default function BrowserScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
 
-      {/* Frigate PWA */}
-      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#0a0f1e" }}>
-        <WebView
-          ref={webviewRef}
-          source={{ uri: baseUrl }}
-          style={{ flex: 1, backgroundColor: "#0a0f1e" }}
-          containerStyle={{ backgroundColor: "#0a0f1e" }}
-          sharedCookiesEnabled={true}
-          allowsInlineMediaPlayback={true}
-          mediaPlaybackRequiresUserAction={false}
-          allowsFullscreenVideo={true}
-          allowsAirPlayForMediaPlayback={true}
-          allowsBackForwardNavigationGestures={true}
-          pullToRefreshEnabled={true}
-          injectedJavaScript={VIEWER_JS}
-          onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
-          onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => { setLoading(false); setServerStatus("online"); }}
-          onError={() => { setLoading(false); setServerStatus("offline"); }}
-          onHttpError={(e) => {
-            if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
-            else if (e.nativeEvent.statusCode >= 500) setServerStatus("offline");
-          }}
-        />
-      </View>
+      {/* Frigate PWA — fills full screen, PWA handles safe areas via CSS env() */}
+      <WebView
+        ref={webviewRef}
+        source={{ uri: baseUrl }}
+        style={{ flex: 1, backgroundColor: "#0a0f1e" }}
+        containerStyle={{ flex: 1, backgroundColor: "#0a0f1e" }}
+        sharedCookiesEnabled={true}
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+        allowsFullscreenVideo={true}
+        allowsAirPlayForMediaPlayback={true}
+        allowsBackForwardNavigationGestures={true}
+        pullToRefreshEnabled={true}
+        injectedJavaScript={VIEWER_JS}
+        applicationNameForUserAgent="ApexNative/1.0"
+        onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
+        onLoadStart={() => setLoading(true)}
+        onLoadEnd={() => { setLoading(false); setServerStatus("online"); }}
+        onError={() => { setLoading(false); setServerStatus("offline"); }}
+        onHttpError={(e) => {
+          if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
+          else if (e.nativeEvent.statusCode >= 500) setServerStatus("offline");
+        }}
+      />
+
+      {/* No-network banner — thin strip at top, auto-dismisses when reconnected */}
+      {isOffline && (
+        <View style={{ position: "absolute", top: insets.top, left: 0, right: 0, backgroundColor: "#7f1d1d", paddingVertical: 6, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}>
+          <Ionicons name="wifi-outline" size={13} color="#fca5a5" />
+          <Text style={{ color: "#fca5a5", fontSize: 12, fontWeight: "600" }}>No internet connection</Text>
+        </View>
+      )}
 
       {/* Loading splash */}
       {loading && serverStatus !== "offline" && (
@@ -412,8 +439,8 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Camera quick-switch button — only shown when cameras are loaded */}
-      {cameras.length > 0 && (
+      {/* Camera quick-switch button — hidden in landscape for immersive viewing */}
+      {cameras.length > 0 && !isLandscape && (
         <TouchableOpacity
           onPress={() => { haptic.tap(); setCameraMenuOpen(true); }}
           style={{
@@ -434,25 +461,27 @@ export default function BrowserScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Floating gear button */}
-      <TouchableOpacity
-        onPress={() => { haptic.tap(); setSettingsOpen(true); }}
-        style={{
-          position: "absolute",
-          bottom: insets.bottom + 82,
-          right: 14,
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          backgroundColor: "#0f172aee",
-          borderWidth: 1,
-          borderColor: "#1e293b",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Ionicons name="settings-outline" size={16} color="#64748b" />
-      </TouchableOpacity>
+      {/* Floating gear button — hidden in landscape for immersive viewing */}
+      {!isLandscape && (
+        <TouchableOpacity
+          onPress={() => { haptic.tap(); setSettingsOpen(true); }}
+          style={{
+            position: "absolute",
+            bottom: insets.bottom + 82,
+            right: 14,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: "#0f172aee",
+            borderWidth: 1,
+            borderColor: "#1e293b",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="settings-outline" size={16} color="#64748b" />
+        </TouchableOpacity>
+      )}
 
       {/* ── Camera quick-switch modal ──────────────────────────────────────── */}
       <Modal
