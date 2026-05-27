@@ -21,6 +21,7 @@ import { apiClient } from "@/utils/apiClient";
 // ─── JS injected on every page load ─────────────────────────────────────────
 const VIEWER_JS = `
 (function() {
+  // ── Video enhancements ──────────────────────────────────────────────────
   function enhanceVideos() {
     document.querySelectorAll('video').forEach(function(v) {
       v.removeAttribute('disablePictureInPicture');
@@ -43,6 +44,32 @@ const VIEWER_JS = `
       }
     }
   });
+
+  // ── Ready signal — tell native to hide the splash once Frigate has rendered.
+  // onLoadEnd fires when the HTML shell loads (React SPA not yet mounted).
+  // We watch the DOM for real content, then post a message. This prevents the
+  // black flash between "HTML loaded" and "Frigate UI painted".
+  var readySent = false;
+  function sendReady() {
+    if (readySent) return;
+    var body = document.body;
+    if (body && body.innerText && body.innerText.trim().length > 20) {
+      readySent = true;
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'frigateReady' })); } catch(e) {}
+      contentObs.disconnect();
+    }
+  }
+  var contentObs = new MutationObserver(sendReady);
+  contentObs.observe(document.documentElement, { childList: true, subtree: true });
+  sendReady();
+  // Hard fallback: show app after 5s no matter what
+  setTimeout(function() {
+    if (!readySent) {
+      readySent = true;
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'frigateReady' })); } catch(e) {}
+      contentObs.disconnect();
+    }
+  }, 5000);
 })();
 true;
 `;
@@ -121,6 +148,8 @@ export default function BrowserScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
   const [isOffline, setIsOffline]       = useState(false);
+  const [errorUrlDraft, setErrorUrlDraft] = useState("");
+  const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Camera quick-switcher
   const [cameras, setCameras]             = useState<string[]>([]);
@@ -379,12 +408,37 @@ export default function BrowserScreen() {
         injectedJavaScript={VIEWER_JS}
         applicationNameForUserAgent="ApexNative/1.0"
         onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
-        onLoadStart={() => setLoading(true)}
-        onLoadEnd={() => { setLoading(false); setServerStatus("online"); }}
-        onError={() => { setLoading(false); setServerStatus("offline"); }}
+        onLoadStart={() => {
+          setLoading(true);
+          if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+        }}
+        onLoadEnd={() => {
+          setServerStatus("online");
+          // frigateReady message hides the splash; this is a 6s safety net
+          if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+          readyTimerRef.current = setTimeout(() => setLoading(false), 6000);
+        }}
+        onMessage={(event) => {
+          try {
+            const msg = JSON.parse(event.nativeEvent.data);
+            if (msg.type === "frigateReady") {
+              if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+              setLoading(false);
+            }
+          } catch {}
+        }}
+        onError={() => {
+          if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+          setLoading(false);
+          setServerStatus("offline");
+        }}
         onHttpError={(e) => {
           if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
-          else if (e.nativeEvent.statusCode >= 500) setServerStatus("offline");
+          else if (e.nativeEvent.statusCode >= 500) {
+            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+            setLoading(false);
+            setServerStatus("offline");
+          }
         }}
       />
 
@@ -407,35 +461,63 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Connection error overlay — replaces the bare black WebView when the server is unreachable */}
+      {/* Connection error overlay — shows when server is unreachable, includes inline URL fixer */}
       {serverStatus === "offline" && (
-        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 28 }}>
           <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
             <Ionicons name="cloud-offline-outline" size={32} color="#ef4444" />
           </View>
-          <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700", marginBottom: 6 }}>Can't reach Frigate</Text>
-          <Text style={{ color: "#64748b", fontSize: 13, textAlign: "center", marginBottom: 6 }}>
+          <Text style={{ color: "#f1f5f9", fontSize: 18, fontWeight: "700", marginBottom: 6 }}>Can't reach Frigate</Text>
+          <Text style={{ color: "#64748b", fontSize: 13, textAlign: "center", marginBottom: 4 }}>
             {baseUrl.replace(/^https?:\/\//, "")}
           </Text>
-          <Text style={{ color: "#475569", fontSize: 12, textAlign: "center", marginBottom: 24, maxWidth: 280 }}>
-            Make sure your phone can reach this server (Wi-Fi, VPN, or Tailscale).
+          <Text style={{ color: "#475569", fontSize: 12, textAlign: "center", marginBottom: 28, maxWidth: 280 }}>
+            Make sure your phone can reach this server via Wi-Fi, VPN, or Tailscale.
           </Text>
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity
-              onPress={() => { haptic.tap(); setServerStatus("unknown"); setLoading(true); setTimeout(() => webviewRef.current?.reload(), 100); }}
-              style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 22, flexDirection: "row", alignItems: "center", gap: 6 }}
-            >
-              <Ionicons name="refresh" size={16} color="#0a0f1e" />
-              <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Retry</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { haptic.tap(); setSettingsOpen(true); }}
-              style={{ backgroundColor: "#1e293b", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 22, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#334155" }}
-            >
-              <Ionicons name="settings-outline" size={16} color="#94a3b8" />
-              <Text style={{ color: "#94a3b8", fontWeight: "700" }}>Settings</Text>
-            </TouchableOpacity>
+
+          {/* Inline URL fixer */}
+          <View style={{ width: "100%", maxWidth: 340, marginBottom: 16 }}>
+            <Text style={{ color: "#64748b", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+              Wrong URL? Change it here
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1e293b", borderRadius: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: "#334155", gap: 10 }}>
+              <Ionicons name="globe-outline" size={16} color="#475569" />
+              <TextInput
+                style={{ flex: 1, paddingVertical: 13, color: "#f1f5f9", fontSize: 14 }}
+                placeholder={baseUrl || "https://your-frigate-host.com"}
+                placeholderTextColor="#475569"
+                value={errorUrlDraft}
+                onChangeText={setErrorUrlDraft}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+            </View>
+            {errorUrlDraft.startsWith("http") && (
+              <TouchableOpacity
+                onPress={async () => {
+                  haptic.tap();
+                  const clean = errorUrlDraft.trim().replace(/\/$/, "");
+                  await setBaseUrl(clean);
+                  setErrorUrlDraft("");
+                  setServerStatus("unknown");
+                  setLoading(true);
+                  setTimeout(() => webviewRef.current?.reload(), 300);
+                }}
+                style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 10 }}
+              >
+                <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save & Connect</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          <TouchableOpacity
+            onPress={() => { haptic.tap(); setServerStatus("unknown"); setLoading(true); setTimeout(() => webviewRef.current?.reload(), 100); }}
+            style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10 }}
+          >
+            <Ionicons name="refresh" size={15} color="#475569" />
+            <Text style={{ color: "#475569", fontSize: 13 }}>Retry without changing URL</Text>
+          </TouchableOpacity>
         </View>
       )}
 
