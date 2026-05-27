@@ -151,6 +151,9 @@ export default function BrowserScreen() {
   const [errorUrlDraft, setErrorUrlDraft] = useState("");
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // cleanup on unmount
+  useEffect(() => () => { if (readyTimerRef.current) clearTimeout(readyTimerRef.current); }, []);
+
   // Camera quick-switcher
   const [cameras, setCameras]             = useState<string[]>([]);
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
@@ -392,55 +395,63 @@ export default function BrowserScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
 
-      {/* Frigate PWA — fills full screen, PWA handles safe areas via CSS env() */}
-      <WebView
-        ref={webviewRef}
-        source={{ uri: baseUrl }}
-        style={{ flex: 1, backgroundColor: "#0a0f1e" }}
-        containerStyle={{ flex: 1, backgroundColor: "#0a0f1e" }}
-        sharedCookiesEnabled={true}
-        allowsInlineMediaPlayback={true}
-        mediaPlaybackRequiresUserAction={false}
-        allowsFullscreenVideo={true}
-        allowsAirPlayForMediaPlayback={true}
-        allowsBackForwardNavigationGestures={true}
-        pullToRefreshEnabled={true}
-        injectedJavaScript={VIEWER_JS}
-        applicationNameForUserAgent="ApexNative/1.0"
-        onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
-        onLoadStart={() => {
-          setLoading(true);
-          if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-        }}
-        onLoadEnd={() => {
-          setServerStatus("online");
-          // frigateReady message hides the splash; this is a 6s safety net
-          if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-          readyTimerRef.current = setTimeout(() => setLoading(false), 6000);
-        }}
-        onMessage={(event) => {
-          try {
-            const msg = JSON.parse(event.nativeEvent.data);
-            if (msg.type === "frigateReady") {
-              if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-              setLoading(false);
-            }
-          } catch {}
-        }}
-        onError={() => {
-          if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-          setLoading(false);
-          setServerStatus("offline");
-        }}
-        onHttpError={(e) => {
-          if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
-          else if (e.nativeEvent.statusCode >= 500) {
+      {/* Frigate PWA — no native padding; Frigate's own CSS env(safe-area-inset-*)
+          handles the notch. Adding paddingTop: insets.top here AND letting Frigate
+          add env(safe-area-inset-top) causes double-inset → content pushed off-screen
+          → black screen. The wrapper View is kept to avoid WKWebView z-index issues
+          with the absolute overlays below. */}
+      <View style={{ flex: 1 }}>
+        <WebView
+          ref={webviewRef}
+          source={{ uri: baseUrl }}
+          style={{ flex: 1, backgroundColor: "#0a0f1e" }}
+          sharedCookiesEnabled={true}
+          allowsInlineMediaPlayback={true}
+          mediaPlaybackRequiresUserAction={false}
+          allowsFullscreenVideo={true}
+          allowsAirPlayForMediaPlayback={true}
+          allowsBackForwardNavigationGestures={true}
+          pullToRefreshEnabled={true}
+          injectedJavaScript={VIEWER_JS}
+          applicationNameForUserAgent="ApexNative/1.0"
+          onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
+          onLoadStart={() => {
+            setLoading(true);
+            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+          }}
+          onLoadEnd={() => {
+            setServerStatus("online");
+            // Frigate is a React SPA — the HTML loads before React paints.
+            // Wait 1.2s after onLoadEnd so Frigate has time to render before
+            // the splash disappears, preventing a black flash.
+            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+            readyTimerRef.current = setTimeout(() => setLoading(false), 1200);
+          }}
+          onMessage={(event) => {
+            // frigateReady signal from VIEWER_JS — React app has painted, dismiss early
+            try {
+              const msg = JSON.parse(event.nativeEvent.data);
+              if (msg.type === "frigateReady") {
+                if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+                setLoading(false);
+              }
+            } catch {}
+          }}
+          onError={() => {
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
             setLoading(false);
             setServerStatus("offline");
-          }
-        }}
-      />
+          }}
+          onHttpError={(e) => {
+            if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
+            else if (e.nativeEvent.statusCode >= 500) {
+              if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+              setLoading(false);
+              setServerStatus("offline");
+            }
+          }}
+        />
+      </View>
 
       {/* No-network banner — thin strip at top, auto-dismisses when reconnected */}
       {isOffline && (
