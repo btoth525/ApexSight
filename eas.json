@@ -11,6 +11,21 @@
         "simulator": false,
         "enterpriseProvisioning": "adhoc"
       }
+    },
+    "production": {
+      "distribution": "store",
+      "ios": {
+        "simulator": false
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "brandontoth525@gmail.com",
+        "ascAppId": "",
+        "appleTeamId": ""
+      }
     }
   }
 }
