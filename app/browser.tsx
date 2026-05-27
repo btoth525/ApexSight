@@ -155,7 +155,7 @@ export default function BrowserScreen() {
   // ── Fetch camera list after server comes online ──────────────────────────
   useEffect(() => {
     if (serverStatus !== "online") return;
-    apiClient.get("/api/config").then((res) => {
+    apiClient.get("/config").then((res) => {
       const cams = Object.keys(res.data?.cameras ?? {});
       if (cams.length > 0) setCameras(cams);
     }).catch(() => {});
