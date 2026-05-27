@@ -1,7 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  Alert, Modal, ScrollView, TextInput, Animated,
+  Alert, Modal, ScrollView, TextInput,
+  PanResponder, Animated, Share,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,10 +16,6 @@ import { haptic } from "@/utils/haptics";
 import { apiClient } from "@/utils/apiClient";
 
 // ─── JS injected on every page load ─────────────────────────────────────────
-// • Removes disablePictureInPicture so iOS PiP works on Frigate's video tiles
-// • MutationObserver re-applies to any video element Frigate adds dynamically
-// • Requests PiP automatically when the user backgrounds the app
-// • x-webkit-airplay so AirPlay icon appears in the native video controls
 const VIEWER_JS = `
 (function() {
   function enhanceVideos() {
@@ -32,7 +29,6 @@ const VIEWER_JS = `
   enhanceVideos();
   var mo = new MutationObserver(enhanceVideos);
   mo.observe(document.body, { childList: true, subtree: true });
-
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState !== 'hidden') return;
     var vs = document.querySelectorAll('video');
@@ -48,11 +44,37 @@ const VIEWER_JS = `
 true;
 `;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Deep-link routes shown in settings with descriptions
+const DEEP_LINKS = [
+  { route: "cameras/{name}",   desc: "Live view for a specific camera",  example: "cameras/driveway" },
+  { route: "review",           desc: "Event review page",                 example: "review" },
+  { route: "clip/{event_id}",  desc: "Jump to a specific event clip",     example: "clip/abc123" },
+  { route: "events",           desc: "All events feed",                   example: "events" },
+  { route: "recordings",       desc: "Recordings browser",                example: "recordings" },
+  { route: "system",           desc: "System stats & logs",               example: "system" },
+];
 
-function Row({
-  icon, iconColor, iconBg, label, sub, right,
-}: {
+// ─── Convert apex:// → Frigate web URL (standard path routing) ──────────────
+function deeplinkToFrigateUrl(apexUrl: string, baseUrl: string): string | null {
+  try {
+    const parsed = Linking.parse(apexUrl);
+    const host = parsed.hostname ?? "";
+    const path = parsed.path ? parsed.path.replace(/^\//, "") : "";
+    if (!host) return null;
+    const route = path ? `${host}/${path}` : host;
+    const qs = parsed.queryParams
+      ? "?" + Object.entries(parsed.queryParams)
+          .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+          .join("&")
+      : "";
+    return `${baseUrl}/${route}${qs}`;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function Row({ icon, iconColor, iconBg, label, sub, right }: {
   icon: string; iconColor: string; iconBg: string;
   label: string; sub?: string; right?: React.ReactNode;
 }) {
@@ -72,56 +94,27 @@ function Row({
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <Text style={{
-      color: "#475569", fontSize: 11, fontWeight: "700",
-      textTransform: "uppercase", letterSpacing: 0.8,
-      marginTop: 20, marginBottom: 6,
-    }}>
+    <Text style={{ color: "#475569", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 20, marginBottom: 6 }}>
       {title}
     </Text>
   );
 }
 
-function Divider() {
-  return <View style={{ height: 1, backgroundColor: "#1e293b", marginVertical: 2 }} />;
-}
-
-// Convert apex:// deep-link → Frigate web URL (standard path routing, no hash)
-// apex://cameras/driveway  →  {baseUrl}/cameras/driveway
-// apex://review            →  {baseUrl}/review
-// apex://clip/EVENT_ID     →  {baseUrl}/clip/EVENT_ID
-function deeplinkToFrigateUrl(apexUrl: string, baseUrl: string): string | null {
-  try {
-    const parsed = Linking.parse(apexUrl);
-    const host = parsed.hostname ?? "";
-    const path = parsed.path ? parsed.path.replace(/^\//, "") : "";
-    if (!host) return null;
-    const route = path ? `${host}/${path}` : host;
-    const qs = parsed.queryParams
-      ? "?" + Object.entries(parsed.queryParams).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&")
-      : "";
-    return `${baseUrl}/${route}${qs}`;
-  } catch {
-    return null;
-  }
-}
+type ServerStatus = "unknown" | "online" | "auth" | "offline";
 
 // ─── Main component ───────────────────────────────────────────────────────────
-
-type ServerStatus = "idle" | "checking" | "online" | "auth" | "offline";
-
 export default function BrowserScreen() {
   const { baseUrl, token, username, setBaseUrl, setAuth, logout } = useAuthStore();
   const router = useRouter();
   const webviewRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
 
-  // Keep screen on while watching live cameras
   useKeepAwake();
 
   const [cookieReady, setCookieReady]   = useState(false);
   const [loading, setLoading]           = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
 
   // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
@@ -135,10 +128,20 @@ export default function BrowserScreen() {
   const [credLoading, setCredLoading]     = useState(false);
   const [showPass, setShowPass]           = useState(false);
 
-  // Server reachability
-  const [serverStatus, setServerStatus] = useState<ServerStatus>("idle");
+  // ── Swipe-to-dismiss the settings panel ─────────────────────────────────
+  // Only the drag handle responds — leaves the ScrollView free to scroll.
+  const dismissSettings = useCallback(() => setSettingsOpen(false), []);
+  const handlePan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  (_, { dy }) => Math.abs(dy) > 5,
+      onPanResponderRelease: (_, { dy, vy }) => {
+        if (dy > 60 || vy > 0.8) dismissSettings();
+      },
+    })
+  ).current;
 
-  // ── Inject auth cookie before WebView loads ─────────────────────────────
+  // ── Inject auth cookie before WebView loads ──────────────────────────────
   useEffect(() => {
     const inject = async () => {
       if (token && token !== "session" && baseUrl) {
@@ -156,18 +159,6 @@ export default function BrowserScreen() {
     inject();
   }, [baseUrl, token]);
 
-  // ── Probe server when settings opens ────────────────────────────────────
-  useEffect(() => {
-    if (!settingsOpen) return;
-    setServerStatus("checking");
-    apiClient.get("/config")
-      .then(() => setServerStatus("online"))
-      .catch((err) => {
-        if (err.response?.status === 401) setServerStatus("auth");
-        else setServerStatus("offline");
-      });
-  }, [settingsOpen]);
-
   // ── Deep-link handler ────────────────────────────────────────────────────
   const navigateDeeplink = useCallback((url: string) => {
     const frigateUrl = deeplinkToFrigateUrl(url, baseUrl);
@@ -177,7 +168,7 @@ export default function BrowserScreen() {
       webviewRef.current?.injectJavaScript(
         `window.location.href = ${JSON.stringify(frigateUrl)}; true;`
       );
-    }, 500);
+    }, 400);
   }, [baseUrl]);
 
   useEffect(() => {
@@ -194,11 +185,11 @@ export default function BrowserScreen() {
     if (!clean) return;
     await setBaseUrl(clean);
     setEditingUrl(false);
-    setServerStatus("idle");
+    setServerStatus("unknown");
     setTimeout(() => webviewRef.current?.reload(), 300);
   };
 
-  // ── Credential change (re-login with new username/password) ─────────────
+  // ── Credential change ────────────────────────────────────────────────────
   const handleSaveCreds = async () => {
     if (!userDraft.trim() || !passDraft.trim()) {
       setCredError("Please enter both username and password.");
@@ -209,8 +200,6 @@ export default function BrowserScreen() {
     try {
       const res = await apiClient.post("/login", { user: userDraft.trim(), password: passDraft });
       if (res.status !== 200) throw new Error("Login failed");
-
-      // Extract token — try response header first, then retry from cookie jar
       let newToken = "session";
       const rawCookie = res.headers?.["set-cookie"];
       if (rawCookie) {
@@ -226,7 +215,6 @@ export default function BrowserScreen() {
           if (val && val.length > 10) { newToken = val; break; }
         }
       }
-
       const name = res.data?.user?.name ?? userDraft.trim();
       await setAuth(newToken, name);
       haptic.success();
@@ -260,29 +248,18 @@ export default function BrowserScreen() {
     ]);
   };
 
-  const handleNavChange = useCallback((_nav: WebViewNavigation) => {}, []);
+  // ── Copy / share a deep-link URL ─────────────────────────────────────────
+  const handleShare = (route: string) => {
+    haptic.tap();
+    Share.share({ message: `apex://${route}` });
+  };
 
-  // ── Status dot helper ────────────────────────────────────────────────────
-  const statusDot = () => {
-    if (serverStatus === "checking") return (
-      <ActivityIndicator size="small" color="#94a3b8" style={{ transform: [{ scale: 0.6 }] }} />
-    );
-    const colors: Record<ServerStatus, string> = {
-      idle: "#334155", checking: "#334155",
-      online: "#10b981", auth: "#f59e0b", offline: "#ef4444",
-    };
-    const labels: Record<ServerStatus, string> = {
-      idle: "Tap to check", checking: "Checking…",
-      online: "Connected", auth: "Session expired", offline: "Unreachable",
-    };
-    return (
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors[serverStatus] }} />
-        <Text style={{ color: colors[serverStatus], fontSize: 12, fontWeight: "600" }}>
-          {labels[serverStatus]}
-        </Text>
-      </View>
-    );
+  // ── Status helpers ────────────────────────────────────────────────────────
+  const statusColor: Record<ServerStatus, string> = {
+    unknown: "#334155", online: "#10b981", auth: "#f59e0b", offline: "#ef4444",
+  };
+  const statusLabel: Record<ServerStatus, string> = {
+    unknown: "Loading…", online: "Connected", auth: "Session expired", offline: "Unreachable",
   };
 
   if (!cookieReady) {
@@ -296,7 +273,7 @@ export default function BrowserScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
 
-      {/* Frigate PWA — full screen, safe area insets only */}
+      {/* Frigate PWA */}
       <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#000" }}>
         <WebView
           ref={webviewRef}
@@ -310,9 +287,14 @@ export default function BrowserScreen() {
           allowsBackForwardNavigationGestures={true}
           pullToRefreshEnabled={true}
           injectedJavaScript={VIEWER_JS}
-          onNavigationStateChange={handleNavChange}
+          onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
           onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
+          onLoadEnd={() => { setLoading(false); setServerStatus("online"); }}
+          onError={() => { setLoading(false); setServerStatus("offline"); }}
+          onHttpError={(e) => {
+            if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
+            else if (e.nativeEvent.statusCode >= 500) setServerStatus("offline");
+          }}
         />
       </View>
 
@@ -327,62 +309,61 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Floating settings pill — bottom-right corner above Frigate nav */}
+      {/* Floating gear button — gear icon only, no label */}
       <TouchableOpacity
         onPress={() => { haptic.tap(); setSettingsOpen(true); }}
         style={{
           position: "absolute",
           bottom: insets.bottom + 82,
           right: 14,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 5,
-          paddingHorizontal: 12,
-          paddingVertical: 7,
-          borderRadius: 20,
+          width: 36,
+          height: 36,
+          borderRadius: 18,
           backgroundColor: "#0f172aee",
           borderWidth: 1,
           borderColor: "#1e293b",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        <Ionicons name="settings-outline" size={13} color="#64748b" />
-        <Text style={{ color: "#64748b", fontSize: 12, fontWeight: "600" }}>Apex</Text>
+        <Ionicons name="settings-outline" size={16} color="#64748b" />
       </TouchableOpacity>
 
-      {/* ── Settings bottom sheet ──────────────────────────────────────── */}
+      {/* ── Settings bottom sheet ──────────────────────────────────────────── */}
       <Modal
         visible={settingsOpen}
         transparent
         animationType="slide"
-        onRequestClose={() => setSettingsOpen(false)}
+        onRequestClose={dismissSettings}
       >
+        {/* Tap outside to dismiss */}
         <TouchableOpacity
           style={{ flex: 1, backgroundColor: "#00000099" }}
           activeOpacity={1}
-          onPress={() => setSettingsOpen(false)}
+          onPress={dismissSettings}
         />
 
         <SafeAreaView style={{ backgroundColor: "#0a0f1e" }} edges={["bottom"]}>
-          <View style={{
-            backgroundColor: "#0a0f1e",
-            borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            borderTopWidth: 1, borderColor: "#1e293b",
-            maxHeight: "85%",
-          }}>
+          <View style={{ backgroundColor: "#0a0f1e", borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: "#1e293b", maxHeight: "86%" }}>
 
-            {/* Drag handle + title */}
-            <View style={{ paddingTop: 12, paddingHorizontal: 20, paddingBottom: 8 }}>
-              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#334155", alignSelf: "center", marginBottom: 16 }} />
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: "#00d4ff22", alignItems: "center", justifyContent: "center" }}>
-                    <Ionicons name="shield" size={15} color="#00d4ff" />
-                  </View>
-                  <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700", letterSpacing: -0.3 }}>Apex</Text>
+            {/* Drag handle — swipe down here to dismiss */}
+            <View
+              {...handlePan.panHandlers}
+              style={{ alignItems: "center", paddingTop: 12, paddingBottom: 8, paddingHorizontal: 20 }}
+            >
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#334155", marginBottom: 14 }} />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start" }}>
+                <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: "#00d4ff22", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="shield" size={15} color="#00d4ff" />
                 </View>
-                <TouchableOpacity onPress={() => setSettingsOpen(false)} style={{ padding: 4 }}>
-                  <Ionicons name="close" size={20} color="#475569" />
-                </TouchableOpacity>
+                <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700", letterSpacing: -0.3 }}>Apex</Text>
+                {/* Live connection dot next to title */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: 4 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusColor[serverStatus] }} />
+                  <Text style={{ color: statusColor[serverStatus], fontSize: 11, fontWeight: "600" }}>
+                    {statusLabel[serverStatus]}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -392,11 +373,9 @@ export default function BrowserScreen() {
               showsVerticalScrollIndicator={false}
             >
 
-              {/* ── ACCOUNT ──────────────────────────────────────── */}
+              {/* ── ACCOUNT ────────────────────────────────────────── */}
               <SectionHeader title="Account" />
               <View style={{ backgroundColor: "#1e293b", borderRadius: 14, overflow: "hidden" }}>
-
-                {/* Current user row */}
                 <View style={{ padding: 14 }}>
                   <Row
                     icon="person-circle-outline" iconColor="#a855f7" iconBg="#a855f722"
@@ -406,7 +385,7 @@ export default function BrowserScreen() {
                       !changingCreds ? (
                         <TouchableOpacity
                           onPress={() => { setUserDraft(username ?? ""); setPassDraft(""); setCredError(""); setChangingCreds(true); }}
-                          style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#334155", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
+                          style={{ backgroundColor: "#334155", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
                         >
                           <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600" }}>Change</Text>
                         </TouchableOpacity>
@@ -415,52 +394,38 @@ export default function BrowserScreen() {
                   />
                 </View>
 
-                {/* Inline credential change form */}
                 {changingCreds && (
                   <>
                     <View style={{ height: 1, backgroundColor: "#334155" }} />
                     <View style={{ padding: 14, gap: 10 }}>
                       <Text style={{ color: "#94a3b8", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 }}>New Credentials</Text>
-
-                      {/* Username */}
                       <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", borderRadius: 10, paddingHorizontal: 12, gap: 8, borderWidth: 1, borderColor: "#334155" }}>
                         <Ionicons name="person-outline" size={15} color="#475569" />
                         <TextInput
                           style={{ flex: 1, paddingVertical: 11, color: "#f1f5f9", fontSize: 14 }}
-                          placeholder="Username"
-                          placeholderTextColor="#475569"
-                          value={userDraft}
-                          onChangeText={setUserDraft}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          textContentType="username"
+                          placeholder="Username" placeholderTextColor="#475569"
+                          value={userDraft} onChangeText={setUserDraft}
+                          autoCapitalize="none" autoCorrect={false} textContentType="username"
                         />
                       </View>
-
-                      {/* Password */}
                       <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", borderRadius: 10, paddingHorizontal: 12, gap: 8, borderWidth: 1, borderColor: "#334155" }}>
                         <Ionicons name="lock-closed-outline" size={15} color="#475569" />
                         <TextInput
                           style={{ flex: 1, paddingVertical: 11, color: "#f1f5f9", fontSize: 14 }}
-                          placeholder="Password"
-                          placeholderTextColor="#475569"
-                          value={passDraft}
-                          onChangeText={setPassDraft}
-                          secureTextEntry={!showPass}
-                          textContentType="password"
+                          placeholder="Password" placeholderTextColor="#475569"
+                          value={passDraft} onChangeText={setPassDraft}
+                          secureTextEntry={!showPass} textContentType="password"
                         />
                         <TouchableOpacity onPress={() => setShowPass((s) => !s)}>
                           <Ionicons name={showPass ? "eye-off-outline" : "eye-outline"} size={15} color="#475569" />
                         </TouchableOpacity>
                       </View>
-
                       {credError ? (
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
                           <Ionicons name="warning" size={12} color="#ef4444" />
                           <Text style={{ color: "#ef4444", fontSize: 12 }}>{credError}</Text>
                         </View>
                       ) : null}
-
                       <View style={{ flexDirection: "row", gap: 8, marginTop: 2 }}>
                         <TouchableOpacity
                           onPress={() => { setChangingCreds(false); setCredError(""); }}
@@ -469,8 +434,7 @@ export default function BrowserScreen() {
                           <Text style={{ color: "#94a3b8", fontWeight: "600", fontSize: 14 }}>Cancel</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={handleSaveCreds}
-                          disabled={credLoading}
+                          onPress={handleSaveCreds} disabled={credLoading}
                           style={{ flex: 2, backgroundColor: "#00d4ff", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
                         >
                           {credLoading
@@ -484,40 +448,28 @@ export default function BrowserScreen() {
                 )}
               </View>
 
-              {/* ── SERVER ───────────────────────────────────────── */}
+              {/* ── SERVER ─────────────────────────────────────────── */}
               <SectionHeader title="Server" />
               <View style={{ backgroundColor: "#1e293b", borderRadius: 14, overflow: "hidden" }}>
-
                 {editingUrl ? (
                   <View style={{ padding: 14, gap: 10 }}>
                     <TextInput
                       style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#334155" }}
-                      value={urlDraft}
-                      onChangeText={setUrlDraft}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="url"
-                      placeholder="https://your-frigate-host.com"
-                      placeholderTextColor="#475569"
+                      value={urlDraft} onChangeText={setUrlDraft}
+                      autoCapitalize="none" autoCorrect={false} keyboardType="url"
+                      placeholder="https://your-frigate-host.com" placeholderTextColor="#475569"
                     />
                     <View style={{ flexDirection: "row", gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => setEditingUrl(false)}
-                        style={{ flex: 1, backgroundColor: "#334155", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
-                      >
+                      <TouchableOpacity onPress={() => setEditingUrl(false)} style={{ flex: 1, backgroundColor: "#334155", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}>
                         <Text style={{ color: "#94a3b8", fontWeight: "600" }}>Cancel</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={handleSaveUrl}
-                        style={{ flex: 2, backgroundColor: "#00d4ff", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
-                      >
+                      <TouchableOpacity onPress={handleSaveUrl} style={{ flex: 2, backgroundColor: "#00d4ff", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}>
                         <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save & Reload</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 ) : (
-                  <View style={{ padding: 14, gap: 12 }}>
-                    {/* URL row */}
+                  <View style={{ padding: 14 }}>
                     <Row
                       icon="globe-outline" iconColor="#00d4ff" iconBg="#00d4ff22"
                       label={baseUrl.replace(/^https?:\/\//, "")}
@@ -532,90 +484,86 @@ export default function BrowserScreen() {
                         </TouchableOpacity>
                       }
                     />
-                    {/* Status row */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                      <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: "#0f172a", alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="pulse-outline" size={17} color="#475569" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: "#f1f5f9", fontSize: 15, fontWeight: "500" }}>Connection</Text>
-                      </View>
-                      {statusDot()}
-                    </View>
                   </View>
                 )}
               </View>
 
-              {/* ── HOME ASSISTANT DEEP LINKS ─────────────────────── */}
+              {/* ── HOME ASSISTANT DEEP LINKS ──────────────────────── */}
               <SectionHeader title="Home Assistant Deep Links" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, gap: 12 }}>
-                <Row
-                  icon="link-outline" iconColor="#f59e0b" iconBg="#f59e0b22"
-                  label="Open Apex from HA automations"
-                  sub={'Add url: "apex://..." to your notify action data'}
-                />
+              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, gap: 10 }}>
+                <Text style={{ color: "#64748b", fontSize: 12, lineHeight: 17 }}>
+                  Add <Text style={{ color: "#94a3b8", fontFamily: "monospace" }}>url: "apex://..."</Text> to your HA notification action. Tap any URL to share/copy it.
+                </Text>
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
-                {[
-                  { route: "cameras/{name}",  desc: "Live camera view" },
-                  { route: "review",           desc: "Event review page" },
-                  { route: "clip/{event_id}",  desc: "Specific event clip" },
-                ].map(({ route, desc }) => (
-                  <View key={route} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                {DEEP_LINKS.map(({ route, desc, example }) => (
+                  <TouchableOpacity
+                    key={route}
+                    onPress={() => handleShare(example)}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}
+                    activeOpacity={0.6}
+                  >
                     <View style={{ flex: 1 }}>
-                      <Text style={{ color: "#00d4ff", fontSize: 13, fontFamily: "monospace", marginBottom: 1 }}>
+                      <Text style={{ color: "#00d4ff", fontSize: 13, fontFamily: "monospace", marginBottom: 2 }}>
                         apex://{route}
                       </Text>
                       <Text style={{ color: "#475569", fontSize: 11 }}>{desc}</Text>
                     </View>
-                  </View>
+                    <Ionicons name="share-outline" size={15} color="#334155" />
+                  </TouchableOpacity>
                 ))}
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
-                <View style={{ backgroundColor: "#0f172a", borderRadius: 8, padding: 10 }}>
-                  <Text style={{ color: "#64748b", fontSize: 11, lineHeight: 17 }}>
-                    <Text style={{ color: "#94a3b8", fontWeight: "600" }}>Example HA action:{"\n"}</Text>
-                    <Text style={{ color: "#00d4ff", fontFamily: "monospace" }}>
-                      {"data:\n  url: \"apex://cameras/driveway\""}
-                    </Text>
+                {/* HA YAML example block */}
+                <View style={{ backgroundColor: "#0f172a", borderRadius: 10, padding: 12 }}>
+                  <Text style={{ color: "#475569", fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Example HA Action</Text>
+                  <Text style={{ color: "#64748b", fontSize: 12, fontFamily: "monospace", lineHeight: 20 }}>
+                    <Text style={{ color: "#94a3b8" }}>action</Text>
+                    <Text style={{ color: "#64748b" }}>: notify.mobile_app_iphone{"\n"}</Text>
+                    <Text style={{ color: "#94a3b8" }}>data</Text>
+                    <Text style={{ color: "#64748b" }}>:{"\n"}</Text>
+                    <Text style={{ color: "#64748b" }}>{"  "}</Text>
+                    <Text style={{ color: "#94a3b8" }}>message</Text>
+                    <Text style={{ color: "#64748b" }}>: Person detected{"\n"}</Text>
+                    <Text style={{ color: "#64748b" }}>{"  "}</Text>
+                    <Text style={{ color: "#94a3b8" }}>data</Text>
+                    <Text style={{ color: "#64748b" }}>:{"\n"}</Text>
+                    <Text style={{ color: "#64748b" }}>{"    "}</Text>
+                    <Text style={{ color: "#94a3b8" }}>url</Text>
+                    <Text style={{ color: "#64748b" }}>: </Text>
+                    <Text style={{ color: "#00d4ff" }}>"apex://cameras/driveway"</Text>
                   </Text>
                 </View>
               </View>
 
-              {/* ── VIEWER ───────────────────────────────────────────── */}
-              <SectionHeader title="Viewer" />
+              {/* ── NATIVE FEATURES ────────────────────────────────── */}
+              <SectionHeader title="Native Features" />
               <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, gap: 10 }}>
                 <Row icon="phone-portrait-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Picture-in-Picture" sub="Auto-activates when you background the app" />
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
                 <Row icon="tv-outline" iconColor="#10b981" iconBg="#10b98122"
-                  label="AirPlay" sub="Use native video controls to stream to Apple TV" />
+                  label="AirPlay" sub="Stream cameras to Apple TV via native controls" />
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
                 <Row icon="sunny-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Keep Screen On" sub="Display stays awake while Apex is open" />
+                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <Row icon="swap-horizontal-outline" iconColor="#10b981" iconBg="#10b98122"
+                  label="Back/Forward Swipe" sub="Swipe left/right to navigate Frigate history" />
               </View>
 
-              {/* ── ACTIONS ──────────────────────────────────────────── */}
+              {/* ── ACTIONS ────────────────────────────────────────── */}
               <SectionHeader title="Actions" />
               <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14 }}>
-                <TouchableOpacity onPress={() => { haptic.tap(); webviewRef.current?.reload(); setSettingsOpen(false); }}>
-                  <Row
-                    icon="refresh-outline" iconColor="#a855f7" iconBg="#a855f722"
-                    label="Reload Frigate"
-                    sub="Force refresh the web app"
-                  />
+                <TouchableOpacity onPress={() => { haptic.tap(); webviewRef.current?.reload(); dismissSettings(); }}>
+                  <Row icon="refresh-outline" iconColor="#a855f7" iconBg="#a855f722"
+                    label="Reload Frigate" sub="Force refresh the web app" />
                 </TouchableOpacity>
               </View>
 
-              {/* ── SIGN OUT ─────────────────────────────────────────── */}
+              {/* ── SIGN OUT ───────────────────────────────────────── */}
               <View style={{ marginTop: 8, marginBottom: 4 }}>
-                <TouchableOpacity
-                  onPress={handleLogout}
-                  style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14 }}
-                >
-                  <Row
-                    icon="log-out-outline" iconColor="#ef4444" iconBg="#ef444422"
-                    label="Sign Out"
-                    sub="Clears your session from this device"
-                  />
+                <TouchableOpacity onPress={handleLogout} style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14 }}>
+                  <Row icon="log-out-outline" iconColor="#ef4444" iconBg="#ef444422"
+                    label="Sign Out" sub="Clears your session from this device" />
                 </TouchableOpacity>
               </View>
 
