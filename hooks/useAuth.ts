@@ -1,41 +1,22 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useRouter, useSegments } from "expo-router";
 import { useAuthStore } from "@/stores/authStore";
-import { apiClient } from "@/utils/apiClient";
 
 export function useAuth() {
   const { token, isLoading, initialize } = useAuthStore();
   const router = useRouter();
   const segments = useSegments();
 
-  // Validation must run at most once per app cold start. This ref lives in
-  // _layout.tsx (which never unmounts), so it persists across logins/logouts.
-  // After the first validation, no further API probes run — fresh-login
-  // tokens are trusted implicitly, which is what prevents the loop.
-  const validatedRef = useRef(false);
-
   useEffect(() => {
     initialize();
   }, []);
 
-  // One-time stored-token validation on cold start.
-  // If Frigate was restarted while the app was closed, its JWT secret has
-  // rotated and the stored token is invalid. We probe /api/config (which
-  // exists on every Frigate version) — a 401 means the token is dead and
-  // we should clean-logout so the user lands on the login screen.
-  useEffect(() => {
-    if (isLoading) return;            // wait for initialize() to finish
-    if (validatedRef.current) return; // already ran this app session
-    validatedRef.current = true;
-    if (!token) return;               // nothing to validate
-    apiClient.get("/config").catch((err) => {
-      if (err.response?.status === 401) {
-        useAuthStore.getState().logout();
-      }
-    });
-  }, [isLoading, token]);
-
-  // Routing — covers all six (token × screen) states without overlap.
+  // Routing — only ever redirect when we know for sure which state we're in.
+  // We deliberately do NOT probe /api/config on cold start. If the stored JWT
+  // has gone stale (e.g. Frigate restarted), Frigate's own PWA will show its
+  // login page inside the WebView — the user can re-authenticate there, or
+  // press Sign Out in Apex settings for a full re-login. Auto-logout here was
+  // the root cause of the "exit app → back to login screen" loop.
   useEffect(() => {
     if (isLoading) return;
     const seg = segments[0] as string | undefined;
