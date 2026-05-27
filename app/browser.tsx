@@ -11,6 +11,8 @@ import CookieManager from "@react-native-cookies/cookies";
 import { useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import { useKeepAwake } from "expo-keep-awake";
+import Constants from "expo-constants";
+import { Accelerometer } from "expo-sensors";
 import { useAuthStore } from "@/stores/authStore";
 import { haptic } from "@/utils/haptics";
 import { apiClient } from "@/utils/apiClient";
@@ -116,6 +118,10 @@ export default function BrowserScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
 
+  // Camera quick-switcher
+  const [cameras, setCameras]             = useState<string[]>([]);
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+
   // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft]     = useState(baseUrl);
@@ -128,8 +134,34 @@ export default function BrowserScreen() {
   const [credLoading, setCredLoading]     = useState(false);
   const [showPass, setShowPass]           = useState(false);
 
+  // ── Shake to reload ──────────────────────────────────────────────────────
+  useEffect(() => {
+    let lastShake = 0;
+    Accelerometer.setUpdateInterval(200);
+    const sub = Accelerometer.addListener(({ x, y, z }) => {
+      const mag = Math.sqrt(x * x + y * y + z * z);
+      if (mag > 2.8) {
+        const now = Date.now();
+        if (now - lastShake > 3000) {
+          lastShake = now;
+          haptic.heavy();
+          webviewRef.current?.reload();
+        }
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // ── Fetch camera list after server comes online ──────────────────────────
+  useEffect(() => {
+    if (serverStatus !== "online") return;
+    apiClient.get("/api/config").then((res) => {
+      const cams = Object.keys(res.data?.cameras ?? {});
+      if (cams.length > 0) setCameras(cams);
+    }).catch(() => {});
+  }, [serverStatus]);
+
   // ── Swipe-to-dismiss the settings panel ─────────────────────────────────
-  // Only the drag handle responds — leaves the ScrollView free to scroll.
   const dismissSettings = useCallback(() => setSettingsOpen(false), []);
   const handlePan = useRef(
     PanResponder.create({
@@ -178,6 +210,17 @@ export default function BrowserScreen() {
     });
     return () => sub.remove();
   }, [navigateDeeplink]);
+
+  // ── Camera quick-switch ──────────────────────────────────────────────────
+  const handleCameraSelect = (name: string) => {
+    haptic.tap();
+    setCameraMenuOpen(false);
+    setTimeout(() => {
+      webviewRef.current?.injectJavaScript(
+        `window.location.href = ${JSON.stringify(`${baseUrl}/cameras/${name}`)}; true;`
+      );
+    }, 200);
+  };
 
   // ── Server URL save ──────────────────────────────────────────────────────
   const handleSaveUrl = async () => {
@@ -262,6 +305,9 @@ export default function BrowserScreen() {
     unknown: "Loading…", online: "Connected", auth: "Session expired", offline: "Unreachable",
   };
 
+  const appVersion = Constants.expoConfig?.version ?? "1.0";
+  const buildNumber = (Constants.expoConfig?.ios as any)?.buildNumber ?? "1";
+
   if (!cookieReady) {
     return (
       <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
@@ -309,7 +355,29 @@ export default function BrowserScreen() {
         </View>
       )}
 
-      {/* Floating gear button — gear icon only, no label */}
+      {/* Camera quick-switch button — only shown when cameras are loaded */}
+      {cameras.length > 0 && (
+        <TouchableOpacity
+          onPress={() => { haptic.tap(); setCameraMenuOpen(true); }}
+          style={{
+            position: "absolute",
+            bottom: insets.bottom + 126,
+            right: 14,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: "#0f172aee",
+            borderWidth: 1,
+            borderColor: "#1e293b",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="videocam-outline" size={16} color="#64748b" />
+        </TouchableOpacity>
+      )}
+
+      {/* Floating gear button */}
       <TouchableOpacity
         onPress={() => { haptic.tap(); setSettingsOpen(true); }}
         style={{
@@ -328,6 +396,59 @@ export default function BrowserScreen() {
       >
         <Ionicons name="settings-outline" size={16} color="#64748b" />
       </TouchableOpacity>
+
+      {/* ── Camera quick-switch modal ──────────────────────────────────────── */}
+      <Modal
+        visible={cameraMenuOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCameraMenuOpen(false)}
+      >
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: "#00000099" }}
+          activeOpacity={1}
+          onPress={() => setCameraMenuOpen(false)}
+        />
+        <SafeAreaView style={{ backgroundColor: "#0a0f1e" }} edges={["bottom"]}>
+          <View style={{ backgroundColor: "#0a0f1e", borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: "#1e293b" }}>
+            <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 16, paddingHorizontal: 20 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#334155", marginBottom: 16 }} />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start" }}>
+                <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: "#10b98122", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="videocam" size={14} color="#10b981" />
+                </View>
+                <Text style={{ color: "#f1f5f9", fontSize: 17, fontWeight: "700" }}>Cameras</Text>
+                <Text style={{ color: "#475569", fontSize: 13 }}>({cameras.length})</Text>
+              </View>
+            </View>
+            <ScrollView
+              style={{ paddingHorizontal: 16, maxHeight: 320 }}
+              contentContainerStyle={{ paddingBottom: 24, gap: 8 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {cameras.map((cam) => (
+                <TouchableOpacity
+                  key={cam}
+                  onPress={() => handleCameraSelect(cam)}
+                  style={{
+                    flexDirection: "row", alignItems: "center", gap: 12,
+                    backgroundColor: "#1e293b", borderRadius: 12, padding: 14,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#10b98122", alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name="videocam-outline" size={16} color="#10b981" />
+                  </View>
+                  <Text style={{ flex: 1, color: "#f1f5f9", fontSize: 15, fontWeight: "500", textTransform: "capitalize" }}>
+                    {cam.replace(/_/g, " ")}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#334155" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* ── Settings bottom sheet ──────────────────────────────────────────── */}
       <Modal
@@ -548,6 +669,16 @@ export default function BrowserScreen() {
                 <View style={{ height: 1, backgroundColor: "#334155" }} />
                 <Row icon="swap-horizontal-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Back/Forward Swipe" sub="Swipe left/right to navigate Frigate history" />
+                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <Row icon="refresh-circle-outline" iconColor="#10b981" iconBg="#10b98122"
+                  label="Shake to Reload" sub="Shake the phone to force-refresh Frigate" />
+                {cameras.length > 0 && (
+                  <>
+                    <View style={{ height: 1, backgroundColor: "#334155" }} />
+                    <Row icon="videocam-outline" iconColor="#10b981" iconBg="#10b98122"
+                      label="Camera Switcher" sub={`Tap the camera button to jump between ${cameras.length} cameras`} />
+                  </>
+                )}
               </View>
 
               {/* ── ACTIONS ────────────────────────────────────────── */}
@@ -566,6 +697,11 @@ export default function BrowserScreen() {
                     label="Sign Out" sub="Clears your session from this device" />
                 </TouchableOpacity>
               </View>
+
+              {/* ── VERSION ────────────────────────────────────────── */}
+              <Text style={{ color: "#1e293b", fontSize: 11, textAlign: "center", marginTop: 12 }}>
+                Apex v{appVersion} ({buildNumber})
+              </Text>
 
             </ScrollView>
           </View>

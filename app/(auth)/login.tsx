@@ -7,14 +7,16 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import CookieManager from "@react-native-cookies/cookies";
 import { useAuthStore } from "@/stores/authStore";
+import { useBiometrics } from "@/hooks/useBiometrics";
 import { apiClient } from "@/utils/apiClient";
 import { haptic } from "@/utils/haptics";
 
 export default function LoginScreen() {
   const router = useRouter();
   const { setAuth, setBaseUrl, baseUrl } = useAuthStore();
+  const biometrics = useBiometrics();
 
-  const [url, setUrl] = useState(baseUrl || "https://frigate.plexserver525.com");
+  const [url, setUrl] = useState(baseUrl || "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,7 +46,7 @@ export default function LoginScreen() {
     }
     const name = res.data?.user?.name ?? loginUser;
     await setAuth(token, name);
-    return { trimmedUrl, name };
+    return { trimmedUrl, name, token };
   };
 
   const handleLogin = async () => {
@@ -56,6 +58,10 @@ export default function LoginScreen() {
     setError("");
     try {
       await doLogin(url, username, password);
+      // Save credentials behind Face ID for next time (silent, never blocks login)
+      if (biometrics.isAvailable) {
+        biometrics.saveCredentials(url.replace(/\/$/, ""), username, password).catch(() => {});
+      }
       haptic.success();
       router.replace("/browser");
     } catch (e: unknown) {
@@ -67,6 +73,31 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
+
+  const handleFaceID = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      // getCredentials triggers Face ID internally via SecureStore requireAuthentication
+      const creds = await biometrics.getCredentials();
+      if (!creds) {
+        setError("Face ID failed. Sign in manually below.");
+        return;
+      }
+      await doLogin(creds.url, creds.username, creds.password);
+      haptic.success();
+      router.replace("/browser");
+    } catch (e: unknown) {
+      haptic.error();
+      const err = e as { response?: { status?: number } };
+      if (err.response?.status === 401) setError("Session expired. Sign in manually below.");
+      else setError("Could not connect to server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showFaceID = biometrics.isAvailable && biometrics.hasStoredCredentials;
 
   return (
     <KeyboardAvoidingView
@@ -87,6 +118,34 @@ export default function LoginScreen() {
             <Text style={{ fontSize: 32, fontWeight: "800", color: "#f1f5f9", letterSpacing: -0.5 }}>Apex</Text>
             <Text style={{ color: "#64748b", marginTop: 4, fontSize: 14 }}>Frigate NVR · Native iOS</Text>
           </View>
+
+          {/* Face ID quick sign-in */}
+          {showFaceID && (
+            <TouchableOpacity
+              onPress={handleFaceID}
+              disabled={loading}
+              style={{
+                flexDirection: "row", alignItems: "center", justifyContent: "center",
+                gap: 10, backgroundColor: "#1e293b", borderRadius: 14,
+                paddingVertical: 16, marginBottom: 20,
+                borderWidth: 1, borderColor: "#334155",
+              }}
+            >
+              <Ionicons name="scan-outline" size={22} color="#00d4ff" />
+              <Text style={{ color: "#f1f5f9", fontWeight: "700", fontSize: 16 }}>
+                Sign in with {biometrics.biometricType ?? "Face ID"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Divider when Face ID is available */}
+          {showFaceID && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: "#1e293b" }} />
+              <Text style={{ color: "#475569", fontSize: 12 }}>or sign in manually</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: "#1e293b" }} />
+            </View>
+          )}
 
           {/* Form */}
           <View style={{ gap: 14 }}>

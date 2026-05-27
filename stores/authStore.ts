@@ -17,7 +17,7 @@ type AuthState = {
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: null,
   username: null,
-  baseUrl: "https://frigate.plexserver525.com",
+  baseUrl: "",
   isLoading: true,
 
   initialize: async () => {
@@ -26,12 +26,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       SecureStore.getItemAsync("frigate_username"),
       SecureStore.getItemAsync("frigate_base_url"),
     ]);
-    const url = baseUrl ?? "https://frigate.plexserver525.com";
-    // Re-inject the JWT into the iOS URLSession cookie jar so that API calls
-    // made immediately after cold start (config validation, push registration)
-    // carry the correct cookie. iOS ignores manually-set Cookie headers in
-    // axios — only the shared HTTPCookieStorage is honoured by URLSession.
-    if (token) {
+    const url = baseUrl ?? "";
+    if (token && url) {
       appGroup.set("frigate_token", token);
       try {
         await CookieManager.set(url, {
@@ -54,21 +50,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       SecureStore.setItemAsync("frigate_token", token),
       SecureStore.setItemAsync("frigate_username", username),
     ]);
-    // Keep URLSession cookie jar in sync with the freshly-issued JWT so
-    // subsequent API calls don't send a stale cookie and trigger a
-    // bad_signature error on the Frigate server.
     const url = get().baseUrl;
-    try {
-      await CookieManager.set(url, {
-        name: "frigate_token",
-        value: token,
-        path: "/",
-        domain: new URL(url).hostname,
-        httpOnly: true,
-        secure: url.startsWith("https"),
-        version: "1",
-      });
-    } catch {}
+    if (url) {
+      try {
+        await CookieManager.set(url, {
+          name: "frigate_token",
+          value: token,
+          path: "/",
+          domain: new URL(url).hostname,
+          httpOnly: true,
+          secure: url.startsWith("https"),
+          version: "1",
+        });
+      } catch {}
+    }
     appGroup.set("frigate_token", token);
     set({ token, username });
   },
