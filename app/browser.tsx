@@ -47,31 +47,38 @@ const VIEWER_JS = `
     }
   });
 
-  // ── Ready signal — tell native to hide the splash once Frigate has rendered.
-  // onLoadEnd fires when the HTML shell loads (React SPA not yet mounted).
-  // We watch the DOM for real content, then post a message. This prevents the
-  // black flash between "HTML loaded" and "Frigate UI painted".
+  // ── Ready signal — only fire once Frigate's React app has actually mounted.
+  // We look for real UI elements (buttons, canvas, video, img, links) inside
+  // a populated React root — not just any text, which fires too early on the
+  // empty HTML shell and dismisses the splash before painting.
   var readySent = false;
+  function post(type) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: type })); } catch(e) {}
+  }
   function sendReady() {
     if (readySent) return;
-    var body = document.body;
-    if (body && body.innerText && body.innerText.trim().length > 20) {
+    var root = document.getElementById('root') || document.body;
+    if (!root) return;
+    // Frigate UI = at least one interactive/media element + actual layout
+    var hasUi = root.querySelector('button, canvas, video, img, a, input, [role="button"]') !== null;
+    var hasText = root.innerText && root.innerText.trim().length > 30;
+    if (hasUi && hasText) {
       readySent = true;
-      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'frigateReady' })); } catch(e) {}
+      post('frigateReady');
       contentObs.disconnect();
     }
   }
   var contentObs = new MutationObserver(sendReady);
-  contentObs.observe(document.documentElement, { childList: true, subtree: true });
+  contentObs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
   sendReady();
-  // Hard fallback: show app after 5s no matter what
+  // Hard fallback: surface the app after 8s regardless
   setTimeout(function() {
     if (!readySent) {
       readySent = true;
-      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'frigateReady' })); } catch(e) {}
+      post('frigateReady');
       contentObs.disconnect();
     }
-  }, 5000);
+  }, 8000);
 })();
 true;
 `;
@@ -151,10 +158,15 @@ export default function BrowserScreen() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
   const [isOffline, setIsOffline]       = useState(false);
   const [errorUrlDraft, setErrorUrlDraft] = useState("");
+  const [showSkip, setShowSkip]           = useState(false);
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // cleanup on unmount
-  useEffect(() => () => { if (readyTimerRef.current) clearTimeout(readyTimerRef.current); }, []);
+  useEffect(() => () => {
+    if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+    if (skipTimerRef.current)  clearTimeout(skipTimerRef.current);
+  }, []);
 
   // Camera quick-switcher
   const [cameras, setCameras]             = useState<string[]>([]);
@@ -426,16 +438,24 @@ export default function BrowserScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
 
-      {/* Frigate PWA — no native padding; Frigate's own CSS env(safe-area-inset-*)
-          handles the notch. Adding paddingTop: insets.top here AND letting Frigate
-          add env(safe-area-inset-top) causes double-inset → content pushed off-screen
-          → black screen. The wrapper View is kept to avoid WKWebView z-index issues
-          with the absolute overlays below. */}
+      {/* Frigate PWA. Two safe-area-inset rules at play:
+            1. iOS auto-adjusts the WKWebView scrollview for the status bar via
+               contentInsetAdjustmentBehavior. We disable it ("never") because
+               Frigate's CSS uses env(safe-area-inset-*) itself; both applied
+               causes double-inset → content pushed off-screen → black at top.
+            2. Our native wrapper has zero padding for the same reason.
+          The splash overlay stays visible until VIEWER_JS posts frigateReady
+          (React app actually mounted), with a long safety net to prevent any
+          accidental "splash gone but app not painted" dark flash. */}
       <View style={{ flex: 1 }}>
         <WebView
           ref={webviewRef}
           source={{ uri: baseUrl }}
           style={{ flex: 1, backgroundColor: "#0a0f1e" }}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
+          contentInset={{ top: 0, left: 0, right: 0, bottom: 0 }}
+          originWhitelist={["*"]}
           sharedCookiesEnabled={true}
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
@@ -448,36 +468,46 @@ export default function BrowserScreen() {
           onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
           onLoadStart={() => {
             setLoading(true);
+            setShowSkip(false);
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+            if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+            // After 6s of waiting, surface a "Tap to continue" button so the
+            // user is never stuck behind the splash even if frigateReady never fires.
+            skipTimerRef.current = setTimeout(() => setShowSkip(true), 6000);
+            // Hard safety net — never let the splash hang past 12s.
+            readyTimerRef.current = setTimeout(() => setLoading(false), 12000);
           }}
           onLoadEnd={() => {
             setServerStatus("online");
-            // Frigate is a React SPA — the HTML loads before React paints.
-            // Wait 1.2s after onLoadEnd so Frigate has time to render before
-            // the splash disappears, preventing a black flash.
-            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            readyTimerRef.current = setTimeout(() => setLoading(false), 1200);
+            // We do NOT hide the splash here. onLoadEnd fires when Frigate's
+            // HTML shell loads; React then needs another second or two to paint.
+            // VIEWER_JS posts frigateReady when the real UI is on screen.
           }}
           onMessage={(event) => {
-            // frigateReady signal from VIEWER_JS — React app has painted, dismiss early
             try {
               const msg = JSON.parse(event.nativeEvent.data);
               if (msg.type === "frigateReady") {
                 if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+                if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+                setShowSkip(false);
                 setLoading(false);
               }
             } catch {}
           }}
           onError={() => {
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+            if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
             setLoading(false);
+            setShowSkip(false);
             setServerStatus("offline");
           }}
           onHttpError={(e) => {
             if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
             else if (e.nativeEvent.statusCode >= 500) {
               if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+              if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
               setLoading(false);
+              setShowSkip(false);
               setServerStatus("offline");
             }
           }}
@@ -494,12 +524,41 @@ export default function BrowserScreen() {
 
       {/* Loading splash */}
       {loading && serverStatus !== "offline" && (
-        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16, shadowColor: "#00d4ff", shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 0 } }}>
             <Ionicons name="shield" size={32} color="#00d4ff" />
           </View>
           <ActivityIndicator color="#00d4ff" />
           <Text style={{ color: "#64748b", marginTop: 12, fontSize: 13, letterSpacing: 0.3 }}>Connecting to Frigate…</Text>
+
+          {/* Escape hatch — appears after 6 s so the user is never trapped behind the splash. */}
+          {showSkip && (
+            <View style={{ marginTop: 32, alignItems: "center", gap: 12 }}>
+              <Text style={{ color: "#475569", fontSize: 12, textAlign: "center", maxWidth: 280 }}>
+                Taking longer than usual. Frigate may be slow to load, or the server URL might be wrong.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  onPress={() => { haptic.tap(); setLoading(false); setShowSkip(false); }}
+                  style={{ backgroundColor: "#1e293b", borderColor: "#334155", borderWidth: 1, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 18 }}
+                >
+                  <Text style={{ color: "#f1f5f9", fontWeight: "600", fontSize: 13 }}>Show app anyway</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { haptic.tap(); webviewRef.current?.reload(); }}
+                  style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 11, paddingHorizontal: 18 }}
+                >
+                  <Text style={{ color: "#0a0f1e", fontWeight: "700", fontSize: 13 }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                onPress={() => { haptic.tap(); setSettingsOpen(true); }}
+                style={{ paddingVertical: 6 }}
+              >
+                <Text style={{ color: "#64748b", fontSize: 12 }}>Open settings to change server URL</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
