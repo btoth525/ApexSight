@@ -17,6 +17,8 @@ import NetInfo from "@react-native-community/netinfo";
 import { useAuthStore } from "@/stores/authStore";
 import { haptic } from "@/utils/haptics";
 import { apiClient } from "@/utils/apiClient";
+import { useFrigateEvents } from "@/hooks/useFrigateEvents";
+import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
 
 // ─── JS injected on every page load ─────────────────────────────────────────
 const VIEWER_JS = `
@@ -158,6 +160,11 @@ export default function BrowserScreen() {
   const [cameras, setCameras]             = useState<string[]>([]);
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
 
+  // Motion alert toast
+  const [toastMsg, setToastMsg]       = useState<string | null>(null);
+  const toastAnim                     = useRef(new Animated.Value(-80)).current;
+  const toastTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft]     = useState(baseUrl);
@@ -190,6 +197,30 @@ export default function BrowserScreen() {
     } catch {}
     return () => { try { sub?.remove(); } catch {} };
   }, []);
+
+  // ── Motion alert toast ──────────────────────────────────────────────────
+  const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    // If already visible, just swap the message; otherwise slide in from top
+    setToastMsg(msg);
+    Animated.timing(toastAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start();
+    toastTimerRef.current = setTimeout(() => {
+      Animated.timing(toastAnim, { toValue: -80, duration: 300, useNativeDriver: true }).start(() => setToastMsg(null));
+    }, 4000);
+  }, [toastAnim]);
+
+  useFrigateEvents(useCallback((data: unknown) => {
+    const ev = data as { type?: string; after?: { camera?: string; label?: string; score?: number } };
+    if (ev?.type !== "new") return;
+    const { camera, label, score } = ev.after ?? {};
+    if (!label || (score !== undefined && score < 0.6)) return;
+    if (settingsOpen) return;
+    haptic.medium();
+    showToast(`${getLabelEmoji(label)} ${formatLabel(label)} detected – ${(camera ?? "").replace(/_/g, " ")}`);
+  }, [settingsOpen, showToast]));
+
+  // cleanup toast timer on unmount
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
 
   // ── Network connectivity — show banner + auto-retry on reconnect ────────
   useEffect(() => {
@@ -574,6 +605,39 @@ export default function BrowserScreen() {
         >
           <Ionicons name="settings-outline" size={16} color="#64748b" />
         </TouchableOpacity>
+      )}
+
+      {/* Motion alert toast — slides in from top, auto-dismisses after 4s */}
+      {toastMsg && (
+        <Animated.View
+          style={{
+            position: "absolute",
+            top: insets.top + 10,
+            left: 16,
+            right: 16,
+            transform: [{ translateY: toastAnim }],
+            backgroundColor: "#0f172aee",
+            borderRadius: 14,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            borderWidth: 1,
+            borderColor: "#1e293b",
+            shadowColor: "#000",
+            shadowOpacity: 0.5,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 4 },
+          }}
+        >
+          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#ef444420", alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="alert-circle" size={18} color="#ef4444" />
+          </View>
+          <Text style={{ flex: 1, color: "#f1f5f9", fontSize: 14, fontWeight: "600" }} numberOfLines={1}>
+            {toastMsg}
+          </Text>
+        </Animated.View>
       )}
 
       {/* ── Camera quick-switch modal ──────────────────────────────────────── */}
