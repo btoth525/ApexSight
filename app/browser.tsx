@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
   Alert, Modal, ScrollView, TextInput,
-  PanResponder, Animated, Share, useWindowDimensions,
+  PanResponder, Animated, useWindowDimensions,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,16 +49,6 @@ const VIEWER_JS = `
 })();
 true;
 `;
-
-// Deep-link routes shown in settings with descriptions
-const DEEP_LINKS = [
-  { route: "cameras/{name}",   desc: "Live view for a specific camera",  example: "cameras/driveway" },
-  { route: "review",           desc: "Event review page",                 example: "review" },
-  { route: "clip/{event_id}",  desc: "Jump to a specific event clip",     example: "clip/abc123" },
-  { route: "events",           desc: "All events feed",                   example: "events" },
-  { route: "recordings",       desc: "Recordings browser",                example: "recordings" },
-  { route: "system",           desc: "System stats & logs",               example: "system" },
-];
 
 // ─── Convert apex:// → Frigate web URL (standard path routing) ──────────────
 function deeplinkToFrigateUrl(apexUrl: string, baseUrl: string): string | null {
@@ -365,12 +355,6 @@ export default function BrowserScreen() {
     ]);
   };
 
-  // ── Copy / share a deep-link URL ─────────────────────────────────────────
-  const handleShare = (route: string) => {
-    haptic.tap();
-    Share.share({ message: `apex://${route}` });
-  };
-
   // ── Status helpers ────────────────────────────────────────────────────────
   const statusColor: Record<ServerStatus, string> = {
     unknown: "#334155", online: "#10b981", auth: "#f59e0b", offline: "#ef4444",
@@ -385,7 +369,7 @@ export default function BrowserScreen() {
   // Guard: missing server URL → kick back to login (prevents black WebView from empty URI)
   if (!baseUrl || !baseUrl.startsWith("http")) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: "#000000", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
           <Ionicons name="warning-outline" size={28} color="#f59e0b" />
         </View>
@@ -415,9 +399,6 @@ export default function BrowserScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#000000" }}>
 
-      {/* Native container applies safe-area padding so the WebView sits
-          below the status bar and above the home indicator. We also disable
-          WKWebView's automatic content-inset adjustment to avoid double-inset. */}
       <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <WebView
           ref={webviewRef}
@@ -817,52 +798,6 @@ export default function BrowserScreen() {
                     />
                   </View>
                 )}
-              </View>
-
-              {/* ── HOME ASSISTANT DEEP LINKS ──────────────────────── */}
-              <SectionHeader title="Home Assistant Deep Links" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, gap: 10 }}>
-                <Text style={{ color: "#64748b", fontSize: 12, lineHeight: 17 }}>
-                  Add <Text style={{ color: "#94a3b8", fontFamily: "monospace" }}>url: "apex://..."</Text> to your HA notification action. Tap any URL to share/copy it.
-                </Text>
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
-                {DEEP_LINKS.map(({ route, desc, example }) => (
-                  <TouchableOpacity
-                    key={route}
-                    onPress={() => handleShare(example)}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}
-                    activeOpacity={0.6}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: "#00d4ff", fontSize: 13, fontFamily: "monospace", marginBottom: 2 }}>
-                        apex://{route}
-                      </Text>
-                      <Text style={{ color: "#475569", fontSize: 11 }}>{desc}</Text>
-                    </View>
-                    <Ionicons name="share-outline" size={15} color="#334155" />
-                  </TouchableOpacity>
-                ))}
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
-                {/* HA YAML example block */}
-                <View style={{ backgroundColor: "#0f172a", borderRadius: 10, padding: 12 }}>
-                  <Text style={{ color: "#475569", fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Example HA Action</Text>
-                  <Text style={{ color: "#64748b", fontSize: 12, fontFamily: "monospace", lineHeight: 20 }}>
-                    <Text style={{ color: "#94a3b8" }}>action</Text>
-                    <Text style={{ color: "#64748b" }}>: notify.mobile_app_iphone{"\n"}</Text>
-                    <Text style={{ color: "#94a3b8" }}>data</Text>
-                    <Text style={{ color: "#64748b" }}>:{"\n"}</Text>
-                    <Text style={{ color: "#64748b" }}>{"  "}</Text>
-                    <Text style={{ color: "#94a3b8" }}>message</Text>
-                    <Text style={{ color: "#64748b" }}>: Person detected{"\n"}</Text>
-                    <Text style={{ color: "#64748b" }}>{"  "}</Text>
-                    <Text style={{ color: "#94a3b8" }}>data</Text>
-                    <Text style={{ color: "#64748b" }}>:{"\n"}</Text>
-                    <Text style={{ color: "#64748b" }}>{"    "}</Text>
-                    <Text style={{ color: "#94a3b8" }}>url</Text>
-                    <Text style={{ color: "#64748b" }}>: </Text>
-                    <Text style={{ color: "#00d4ff" }}>"apex://cameras/driveway"</Text>
-                  </Text>
-                </View>
               </View>
 
               {/* ── NATIVE FEATURES ────────────────────────────────── */}
