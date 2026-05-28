@@ -388,12 +388,13 @@ export default function BrowserScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color="#00d4ff" size="large" />
+        <Text style={{ color: "#00d4ff", marginTop: 12, fontSize: 16 }}>Loading auth...</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
+    <View style={{ flex: 1, backgroundColor: "#ff0000" }}>
 
       {/* Frigate PWA. Two safe-area-inset rules at play:
             1. iOS auto-adjusts the WKWebView scrollview for the status bar via
