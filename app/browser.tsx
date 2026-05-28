@@ -125,15 +125,11 @@ export default function BrowserScreen() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
   const [isOffline, setIsOffline]       = useState(false);
   const [errorUrlDraft, setErrorUrlDraft] = useState("");
-  const [showSkip, setShowSkip]           = useState(false);
+  const showSkip = false; // kept for JSX compatibility, never shown
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // cleanup on unmount
-  useEffect(() => () => {
-    if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-    if (skipTimerRef.current)  clearTimeout(skipTimerRef.current);
-  }, []);
+  useEffect(() => () => { if (readyTimerRef.current) clearTimeout(readyTimerRef.current); }, []);
 
   // Camera quick-switcher
   const [cameras, setCameras]             = useState<string[]>([]);
@@ -435,36 +431,24 @@ export default function BrowserScreen() {
           onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
           onLoadStart={() => {
             setLoading(true);
-            setShowSkip(false);
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
-            skipTimerRef.current = setTimeout(() => setShowSkip(true), 8000);
           }}
           onLoadEnd={() => {
             setServerStatus("online");
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            // 2s after the HTML lands gives Frigate's React app time to paint.
-            readyTimerRef.current = setTimeout(() => {
-              setLoading(false);
-              setShowSkip(false);
-              if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
-            }, 2000);
+            readyTimerRef.current = setTimeout(() => setLoading(false), 1500);
           }}
           onMessage={(_event) => {}}
           onError={() => {
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
             setLoading(false);
-            setShowSkip(false);
             setServerStatus("offline");
           }}
           onHttpError={(e) => {
             if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
             else if (e.nativeEvent.statusCode >= 500) {
               if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-              if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
               setLoading(false);
-              setShowSkip(false);
               setServerStatus("offline");
             }
           }}
@@ -487,35 +471,6 @@ export default function BrowserScreen() {
           </View>
           <ActivityIndicator color="#00d4ff" />
           <Text style={{ color: "#64748b", marginTop: 12, fontSize: 13, letterSpacing: 0.3 }}>Connecting to Frigate…</Text>
-
-          {/* Escape hatch — appears after 6 s so the user is never trapped behind the splash. */}
-          {showSkip && (
-            <View style={{ marginTop: 32, alignItems: "center", gap: 12 }}>
-              <Text style={{ color: "#475569", fontSize: 12, textAlign: "center", maxWidth: 280 }}>
-                Taking longer than usual. Frigate may be slow to load, or the server URL might be wrong.
-              </Text>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <TouchableOpacity
-                  onPress={() => { haptic.tap(); setLoading(false); setShowSkip(false); }}
-                  style={{ backgroundColor: "#1e293b", borderColor: "#334155", borderWidth: 1, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 18 }}
-                >
-                  <Text style={{ color: "#f1f5f9", fontWeight: "600", fontSize: 13 }}>Show app anyway</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => { haptic.tap(); webviewRef.current?.reload(); }}
-                  style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 11, paddingHorizontal: 18 }}
-                >
-                  <Text style={{ color: "#0a0f1e", fontWeight: "700", fontSize: 13 }}>Retry</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                onPress={() => { haptic.tap(); setSettingsOpen(true); }}
-                style={{ paddingVertical: 6 }}
-              >
-                <Text style={{ color: "#64748b", fontSize: 12 }}>Open settings to change server URL</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </View>
       )}
 
