@@ -19,7 +19,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.brandontoth.apexsight",
-      "buildNumber": "2",
+      "buildNumber": "22",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Used for live camera viewing",
