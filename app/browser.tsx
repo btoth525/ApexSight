@@ -216,6 +216,8 @@ export default function BrowserScreen() {
     }).catch(() => {});
   }, [serverStatus]);
 
+  const handleNavStateChange = useCallback((_: WebViewNavigation) => {}, []);
+
   // ── Swipe-to-dismiss the settings panel ─────────────────────────────────
   const dismissSettings = useCallback(() => setSettingsOpen(false), []);
   const handlePan = useRef(
@@ -423,7 +425,7 @@ export default function BrowserScreen() {
           pullToRefreshEnabled={true}
           injectedJavaScript={VIEWER_JS}
           applicationNameForUserAgent="ApexNative/1.0"
-          onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
+          onNavigationStateChange={handleNavStateChange}
           onLoadEnd={() => setServerStatus("online")}
           onError={() => setServerStatus("offline")}
           onHttpError={(e) => {
