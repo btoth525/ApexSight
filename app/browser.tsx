@@ -201,7 +201,7 @@ export default function BrowserScreen() {
     if (!label || (score !== undefined && score < 0.6)) return;
     if (settingsOpen) return;
     haptic.medium();
-    const clipUrl = id && baseUrl ? `${baseUrl}/clip/${id}.mp4` : undefined;
+    const clipUrl = id && baseUrl ? `${baseUrl}/clips/${id}.mp4` : undefined;
     showToast(`${getLabelEmoji(label)} ${formatLabel(label)} detected – ${(camera ?? "").replace(/_/g, " ")}`, clipUrl);
   }, [settingsOpen, showToast, baseUrl]));
 
