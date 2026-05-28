@@ -23,12 +23,20 @@ export function useAuth() {
     const inAuthGroup = seg === "(auth)";
     const inBrowser   = seg === "browser";
 
-    if (!token && !inAuthGroup) {
+    // Already on the right screen — never re-replace, it remounts the component
+    // and resets loading state, causing a black screen loop.
+    if (token && inBrowser) return;
+    if (!token && inAuthGroup) return;
+
+    if (!token) {
       router.replace("/(auth)/login");
-    } else if (token && !inBrowser) {
+    } else {
       router.replace("/browser");
     }
-  }, [token, isLoading, segments]);
+  // Intentionally omitting `segments` — we only care when token/isLoading changes,
+  // not on every expo-router segment update during navigation.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isLoading]);
 
   return { token, isLoading };
 }

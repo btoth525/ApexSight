@@ -47,38 +47,40 @@ const VIEWER_JS = `
     }
   });
 
-  // ── Ready signal — only fire once Frigate's React app has actually mounted.
-  // We look for real UI elements (buttons, canvas, video, img, links) inside
-  // a populated React root — not just any text, which fires too early on the
-  // empty HTML shell and dismisses the splash before painting.
+  // ── Ready signal — only fire once Frigate's React app has painted on screen.
+  // DOM updates and GPU paint happen on different timelines in WKWebView.
+  // We use requestAnimationFrame so the signal fires AFTER the browser has
+  // actually committed the frame to screen, preventing "DOM ready but still black".
   var readySent = false;
   function post(type) {
     try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: type })); } catch(e) {}
   }
-  function sendReady() {
+  function fireReady() {
+    if (readySent) return;
+    readySent = true;
+    contentObs.disconnect();
+    post('frigateReady');
+  }
+  function checkReady() {
     if (readySent) return;
     var root = document.getElementById('root') || document.body;
     if (!root) return;
-    // Frigate UI = at least one interactive/media element + actual layout
     var hasUi = root.querySelector('button, canvas, video, img, a, input, [role="button"]') !== null;
     var hasText = root.innerText && root.innerText.trim().length > 30;
     if (hasUi && hasText) {
-      readySent = true;
-      post('frigateReady');
-      contentObs.disconnect();
+      // Wait for the browser to actually paint the frame before signalling
+      if (window.requestAnimationFrame) {
+        requestAnimationFrame(function() { requestAnimationFrame(fireReady); });
+      } else {
+        setTimeout(fireReady, 100);
+      }
     }
   }
-  var contentObs = new MutationObserver(sendReady);
-  contentObs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-  sendReady();
+  var contentObs = new MutationObserver(checkReady);
+  contentObs.observe(document.documentElement, { childList: true, subtree: true });
+  checkReady();
   // Hard fallback: surface the app after 8s regardless
-  setTimeout(function() {
-    if (!readySent) {
-      readySent = true;
-      post('frigateReady');
-      contentObs.disconnect();
-    }
-  }, 8000);
+  setTimeout(fireReady, 8000);
 })();
 true;
 `;
@@ -479,9 +481,10 @@ export default function BrowserScreen() {
           }}
           onLoadEnd={() => {
             setServerStatus("online");
-            // We do NOT hide the splash here. onLoadEnd fires when Frigate's
-            // HTML shell loads; React then needs another second or two to paint.
-            // VIEWER_JS posts frigateReady when the real UI is on screen.
+            // frigateReady (from VIEWER_JS) is the primary signal. This 3s
+            // timer is a safety net for cases where the JS signal never arrives.
+            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+            readyTimerRef.current = setTimeout(() => setLoading(false), 3000);
           }}
           onMessage={(event) => {
             try {
