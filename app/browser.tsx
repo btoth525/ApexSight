@@ -23,7 +23,7 @@ import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
 // ─── JS injected on every page load ─────────────────────────────────────────
 const VIEWER_JS = `
 (function() {
-  // ── Video enhancements ──────────────────────────────────────────────────
+  // ── Video / PiP / AirPlay enhancements ─────────────────────────────────
   function enhanceVideos() {
     document.querySelectorAll('video').forEach(function(v) {
       v.removeAttribute('disablePictureInPicture');
@@ -46,41 +46,6 @@ const VIEWER_JS = `
       }
     }
   });
-
-  // ── Ready signal — only fire once Frigate's React app has painted on screen.
-  // DOM updates and GPU paint happen on different timelines in WKWebView.
-  // We use requestAnimationFrame so the signal fires AFTER the browser has
-  // actually committed the frame to screen, preventing "DOM ready but still black".
-  var readySent = false;
-  function post(type) {
-    try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: type })); } catch(e) {}
-  }
-  function fireReady() {
-    if (readySent) return;
-    readySent = true;
-    contentObs.disconnect();
-    post('frigateReady');
-  }
-  function checkReady() {
-    if (readySent) return;
-    var root = document.getElementById('root') || document.body;
-    if (!root) return;
-    var hasUi = root.querySelector('button, canvas, video, img, a, input, [role="button"]') !== null;
-    var hasText = root.innerText && root.innerText.trim().length > 30;
-    if (hasUi && hasText) {
-      // Wait for the browser to actually paint the frame before signalling
-      if (window.requestAnimationFrame) {
-        requestAnimationFrame(function() { requestAnimationFrame(fireReady); });
-      } else {
-        setTimeout(fireReady, 100);
-      }
-    }
-  }
-  var contentObs = new MutationObserver(checkReady);
-  contentObs.observe(document.documentElement, { childList: true, subtree: true });
-  checkReady();
-  // Hard fallback: surface the app after 8s regardless
-  setTimeout(fireReady, 8000);
 })();
 true;
 `;
@@ -473,30 +438,19 @@ export default function BrowserScreen() {
             setShowSkip(false);
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
             if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
-            // After 6s of waiting, surface a "Tap to continue" button so the
-            // user is never stuck behind the splash even if frigateReady never fires.
-            skipTimerRef.current = setTimeout(() => setShowSkip(true), 6000);
-            // Hard safety net — never let the splash hang past 12s.
-            readyTimerRef.current = setTimeout(() => setLoading(false), 12000);
+            skipTimerRef.current = setTimeout(() => setShowSkip(true), 8000);
           }}
           onLoadEnd={() => {
             setServerStatus("online");
-            // frigateReady (from VIEWER_JS) is the primary signal. This 3s
-            // timer is a safety net for cases where the JS signal never arrives.
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            readyTimerRef.current = setTimeout(() => setLoading(false), 3000);
+            // 2s after the HTML lands gives Frigate's React app time to paint.
+            readyTimerRef.current = setTimeout(() => {
+              setLoading(false);
+              setShowSkip(false);
+              if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+            }, 2000);
           }}
-          onMessage={(event) => {
-            try {
-              const msg = JSON.parse(event.nativeEvent.data);
-              if (msg.type === "frigateReady") {
-                if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-                if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
-                setShowSkip(false);
-                setLoading(false);
-              }
-            } catch {}
-          }}
+          onMessage={(_event) => {}}
           onError={() => {
             if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
             if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
