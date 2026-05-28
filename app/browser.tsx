@@ -396,18 +396,12 @@ export default function BrowserScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#ff0000" }}>
+    <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
 
-      {/* Frigate PWA. Two safe-area-inset rules at play:
-            1. iOS auto-adjusts the WKWebView scrollview for the status bar via
-               contentInsetAdjustmentBehavior. We disable it ("never") because
-               Frigate's CSS uses env(safe-area-inset-*) itself; both applied
-               causes double-inset → content pushed off-screen → black at top.
-            2. Our native wrapper has zero padding for the same reason.
-          The splash overlay stays visible until VIEWER_JS posts frigateReady
-          (React app actually mounted), with a long safety net to prevent any
-          accidental "splash gone but app not painted" dark flash. */}
-      <View style={{ flex: 1 }}>
+      {/* Native container applies safe-area padding so the WebView sits
+          below the status bar and above the home indicator. We also disable
+          WKWebView's automatic content-inset adjustment to avoid double-inset. */}
+      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <WebView
           ref={webviewRef}
           source={{ uri: baseUrl }}
