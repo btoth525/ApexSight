@@ -133,6 +133,7 @@ export default function BrowserScreen() {
   const [toastMsg, setToastMsg]       = useState<string | null>(null);
   const toastAnim                     = useRef(new Animated.Value(-80)).current;
   const toastTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastUrlRef                   = useRef<string | null>(null);
 
   // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
@@ -168,25 +169,41 @@ export default function BrowserScreen() {
   }, []);
 
   // ── Motion alert toast ──────────────────────────────────────────────────
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, clipUrl?: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    // If already visible, just swap the message; otherwise slide in from top
+    toastUrlRef.current = clipUrl ?? null;
     setToastMsg(msg);
     Animated.timing(toastAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start();
     toastTimerRef.current = setTimeout(() => {
-      Animated.timing(toastAnim, { toValue: -80, duration: 300, useNativeDriver: true }).start(() => setToastMsg(null));
+      Animated.timing(toastAnim, { toValue: -80, duration: 300, useNativeDriver: true }).start(() => {
+        setToastMsg(null);
+        toastUrlRef.current = null;
+      });
     }, 4000);
   }, [toastAnim]);
 
+  const handleToastPress = useCallback(() => {
+    const url = toastUrlRef.current;
+    if (!url) return;
+    haptic.tap();
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    Animated.timing(toastAnim, { toValue: -80, duration: 200, useNativeDriver: true }).start(() => {
+      setToastMsg(null);
+      toastUrlRef.current = null;
+    });
+    webviewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
+  }, [toastAnim]);
+
   useFrigateEvents(useCallback((data: unknown) => {
-    const ev = data as { type?: string; after?: { camera?: string; label?: string; score?: number } };
+    const ev = data as { type?: string; after?: { camera?: string; label?: string; score?: number; id?: string } };
     if (ev?.type !== "new") return;
-    const { camera, label, score } = ev.after ?? {};
+    const { camera, label, score, id } = ev.after ?? {};
     if (!label || (score !== undefined && score < 0.6)) return;
     if (settingsOpen) return;
     haptic.medium();
-    showToast(`${getLabelEmoji(label)} ${formatLabel(label)} detected – ${(camera ?? "").replace(/_/g, " ")}`);
-  }, [settingsOpen, showToast]));
+    const clipUrl = id && baseUrl ? `${baseUrl}/clip/${id}.mp4` : undefined;
+    showToast(`${getLabelEmoji(label)} ${formatLabel(label)} detected – ${(camera ?? "").replace(/_/g, " ")}`, clipUrl);
+  }, [settingsOpen, showToast, baseUrl]));
 
   // cleanup toast timer on unmount
   useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
@@ -550,27 +567,43 @@ export default function BrowserScreen() {
             left: 16,
             right: 16,
             transform: [{ translateY: toastAnim }],
-            backgroundColor: "#0f172aee",
-            borderRadius: 14,
-            paddingVertical: 12,
-            paddingHorizontal: 16,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            borderWidth: 1,
-            borderColor: "#1e293b",
-            shadowColor: "#000",
-            shadowOpacity: 0.5,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 4 },
           }}
+          pointerEvents="box-none"
         >
-          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#ef444420", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="alert-circle" size={18} color="#ef4444" />
-          </View>
-          <Text style={{ flex: 1, color: "#f1f5f9", fontSize: 14, fontWeight: "600" }} numberOfLines={1}>
-            {toastMsg}
-          </Text>
+          <TouchableOpacity
+            activeOpacity={toastUrlRef.current ? 0.7 : 1}
+            onPress={handleToastPress}
+            style={{
+              backgroundColor: "#0f172aee",
+              borderRadius: 14,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              borderWidth: 1,
+              borderColor: "#1e293b",
+              shadowColor: "#000",
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 4 },
+            }}
+          >
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#ef444420", alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="alert-circle" size={18} color="#ef4444" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: "#f1f5f9", fontSize: 14, fontWeight: "600" }} numberOfLines={1}>
+                {toastMsg}
+              </Text>
+              {toastUrlRef.current && (
+                <Text style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>Tap to view clip</Text>
+              )}
+            </View>
+            {toastUrlRef.current && (
+              <Ionicons name="chevron-forward" size={16} color="#475569" />
+            )}
+          </TouchableOpacity>
         </Animated.View>
       )}
 
