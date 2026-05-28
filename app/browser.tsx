@@ -388,7 +388,7 @@ export default function BrowserScreen() {
 
   if (!cookieReady) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center" }}>
+      <View style={{ flex: 1, backgroundColor: "#000000", alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color="#00d4ff" size="large" />
         <Text style={{ color: "#00d4ff", marginTop: 12, fontSize: 16 }}>Loading auth...</Text>
       </View>
@@ -396,7 +396,7 @@ export default function BrowserScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
+    <View style={{ flex: 1, backgroundColor: "#000000" }}>
 
       {/* Native container applies safe-area padding so the WebView sits
           below the status bar and above the home indicator. We also disable
@@ -405,7 +405,7 @@ export default function BrowserScreen() {
         <WebView
           ref={webviewRef}
           source={{ uri: baseUrl }}
-          style={{ flex: 1, backgroundColor: "#0a0f1e" }}
+          style={{ flex: 1, backgroundColor: "#000000" }}
           automaticallyAdjustContentInsets={false}
           contentInsetAdjustmentBehavior="never"
           contentInset={{ top: 0, left: 0, right: 0, bottom: 0 }}

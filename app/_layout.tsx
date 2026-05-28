@@ -40,9 +40,9 @@ function AppContent() {
   useAuth();
   return (
     <SafeAreaProvider>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0a0f1e" }}>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#000000" }}>
         <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#0a0f1e" } }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#000000" } }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="browser" />
