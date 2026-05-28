@@ -120,16 +120,10 @@ export default function BrowserScreen() {
   useKeepAwake();
 
   const [cookieReady, setCookieReady]   = useState(false);
-  const [loading, setLoading]           = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>("unknown");
   const [isOffline, setIsOffline]       = useState(false);
   const [errorUrlDraft, setErrorUrlDraft] = useState("");
-  const showSkip = false; // kept for JSX compatibility, never shown
-  const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // cleanup on unmount
-  useEffect(() => () => { if (readyTimerRef.current) clearTimeout(readyTimerRef.current); }, []);
 
   // Camera quick-switcher
   const [cameras, setCameras]             = useState<string[]>([]);
@@ -206,7 +200,7 @@ export default function BrowserScreen() {
       // Auto-retry WebView when connectivity returns
       if (connected && serverStatus === "offline") {
         setServerStatus("unknown");
-        setLoading(true);
+        setServerStatus("unknown");
         setTimeout(() => webviewRef.current?.reload(), 500);
       }
     });
@@ -429,28 +423,11 @@ export default function BrowserScreen() {
           injectedJavaScript={VIEWER_JS}
           applicationNameForUserAgent="ApexNative/1.0"
           onNavigationStateChange={useCallback((_: WebViewNavigation) => {}, [])}
-          onLoadStart={() => {
-            setLoading(true);
-            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-          }}
-          onLoadEnd={() => {
-            setServerStatus("online");
-            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            readyTimerRef.current = setTimeout(() => setLoading(false), 1500);
-          }}
-          onMessage={(_event) => {}}
-          onError={() => {
-            if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-            setLoading(false);
-            setServerStatus("offline");
-          }}
+          onLoadEnd={() => setServerStatus("online")}
+          onError={() => setServerStatus("offline")}
           onHttpError={(e) => {
             if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
-            else if (e.nativeEvent.statusCode >= 500) {
-              if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
-              setLoading(false);
-              setServerStatus("offline");
-            }
+            else if (e.nativeEvent.statusCode >= 500) setServerStatus("offline");
           }}
         />
       </View>
@@ -460,17 +437,6 @@ export default function BrowserScreen() {
         <View style={{ position: "absolute", top: insets.top, left: 0, right: 0, backgroundColor: "#7f1d1d", paddingVertical: 6, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}>
           <Ionicons name="wifi-outline" size={13} color="#fca5a5" />
           <Text style={{ color: "#fca5a5", fontSize: 12, fontWeight: "600" }}>No internet connection</Text>
-        </View>
-      )}
-
-      {/* Loading splash */}
-      {loading && serverStatus !== "offline" && (
-        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0a0f1e", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16, shadowColor: "#00d4ff", shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 0 } }}>
-            <Ionicons name="shield" size={32} color="#00d4ff" />
-          </View>
-          <ActivityIndicator color="#00d4ff" />
-          <Text style={{ color: "#64748b", marginTop: 12, fontSize: 13, letterSpacing: 0.3 }}>Connecting to Frigate…</Text>
         </View>
       )}
 
@@ -514,7 +480,7 @@ export default function BrowserScreen() {
                   await setBaseUrl(clean);
                   setErrorUrlDraft("");
                   setServerStatus("unknown");
-                  setLoading(true);
+                  setServerStatus("unknown");
                   setTimeout(() => webviewRef.current?.reload(), 300);
                 }}
                 style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 10 }}
@@ -525,7 +491,7 @@ export default function BrowserScreen() {
           </View>
 
           <TouchableOpacity
-            onPress={() => { haptic.tap(); setServerStatus("unknown"); setLoading(true); setTimeout(() => webviewRef.current?.reload(), 100); }}
+            onPress={() => { haptic.tap(); setServerStatus("unknown"); setServerStatus("unknown"); setTimeout(() => webviewRef.current?.reload(), 100); }}
             style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10 }}
           >
             <Ionicons name="refresh" size={15} color="#475569" />
