@@ -4,6 +4,7 @@ import {
   Alert, Modal, ScrollView, TextInput,
   PanResponder, Animated, useWindowDimensions,
 } from "react-native";
+import { BlurView } from "expo-blur";
 import { WebView, WebViewNavigation } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -92,7 +93,7 @@ function Row({ icon, iconColor, iconBg, label, sub, right }: {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <Text style={{ color: "#475569", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 20, marginBottom: 6 }}>
+    <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 20, marginBottom: 6 }}>
       {title}
     </Text>
   );
@@ -500,21 +501,11 @@ export default function BrowserScreen() {
       {cameras.length > 0 && !isLandscape && (
         <TouchableOpacity
           onPress={() => { haptic.tap(); setCameraMenuOpen(true); }}
-          style={{
-            position: "absolute",
-            bottom: insets.bottom + 126,
-            right: 14,
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            backgroundColor: "#0f172aee",
-            borderWidth: 1,
-            borderColor: "#1e293b",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          style={{ position: "absolute", bottom: insets.bottom + 126, right: 14, width: 36, height: 36, borderRadius: 18, overflow: "hidden" }}
         >
-          <Ionicons name="videocam-outline" size={16} color="#64748b" />
+          <BlurView tint="dark" intensity={80} style={{ flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}>
+            <Ionicons name="videocam-outline" size={16} color="rgba(255,255,255,0.6)" />
+          </BlurView>
         </TouchableOpacity>
       )}
 
@@ -522,21 +513,11 @@ export default function BrowserScreen() {
       {!isLandscape && (
         <TouchableOpacity
           onPress={() => { haptic.tap(); setSettingsOpen(true); }}
-          style={{
-            position: "absolute",
-            bottom: insets.bottom + 82,
-            right: 14,
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            backgroundColor: "#0f172aee",
-            borderWidth: 1,
-            borderColor: "#1e293b",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          style={{ position: "absolute", bottom: insets.bottom + 82, right: 14, width: 36, height: 36, borderRadius: 18, overflow: "hidden" }}
         >
-          <Ionicons name="settings-outline" size={16} color="#64748b" />
+          <BlurView tint="dark" intensity={80} style={{ flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}>
+            <Ionicons name="settings-outline" size={16} color="rgba(255,255,255,0.6)" />
+          </BlurView>
         </TouchableOpacity>
       )}
 
@@ -556,21 +537,24 @@ export default function BrowserScreen() {
             activeOpacity={toastUrlRef.current ? 0.7 : 1}
             onPress={handleToastPress}
             style={{
-              backgroundColor: "#0f172aee",
-              borderRadius: 14,
+              borderRadius: 18,
+              overflow: "hidden",
+              shadowColor: "#000",
+              shadowOpacity: 0.4,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 6 },
+            }}
+          >
+            <BlurView tint="dark" intensity={85} style={{
               paddingVertical: 12,
               paddingHorizontal: 16,
               flexDirection: "row",
               alignItems: "center",
               gap: 10,
+              borderRadius: 18,
               borderWidth: 1,
-              borderColor: "#1e293b",
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 12,
-              shadowOffset: { width: 0, height: 4 },
-            }}
-          >
+              borderColor: "rgba(255,255,255,0.15)",
+            }}>
             <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: "#ef444420", alignItems: "center", justifyContent: "center" }}>
               <Ionicons name="alert-circle" size={18} color="#ef4444" />
             </View>
@@ -583,8 +567,9 @@ export default function BrowserScreen() {
               )}
             </View>
             {toastUrlRef.current && (
-              <Ionicons name="chevron-forward" size={16} color="#475569" />
+              <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" />
             )}
+            </BlurView>
           </TouchableOpacity>
         </Animated.View>
       )}
@@ -597,14 +582,13 @@ export default function BrowserScreen() {
         onRequestClose={() => setCameraMenuOpen(false)}
       >
         <TouchableOpacity
-          style={{ flex: 1, backgroundColor: "#00000099" }}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }}
           activeOpacity={1}
           onPress={() => setCameraMenuOpen(false)}
         />
-        <SafeAreaView style={{ backgroundColor: "#0a0f1e" }} edges={["bottom"]}>
-          <View style={{ backgroundColor: "#0a0f1e", borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: "#1e293b" }}>
-            <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 16, paddingHorizontal: 20 }}>
-              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#334155", marginBottom: 16 }} />
+        <BlurView tint="dark" intensity={90} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingBottom: insets.bottom, borderTopWidth: 1, borderColor: "rgba(255,255,255,0.12)" }}>
+          <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 16, paddingHorizontal: 20 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.25)", marginBottom: 16 }} />
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start" }}>
                 <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: "#10b98122", alignItems: "center", justifyContent: "center" }}>
                   <Ionicons name="videocam" size={14} color="#10b981" />
@@ -624,7 +608,8 @@ export default function BrowserScreen() {
                   onPress={() => handleCameraSelect(cam)}
                   style={{
                     flexDirection: "row", alignItems: "center", gap: 12,
-                    backgroundColor: "#1e293b", borderRadius: 12, padding: 14,
+                    backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 12, padding: 14,
+                    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
                   }}
                   activeOpacity={0.7}
                 >
@@ -634,12 +619,11 @@ export default function BrowserScreen() {
                   <Text style={{ flex: 1, color: "#f1f5f9", fontSize: 15, fontWeight: "500", textTransform: "capitalize" }}>
                     {cam.replace(/_/g, " ")}
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#334155" />
+                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.3)" />
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </View>
-        </SafeAreaView>
+        </BlurView>
       </Modal>
 
       {/* ── Settings bottom sheet ──────────────────────────────────────────── */}
@@ -651,20 +635,19 @@ export default function BrowserScreen() {
       >
         {/* Tap outside to dismiss */}
         <TouchableOpacity
-          style={{ flex: 1, backgroundColor: "#00000099" }}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }}
           activeOpacity={1}
           onPress={dismissSettings}
         />
 
-        <SafeAreaView style={{ backgroundColor: "#0a0f1e" }} edges={["bottom"]}>
-          <View style={{ backgroundColor: "#0a0f1e", borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: "#1e293b", maxHeight: "86%" }}>
+        <BlurView tint="dark" intensity={90} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingBottom: insets.bottom, borderTopWidth: 1, borderColor: "rgba(255,255,255,0.12)", maxHeight: "86%" }}>
 
             {/* Drag handle — swipe down here to dismiss */}
             <View
               {...handlePan.panHandlers}
               style={{ alignItems: "center", paddingTop: 12, paddingBottom: 8, paddingHorizontal: 20 }}
             >
-              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#334155", marginBottom: 14 }} />
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.25)", marginBottom: 14 }} />
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start" }}>
                 <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: "#00d4ff22", alignItems: "center", justifyContent: "center" }}>
                   <Ionicons name="shield" size={15} color="#00d4ff" />
@@ -688,7 +671,7 @@ export default function BrowserScreen() {
 
               {/* ── ACCOUNT ────────────────────────────────────────── */}
               <SectionHeader title="Account" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, overflow: "hidden" }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
                 <View style={{ padding: 14 }}>
                   <Row
                     icon="person-circle-outline" iconColor="#a855f7" iconBg="#a855f722"
@@ -698,9 +681,9 @@ export default function BrowserScreen() {
                       !changingCreds ? (
                         <TouchableOpacity
                           onPress={() => { setUserDraft(username ?? ""); setPassDraft(""); setCredError(""); setChangingCreds(true); }}
-                          style={{ backgroundColor: "#334155", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
+                          style={{ backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
                         >
-                          <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600" }}>Change</Text>
+                          <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: "600" }}>Change</Text>
                         </TouchableOpacity>
                       ) : null
                     }
@@ -709,28 +692,28 @@ export default function BrowserScreen() {
 
                 {changingCreds && (
                   <>
-                    <View style={{ height: 1, backgroundColor: "#334155" }} />
+                    <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                     <View style={{ padding: 14, gap: 10 }}>
-                      <Text style={{ color: "#94a3b8", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 }}>New Credentials</Text>
-                      <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", borderRadius: 10, paddingHorizontal: 12, gap: 8, borderWidth: 1, borderColor: "#334155" }}>
-                        <Ionicons name="person-outline" size={15} color="#475569" />
+                      <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 }}>New Credentials</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.3)", borderRadius: 10, paddingHorizontal: 12, gap: 8, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
+                        <Ionicons name="person-outline" size={15} color="rgba(255,255,255,0.4)" />
                         <TextInput
                           style={{ flex: 1, paddingVertical: 11, color: "#f1f5f9", fontSize: 14 }}
-                          placeholder="Username" placeholderTextColor="#475569"
+                          placeholder="Username" placeholderTextColor="rgba(255,255,255,0.3)"
                           value={userDraft} onChangeText={setUserDraft}
                           autoCapitalize="none" autoCorrect={false} textContentType="username"
                         />
                       </View>
-                      <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", borderRadius: 10, paddingHorizontal: 12, gap: 8, borderWidth: 1, borderColor: "#334155" }}>
-                        <Ionicons name="lock-closed-outline" size={15} color="#475569" />
+                      <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.3)", borderRadius: 10, paddingHorizontal: 12, gap: 8, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
+                        <Ionicons name="lock-closed-outline" size={15} color="rgba(255,255,255,0.4)" />
                         <TextInput
                           style={{ flex: 1, paddingVertical: 11, color: "#f1f5f9", fontSize: 14 }}
-                          placeholder="Password" placeholderTextColor="#475569"
+                          placeholder="Password" placeholderTextColor="rgba(255,255,255,0.3)"
                           value={passDraft} onChangeText={setPassDraft}
                           secureTextEntry={!showPass} textContentType="password"
                         />
                         <TouchableOpacity onPress={() => setShowPass((s) => !s)}>
-                          <Ionicons name={showPass ? "eye-off-outline" : "eye-outline"} size={15} color="#475569" />
+                          <Ionicons name={showPass ? "eye-off-outline" : "eye-outline"} size={15} color="rgba(255,255,255,0.4)" />
                         </TouchableOpacity>
                       </View>
                       {credError ? (
@@ -742,9 +725,9 @@ export default function BrowserScreen() {
                       <View style={{ flexDirection: "row", gap: 8, marginTop: 2 }}>
                         <TouchableOpacity
                           onPress={() => { setChangingCreds(false); setCredError(""); }}
-                          style={{ flex: 1, backgroundColor: "#334155", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
+                          style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
                         >
-                          <Text style={{ color: "#94a3b8", fontWeight: "600", fontSize: 14 }}>Cancel</Text>
+                          <Text style={{ color: "rgba(255,255,255,0.7)", fontWeight: "600", fontSize: 14 }}>Cancel</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={handleSaveCreds} disabled={credLoading}
@@ -763,18 +746,18 @@ export default function BrowserScreen() {
 
               {/* ── SERVER ─────────────────────────────────────────── */}
               <SectionHeader title="Server" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, overflow: "hidden" }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
                 {editingUrl ? (
                   <View style={{ padding: 14, gap: 10 }}>
                     <TextInput
-                      style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "#0f172a", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#334155" }}
+                      style={{ color: "#f1f5f9", fontSize: 14, backgroundColor: "rgba(0,0,0,0.3)", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}
                       value={urlDraft} onChangeText={setUrlDraft}
                       autoCapitalize="none" autoCorrect={false} keyboardType="url"
-                      placeholder="https://your-frigate-host.com" placeholderTextColor="#475569"
+                      placeholder="https://your-frigate-host.com" placeholderTextColor="rgba(255,255,255,0.3)"
                     />
                     <View style={{ flexDirection: "row", gap: 8 }}>
-                      <TouchableOpacity onPress={() => setEditingUrl(false)} style={{ flex: 1, backgroundColor: "#334155", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}>
-                        <Text style={{ color: "#94a3b8", fontWeight: "600" }}>Cancel</Text>
+                      <TouchableOpacity onPress={() => setEditingUrl(false)} style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}>
+                        <Text style={{ color: "rgba(255,255,255,0.7)", fontWeight: "600" }}>Cancel</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={handleSaveUrl} style={{ flex: 2, backgroundColor: "#00d4ff", borderRadius: 10, paddingVertical: 11, alignItems: "center" }}>
                         <Text style={{ color: "#0a0f1e", fontWeight: "700" }}>Save & Reload</Text>
@@ -790,10 +773,10 @@ export default function BrowserScreen() {
                       right={
                         <TouchableOpacity
                           onPress={() => { setUrlDraft(baseUrl); setEditingUrl(true); }}
-                          style={{ backgroundColor: "#334155", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, flexDirection: "row", alignItems: "center", gap: 4 }}
+                          style={{ backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, flexDirection: "row", alignItems: "center", gap: 4 }}
                         >
-                          <Ionicons name="pencil-outline" size={12} color="#94a3b8" />
-                          <Text style={{ color: "#94a3b8", fontSize: 12, fontWeight: "600" }}>Edit</Text>
+                          <Ionicons name="pencil-outline" size={12} color="rgba(255,255,255,0.6)" />
+                          <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600" }}>Edit</Text>
                         </TouchableOpacity>
                       }
                     />
@@ -803,24 +786,24 @@ export default function BrowserScreen() {
 
               {/* ── NATIVE FEATURES ────────────────────────────────── */}
               <SectionHeader title="Native Features" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14, gap: 10 }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14, padding: 14, gap: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
                 <Row icon="phone-portrait-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Picture-in-Picture" sub="Auto-activates when you background the app" />
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                 <Row icon="tv-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="AirPlay" sub="Stream cameras to Apple TV via native controls" />
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                 <Row icon="sunny-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Keep Screen On" sub="Display stays awake while Apex is open" />
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                 <Row icon="swap-horizontal-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Back/Forward Swipe" sub="Swipe left/right to navigate Frigate history" />
-                <View style={{ height: 1, backgroundColor: "#334155" }} />
+                <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                 <Row icon="refresh-circle-outline" iconColor="#10b981" iconBg="#10b98122"
                   label="Shake to Reload" sub="Shake the phone to force-refresh Frigate" />
                 {cameras.length > 0 && (
                   <>
-                    <View style={{ height: 1, backgroundColor: "#334155" }} />
+                    <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)" }} />
                     <Row icon="videocam-outline" iconColor="#10b981" iconBg="#10b98122"
                       label="Camera Switcher" sub={`Tap the camera button to jump between ${cameras.length} cameras`} />
                   </>
@@ -829,7 +812,7 @@ export default function BrowserScreen() {
 
               {/* ── ACTIONS ────────────────────────────────────────── */}
               <SectionHeader title="Actions" />
-              <View style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14 }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
                 <TouchableOpacity onPress={() => { haptic.tap(); webviewRef.current?.reload(); dismissSettings(); }}>
                   <Row icon="refresh-outline" iconColor="#a855f7" iconBg="#a855f722"
                     label="Reload Frigate" sub="Force refresh the web app" />
@@ -838,20 +821,19 @@ export default function BrowserScreen() {
 
               {/* ── SIGN OUT ───────────────────────────────────────── */}
               <View style={{ marginTop: 8, marginBottom: 4 }}>
-                <TouchableOpacity onPress={handleLogout} style={{ backgroundColor: "#1e293b", borderRadius: 14, padding: 14 }}>
+                <TouchableOpacity onPress={handleLogout} style={{ backgroundColor: "rgba(255,59,48,0.15)", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "rgba(255,59,48,0.25)" }}>
                   <Row icon="log-out-outline" iconColor="#ef4444" iconBg="#ef444422"
                     label="Sign Out" sub="Clears your session from this device" />
                 </TouchableOpacity>
               </View>
 
               {/* ── VERSION ────────────────────────────────────────── */}
-              <Text style={{ color: "#1e293b", fontSize: 11, textAlign: "center", marginTop: 12 }}>
+              <Text style={{ color: "rgba(255,255,255,0.2)", fontSize: 11, textAlign: "center", marginTop: 12 }}>
                 Apex v{appVersion} ({buildNumber})
               </Text>
 
             </ScrollView>
-          </View>
-        </SafeAreaView>
+        </BlurView>
       </Modal>
     </View>
   );
