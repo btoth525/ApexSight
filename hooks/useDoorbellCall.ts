@@ -15,15 +15,8 @@ type Options = {
   onEndCall: (callUUID: string) => void;
 };
 
-function generateUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
-// Lazy-load native modules so a missing entitlement/provisioning issue
-// never crashes the app — CallKit just silently won't work.
+// Lazy-load native modules so any linking/entitlement issue degrades
+// gracefully instead of crashing the whole app.
 function getCallKeep() {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -61,13 +54,18 @@ function setupCallKeep(RNCallKeep: NonNullable<ReturnType<typeof getCallKeep>>) 
     });
     RNCallKeep.setAvailable(true);
   } catch {
-    // idempotent — safe to call multiple times
+    // idempotent — safe to call repeatedly
   }
 }
 
 export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
   const [voipToken, setVoipToken] = useState<string | null>(null);
-  const activeCallRef = useRef<ActiveCall | null>(null);
+
+  // uuid → camera, populated by the VoIP "notification" payload. The native
+  // AppDelegate already showed the CallKit screen via reportNewIncomingCall;
+  // here we just need to know which camera to open when the call is answered.
+  const cameraByUUID = useRef<Record<string, string>>({});
+  const lastCameraRef = useRef<string>("doorbell");
 
   const onAnswerRef = useRef(onAnswer);
   const onEndCallRef = useRef(onEndCall);
@@ -77,16 +75,12 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
   useEffect(() => {
     if (Platform.OS !== "ios") return;
 
-    // Load cached token immediately (shows in settings before re-registration)
-    SecureStore.getItemAsync(VOIP_TOKEN_KEY).then((t) => {
-      if (t) setVoipToken(t);
-    }).catch(() => {});
+    SecureStore.getItemAsync(VOIP_TOKEN_KEY)
+      .then((t) => { if (t) setVoipToken(t); })
+      .catch(() => {});
 
     const RNCallKeep = getCallKeep();
     const VoipPush = getVoipPush();
-
-    // If either native module failed to load, bail out gracefully —
-    // the rest of the app continues to work normally.
     if (!RNCallKeep || !VoipPush) return;
 
     try {
@@ -96,6 +90,19 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
       return;
     }
 
+    // ── Helpers ────────────────────────────────────────────────────────────
+    const recordCamera = (payload: { uuid?: string; camera?: string }) => {
+      const camera = payload?.camera ?? "doorbell";
+      lastCameraRef.current = camera;
+      if (payload?.uuid) cameraByUUID.current[payload.uuid] = camera;
+    };
+
+    const doAnswer = (callUUID: string) => {
+      const camera = cameraByUUID.current[callUUID] ?? lastCameraRef.current;
+      onAnswerRef.current({ callUUID, cameraName: camera, callerName: "Front Door" });
+    };
+
+    // ── VoIP push token ──────────────────────────────────────────────────
     const handleToken = (token: string) => {
       try {
         setVoipToken(token);
@@ -103,29 +110,37 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
       } catch {}
     };
 
+    // ── Incoming VoIP push payload (CallKit UI already shown natively) ─────
     const handlePush = (notification: object) => {
       try {
-        const n = notification as { data?: { camera?: string; caller?: string } };
-        setupCallKeep(RNCallKeep);
-        const camera = n?.data?.camera ?? "doorbell";
-        const caller = n?.data?.caller ?? "Front Door";
-        const callUUID = generateUUID();
-        activeCallRef.current = { callUUID, cameraName: camera, callerName: caller };
-        RNCallKeep.displayIncomingCall(callUUID, caller, caller, "generic", true);
+        recordCamera(notification as { uuid?: string; camera?: string });
       } catch {}
     };
 
+    // ── Call answered ──────────────────────────────────────────────────────
     const handleAnswer = ({ callUUID }: { callUUID: string }) => {
-      try {
-        const call = activeCallRef.current;
-        if (call && call.callUUID === callUUID) onAnswerRef.current(call);
-      } catch {}
+      try { doAnswer(callUUID); } catch {}
     };
 
+    // ── Call ended / declined ────────────────────────────────────────────
     const handleEnd = ({ callUUID }: { callUUID: string }) => {
       try {
-        activeCallRef.current = null;
+        delete cameraByUUID.current[callUUID];
         onEndCallRef.current(callUUID);
+      } catch {}
+    };
+
+    // ── Cold start: events that fired before JS was ready ──────────────────
+    // When the app is launched by answering the call, RNCallKeep buffers the
+    // events and replays them here as [{ name, data }].
+    const handleDidLoad = (events: { name: string; data: any }[]) => {
+      try {
+        if (!Array.isArray(events)) return;
+        for (const e of events) {
+          if (e.name === "RNCallKeepAnswerCall" && e.data?.callUUID) {
+            doAnswer(e.data.callUUID);
+          }
+        }
       } catch {}
     };
 
@@ -134,6 +149,7 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
       VoipPush.addEventListener("notification", handlePush);
       RNCallKeep.addEventListener("answerCall", handleAnswer);
       RNCallKeep.addEventListener("endCall", handleEnd);
+      RNCallKeep.addEventListener("didLoadWithEvents", handleDidLoad);
     } catch {}
 
     return () => {
@@ -142,6 +158,7 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
         VoipPush.removeEventListener("notification");
         RNCallKeep.removeEventListener("answerCall");
         RNCallKeep.removeEventListener("endCall");
+        RNCallKeep.removeEventListener("didLoadWithEvents");
       } catch {}
     };
   }, []);
@@ -150,10 +167,15 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
     try {
       const RNCallKeep = getCallKeep();
       if (!RNCallKeep) return;
-      const uuid = callUUID ?? activeCallRef.current?.callUUID;
-      if (uuid) {
-        RNCallKeep.endCall(uuid);
-        activeCallRef.current = null;
+      if (callUUID) {
+        RNCallKeep.endCall(callUUID);
+        delete cameraByUUID.current[callUUID];
+      } else {
+        // End any active call (best effort)
+        for (const uuid of Object.keys(cameraByUUID.current)) {
+          RNCallKeep.endCall(uuid);
+          delete cameraByUUID.current[uuid];
+        }
       }
     } catch {}
   }, []);

@@ -66,8 +66,14 @@ def send_voip_push(
     camera: str,
     caller: str,
 ) -> None:
-    # Payload consumed by useDoorbellCall.ts in the Apex app
-    payload = json.dumps({"camera": camera, "caller": caller}).encode("utf-8")
+    # Payload consumed by the native AppDelegate handler + useDoorbellCall.ts.
+    # "uuid" ties the CallKit call to the camera so the app knows which feed to
+    # open when the call is answered.
+    payload = json.dumps({
+        "uuid": str(uuid.uuid4()),
+        "camera": camera,
+        "caller": caller,
+    }).encode("utf-8")
 
     headers = {
         "authorization": f"bearer {jwt_token}",
