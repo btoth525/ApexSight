@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import { useAuthStore } from "@/stores/authStore";
 
 export const VOIP_TOKEN_KEY = "apex_voip_push_token";
 
@@ -113,7 +114,22 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
     // ── Incoming VoIP push payload (CallKit UI already shown natively) ─────
     const handlePush = (notification: object) => {
       try {
-        recordCamera(notification as { uuid?: string; camera?: string });
+        const payload = notification as { uuid?: string; camera?: string };
+        recordCamera(payload);
+        // Pre-warm go2rtc: open a WebSocket immediately so go2rtc starts
+        // buffering the RTSP stream before the user taps Accept. By the time
+        // they answer, ICE is already checked and a keyframe is buffered.
+        const { baseUrl, token } = useAuthStore.getState();
+        if (baseUrl) {
+          try {
+            const url = new URL(baseUrl);
+            const proto = url.protocol === "https:" ? "wss:" : "ws:";
+            const cam = encodeURIComponent(payload.camera ?? "doorbell_twoway");
+            const tok = token ? `&token=${encodeURIComponent(token)}` : "";
+            const ws = new WebSocket(`${proto}//${url.host}/live/webrtc/api/ws?src=${cam}${tok}`);
+            setTimeout(() => { try { ws.close(); } catch {} }, 10000);
+          } catch {}
+        }
       } catch {}
     };
 
