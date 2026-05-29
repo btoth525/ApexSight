@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { WebView } from "react-native-webview";
@@ -7,25 +7,62 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/stores/authStore";
 import * as Haptics from "expo-haptics";
 
-// Auto-clicks go2rtc's play/connect button after the page loads.
-// go2rtc web UI renders a single play button; we target it with a MutationObserver fallback.
-const GO2RTC_AUTOPLAY_JS = `
+// Minimal WebRTC client that talks directly to go2rtc's WebSocket signaling API.
+// This bypasses Frigate's go2rtc web-interface route (which requires admin role)
+// and instead uses go2rtc's /api/ws endpoint which is accessible with a valid token.
+function buildWebRTCHtml(wsUrl: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; width:100vw; height:100vh; overflow:hidden; }
+video { width:100%; height:100%; object-fit:cover; display:block; }
+</style>
+</head>
+<body>
+<video id="v" autoplay playsinline></video>
+<script>
 (function() {
-  function tryConnect() {
-    var btn = document.querySelector('button.play, button[title="play"], button[type="button"], button');
-    if (btn) { btn.click(); return true; }
-    return false;
-  }
-  if (!tryConnect()) {
-    var obs = new MutationObserver(function() {
-      if (tryConnect()) obs.disconnect();
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { obs.disconnect(); }, 10000);
-  }
+  var pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  var ws = new WebSocket(${JSON.stringify(wsUrl)});
+  pc.ontrack = function(e) {
+    var v = document.getElementById('v');
+    if (!v.srcObject || v.srcObject !== e.streams[0]) v.srcObject = e.streams[0];
+  };
+  ws.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      if (msg.type === 'offer') {
+        pc.setRemoteDescription(new RTCSessionDescription(msg))
+          .then(function() { return pc.createAnswer(); })
+          .then(function(a) { pc.setLocalDescription(a); return a; })
+          .then(function(a) { ws.send(JSON.stringify(a)); });
+      } else if (msg.type === 'candidate' && msg.candidate) {
+        pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(function(){});
+      }
+    } catch(err) {}
+  };
+  pc.onicecandidate = function(e) {
+    if (e.candidate && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+    }
+  };
+  ws.onopen = function() {
+    try {
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.createOffer()
+        .then(function(o) { pc.setLocalDescription(o); return o; })
+        .then(function(o) { ws.send(JSON.stringify(o)); });
+    } catch(err) {}
+  };
 })();
-true;
-`;
+</script>
+</body>
+</html>`;
+}
 
 export default function DoorbellCallScreen() {
   const { camera } = useLocalSearchParams<{ camera: string }>();
@@ -34,10 +71,23 @@ export default function DoorbellCallScreen() {
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
 
-  const cameraName = camera ?? "doorbell";
+  const cameraName = camera ?? "doorbell_twoway";
 
-  // go2rtc WebRTC player — Frigate proxies go2rtc at /api/go2rtc/
-  const streamUrl = `${baseUrl}/api/go2rtc/webrtc?src=${encodeURIComponent(cameraName)}`;
+  // Build the go2rtc WebSocket signaling URL with the auth token as a query param.
+  // Frigate's go2rtc proxy lives at /api/go2rtc/ and accepts ?token= for auth.
+  const wsUrl = useMemo(() => {
+    if (!baseUrl) return "";
+    try {
+      const url = new URL(baseUrl);
+      const proto = url.protocol === "https:" ? "wss:" : "ws:";
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+      return `${proto}//${url.host}/api/go2rtc/api/ws?src=${encodeURIComponent(cameraName)}${tokenParam}`;
+    } catch {
+      return "";
+    }
+  }, [baseUrl, token, cameraName]);
+
+  const webRTCHtml = useMemo(() => buildWebRTCHtml(wsUrl), [wsUrl]);
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -50,26 +100,21 @@ export default function DoorbellCallScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000000" }}>
-      {/* go2rtc WebRTC stream — two-way audio via mediaCapturePermissionGrantType */}
-      {!isLoading && (
+      {/* Inject our own WebRTC HTML so we talk directly to go2rtc's WS API,
+          bypassing Frigate's go2rtc web-interface page (admin-only 403). */}
+      {!isLoading && wsUrl ? (
         <WebView
           ref={webViewRef}
-          source={{
-            uri: streamUrl,
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          }}
+          source={{ html: webRTCHtml, baseUrl }}
           style={{ flex: 1, backgroundColor: "#000000" }}
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
           allowsAirPlayForMediaPlayback={false}
           sharedCookiesEnabled={true}
           originWhitelist={["*"]}
-          injectedJavaScript={GO2RTC_AUTOPLAY_JS}
-          // Auto-grant mic permission for same-host WebRTC (two-way audio)
-          // NSMicrophoneUsageDescription already present in app.json
           mediaCapturePermissionGrantType="grantIfSameHostElseDeny"
         />
-      )}
+      ) : null}
 
       {/* Caller pill — top overlay */}
       <View
