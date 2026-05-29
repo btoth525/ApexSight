@@ -81,7 +81,7 @@ export default function DoorbellCallScreen() {
       const url = new URL(baseUrl);
       const proto = url.protocol === "https:" ? "wss:" : "ws:";
       const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
-      return `${proto}//${url.host}/api/go2rtc/api/ws?src=${encodeURIComponent(cameraName)}${tokenParam}`;
+      return `${proto}//${url.host}/live/webrtc/api/ws?src=${encodeURIComponent(cameraName)}${tokenParam}`;
     } catch {
       return "";
     }
