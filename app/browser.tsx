@@ -19,6 +19,7 @@ import { haptic } from "@/utils/haptics";
 import { apiClient } from "@/utils/apiClient";
 import { useFrigateEvents } from "@/hooks/useFrigateEvents";
 import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
+import { pendingDeeplink } from "@/stores/pendingDeeplink";
 
 // ─── JS injected on every page load ─────────────────────────────────────────
 const VIEWER_JS = `
@@ -50,15 +51,16 @@ const VIEWER_JS = `
 true;
 `;
 
-// ─── Convert apex:// → Frigate web URL (standard path routing) ──────────────
+// ─── Convert apex:// → Frigate web URL ──────────────────────────────────────
+// Handles both apex://review (host=review) and apex:///review (host='', path=review)
 function deeplinkToFrigateUrl(apexUrl: string, baseUrl: string): string | null {
   try {
     const parsed = Linking.parse(apexUrl);
     const host = parsed.hostname ?? "";
     const path = parsed.path ? parsed.path.replace(/^\//, "") : "";
-    if (!host) return null;
-    const route = path ? `${host}/${path}` : host;
-    const qs = parsed.queryParams
+    const route = [host, path].filter(Boolean).join("/");
+    if (!route) return null;
+    const qs = parsed.queryParams && Object.keys(parsed.queryParams).length > 0
       ? "?" + Object.entries(parsed.queryParams)
           .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
           .join("&")
@@ -191,7 +193,7 @@ export default function BrowserScreen() {
     if (!label || (score !== undefined && score < 0.6)) return;
     if (settingsOpen) return;
     haptic.medium();
-    const clipUrl = id && baseUrl ? `${baseUrl}/clips/${id}.mp4` : undefined;
+    const clipUrl = id && baseUrl ? `${baseUrl}/api/events/${id}/clip.mp4` : undefined;
     showToast(`${getLabelEmoji(label)} ${formatLabel(label)} detected – ${(camera ?? "").replace(/_/g, " ")}`, clipUrl);
   }, [settingsOpen, showToast, baseUrl]));
 
@@ -267,13 +269,12 @@ export default function BrowserScreen() {
     }, 400);
   }, [baseUrl]);
 
+  // Consume any pending deeplink once cookie is ready and WebView has loaded
   useEffect(() => {
-    const sub = Linking.addEventListener("url", ({ url }) => navigateDeeplink(url));
-    Linking.getInitialURL().then((url) => {
-      if (url) setTimeout(() => navigateDeeplink(url), 1500);
-    });
-    return () => sub.remove();
-  }, [navigateDeeplink]);
+    if (!cookieReady) return;
+    const url = pendingDeeplink.consume();
+    if (url) setTimeout(() => navigateDeeplink(url), 800);
+  }, [cookieReady, navigateDeeplink]);
 
   // ── Camera quick-switch ──────────────────────────────────────────────────
   const handleCameraSelect = (name: string) => {

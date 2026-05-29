@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Stack } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, ScrollView } from "react-native";
+import * as Linking from "expo-linking";
 import { useAuth } from "@/hooks/useAuth";
+import { pendingDeeplink } from "@/stores/pendingDeeplink";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -38,6 +40,16 @@ class ErrorBoundary extends React.Component<
 
 function AppContent() {
   useAuth();
+
+  // Intercept apex:// URLs when app is already running (foreground case).
+  // Stores them so browser.tsx can consume and navigate the WebView.
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      if (url.startsWith("apex://")) pendingDeeplink.set(url);
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#000000" }}>
@@ -46,6 +58,7 @@ function AppContent() {
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="browser" />
+          <Stack.Screen name="[...deeplink]" />
         </Stack>
       </GestureHandlerRootView>
     </SafeAreaProvider>
