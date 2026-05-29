@@ -7,9 +7,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/stores/authStore";
 import * as Haptics from "expo-haptics";
 
-// Minimal WebRTC client that talks directly to go2rtc's WebSocket signaling API.
-// This bypasses Frigate's go2rtc web-interface route (which requires admin role)
-// and instead uses go2rtc's /api/ws endpoint which is accessible with a valid token.
+// Minimal WebRTC client using go2rtc's native 2.x signaling protocol:
+//   offer:     {type:"webrtc/offer",     value: sdp_string}
+//   answer:    {type:"webrtc/answer",    value: sdp_string}
+//   candidate: {type:"webrtc/candidate", value: "candidate_line\nsdpMLineIndex"}
+// Confirmed working via browser console test against /live/webrtc/api/ws.
 function buildWebRTCHtml(wsUrl: string): string {
   return `<!DOCTYPE html>
 <html>
@@ -34,19 +36,19 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
   ws.onmessage = function(e) {
     try {
       var msg = JSON.parse(e.data);
-      if (msg.type === 'offer') {
-        pc.setRemoteDescription(new RTCSessionDescription(msg))
-          .then(function() { return pc.createAnswer(); })
-          .then(function(a) { pc.setLocalDescription(a); return a; })
-          .then(function(a) { ws.send(JSON.stringify(a)); });
-      } else if (msg.type === 'candidate' && msg.candidate) {
-        pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(function(){});
+      if (msg.type === 'webrtc/answer') {
+        pc.setRemoteDescription({ type: 'answer', sdp: msg.value });
+      } else if (msg.type === 'webrtc/candidate' && msg.value) {
+        pc.addIceCandidate({ candidate: msg.value, sdpMid: '0' }).catch(function(){});
       }
     } catch(err) {}
   };
   pc.onicecandidate = function(e) {
     if (e.candidate && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+      ws.send(JSON.stringify({
+        type: 'webrtc/candidate',
+        value: e.candidate.candidate + '\\n' + (e.candidate.sdpMLineIndex || 0)
+      }));
     }
   };
   ws.onopen = function() {
@@ -54,8 +56,8 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
       pc.addTransceiver('video', { direction: 'recvonly' });
       pc.addTransceiver('audio', { direction: 'sendrecv' });
       pc.createOffer()
-        .then(function(o) { pc.setLocalDescription(o); return o; })
-        .then(function(o) { ws.send(JSON.stringify(o)); });
+        .then(function(o) { return pc.setLocalDescription(o).then(function() { return o; }); })
+        .then(function(o) { ws.send(JSON.stringify({ type: 'webrtc/offer', value: o.sdp })); });
     } catch(err) {}
   };
 })();
