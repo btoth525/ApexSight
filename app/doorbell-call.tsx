@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/stores/authStore";
-import { buildWsUrl, buildWebRTCHtml } from "@/utils/doorbellStream";
+import { buildWsUrl, buildWebRTCHtml, buildAudioWsUrl } from "@/utils/doorbellStream";
 import * as Haptics from "expo-haptics";
 
 export default function DoorbellCallScreen() {
@@ -14,12 +14,18 @@ export default function DoorbellCallScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
+  const [isTalking, setIsTalking] = useState(false);
 
   const cameraName = camera ?? "doorbell_twoway";
 
   const wsUrl = useMemo(
     () => buildWsUrl(baseUrl, token, cameraName),
     [baseUrl, token, cameraName],
+  );
+
+  const audioWsUrl = useMemo(
+    () => buildAudioWsUrl(baseUrl, token),
+    [baseUrl, token],
   );
 
   const webRTCHtml = useMemo(() => buildWebRTCHtml(wsUrl), [wsUrl]);
@@ -29,9 +35,25 @@ export default function DoorbellCallScreen() {
   }, []);
 
   const handleEndCall = () => {
+    if (isTalking) {
+      webViewRef.current?.injectJavaScript("window._stopTalkback(); true;");
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     router.back();
   };
+
+  const handleMicToggle = useCallback(() => {
+    if (isTalking) {
+      webViewRef.current?.injectJavaScript("window._stopTalkback(); true;");
+      setIsTalking(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else {
+      const escaped = JSON.stringify(audioWsUrl);
+      webViewRef.current?.injectJavaScript(`window._startTalkback(${escaped}); true;`);
+      setIsTalking(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  }, [isTalking, audioWsUrl]);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000000" }}>
@@ -73,54 +95,98 @@ export default function DoorbellCallScreen() {
             Front Door
           </Text>
           <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 2 }}>
-            Live
+            {isTalking ? "Speaking…" : "Live"}
           </Text>
         </View>
       </View>
 
-      {/* End Call button — bottom center */}
+      {/* Bottom controls — mic toggle (left) + end call (right) */}
       <View
         style={{
           position: "absolute",
           bottom: insets.bottom + 44,
           left: 0,
           right: 0,
-          alignItems: "center",
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "flex-end",
+          gap: 48,
         }}
       >
-        <TouchableOpacity
-          onPress={handleEndCall}
-          activeOpacity={0.8}
-          style={{
-            width: 72,
-            height: 72,
-            borderRadius: 36,
-            backgroundColor: "#ef4444",
-            alignItems: "center",
-            justifyContent: "center",
-            shadowColor: "#ef4444",
-            shadowOpacity: 0.5,
-            shadowRadius: 16,
-            shadowOffset: { width: 0, height: 4 },
-          }}
-        >
-          <Ionicons
-            name="call"
-            size={30}
-            color="#ffffff"
-            style={{ transform: [{ rotate: "135deg" }] }}
-          />
-        </TouchableOpacity>
-        <Text
-          style={{
-            color: "rgba(255,255,255,0.45)",
-            fontSize: 12,
-            marginTop: 8,
-            fontWeight: "500",
-          }}
-        >
-          End Call
-        </Text>
+        {/* Mic toggle button */}
+        <View style={{ alignItems: "center" }}>
+          <TouchableOpacity
+            onPress={handleMicToggle}
+            activeOpacity={0.8}
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: isTalking ? "#22c55e" : "rgba(255,255,255,0.18)",
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: isTalking ? 0 : 1.5,
+              borderColor: "rgba(255,255,255,0.3)",
+              shadowColor: isTalking ? "#22c55e" : "transparent",
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 2 },
+            }}
+          >
+            <Ionicons
+              name={isTalking ? "mic" : "mic-off"}
+              size={26}
+              color="#ffffff"
+            />
+          </TouchableOpacity>
+          <Text
+            style={{
+              color: isTalking ? "#22c55e" : "rgba(255,255,255,0.45)",
+              fontSize: 12,
+              marginTop: 8,
+              fontWeight: "500",
+            }}
+          >
+            {isTalking ? "Talking" : "Muted"}
+          </Text>
+        </View>
+
+        {/* End call button */}
+        <View style={{ alignItems: "center" }}>
+          <TouchableOpacity
+            onPress={handleEndCall}
+            activeOpacity={0.8}
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 36,
+              backgroundColor: "#ef4444",
+              alignItems: "center",
+              justifyContent: "center",
+              shadowColor: "#ef4444",
+              shadowOpacity: 0.5,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 4 },
+            }}
+          >
+            <Ionicons
+              name="call"
+              size={30}
+              color="#ffffff"
+              style={{ transform: [{ rotate: "135deg" }] }}
+            />
+          </TouchableOpacity>
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.45)",
+              fontSize: 12,
+              marginTop: 8,
+              fontWeight: "500",
+            }}
+          >
+            End Call
+          </Text>
+        </View>
       </View>
     </View>
   );
