@@ -51,7 +51,7 @@ video { width:100%; height:100%; object-fit:cover; display:block; }
   ws.onopen = function() {
     try {
       pc.addTransceiver('video', { direction: 'recvonly' });
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
       pc.createOffer()
         .then(function(o) { return pc.setLocalDescription(o).then(function() { return o; }); })
         .then(function(o) { ws.send(JSON.stringify({ type: 'webrtc/offer', value: o.sdp })); });
