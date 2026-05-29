@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { Stack } from "expo-router";
+import React, { useCallback, useEffect } from "react";
+import { Stack, useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -7,6 +7,7 @@ import { View, Text, ScrollView } from "react-native";
 import * as Linking from "expo-linking";
 import { useAuth } from "@/hooks/useAuth";
 import { pendingDeeplink } from "@/stores/pendingDeeplink";
+import { useDoorbellCall, type ActiveCall } from "@/hooks/useDoorbellCall";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -40,6 +41,7 @@ class ErrorBoundary extends React.Component<
 
 function AppContent() {
   useAuth();
+  const router = useRouter();
 
   // Intercept apex:// URLs when app is already running (foreground case).
   // Stores them so browser.tsx can consume and navigate the WebView.
@@ -50,6 +52,16 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
+  // CallKit incoming call — push to full-screen doorbell screen
+  const handleAnswer = useCallback((call: ActiveCall) => {
+    router.push(`/doorbell-call?camera=${encodeURIComponent(call.cameraName)}`);
+  }, [router]);
+
+  // Decline / remote end — doorbell-call screen handles its own dismissal
+  const handleEndCall = useCallback((_uuid: string) => {}, []);
+
+  useDoorbellCall({ onAnswer: handleAnswer, onEndCall: handleEndCall });
+
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#000000" }}>
@@ -59,6 +71,15 @@ function AppContent() {
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="browser" />
           <Stack.Screen name="[...deeplink]" />
+          <Stack.Screen
+            name="doorbell-call"
+            options={{
+              presentation: "fullScreenModal",
+              headerShown: false,
+              gestureEnabled: false,
+              contentStyle: { backgroundColor: "#000000" },
+            }}
+          />
         </Stack>
       </GestureHandlerRootView>
     </SafeAreaProvider>

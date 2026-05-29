@@ -2,7 +2,7 @@
   "expo": {
     "name": "Apex",
     "slug": "apex-frigate",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "platforms": [
       "ios"
     ],
@@ -19,11 +19,12 @@
     },
     "ios": {
       "bundleIdentifier": "com.brandontoth.apexsight",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Used for live camera viewing",
-        "NSMicrophoneUsageDescription": "Used for live camera audio"
+        "NSMicrophoneUsageDescription": "Used for live camera audio",
+        "UIBackgroundModes": ["voip", "audio"]
       }
     },
     "plugins": [
@@ -34,6 +35,10 @@
         {
           "initialOrientation": "DEFAULT"
         }
+      ],
+      [
+        "@config-plugins/react-native-callkeep",
+        {}
       ]
     ],
     "scheme": "apex",

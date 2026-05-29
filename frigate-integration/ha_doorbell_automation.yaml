@@ -1,0 +1,91 @@
+# ha_doorbell_automation.yaml
+# Rings the Apex app like a phone call (Apple CallKit) when the G410 doorbell is pressed.
+#
+# ─── SETUP STEPS ─────────────────────────────────────────────────────────────
+#
+# 1. Install pyjwt on your HA instance:
+#    In HA Terminal (SSH add-on or Studio Code Server terminal):
+#      pip3 install pyjwt cryptography
+#
+# 2. Copy voip_push.py to your HA config folder:
+#      /config/scripts/voip_push.py
+#
+# 3. Get your APNs key from Apple:
+#    a. Go to developer.apple.com → Certificates, Identifiers & Profiles → Keys
+#    b. Click "+" → Name it "Apex VoIP" → check "Apple Push Notifications service (APNs)"
+#    c. Download the .p8 file — save it as: /config/apns/AuthKey_YOURKEYID.p8
+#    d. Record your Key ID (10-char code) and Team ID (Membership section)
+#
+# 4. Create a wrapper shell script at /config/scripts/ring_doorbell.sh:
+#    (Replace the placeholder values with your real tokens/IDs)
+#
+#    #!/bin/bash
+#    python3 /config/scripts/voip_push.py \
+#      --token "YOUR_64_CHAR_VOIP_TOKEN_FROM_APEX_SETTINGS" \
+#      --key-id "YOURKEYID10" \
+#      --team-id "YOURTEAMID" \
+#      --key-path "/config/apns/AuthKey_YOURKEYID10.p8" \
+#      --camera "doorbell" \
+#      --caller "Front Door"
+#
+#    Make it executable:  chmod +x /config/scripts/ring_doorbell.sh
+#
+# 5. Get your VoIP token from the Apex app:
+#    Open Apex → tap gear icon → scroll to "Doorbell" section → tap "Copy"
+#    Paste that token into ring_doorbell.sh above.
+#
+# 6. Add to configuration.yaml:
+#
+#    shell_command:
+#      ring_doorbell: "bash /config/scripts/ring_doorbell.sh"
+#
+#    Then restart HA (Settings → System → Restart).
+#
+# 7. Paste this automation into HA (Settings → Automations → ⋮ → Edit as YAML)
+#    or save it to config/automations/doorbell_callkit.yaml.
+#
+# ─── AUTOMATION ──────────────────────────────────────────────────────────────
+
+alias: "Doorbell: Apex CallKit Ring"
+description: "Rings the Apex app as a native phone call when the G410 doorbell button is pressed"
+mode: single  # Ignore duplicate rings while one is already in progress
+
+trigger:
+  # Option A: If HA sees your G410 as a native doorbell device (Reolink integration)
+  - platform: state
+    entity_id: binary_sensor.g410_doorbell_button  # <-- replace with your actual entity ID
+    to: "on"
+
+  # Option B: Device trigger (if G410 appears as a doorbell device class in HA)
+  # - platform: device
+  #   device_id: YOUR_G410_DEVICE_ID
+  #   domain: doorbell
+  #   type: doorbell
+
+condition: []
+
+action:
+  - service: shell_command.ring_doorbell
+  - delay:
+      seconds: 1
+  # Optional: also send a regular push notification as a fallback
+  # (shows on lock screen if CallKit somehow fails)
+  # - service: notify.mobile_app_YOUR_PHONE
+  #   data:
+  #     title: "Doorbell"
+  #     message: "Someone is at the front door"
+  #     data:
+  #       push:
+  #         sound: "default"
+
+# ─── TESTING ─────────────────────────────────────────────────────────────────
+#
+# To test without pressing the physical doorbell:
+#   HA Developer Tools → Services → shell_command.ring_doorbell → Call Service
+#
+# Or run directly from terminal:
+#   python3 /config/scripts/voip_push.py --token YOUR_TOKEN --key-id KEYID ...
+#
+# Expected result: iPhone shows native CallKit incoming call screen (like a phone call)
+# even if the Apex app is completely closed/locked.
+# Tapping "Accept" opens Apex and shows the doorbell camera feed with live audio.

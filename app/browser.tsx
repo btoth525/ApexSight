@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
   Alert, Modal, ScrollView, TextInput,
-  PanResponder, Animated, useWindowDimensions,
+  PanResponder, Animated, useWindowDimensions, Clipboard,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { WebView, WebViewNavigation } from "react-native-webview";
@@ -21,6 +21,8 @@ import { apiClient } from "@/utils/apiClient";
 import { useFrigateEvents } from "@/hooks/useFrigateEvents";
 import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
 import { pendingDeeplink } from "@/stores/pendingDeeplink";
+import * as SecureStore from "expo-secure-store";
+import { VOIP_TOKEN_KEY } from "@/hooks/useDoorbellCall";
 
 // ─── JS injected on every page load ─────────────────────────────────────────
 const VIEWER_JS = `
@@ -127,6 +129,12 @@ export default function BrowserScreen() {
   const toastAnim                     = useRef(new Animated.Value(-80)).current;
   const toastTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastUrlRef                   = useRef<string | null>(null);
+
+  // VoIP push token (for Doorbell settings row)
+  const [voipToken, setVoipToken] = useState<string | null>(null);
+  useEffect(() => {
+    SecureStore.getItemAsync(VOIP_TOKEN_KEY).then((t) => setVoipToken(t ?? null));
+  }, []);
 
   // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
@@ -808,6 +816,46 @@ export default function BrowserScreen() {
                       label="Camera Switcher" sub={`Tap the camera button to jump between ${cameras.length} cameras`} />
                   </>
                 )}
+              </View>
+
+              {/* ── DOORBELL ───────────────────────────────────────── */}
+              <SectionHeader title="Doorbell" />
+              <View style={{ backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Row icon="key-outline" iconColor="#f59e0b" iconBg="#f59e0b22"
+                    label="VoIP Push Token"
+                    sub={voipToken
+                      ? `${voipToken.slice(0, 8)}…${voipToken.slice(-8)}`
+                      : "Not registered yet — open app once to register"
+                    }
+                  />
+                  {voipToken && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        haptic.tap();
+                        Clipboard.setString(voipToken);
+                        Alert.alert("Copied", "VoIP Push Token copied to clipboard.");
+                      }}
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.12)",
+                        borderRadius: 8,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Ionicons name="copy-outline" size={12} color="rgba(255,255,255,0.6)" />
+                      <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600" }}>Copy</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)", marginVertical: 10 }} />
+                <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, lineHeight: 16 }}>
+                  Paste this token into your Home Assistant automation to enable live doorbell calls.
+                </Text>
               </View>
 
               {/* ── ACTIONS ────────────────────────────────────────── */}
