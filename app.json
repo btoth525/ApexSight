@@ -2,7 +2,7 @@
   "expo": {
     "name": "Apex",
     "slug": "apex-frigate",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "platforms": [
       "ios"
     ],
@@ -19,7 +19,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.brandontoth.apexsight",
-      "buildNumber": "22",
+      "buildNumber": "23",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Used for live camera viewing",
