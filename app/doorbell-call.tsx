@@ -5,66 +5,8 @@ import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/stores/authStore";
+import { buildWsUrl, buildWebRTCHtml } from "@/utils/doorbellStream";
 import * as Haptics from "expo-haptics";
-
-// Minimal WebRTC client using go2rtc's native 2.x signaling protocol:
-//   offer:     {type:"webrtc/offer",     value: sdp_string}
-//   answer:    {type:"webrtc/answer",    value: sdp_string}
-//   candidate: {type:"webrtc/candidate", value: "candidate_line\nsdpMLineIndex"}
-// Confirmed working via browser console test against /live/webrtc/api/ws.
-function buildWebRTCHtml(wsUrl: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:#000; width:100vw; height:100vh; overflow:hidden; }
-video { width:100%; height:100%; object-fit:cover; display:block; }
-</style>
-</head>
-<body>
-<video id="v" autoplay playsinline></video>
-<script>
-(function() {
-  var pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-  var ws = new WebSocket(${JSON.stringify(wsUrl)});
-  pc.ontrack = function(e) {
-    var v = document.getElementById('v');
-    if (!v.srcObject || v.srcObject !== e.streams[0]) v.srcObject = e.streams[0];
-  };
-  ws.onmessage = function(e) {
-    try {
-      var msg = JSON.parse(e.data);
-      if (msg.type === 'webrtc/answer') {
-        pc.setRemoteDescription({ type: 'answer', sdp: msg.value });
-      } else if (msg.type === 'webrtc/candidate' && msg.value) {
-        pc.addIceCandidate({ candidate: msg.value, sdpMid: '0' }).catch(function(){});
-      }
-    } catch(err) {}
-  };
-  pc.onicecandidate = function(e) {
-    if (e.candidate && ws.readyState === 1) {
-      ws.send(JSON.stringify({
-        type: 'webrtc/candidate',
-        value: e.candidate.candidate + '\\n' + (e.candidate.sdpMLineIndex || 0)
-      }));
-    }
-  };
-  ws.onopen = function() {
-    try {
-      pc.addTransceiver('video', { direction: 'recvonly' });
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-      pc.createOffer()
-        .then(function(o) { return pc.setLocalDescription(o).then(function() { return o; }); })
-        .then(function(o) { ws.send(JSON.stringify({ type: 'webrtc/offer', value: o.sdp })); });
-    } catch(err) {}
-  };
-})();
-</script>
-</body>
-</html>`;
-}
 
 export default function DoorbellCallScreen() {
   const { camera } = useLocalSearchParams<{ camera: string }>();
@@ -75,19 +17,10 @@ export default function DoorbellCallScreen() {
 
   const cameraName = camera ?? "doorbell_twoway";
 
-  // Build the go2rtc WebSocket signaling URL with the auth token as a query param.
-  // Frigate's go2rtc proxy lives at /api/go2rtc/ and accepts ?token= for auth.
-  const wsUrl = useMemo(() => {
-    if (!baseUrl) return "";
-    try {
-      const url = new URL(baseUrl);
-      const proto = url.protocol === "https:" ? "wss:" : "ws:";
-      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
-      return `${proto}//${url.host}/live/webrtc/api/ws?src=${encodeURIComponent(cameraName)}${tokenParam}`;
-    } catch {
-      return "";
-    }
-  }, [baseUrl, token, cameraName]);
+  const wsUrl = useMemo(
+    () => buildWsUrl(baseUrl, token, cameraName),
+    [baseUrl, token, cameraName],
+  );
 
   const webRTCHtml = useMemo(() => buildWebRTCHtml(wsUrl), [wsUrl]);
 
@@ -102,8 +35,6 @@ export default function DoorbellCallScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000000" }}>
-      {/* Inject our own WebRTC HTML so we talk directly to go2rtc's WS API,
-          bypassing Frigate's go2rtc web-interface page (admin-only 403). */}
       {!isLoading && wsUrl ? (
         <WebView
           ref={webViewRef}

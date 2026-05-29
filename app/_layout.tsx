@@ -1,13 +1,16 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Stack, useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { View, Text, ScrollView } from "react-native";
+import { WebView } from "react-native-webview";
 import * as Linking from "expo-linking";
 import { useAuth } from "@/hooks/useAuth";
 import { pendingDeeplink } from "@/stores/pendingDeeplink";
 import { useDoorbellCall, type ActiveCall } from "@/hooks/useDoorbellCall";
+import { useAuthStore } from "@/stores/authStore";
+import { buildWsUrl, buildWebRTCHtml } from "@/utils/doorbellStream";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -42,9 +45,23 @@ class ErrorBoundary extends React.Component<
 function AppContent() {
   useAuth();
   const router = useRouter();
+  const { baseUrl, token } = useAuthStore();
+
+  // Camera name set when a VoIP push arrives — mounts a hidden 1×1 WebView
+  // that runs the full WebRTC handshake so go2rtc buffers the RTSP stream
+  // before the user taps Accept. Cleared when they answer or decline.
+  const [preWarmCamera, setPreWarmCamera] = useState<string | null>(null);
+
+  const preWarmWsUrl = useMemo(
+    () => (preWarmCamera ? buildWsUrl(baseUrl, token, preWarmCamera) : ""),
+    [baseUrl, token, preWarmCamera],
+  );
+  const preWarmHtml = useMemo(
+    () => (preWarmWsUrl ? buildWebRTCHtml(preWarmWsUrl) : ""),
+    [preWarmWsUrl],
+  );
 
   // Intercept apex:// URLs when app is already running (foreground case).
-  // Stores them so browser.tsx can consume and navigate the WebView.
   useEffect(() => {
     const sub = Linking.addEventListener("url", ({ url }) => {
       if (url.startsWith("apex://")) pendingDeeplink.set(url);
@@ -52,20 +69,50 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
-  // CallKit incoming call — push to full-screen doorbell screen
+  const handlePush = useCallback((camera: string) => {
+    setPreWarmCamera(camera);
+  }, []);
+
   const handleAnswer = useCallback((call: ActiveCall) => {
+    setPreWarmCamera(null); // stop pre-warm — doorbell-call takes over
     router.push(`/doorbell-call?camera=${encodeURIComponent(call.cameraName)}`);
   }, [router]);
 
-  // Decline / remote end — doorbell-call screen handles its own dismissal
-  const handleEndCall = useCallback((_uuid: string) => {}, []);
+  const handleEndCall = useCallback((_uuid: string) => {
+    setPreWarmCamera(null);
+  }, []);
 
-  useDoorbellCall({ onAnswer: handleAnswer, onEndCall: handleEndCall });
+  useDoorbellCall({ onAnswer: handleAnswer, onEndCall: handleEndCall, onPush: handlePush });
 
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#000000" }}>
         <StatusBar style="light" />
+
+        {/* Hidden 1×1 pre-warm WebView — starts WebRTC handshake when push
+            arrives so go2rtc buffers the RTSP stream before user answers. */}
+        {preWarmCamera && preWarmWsUrl ? (
+          <View
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              top: -10,
+              left: -10,
+              opacity: 0,
+            }}
+          >
+            <WebView
+              source={{ html: preWarmHtml, baseUrl }}
+              style={{ width: 1, height: 1 }}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
+              sharedCookiesEnabled={true}
+              originWhitelist={["*"]}
+            />
+          </View>
+        ) : null}
+
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#000000" } }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />

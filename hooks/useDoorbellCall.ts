@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import { useAuthStore } from "@/stores/authStore";
 
 export const VOIP_TOKEN_KEY = "apex_voip_push_token";
 
@@ -14,6 +13,7 @@ export type ActiveCall = {
 type Options = {
   onAnswer: (call: ActiveCall) => void;
   onEndCall: (callUUID: string) => void;
+  onPush?: (camera: string) => void;
 };
 
 // Lazy-load native modules so any linking/entitlement issue degrades
@@ -59,7 +59,7 @@ function setupCallKeep(RNCallKeep: NonNullable<ReturnType<typeof getCallKeep>>) 
   }
 }
 
-export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
+export function useDoorbellCall({ onAnswer, onEndCall, onPush }: Options) {
   const [voipToken, setVoipToken] = useState<string | null>(null);
 
   // uuid → camera, populated by the VoIP "notification" payload. The native
@@ -70,8 +70,10 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
 
   const onAnswerRef = useRef(onAnswer);
   const onEndCallRef = useRef(onEndCall);
+  const onPushRef = useRef(onPush);
   useEffect(() => { onAnswerRef.current = onAnswer; }, [onAnswer]);
   useEffect(() => { onEndCallRef.current = onEndCall; }, [onEndCall]);
+  useEffect(() => { onPushRef.current = onPush; }, [onPush]);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -93,7 +95,7 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
 
     // ── Helpers ────────────────────────────────────────────────────────────
     const recordCamera = (payload: { uuid?: string; camera?: string }) => {
-      const camera = payload?.camera ?? "doorbell";
+      const camera = payload?.camera ?? "doorbell_twoway";
       lastCameraRef.current = camera;
       if (payload?.uuid) cameraByUUID.current[payload.uuid] = camera;
     };
@@ -116,20 +118,9 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
       try {
         const payload = notification as { uuid?: string; camera?: string };
         recordCamera(payload);
-        // Pre-warm go2rtc: open a WebSocket immediately so go2rtc starts
-        // buffering the RTSP stream before the user taps Accept. By the time
-        // they answer, ICE is already checked and a keyframe is buffered.
-        const { baseUrl, token } = useAuthStore.getState();
-        if (baseUrl) {
-          try {
-            const url = new URL(baseUrl);
-            const proto = url.protocol === "https:" ? "wss:" : "ws:";
-            const cam = encodeURIComponent(payload.camera ?? "doorbell_twoway");
-            const tok = token ? `&token=${encodeURIComponent(token)}` : "";
-            const ws = new WebSocket(`${proto}//${url.host}/live/webrtc/api/ws?src=${cam}${tok}`);
-            setTimeout(() => { try { ws.close(); } catch {} }, 10000);
-          } catch {}
-        }
+        // Notify _layout.tsx so it can mount a hidden pre-warm WebView that
+        // does the full WebRTC handshake while CallKit screen is showing.
+        onPushRef.current?.(payload.camera ?? "doorbell_twoway");
       } catch {}
     };
 
@@ -187,7 +178,6 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
         RNCallKeep.endCall(callUUID);
         delete cameraByUUID.current[callUUID];
       } else {
-        // End any active call (best effort)
         for (const uuid of Object.keys(cameraByUUID.current)) {
           RNCallKeep.endCall(uuid);
           delete cameraByUUID.current[uuid];
