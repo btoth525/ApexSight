@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import RNCallKeep from "react-native-callkeep";
-import VoipPushNotification from "react-native-voip-push-notification";
 
 export const VOIP_TOKEN_KEY = "apex_voip_push_token";
 
@@ -24,7 +22,27 @@ function generateUUID(): string {
   });
 }
 
-function setupCallKeep() {
+// Lazy-load native modules so a missing entitlement/provisioning issue
+// never crashes the app — CallKit just silently won't work.
+function getCallKeep() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("react-native-callkeep").default;
+  } catch {
+    return null;
+  }
+}
+
+function getVoipPush() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("react-native-voip-push-notification").default;
+  } catch {
+    return null;
+  }
+}
+
+function setupCallKeep(RNCallKeep: NonNullable<ReturnType<typeof getCallKeep>>) {
   try {
     RNCallKeep.setup({
       ios: {
@@ -43,7 +61,7 @@ function setupCallKeep() {
     });
     RNCallKeep.setAvailable(true);
   } catch {
-    // setup may throw if already initialized — safe to ignore
+    // idempotent — safe to call multiple times
   }
 }
 
@@ -51,8 +69,6 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
   const [voipToken, setVoipToken] = useState<string | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
 
-  // Stable refs so push handler (which may fire before re-renders) always
-  // calls the latest version of the callbacks without re-registering listeners.
   const onAnswerRef = useRef(onAnswer);
   const onEndCallRef = useRef(onEndCall);
   useEffect(() => { onAnswerRef.current = onAnswer; }, [onAnswer]);
@@ -61,72 +77,85 @@ export function useDoorbellCall({ onAnswer, onEndCall }: Options) {
   useEffect(() => {
     if (Platform.OS !== "ios") return;
 
-    setupCallKeep();
-
     // Load cached token immediately (shows in settings before re-registration)
     SecureStore.getItemAsync(VOIP_TOKEN_KEY).then((t) => {
       if (t) setVoipToken(t);
-    });
+    }).catch(() => {});
 
-    VoipPushNotification.registerVoipToken();
+    const RNCallKeep = getCallKeep();
+    const VoipPush = getVoipPush();
+
+    // If either native module failed to load, bail out gracefully —
+    // the rest of the app continues to work normally.
+    if (!RNCallKeep || !VoipPush) return;
+
+    try {
+      setupCallKeep(RNCallKeep);
+      VoipPush.registerVoipToken();
+    } catch {
+      return;
+    }
 
     const handleToken = (token: string) => {
-      setVoipToken(token);
-      SecureStore.setItemAsync(VOIP_TOKEN_KEY, token).catch(() => {});
+      try {
+        setVoipToken(token);
+        SecureStore.setItemAsync(VOIP_TOKEN_KEY, token).catch(() => {});
+      } catch {}
     };
 
-    // Payload sent by voip_push.py: { "camera": "doorbell", "caller": "Front Door" }
     const handlePush = (notification: object) => {
-      const n = notification as { data?: { camera?: string; caller?: string } };
-      // Ensure CallKit is initialized (critical for killed-state wakeup)
-      setupCallKeep();
-
-      const camera = n?.data?.camera ?? "doorbell";
-      const caller = n?.data?.caller ?? "Front Door";
-      const callUUID = generateUUID();
-
-      activeCallRef.current = { callUUID, cameraName: camera, callerName: caller };
-
-      RNCallKeep.displayIncomingCall(
-        callUUID,
-        caller,    // handle (shown as caller identifier)
-        caller,    // localizedCallerName
-        "generic", // handleType
-        true,      // hasVideo
-      );
+      try {
+        const n = notification as { data?: { camera?: string; caller?: string } };
+        setupCallKeep(RNCallKeep);
+        const camera = n?.data?.camera ?? "doorbell";
+        const caller = n?.data?.caller ?? "Front Door";
+        const callUUID = generateUUID();
+        activeCallRef.current = { callUUID, cameraName: camera, callerName: caller };
+        RNCallKeep.displayIncomingCall(callUUID, caller, caller, "generic", true);
+      } catch {}
     };
 
     const handleAnswer = ({ callUUID }: { callUUID: string }) => {
-      const call = activeCallRef.current;
-      if (call && call.callUUID === callUUID) {
-        onAnswerRef.current(call);
-      }
+      try {
+        const call = activeCallRef.current;
+        if (call && call.callUUID === callUUID) onAnswerRef.current(call);
+      } catch {}
     };
 
     const handleEnd = ({ callUUID }: { callUUID: string }) => {
-      activeCallRef.current = null;
-      onEndCallRef.current(callUUID);
+      try {
+        activeCallRef.current = null;
+        onEndCallRef.current(callUUID);
+      } catch {}
     };
 
-    VoipPushNotification.addEventListener("register", handleToken);
-    VoipPushNotification.addEventListener("notification", handlePush);
-    RNCallKeep.addEventListener("answerCall", handleAnswer);
-    RNCallKeep.addEventListener("endCall", handleEnd);
+    try {
+      VoipPush.addEventListener("register", handleToken);
+      VoipPush.addEventListener("notification", handlePush);
+      RNCallKeep.addEventListener("answerCall", handleAnswer);
+      RNCallKeep.addEventListener("endCall", handleEnd);
+    } catch {}
 
     return () => {
-      VoipPushNotification.removeEventListener("register");
-      VoipPushNotification.removeEventListener("notification");
-      RNCallKeep.removeEventListener("answerCall");
-      RNCallKeep.removeEventListener("endCall");
+      try {
+        VoipPush.removeEventListener("register");
+        VoipPush.removeEventListener("notification");
+        RNCallKeep.removeEventListener("answerCall");
+        RNCallKeep.removeEventListener("endCall");
+      } catch {}
     };
-  }, []); // empty deps — callbacks accessed via refs
+  }, []);
 
   const endCall = useCallback((callUUID?: string) => {
-    const uuid = callUUID ?? activeCallRef.current?.callUUID;
-    if (uuid) {
-      RNCallKeep.endCall(uuid);
-      activeCallRef.current = null;
-    }
+    try {
+      const RNCallKeep = getCallKeep();
+      if (!RNCallKeep) return;
+      const uuid = callUUID ?? activeCallRef.current?.callUUID;
+      if (uuid) {
+        RNCallKeep.endCall(uuid);
+        activeCallRef.current = null;
+      }
+    } catch {}
   }, []);
 
   return { voipToken, endCall };
