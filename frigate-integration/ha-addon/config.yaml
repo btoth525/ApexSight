@@ -1,0 +1,32 @@
+name: "Apex Doorbell Audio"
+description: "Two-way audio proxy for Aqara G410 doorbell. Bridges WebSocket mic audio from the Apex app to the doorbell's native RTP/control channels."
+version: "1.0.0"
+slug: "apex_doorbell_audio"
+init: false
+
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+
+options:
+  doorbell_ip: "192.168.1.67"
+  ws_port: 8556
+  frigate_token: ""
+
+schema:
+  doorbell_ip: str
+  ws_port: int
+  frigate_token: str
+
+ports:
+  8556/tcp: 8556
+
+ports_description:
+  8556/tcp: "WebSocket audio proxy (Apex app connects here)"
+
+network: true
+
+image: "ghcr.io/home-assistant/{arch}-base-python:3.11"

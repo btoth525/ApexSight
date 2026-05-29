@@ -1,0 +1,18 @@
+# Add this to your existing cloudflared config.yaml
+# (usually at /etc/cloudflared/config.yaml or ~/.cloudflared/config.yaml)
+#
+# The ingress rules are matched top-to-bottom. The /doorbell-audio path
+# must come BEFORE the catch-all Frigate rule.
+
+tunnel: <YOUR_TUNNEL_ID>
+credentials-file: /etc/cloudflared/<YOUR_TUNNEL_ID>.json
+
+ingress:
+  # Apex two-way audio proxy (HA add-on on port 8556)
+  - hostname: frigate.plexserver525.com
+    path: /doorbell-audio
+    service: ws://localhost:8556
+
+  # Frigate NVR — everything else
+  - hostname: frigate.plexserver525.com
+    service: http://localhost:5000
