@@ -29,7 +29,7 @@ true;
 
 export default function DoorbellCallScreen() {
   const { camera } = useLocalSearchParams<{ camera: string }>();
-  const { baseUrl } = useAuthStore();
+  const { baseUrl, token, isLoading } = useAuthStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
@@ -51,20 +51,25 @@ export default function DoorbellCallScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#000000" }}>
       {/* go2rtc WebRTC stream — two-way audio via mediaCapturePermissionGrantType */}
-      <WebView
-        ref={webViewRef}
-        source={{ uri: streamUrl }}
-        style={{ flex: 1, backgroundColor: "#000000" }}
-        allowsInlineMediaPlayback={true}
-        mediaPlaybackRequiresUserAction={false}
-        allowsAirPlayForMediaPlayback={false}
-        sharedCookiesEnabled={true}
-        originWhitelist={["*"]}
-        injectedJavaScript={GO2RTC_AUTOPLAY_JS}
-        // Auto-grant mic permission for same-host WebRTC (two-way audio)
-        // NSMicrophoneUsageDescription already present in app.json
-        mediaCapturePermissionGrantType="grantIfSameHostElseDeny"
-      />
+      {!isLoading && (
+        <WebView
+          ref={webViewRef}
+          source={{
+            uri: streamUrl,
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }}
+          style={{ flex: 1, backgroundColor: "#000000" }}
+          allowsInlineMediaPlayback={true}
+          mediaPlaybackRequiresUserAction={false}
+          allowsAirPlayForMediaPlayback={false}
+          sharedCookiesEnabled={true}
+          originWhitelist={["*"]}
+          injectedJavaScript={GO2RTC_AUTOPLAY_JS}
+          // Auto-grant mic permission for same-host WebRTC (two-way audio)
+          // NSMicrophoneUsageDescription already present in app.json
+          mediaCapturePermissionGrantType="grantIfSameHostElseDeny"
+        />
+      )}
 
       {/* Caller pill — top overlay */}
       <View
