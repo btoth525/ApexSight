@@ -36,10 +36,6 @@
           "initialOrientation": "DEFAULT"
         }
       ],
-      [
-        "@config-plugins/react-native-callkeep",
-        {}
-      ]
     ],
     "scheme": "apex",
     "experiments": {
