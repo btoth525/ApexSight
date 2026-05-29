@@ -25,7 +25,7 @@
 #      --key-id "YOURKEYID10" \
 #      --team-id "YOURTEAMID" \
 #      --key-path "/config/apns/AuthKey_YOURKEYID10.p8" \
-#      --camera "doorbell" \
+#      --camera "doorbell_twoway" \
 #      --caller "Front Door"
 #
 #    Make it executable:  chmod +x /config/scripts/ring_doorbell.sh
@@ -51,16 +51,9 @@ description: "Rings the Apex app as a native phone call when the G410 doorbell b
 mode: single  # Ignore duplicate rings while one is already in progress
 
 trigger:
-  # Option A: If HA sees your G410 as a native doorbell device (Reolink integration)
   - platform: state
-    entity_id: binary_sensor.g410_doorbell_button  # <-- replace with your actual entity ID
+    entity_id: binary_sensor.door_bell_ring_occupancy
     to: "on"
-
-  # Option B: Device trigger (if G410 appears as a doorbell device class in HA)
-  # - platform: device
-  #   device_id: YOUR_G410_DEVICE_ID
-  #   domain: doorbell
-  #   type: doorbell
 
 condition: []
 
