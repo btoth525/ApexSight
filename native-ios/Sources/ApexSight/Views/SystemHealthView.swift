@@ -4,7 +4,9 @@ struct SystemHealthView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        ScrollView {
+        ZStack {
+            GlassBackground()
+            ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -101,8 +103,10 @@ struct SystemHealthView: View {
             }
             .padding(18)
         }
+        }
         .navigationTitle("System")
         .navigationBarTitleDisplayMode(.inline)
+        }
     }
 
     private func metric(_ label: String, value: String) -> some View {

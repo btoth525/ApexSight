@@ -8,53 +8,66 @@ struct LoginView: View {
     @State private var password = ""
 
     var body: some View {
-        VStack(spacing: 18) {
-            Spacer()
+        ZStack {
+            GlassBackground()
+            VStack(spacing: 18) {
+                Spacer()
 
-            VStack(spacing: 6) {
-                Text("ApexSight")
-                    .font(.system(size: 44, weight: .900, design: .rounded))
-                    .foregroundStyle(GlassTheme.primary)
+                VStack(spacing: 8) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 52, weight: .900))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [GlassTheme.cyan, GlassTheme.blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .padding(.bottom, 4)
 
-                Text("Native Frigate control")
-                    .font(.system(size: 15, weight: .700))
-                    .foregroundStyle(GlassTheme.secondary)
-            }
+                    Text("ApexSight")
+                        .font(.system(size: 44, weight: .900, design: .rounded))
+                        .foregroundStyle(GlassTheme.primary)
 
-            GlassCard {
-                VStack(spacing: 14) {
-                    field("Server", text: $baseURL, keyboard: .URL)
-                    field("Username", text: $username, keyboard: .default)
-                    secureField("Password", text: $password)
-
-                    if let error = appState.errorMessage {
-                        Text(error)
-                            .font(.system(size: 13, weight: .700))
-                            .foregroundStyle(GlassTheme.orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Button {
-                        Task {
-                            await appState.signIn(baseURL: baseURL, username: username, password: password)
-                        }
-                    } label: {
-                        HStack {
-                            if appState.isLoading {
-                                ProgressView()
-                                    .tint(.white)
-                            }
-                            Text("Connect")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PillButtonStyle(tint: GlassTheme.blue))
-                    .disabled(appState.isLoading)
+                    Text("Native Frigate control")
+                        .font(.system(size: 15, weight: .700))
+                        .foregroundStyle(GlassTheme.secondary)
                 }
-            }
-            .padding(.horizontal, 20)
 
-            Spacer()
+                GlassCard {
+                    VStack(spacing: 14) {
+                        field("Server URL", text: $baseURL, keyboard: .URL)
+                        field("Username", text: $username, keyboard: .default)
+                        secureField("Password", text: $password)
+
+                        if let error = appState.errorMessage {
+                            Text(error)
+                                .font(.system(size: 13, weight: .700))
+                                .foregroundStyle(GlassTheme.orange)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Button {
+                            Task {
+                                await appState.signIn(baseURL: baseURL, username: username, password: password)
+                            }
+                        } label: {
+                            HStack {
+                                if appState.isLoading {
+                                    ProgressView().tint(.white)
+                                }
+                                Text("Connect to Frigate")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PillButtonStyle(tint: GlassTheme.blue))
+                        .disabled(appState.isLoading || baseURL.isEmpty)
+                    }
+                }
+                .padding(.horizontal, 20)
+
+                Spacer()
+            }
         }
     }
 
@@ -79,3 +92,4 @@ struct LoginView: View {
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
+

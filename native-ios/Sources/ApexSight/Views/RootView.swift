@@ -5,16 +5,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    GlassTheme.background,
-                    Color(red: 0.03, green: 0.05, blue: 0.08),
-                    GlassTheme.background
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            GlassBackground()
 
             if appState.session == nil {
                 LoginView()
