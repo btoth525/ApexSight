@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>ApexSight</string>
+    <key>CFBundleDisplayName</key>
+    <string>ApexSight</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.brandontoth.apexsight</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>3.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+
+    <!-- Background modes: voip for PushKit, audio for WebRTC mic, fetch for events -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>voip</string>
+        <string>audio</string>
+        <string>fetch</string>
+    </array>
+
+    <!-- Privacy strings — required for App Store review -->
+    <key>NSCameraUsageDescription</key>
+    <string>Used for live doorbell video calls.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Used for two-way audio during doorbell calls.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Authenticate quickly to access your Frigate cameras.</string>
+
+    <!-- Allow local network access for LAN Frigate instances -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Connects to your Frigate NVR on your home network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_http._tcp</string>
+        <string>_https._tcp</string>
+    </array>
+
+    <!-- Allow HTTP for local (non-HTTPS) Frigate instances -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+
+    <!-- Supported orientations -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <key>UIRequiresFullScreen</key>
+    <true/>
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleLightContent</string>
+</dict>
+</plist>
