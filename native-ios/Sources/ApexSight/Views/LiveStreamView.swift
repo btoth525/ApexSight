@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import CoreMedia
 import WebKit
 
 struct LiveStreamView: View {
@@ -12,6 +13,7 @@ struct LiveStreamView: View {
     @State private var errorMessage: String?
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
+    @State private var stallObserver: NSKeyValueObservation?
 
     enum StreamMode: String, CaseIterable {
         case webrtc = "WebRTC"
@@ -65,7 +67,10 @@ struct LiveStreamView: View {
                 player = nil
             }
         }
-        .onDisappear { player?.pause() }
+        .onDisappear {
+            player?.pause()
+            stallObserver = nil
+        }
     }
 
     private var webrtcView: some View {
@@ -219,6 +224,7 @@ struct LiveStreamView: View {
 
     private func startHLS() {
         player?.pause()
+        stallObserver = nil
         player = nil
         isLoading = true
         errorMessage = nil
@@ -228,12 +234,27 @@ struct LiveStreamView: View {
             isLoading = false
             return
         }
+
         let item = client.playerItem(for: url)
+        item.preferredForwardBufferDuration = 2
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.automaticallyWaitsToMinimizeStalling = false
         newPlayer.play()
         player = newPlayer
         isLoading = false
+
+        // Stall recovery: observe timeControlStatus
+        stallObserver = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak newPlayer] p, _ in
+            guard let p = newPlayer else { return }
+            if p.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                // Seek to live edge and force restart
+                if let range = p.currentItem?.seekableTimeRanges.last?.timeRangeValue {
+                    p.seek(to: CMTimeRangeGetEnd(range), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                        p.play()
+                    }
+                }
+            }
+        }
     }
 }
 

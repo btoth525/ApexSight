@@ -121,6 +121,8 @@ struct DashboardView: View {
                     NotificationSettingsView()
                 } else if value == "servers" {
                     ServerSwitcherView()
+                } else if value == "search" {
+                    SearchView()
                 }
             }
         }
@@ -137,6 +139,16 @@ struct DashboardView: View {
                     .foregroundStyle(GlassTheme.secondary)
             }
             Spacer()
+            Button {
+                path.append("search")
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .heavy))
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.12), in: Circle())
+            }
+            .foregroundStyle(GlassTheme.cyan)
+
             Button {
                 path.append("notifications")
             } label: {

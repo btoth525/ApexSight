@@ -149,6 +149,67 @@ struct FrigateClient {
         baseURL.appending(path: "vod/\(camera)/start/\(Int(start))/end/\(Int(end))/master.m3u8")
     }
 
+    // Events with full filter params
+    func events(
+        camera: String? = nil,
+        label: String? = nil,
+        subLabel: String? = nil,
+        zone: String? = nil,
+        after: Date? = nil,
+        before: Date? = nil,
+        limit: Int = 50,
+        hasClip: Bool? = nil,
+        hasSnapshot: Bool? = nil
+    ) async throws -> [FrigateEvent] {
+        var params: [String: String] = ["limit": "\(limit)"]
+        if let camera { params["camera"] = camera }
+        if let label { params["label"] = label }
+        if let subLabel { params["sub_label"] = subLabel }
+        if let zone { params["zone"] = zone }
+        if let after { params["after"] = "\(Int(after.timeIntervalSince1970))" }
+        if let before { params["before"] = "\(Int(before.timeIntervalSince1970))" }
+        if let hasClip { params["has_clip"] = hasClip ? "1" : "0" }
+        if let hasSnapshot { params["has_snapshot"] = hasSnapshot ? "1" : "0" }
+
+        var components = URLComponents(url: baseURL.appending(path: "api/events"), resolvingAgainstBaseURL: false)
+        components?.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        return try JSONDecoder.frigate.decode([FrigateEvent].self, from: data)
+    }
+
+    // Semantic search (requires Frigate+ with embeddings enabled)
+    func semanticSearch(
+        query: String,
+        camera: String? = nil,
+        label: String? = nil,
+        subLabel: String? = nil,
+        zone: String? = nil,
+        after: Date? = nil,
+        before: Date? = nil,
+        limit: Int = 50
+    ) async throws -> [FrigateEvent] {
+        var params: [String: String] = ["query": query, "limit": "\(limit)"]
+        if let camera { params["cameras"] = camera }
+        if let label { params["labels"] = label }
+        if let subLabel { params["sub_labels"] = subLabel }
+        if let zone { params["zones"] = zone }
+        if let after { params["after"] = "\(Int(after.timeIntervalSince1970))" }
+        if let before { params["before"] = "\(Int(before.timeIntervalSince1970))" }
+
+        var components = URLComponents(url: baseURL.appending(path: "api/events/search"), resolvingAgainstBaseURL: false)
+        components?.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        return try JSONDecoder.frigate.decode([FrigateEvent].self, from: data)
+    }
+
     func retainEvent(id: String) async throws {
         try await post("api/events/\(id)/retain", body: EmptyBody())
     }

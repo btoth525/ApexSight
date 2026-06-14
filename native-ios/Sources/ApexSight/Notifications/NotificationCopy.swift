@@ -50,17 +50,51 @@ enum NotificationCopy {
 
     private static func subLabelEmoji(_ sub: String) -> String {
         switch sub.lowercased() {
+        // Delivery carriers
         case "amazon": return "📦"
         case "ups": return "📦"
         case "fedex": return "📦"
         case "usps": return "📬"
         case "dhl": return "📦"
+        case "an_post": return "📮"
+        case "purolator": return "📦"
+        case "postnl": return "📦"
+        case "postnord": return "📦"
+        case "gls": return "📦"
+        case "dpd": return "📦"
+        case "canada_post": return "📮"
+        case "royal_mail": return "📮"
+        // People/face
         case "face": return "👤"
         case "child": return "🧒"
         case "elderly": return "👴"
         case "vest": return "🦺"
+        // Animals
+        case "dog": return "🐕"
+        case "cat": return "🐈"
+        case "bird": return "🐦"
+        case "deer": return "🦌"
+        case "horse": return "🐴"
+        case "bear": return "🐻"
+        case "raccoon": return "🦝"
+        case "fox": return "🦊"
+        case "cow": return "🐄"
+        case "squirrel": return "🐿️"
+        case "goat": return "🐐"
+        case "rabbit": return "🐇"
+        case "kangaroo": return "🦘"
+        case "skunk": return "🦨"
+        // Vehicles/plates
         case "license_plate", "license plate": return "🔎"
+        case "motorcycle": return "🏍"
+        // Other
+        case "package": return "📦"
+        case "waste_bin": return "🗑️"
+        case "bbq_grill": return "🍖"
+        case "robot_lawnmower": return "🤖"
+        case "umbrella": return "☂️"
         case "police": return "🚔"
+        // Emergency
         case "fire_truck", "fire truck": return "🚒"
         case "ambulance": return "🚑"
         default: return "📹"
