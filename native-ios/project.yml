@@ -21,10 +21,12 @@ targets:
         INFOPLIST_FILE: Sources/ApexSight/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/ApexSight/Resources/ApexSightNative.entitlements
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
     info:
       path: Sources/ApexSight/Resources/Info.plist
       properties:
         CFBundleDisplayName: ApexSight
+        CFBundleIconName: AppIcon
         CFBundleURLTypes:
           - CFBundleURLName: ApexSight
             CFBundleURLSchemes:
@@ -33,6 +35,16 @@ targets:
           UIColorName: LaunchBackground
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: Use Face ID to unlock your saved Frigate sign-in.
         NSLocalNetworkUsageDescription: ApexSight connects to Frigate on your local network.
         NSCameraUsageDescription: Camera access is reserved for future visual search and setup features.
