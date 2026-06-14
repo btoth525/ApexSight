@@ -8,6 +8,8 @@ settings:
     MARKETING_VERSION: 1.0.0
     CURRENT_PROJECT_VERSION: 1
     SWIFT_VERSION: 5.10
+    DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
+    CODE_SIGN_STYLE: Automatic
 targets:
   ApexSightNative:
     type: application
@@ -21,7 +23,8 @@ targets:
         INFOPLIST_FILE: Sources/ApexSight/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Sources/ApexSight/Resources/ApexSightNative.entitlements
-        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     info:
       path: Sources/ApexSight/Resources/Info.plist
       properties:
@@ -55,6 +58,7 @@ targets:
         embed: true
     scheme:
       testTargets: []
+
   ApexSightWidgets:
     type: app-extension
     platform: iOS
@@ -66,12 +70,15 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.widgets
         INFOPLIST_FILE: Sources/ApexSightWidgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: Sources/ApexSightWidgets/ApexSightWidgets.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     info:
       path: Sources/ApexSightWidgets/Info.plist
       properties:
         CFBundleDisplayName: ApexSight Widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
   ApexSightNotificationService:
     type: app-extension
     platform: iOS
@@ -82,6 +89,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.NotificationService
         INFOPLIST_FILE: Sources/ApexSightNotificationService/Info.plist
         CODE_SIGN_ENTITLEMENTS: Sources/ApexSightNotificationService/ApexSightNotificationService.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     info:
       path: Sources/ApexSightNotificationService/Info.plist
       properties:
