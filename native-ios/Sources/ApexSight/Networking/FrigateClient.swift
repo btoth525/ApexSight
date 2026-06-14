@@ -112,6 +112,10 @@ struct FrigateClient {
         try await get("api/\(camera)/ptz/info")
     }
 
+    func liveHLSURL(camera: String) -> URL {
+        baseURL.appending(path: "live/hls/\(camera)/index.m3u8")
+    }
+
     func latestFrameURL(camera: String) -> URL {
         baseURL.appending(path: "api/\(camera)/latest.jpg")
     }
@@ -143,6 +147,36 @@ struct FrigateClient {
 
     func recordingHLSURL(camera: String, start: Double, end: Double) -> URL {
         baseURL.appending(path: "vod/\(camera)/start/\(Int(start))/end/\(Int(end))/master.m3u8")
+    }
+
+    func retainEvent(id: String) async throws {
+        try await post("api/events/\(id)/retain", body: EmptyBody())
+    }
+
+    func deleteEvent(id: String) async throws {
+        let url = baseURL.appending(path: "api/events/\(id)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        applyAuth(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
+    func markFalsePositive(id: String) async throws {
+        try await post("api/events/\(id)/false_positive", body: EmptyBody())
+    }
+
+    func ptzMove(camera: String, action: String, extra: [String: String] = [:]) async throws {
+        var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/ptz"), resolvingAgainstBaseURL: false)
+        var queryItems = [URLQueryItem(name: "action", value: action)]
+        extra.forEach { queryItems.append(URLQueryItem(name: $0.key, value: $0.value)) }
+        components?.queryItems = queryItems
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        applyAuth(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
     }
 
     func imageData(from url: URL) async throws -> Data {
@@ -205,6 +239,8 @@ struct FrigateClient {
         }
     }
 }
+
+private struct EmptyBody: Encodable {}
 
 private struct LogResponse: Decodable {
     let lines: [String]

@@ -116,6 +116,8 @@ struct DashboardView: View {
                     SystemHealthView()
                 } else if value == "notifications" {
                     NotificationSettingsView()
+                } else if value == "servers" {
+                    ServerSwitcherView()
                 }
             }
         }
@@ -151,6 +153,16 @@ struct DashboardView: View {
                     .background(.white.opacity(0.12), in: Circle())
             }
             .foregroundStyle(GlassTheme.green)
+
+            Button {
+                path.append("servers")
+            } label: {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 18, weight: .800))
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.12), in: Circle())
+            }
+            .foregroundStyle(GlassTheme.primary)
 
             Button {
                 appState.signOut()

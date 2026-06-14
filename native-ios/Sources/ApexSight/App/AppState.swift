@@ -22,7 +22,7 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    private let keychain = KeychainStore()
+    let keychain = KeychainStore()
 
     var client: FrigateClient? {
         guard let session else { return nil }
@@ -152,6 +152,20 @@ final class AppState: ObservableObject {
         }
 
         return output.sorted { $0.camera < $1.camera }
+    }
+
+    func switchTo(session: FrigateSession) {
+        self.session = session
+        keychain.save(session: session)
+        cameras = []
+        events = []
+        reviews = []
+        labels = []
+        subLabels = []
+        stats = nil
+        capabilities = []
+        recentLogs = []
+        Task { await refresh() }
     }
 
     func signOut() {
