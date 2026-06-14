@@ -102,11 +102,10 @@ struct SystemHealthView: View {
                 }
             }
             .padding(18)
-        }
+            }
         }
         .navigationTitle("System")
         .navigationBarTitleDisplayMode(.inline)
-        }
     }
 
     private func metric(_ label: String, value: String) -> some View {
