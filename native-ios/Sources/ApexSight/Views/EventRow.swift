@@ -13,16 +13,26 @@ struct EventRow: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("\(NotificationCopy.emoji(for: event.label)) \(titleize(event.label))")
+                Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
                     .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 Text("\(titleize(event.camera)) · \(relativeTime(event.startTime))")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
-                if let score = event.score ?? event.topScore {
-                    Text("\(Int(score * 100))% confidence")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(GlassTheme.tertiary)
+                HStack(spacing: 8) {
+                    if let score = event.score ?? event.topScore {
+                        Text("\(Int(score * 100))% confidence")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(GlassTheme.tertiary)
+                    }
+                    if let sub = event.subLabel, !sub.isEmpty {
+                        Text(titleize(sub))
+                            .font(.system(size: 11, weight: .black))
+                            .foregroundStyle(GlassTheme.cyan)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(GlassTheme.cyan.opacity(0.14), in: Capsule())
+                    }
                 }
             }
             Spacer()

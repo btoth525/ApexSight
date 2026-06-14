@@ -36,6 +36,8 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     let id: String
     let camera: String
     let label: String
+    let subLabel: String?
+    let subLabelScore: Double?
     let startTime: Double?
     let endTime: Double?
     let score: Double?
@@ -44,10 +46,17 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     let hasClip: Bool?
     let hasSnapshot: Bool?
 
+    var displayLabel: String {
+        if let sub = subLabel, !sub.isEmpty { return sub }
+        return label
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case camera
         case label
+        case subLabel = "sub_label"
+        case subLabelScore = "sub_label_score"
         case startTime = "start_time"
         case endTime = "end_time"
         case score

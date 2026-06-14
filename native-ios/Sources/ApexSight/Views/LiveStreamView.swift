@@ -1,18 +1,20 @@
 import SwiftUI
 import AVKit
+import WebKit
 
 struct LiveStreamView: View {
     let camera: FrigateCamera
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
-    @State private var streamMode: StreamMode = .hls
+    @State private var streamMode: StreamMode = .webrtc
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
 
     enum StreamMode: String, CaseIterable {
+        case webrtc = "WebRTC"
         case hls = "HLS"
         case snapshot = "Snapshot"
     }
@@ -21,11 +23,18 @@ struct LiveStreamView: View {
         appState.client?.liveHLSURL(camera: camera.name)
     }
 
+    private var webrtcURL: URL? {
+        guard let base = appState.session?.baseURL else { return nil }
+        return base.appending(path: "/live/webrtc").appending(queryItems: [URLQueryItem(name: "src", value: camera.name)])
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             switch streamMode {
+            case .webrtc:
+                webrtcView
             case .hls:
                 hlsPlayerView
             case .snapshot:
@@ -41,9 +50,40 @@ struct LiveStreamView: View {
         .navigationBarHidden(true)
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
-            startHLS()
+            if capability?.hasGo2RtcStream == true {
+                streamMode = .webrtc
+            } else {
+                streamMode = .hls
+                startHLS()
+            }
+        }
+        .onChange(of: streamMode) { _, mode in
+            if mode == .hls {
+                startHLS()
+            } else {
+                player?.pause()
+                player = nil
+            }
         }
         .onDisappear { player?.pause() }
+    }
+
+    private var webrtcView: some View {
+        Group {
+            if let url = webrtcURL, let session = appState.session {
+                WebRTCView(url: url, session: session)
+                    .ignoresSafeArea()
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(.orange)
+                    Text("WebRTC not available")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
     }
 
     private var hlsPlayerView: some View {
@@ -95,9 +135,14 @@ struct LiveStreamView: View {
                 Text(titleize(camera.name))
                     .font(.system(size: 18, weight: .black))
                     .foregroundStyle(.white)
-                Text("Live")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(.green)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 7, height: 7)
+                    Text("Live")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.green)
+                }
             }
 
             Spacer()
@@ -108,7 +153,7 @@ struct LiveStreamView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 160)
+            .frame(width: 200)
 
             if capability?.hasPtz == true {
                 Button {
@@ -189,5 +234,42 @@ struct LiveStreamView: View {
         newPlayer.play()
         player = newPlayer
         isLoading = false
+    }
+}
+
+// MARK: - WebRTC via go2rtc embedded player
+
+struct WebRTCView: UIViewRepresentable {
+    let url: URL
+    let session: FrigateSession
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+        webView.isOpaque = false
+        injectCookie(into: webView)
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        webView.load(request)
+    }
+
+    private func injectCookie(into webView: WKWebView) {
+        let props: [HTTPCookiePropertyKey: Any] = [
+            .name: "frigate_token",
+            .value: session.token,
+            .domain: session.baseURL.host() ?? "",
+            .path: "/",
+            .secure: session.baseURL.scheme == "https"
+        ]
+        if let cookie = HTTPCookie(properties: props) {
+            webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
+        }
     }
 }
