@@ -22,16 +22,17 @@ export function useAuth() {
     const seg = segments[0] as string | undefined;
     const inAuthGroup = seg === "(auth)";
     const inBrowser   = seg === "browser";
+    const inNative    = seg === "native";
 
     // Already on the right screen — never re-replace, it remounts the component
     // and resets loading state, causing a black screen loop.
-    if (token && inBrowser) return;
+    if (token && (inNative || inBrowser)) return;
     if (!token && inAuthGroup) return;
 
     if (!token) {
       router.replace("/(auth)/login");
     } else {
-      router.replace("/browser");
+      router.replace("/native");
     }
   // Intentionally omitting `segments` — we only care when token/isLoading changes,
   // not on every expo-router segment update during navigation.

@@ -21,10 +21,14 @@
       "bundleIdentifier": "com.brandontoth.apexsight",
       "buildNumber": "5",
       "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
-        "NSCameraUsageDescription": "Used for live camera viewing",
-        "NSMicrophoneUsageDescription": "Used for live camera audio",
-        "UIBackgroundModes": ["voip", "audio"]
+        "NSCameraUsageDescription": "Apex uses camera access only when a live WebRTC view requests it.",
+        "NSFaceIDUsageDescription": "Use Face ID to unlock your saved Frigate sign-in.",
+        "NSLocalNetworkUsageDescription": "Apex connects to your local Frigate server on your home network.",
+        "UIViewControllerBasedStatusBarAppearance": true
       }
     },
     "plugins": [
@@ -36,8 +40,7 @@
           "initialOrientation": "DEFAULT"
         }
       ],
-      "@config-plugins/react-native-callkeep",
-      "./plugins/withApexDoorbell.js"
+      "expo-font"
     ],
     "scheme": "apex",
     "experiments": {

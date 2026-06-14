@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
   Alert, Modal, ScrollView, TextInput,
-  PanResponder, Animated, useWindowDimensions, Clipboard,
+  PanResponder, Animated, useWindowDimensions,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { WebView, WebViewNavigation } from "react-native-webview";
@@ -21,8 +21,7 @@ import { apiClient } from "@/utils/apiClient";
 import { useFrigateEvents } from "@/hooks/useFrigateEvents";
 import { getLabelEmoji, formatLabel } from "@/utils/labelUtil";
 import { pendingDeeplink } from "@/stores/pendingDeeplink";
-import * as SecureStore from "expo-secure-store";
-import { VOIP_TOKEN_KEY } from "@/hooks/useDoorbellCall";
+import { isValidServerUrl, normalizeServerUrl } from "@/utils/serverUrl";
 
 // ─── JS injected on every page load ─────────────────────────────────────────
 const VIEWER_JS = `
@@ -65,10 +64,10 @@ function deeplinkToFrigateUrl(apexUrl: string, baseUrl: string): string | null {
     if (!route) return null;
     const qs = parsed.queryParams && Object.keys(parsed.queryParams).length > 0
       ? "?" + Object.entries(parsed.queryParams)
-          .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
           .join("&")
       : "";
-    return `${baseUrl}/${route}${qs}`;
+    return `${baseUrl.replace(/\/+$/, "")}/${route}${qs}`;
   } catch {
     return null;
   }
@@ -129,12 +128,6 @@ export default function BrowserScreen() {
   const toastAnim                     = useRef(new Animated.Value(-80)).current;
   const toastTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastUrlRef                   = useRef<string | null>(null);
-
-  // VoIP push token (for Doorbell settings row)
-  const [voipToken, setVoipToken] = useState<string | null>(null);
-  useEffect(() => {
-    SecureStore.getItemAsync(VOIP_TOKEN_KEY).then((t) => setVoipToken(t ?? null));
-  }, []);
 
   // Server URL editing
   const [editingUrl, setEditingUrl] = useState(false);
@@ -213,11 +206,8 @@ export default function BrowserScreen() {
   useEffect(() => {
     const unsub = NetInfo.addEventListener((state) => {
       const connected = state.isConnected ?? true;
-      const wasOffline = !connected;
       setIsOffline(!connected);
-      // Auto-retry WebView when connectivity returns
       if (connected && serverStatus === "offline") {
-        setServerStatus("unknown");
         setServerStatus("unknown");
         setTimeout(() => webviewRef.current?.reload(), 500);
       }
@@ -298,9 +288,14 @@ export default function BrowserScreen() {
 
   // ── Server URL save ──────────────────────────────────────────────────────
   const handleSaveUrl = async () => {
-    const clean = urlDraft.trim().replace(/\/$/, "");
+    const clean = normalizeServerUrl(urlDraft);
     if (!clean) return;
+    if (!isValidServerUrl(clean)) {
+      Alert.alert("Invalid URL", "Enter a valid Frigate server URL.");
+      return;
+    }
     await setBaseUrl(clean);
+    setUrlDraft(clean);
     setEditingUrl(false);
     setServerStatus("unknown");
     setTimeout(() => webviewRef.current?.reload(), 300);
@@ -377,7 +372,7 @@ export default function BrowserScreen() {
   const buildNumber = (Constants.expoConfig?.ios as any)?.buildNumber ?? "1";
 
   // Guard: missing server URL → kick back to login (prevents black WebView from empty URI)
-  if (!baseUrl || !baseUrl.startsWith("http")) {
+  if (!baseUrl || !isValidServerUrl(baseUrl)) {
     return (
       <View style={{ flex: 1, backgroundColor: "#000000", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <View style={{ width: 64, height: 64, borderRadius: 18, backgroundColor: "#1e293b", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
@@ -401,7 +396,7 @@ export default function BrowserScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: "#000000", alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color="#00d4ff" size="large" />
-        <Text style={{ color: "#00d4ff", marginTop: 12, fontSize: 16 }}>Loading auth...</Text>
+        <Text style={{ color: "#00d4ff", marginTop: 12, fontSize: 16 }}>Preparing secure session...</Text>
       </View>
     );
   }
@@ -428,7 +423,7 @@ export default function BrowserScreen() {
           injectedJavaScript={VIEWER_JS}
           applicationNameForUserAgent="ApexNative/1.0"
           onNavigationStateChange={handleNavStateChange}
-          onLoadEnd={() => setServerStatus("online")}
+          onLoadEnd={() => setServerStatus((status) => (status === "auth" || status === "offline" ? status : "online"))}
           onError={() => setServerStatus("offline")}
           onHttpError={(e) => {
             if (e.nativeEvent.statusCode === 401) setServerStatus("auth");
@@ -477,14 +472,18 @@ export default function BrowserScreen() {
                 keyboardType="url"
               />
             </View>
-            {errorUrlDraft.startsWith("http") && (
+            {errorUrlDraft.trim().length > 0 && (
               <TouchableOpacity
                 onPress={async () => {
                   haptic.tap();
-                  const clean = errorUrlDraft.trim().replace(/\/$/, "");
+                  const clean = normalizeServerUrl(errorUrlDraft);
+                  if (!isValidServerUrl(clean)) {
+                    Alert.alert("Invalid URL", "Enter a valid Frigate server URL.");
+                    return;
+                  }
                   await setBaseUrl(clean);
+                  setUrlDraft(clean);
                   setErrorUrlDraft("");
-                  setServerStatus("unknown");
                   setServerStatus("unknown");
                   setTimeout(() => webviewRef.current?.reload(), 300);
                 }}
@@ -496,7 +495,7 @@ export default function BrowserScreen() {
           </View>
 
           <TouchableOpacity
-            onPress={() => { haptic.tap(); setServerStatus("unknown"); setServerStatus("unknown"); setTimeout(() => webviewRef.current?.reload(), 100); }}
+            onPress={() => { haptic.tap(); setServerStatus("unknown"); setTimeout(() => webviewRef.current?.reload(), 100); }}
             style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10 }}
           >
             <Ionicons name="refresh" size={15} color="#475569" />
@@ -511,7 +510,7 @@ export default function BrowserScreen() {
           onPress={() => { haptic.tap(); setCameraMenuOpen(true); }}
           style={{ position: "absolute", bottom: insets.bottom + 126, right: 14, width: 36, height: 36, borderRadius: 18, overflow: "hidden" }}
         >
-          <BlurView tint="dark" intensity={80} style={{ flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}>
+          <BlurView tint="systemChromeMaterialDark" intensity={86} style={{ flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}>
             <Ionicons name="videocam-outline" size={16} color="rgba(255,255,255,0.6)" />
           </BlurView>
         </TouchableOpacity>
@@ -523,7 +522,7 @@ export default function BrowserScreen() {
           onPress={() => { haptic.tap(); setSettingsOpen(true); }}
           style={{ position: "absolute", bottom: insets.bottom + 82, right: 14, width: 36, height: 36, borderRadius: 18, overflow: "hidden" }}
         >
-          <BlurView tint="dark" intensity={80} style={{ flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}>
+          <BlurView tint="systemChromeMaterialDark" intensity={86} style={{ flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}>
             <Ionicons name="settings-outline" size={16} color="rgba(255,255,255,0.6)" />
           </BlurView>
         </TouchableOpacity>
@@ -553,7 +552,7 @@ export default function BrowserScreen() {
               shadowOffset: { width: 0, height: 6 },
             }}
           >
-            <BlurView tint="dark" intensity={85} style={{
+            <BlurView tint="systemMaterialDark" intensity={88} style={{
               paddingVertical: 12,
               paddingHorizontal: 16,
               flexDirection: "row",
@@ -594,7 +593,7 @@ export default function BrowserScreen() {
           activeOpacity={1}
           onPress={() => setCameraMenuOpen(false)}
         />
-        <BlurView tint="dark" intensity={90} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingBottom: insets.bottom, borderTopWidth: 1, borderColor: "rgba(255,255,255,0.12)" }}>
+        <BlurView tint="systemChromeMaterialDark" intensity={90} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingBottom: insets.bottom, borderTopWidth: 1, borderColor: "rgba(255,255,255,0.12)" }}>
           <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 16, paddingHorizontal: 20 }}>
               <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.25)", marginBottom: 16 }} />
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start" }}>
@@ -648,7 +647,7 @@ export default function BrowserScreen() {
           onPress={dismissSettings}
         />
 
-        <BlurView tint="dark" intensity={90} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingBottom: insets.bottom, borderTopWidth: 1, borderColor: "rgba(255,255,255,0.12)", maxHeight: "86%" }}>
+        <BlurView tint="systemChromeMaterialDark" intensity={90} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden", paddingBottom: insets.bottom, borderTopWidth: 1, borderColor: "rgba(255,255,255,0.12)", maxHeight: "86%" }}>
 
             {/* Drag handle — swipe down here to dismiss */}
             <View
@@ -818,45 +817,6 @@ export default function BrowserScreen() {
                 )}
               </View>
 
-              {/* ── DOORBELL ───────────────────────────────────────── */}
-              <SectionHeader title="Doorbell" />
-              <View style={{ backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }}>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Row icon="key-outline" iconColor="#f59e0b" iconBg="#f59e0b22"
-                    label="VoIP Push Token"
-                    sub={voipToken
-                      ? `${voipToken.slice(0, 8)}…${voipToken.slice(-8)}`
-                      : "Not registered yet — open app once to register"
-                    }
-                  />
-                  {voipToken && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        haptic.tap();
-                        Clipboard.setString(voipToken);
-                        Alert.alert("Copied", "VoIP Push Token copied to clipboard.");
-                      }}
-                      style={{
-                        backgroundColor: "rgba(255,255,255,0.12)",
-                        borderRadius: 8,
-                        paddingHorizontal: 10,
-                        paddingVertical: 6,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 4,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Ionicons name="copy-outline" size={12} color="rgba(255,255,255,0.6)" />
-                      <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600" }}>Copy</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)", marginVertical: 10 }} />
-                <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, lineHeight: 16 }}>
-                  Paste this token into your Home Assistant automation to enable live doorbell calls.
-                </Text>
-              </View>
 
               {/* ── ACTIONS ────────────────────────────────────────── */}
               <SectionHeader title="Actions" />

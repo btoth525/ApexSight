@@ -2,6 +2,7 @@ import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
 import CookieManager from "@react-native-cookies/cookies";
 import { appGroup } from "@/utils/appGroup";
+import { normalizeServerUrl } from "@/utils/serverUrl";
 
 type AuthState = {
   token: string | null;
@@ -26,7 +27,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       SecureStore.getItemAsync("frigate_username"),
       SecureStore.getItemAsync("frigate_base_url"),
     ]);
-    const url = baseUrl ?? "";
+    const url = normalizeServerUrl(baseUrl ?? "");
     if (token && url) {
       appGroup.set("frigate_token", token);
       try {
@@ -41,7 +42,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       } catch {}
     }
-    if (baseUrl) appGroup.set("frigate_base_url", baseUrl);
+    if (baseUrl && url !== baseUrl) {
+      SecureStore.setItemAsync("frigate_base_url", url).catch(() => {});
+    }
+    if (url) appGroup.set("frigate_base_url", url);
     set({ token, username, baseUrl: url, isLoading: false });
   },
 
@@ -69,9 +73,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setBaseUrl: async (url) => {
-    await SecureStore.setItemAsync("frigate_base_url", url);
-    appGroup.set("frigate_base_url", url);
-    set({ baseUrl: url });
+    const cleanUrl = normalizeServerUrl(url);
+    await SecureStore.setItemAsync("frigate_base_url", cleanUrl);
+    appGroup.set("frigate_base_url", cleanUrl);
+    set({ baseUrl: cleanUrl });
   },
 
   logout: async () => {

@@ -1,15 +1,58 @@
+import type React from "react";
 import { useState } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity, ActivityIndicator,
-  KeyboardAvoidingView, Platform, ScrollView, Image, StatusBar,
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import CookieManager from "@react-native-cookies/cookies";
+import { useRouter } from "expo-router";
+import { AppleMaterial, ApplePressable, apple } from "@/components/AppleMaterial";
 import { useAuthStore } from "@/stores/authStore";
 import { useBiometrics } from "@/hooks/useBiometrics";
 import { apiClient } from "@/utils/apiClient";
 import { haptic } from "@/utils/haptics";
+import { isValidServerUrl, normalizeServerUrl } from "@/utils/serverUrl";
+
+type FieldProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  children: React.ReactNode;
+};
+
+function Field({ icon, label, children }: FieldProps) {
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ color: apple.colors.secondaryLabel, fontSize: 12, fontWeight: "700" }}>
+        {label}
+      </Text>
+      <View
+        style={{
+          minHeight: 52,
+          borderRadius: 16,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: apple.colors.separator,
+          backgroundColor: "rgba(255,255,255,0.08)",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+          paddingHorizontal: 14,
+        }}
+      >
+        <Ionicons name={icon} size={18} color={apple.colors.tertiaryLabel} />
+        {children}
+      </View>
+    </View>
+  );
+}
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -19,14 +62,20 @@ export default function LoginScreen() {
   const [url, setUrl] = useState(baseUrl || "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const doLogin = async (loginUrl: string, loginUser: string, loginPass: string) => {
-    const trimmedUrl = loginUrl.replace(/\/$/, "");
+    const trimmedUrl = normalizeServerUrl(loginUrl);
+    if (!isValidServerUrl(trimmedUrl)) {
+      throw new Error("invalid-url");
+    }
+
     await setBaseUrl(trimmedUrl);
-    const res = await apiClient.post("/login", { user: loginUser, password: loginPass });
-    if (res.status !== 200) throw new Error("Login failed");
+    const res = await apiClient.post("/login", { user: loginUser.trim(), password: loginPass });
+    if (res.status !== 200) throw new Error("login-failed");
+
     let token = "session";
     const rawCookie = res.headers?.["set-cookie"];
     if (rawCookie) {
@@ -34,41 +83,51 @@ export default function LoginScreen() {
       const match = cookieStr.match(/frigate_token=([^;,\s]+)/);
       if (match?.[1]) token = match[1];
     }
-    // URLSession processes Set-Cookie asynchronously — retry up to 5x
-    // so we always capture the real JWT rather than falling back to "session"
+
     if (token === "session") {
       for (let i = 0; i < 5; i++) {
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
         const cookies = await CookieManager.get(trimmedUrl);
         const val = cookies["frigate_token"]?.value;
-        if (val && val.length > 10) { token = val; break; }
+        if (val && val.length > 10) {
+          token = val;
+          break;
+        }
       }
     }
-    const name = res.data?.user?.name ?? loginUser;
+
+    const name = res.data?.user?.name ?? loginUser.trim();
     await setAuth(token, name);
     return { trimmedUrl, name, token };
   };
 
   const handleLogin = async () => {
-    if (!url.trim() || !username.trim() || !password.trim()) {
-      setError("Please fill in all fields.");
+    const cleanUrl = normalizeServerUrl(url);
+    if (!cleanUrl || !username.trim() || !password.trim()) {
+      setError("Enter your server, username, and password.");
       return;
     }
+
+    if (!isValidServerUrl(cleanUrl)) {
+      setError("Use a valid Frigate server URL.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      await doLogin(url, username, password);
-      // Save credentials behind Face ID for next time (silent, never blocks login)
+      await doLogin(cleanUrl, username, password);
       if (biometrics.isAvailable) {
-        biometrics.saveCredentials(url.replace(/\/$/, ""), username, password).catch(() => {});
+        biometrics.saveCredentials(cleanUrl, username.trim(), password).catch(() => {});
       }
       haptic.success();
       router.replace("/browser");
     } catch (e: unknown) {
       haptic.error();
-      const err = e as { response?: { status?: number } };
-      if (err.response?.status === 401) setError("Invalid username or password.");
-      else setError("Could not connect to server. Check the URL.");
+      const err = e as { message?: string; response?: { status?: number } };
+      if (err.message === "invalid-url") setError("Use a valid Frigate server URL.");
+      else if (err.response?.status === 401) setError("Invalid username or password.");
+      else setError("Could not connect to Frigate.");
     } finally {
       setLoading(false);
     }
@@ -78,10 +137,9 @@ export default function LoginScreen() {
     setLoading(true);
     setError("");
     try {
-      // getCredentials triggers Face ID internally via SecureStore requireAuthentication
       const creds = await biometrics.getCredentials();
       if (!creds) {
-        setError("Face ID failed. Sign in manually below.");
+        setError("Face ID was not able to unlock saved credentials.");
         return;
       }
       await doLogin(creds.url, creds.username, creds.password);
@@ -90,8 +148,8 @@ export default function LoginScreen() {
     } catch (e: unknown) {
       haptic.error();
       const err = e as { response?: { status?: number } };
-      if (err.response?.status === 401) setError("Session expired. Sign in manually below.");
-      else setError("Could not connect to server.");
+      if (err.response?.status === 401) setError("Saved credentials need to be updated.");
+      else setError("Could not connect to Frigate.");
     } finally {
       setLoading(false);
     }
@@ -102,126 +160,183 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1, backgroundColor: "#0a0f1e" }}
+      style={{ flex: 1, backgroundColor: apple.colors.background }}
     >
       <StatusBar barStyle="light-content" />
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 48 }}>
-
-          {/* Logo header */}
-          <View style={{ alignItems: "center", marginBottom: 40 }}>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 22, paddingVertical: 36 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ flex: 1, justifyContent: "center", gap: 26 }}>
+          <View style={{ alignItems: "center" }}>
             <Image
               source={require("@/assets/icon.png")}
-              style={{ width: 120, height: 120, borderRadius: 28, marginBottom: 20 }}
+              style={{
+                width: 104,
+                height: 104,
+                borderRadius: 26,
+                marginBottom: 18,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.16)",
+              }}
               resizeMode="cover"
             />
-            <Text style={{ fontSize: 32, fontWeight: "800", color: "#f1f5f9", letterSpacing: -0.5 }}>Apex</Text>
-            <Text style={{ color: "#64748b", marginTop: 4, fontSize: 14 }}>Frigate NVR · Native iOS</Text>
+            <Text style={{ color: apple.colors.label, fontSize: 34, fontWeight: "800" }}>Apex</Text>
+            <Text style={{ color: apple.colors.secondaryLabel, fontSize: 15, marginTop: 6 }}>
+              Native Frigate viewer for iPhone
+            </Text>
           </View>
 
-          {/* Face ID quick sign-in */}
-          {showFaceID && (
-            <TouchableOpacity
-              onPress={handleFaceID}
-              disabled={loading}
-              style={{
-                flexDirection: "row", alignItems: "center", justifyContent: "center",
-                gap: 10, backgroundColor: "#1e293b", borderRadius: 14,
-                paddingVertical: 16, marginBottom: 20,
-                borderWidth: 1, borderColor: "#334155",
-              }}
-            >
-              <Ionicons name="scan-outline" size={22} color="#00d4ff" />
-              <Text style={{ color: "#f1f5f9", fontWeight: "700", fontSize: 16 }}>
-                Sign in with {biometrics.biometricType ?? "Face ID"}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <AppleMaterial
+            tint="systemChromeMaterialDark"
+            intensity={88}
+            contentStyle={{
+              padding: 18,
+              gap: 15,
+            }}
+          >
+            {showFaceID ? (
+              <ApplePressable
+                onPress={handleFaceID}
+                disabled={loading}
+                accessibilityLabel={`Sign in with ${biometrics.biometricType ?? "Face ID"}`}
+                style={{
+                  minHeight: 54,
+                  borderRadius: 18,
+                  backgroundColor: "rgba(255,255,255,0.14)",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.16)",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                }}
+              >
+                <Ionicons name="scan-outline" size={22} color={apple.colors.cyan} />
+                <Text style={{ color: apple.colors.label, fontWeight: "800", fontSize: 16 }}>
+                  Sign in with {biometrics.biometricType ?? "Face ID"}
+                </Text>
+              </ApplePressable>
+            ) : null}
 
-          {/* Divider when Face ID is available */}
-          {showFaceID && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: "#1e293b" }} />
-              <Text style={{ color: "#475569", fontSize: 12 }}>or sign in manually</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: "#1e293b" }} />
-            </View>
-          )}
-
-          {/* Form */}
-          <View style={{ gap: 14 }}>
-            <View>
-              <Text style={{ color: "#64748b", fontSize: 12, fontWeight: "600", marginBottom: 6, marginLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Server URL</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1e293b", borderRadius: 12, paddingHorizontal: 14, gap: 10, borderWidth: 1, borderColor: "#334155" }}>
-                <Ionicons name="globe-outline" size={18} color="#475569" />
-                <TextInput
-                  style={{ flex: 1, paddingVertical: 14, color: "#f1f5f9", fontSize: 15 }}
-                  placeholder="https://your-frigate-host.com"
-                  placeholderTextColor="#475569"
-                  value={url}
-                  onChangeText={setUrl}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  textContentType="URL"
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text style={{ color: "#64748b", fontSize: 12, fontWeight: "600", marginBottom: 6, marginLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Username</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1e293b", borderRadius: 12, paddingHorizontal: 14, gap: 10, borderWidth: 1, borderColor: "#334155" }}>
-                <Ionicons name="person-outline" size={18} color="#475569" />
-                <TextInput
-                  style={{ flex: 1, paddingVertical: 14, color: "#f1f5f9", fontSize: 15 }}
-                  placeholder="admin"
-                  placeholderTextColor="#475569"
-                  value={username}
-                  onChangeText={setUsername}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="username"
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text style={{ color: "#64748b", fontSize: 12, fontWeight: "600", marginBottom: 6, marginLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Password</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#1e293b", borderRadius: 12, paddingHorizontal: 14, gap: 10, borderWidth: 1, borderColor: "#334155" }}>
-                <Ionicons name="lock-closed-outline" size={18} color="#475569" />
-                <TextInput
-                  style={{ flex: 1, paddingVertical: 14, color: "#f1f5f9", fontSize: 15 }}
-                  placeholder="••••••••"
-                  placeholderTextColor="#475569"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  textContentType="password"
-                />
-              </View>
-            </View>
-
-            {error ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, justifyContent: "center", marginTop: 4 }}>
-                <Ionicons name="warning" size={14} color="#ef4444" />
-                <Text style={{ color: "#ef4444", fontSize: 13 }}>{error}</Text>
+            {showFaceID ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 2 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.1)" }} />
+                <Text style={{ color: apple.colors.tertiaryLabel, fontSize: 12, fontWeight: "700" }}>
+                  Manual sign in
+                </Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.1)" }} />
               </View>
             ) : null}
 
-            <TouchableOpacity
-              style={{ backgroundColor: "#00d4ff", borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 8, shadowColor: "#00d4ff", shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } }}
+            <Field icon="globe-outline" label="Server">
+              <TextInput
+                style={{ flex: 1, color: "#ffffff", fontSize: 15, paddingVertical: 14 }}
+                placeholder="frigate.example.com"
+                placeholderTextColor="rgba(255,255,255,0.34)"
+                value={url}
+                onChangeText={(value) => {
+                  setUrl(value);
+                  if (error) setError("");
+                }}
+                onBlur={() => setUrl((value) => normalizeServerUrl(value))}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                textContentType="URL"
+              />
+            </Field>
+
+            <Field icon="person-outline" label="Username">
+              <TextInput
+                style={{ flex: 1, color: "#ffffff", fontSize: 15, paddingVertical: 14 }}
+                placeholder="admin"
+                placeholderTextColor="rgba(255,255,255,0.34)"
+                value={username}
+                onChangeText={(value) => {
+                  setUsername(value);
+                  if (error) setError("");
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="username"
+              />
+            </Field>
+
+            <Field icon="lock-closed-outline" label="Password">
+              <TextInput
+                style={{ flex: 1, color: "#ffffff", fontSize: 15, paddingVertical: 14 }}
+                placeholder="Password"
+                placeholderTextColor="rgba(255,255,255,0.34)"
+                value={password}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  if (error) setError("");
+                }}
+                secureTextEntry={!showPassword}
+                textContentType="password"
+              />
+              <ApplePressable
+                onPress={() => setShowPassword((value) => !value)}
+                accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                style={{ width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={18}
+                  color={apple.colors.secondaryLabel}
+                />
+              </ApplePressable>
+            </Field>
+
+            {error ? (
+              <View
+                style={{
+                  borderRadius: 14,
+                  backgroundColor: "rgba(255,59,48,0.13)",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,59,48,0.22)",
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Ionicons name="alert-circle" size={16} color="#ff9f9a" />
+                <Text style={{ flex: 1, color: "#ffd3d0", fontSize: 13, fontWeight: "600" }}>
+                  {error}
+                </Text>
+              </View>
+            ) : null}
+
+            <ApplePressable
+              style={{
+                minHeight: 56,
+                backgroundColor: apple.colors.cyan,
+                borderRadius: 18,
+                alignItems: "center",
+                justifyContent: "center",
+                marginTop: 2,
+                shadowColor: apple.colors.cyan,
+                shadowOpacity: 0.28,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 8 },
+              }}
               onPress={handleLogin}
               disabled={loading}
+              accessibilityLabel="Sign in"
             >
               {loading ? (
-                <ActivityIndicator color="#0a0f1e" />
+                <ActivityIndicator color="#061016" />
               ) : (
-                <Text style={{ color: "#0a0f1e", fontWeight: "700", fontSize: 16, letterSpacing: 0.3 }}>Sign In</Text>
+                <Text style={{ color: "#061016", fontWeight: "900", fontSize: 16 }}>Sign In</Text>
               )}
-            </TouchableOpacity>
-          </View>
+            </ApplePressable>
+          </AppleMaterial>
 
-          <Text style={{ color: "#475569", fontSize: 11, textAlign: "center", marginTop: 32 }}>
-            Connects to your self-hosted Frigate NVR instance
+          <Text style={{ color: apple.colors.tertiaryLabel, fontSize: 12, textAlign: "center" }}>
+            Secured locally with iOS keychain storage
           </Text>
         </View>
       </ScrollView>
