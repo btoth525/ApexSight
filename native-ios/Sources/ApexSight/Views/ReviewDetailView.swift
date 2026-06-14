@@ -51,12 +51,12 @@ struct ReviewDetailView: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(NotificationCopy.title(for: review))
-                            .font(.system(size: 28, weight: .900, design: .rounded))
+                            .font(.system(size: 28, weight: .black, design: .rounded))
                             .foregroundStyle(GlassTheme.primary)
                             .lineLimit(2)
 
                         Text(NotificationCopy.body(for: review))
-                            .font(.system(size: 14, weight: .800))
+                            .font(.system(size: 14, weight: .heavy))
                             .foregroundStyle(GlassTheme.secondary)
                     }
 
@@ -72,7 +72,7 @@ struct ReviewDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Timeline")
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
 
                 HStack(spacing: 10) {
@@ -88,7 +88,7 @@ struct ReviewDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Detected")
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
 
                 tagSection(title: "Objects", values: review.data?.objects ?? [])
@@ -102,7 +102,7 @@ struct ReviewDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Actions")
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
 
                 Button {
@@ -135,7 +135,7 @@ struct ReviewDetailView: View {
 
     private var severityBadge: some View {
         Text(titleize(review.severity ?? "activity"))
-            .font(.system(size: 12, weight: .900))
+            .font(.system(size: 12, weight: .black))
             .foregroundStyle(.black)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -161,10 +161,10 @@ struct ReviewDetailView: View {
             Image(systemName: icon)
                 .foregroundStyle(tint)
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .900))
+                .font(.system(size: 10, weight: .black))
                 .foregroundStyle(GlassTheme.secondary)
             Text(value)
-                .font(.system(size: 13, weight: .900))
+                .font(.system(size: 13, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -179,7 +179,7 @@ struct ReviewDetailView: View {
         if !values.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .900))
+                    .font(.system(size: 11, weight: .black))
                     .foregroundStyle(GlassTheme.secondary)
 
                 FlowTags(values: values)
@@ -213,7 +213,7 @@ struct FlowTags: View {
 
     private func tag(_ value: String) -> some View {
         Text(titleize(value))
-            .font(.system(size: 12, weight: .900))
+            .font(.system(size: 12, weight: .black))
             .foregroundStyle(GlassTheme.cyan)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)

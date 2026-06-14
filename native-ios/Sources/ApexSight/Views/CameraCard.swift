@@ -25,7 +25,7 @@ struct CameraCard: View {
                             .fill(.green)
                             .frame(width: 7, height: 7)
                         Text("LIVE")
-                            .font(.system(size: 10, weight: .900))
+                            .font(.system(size: 10, weight: .black))
                             .foregroundStyle(.white)
                     }
                     .padding(.horizontal, 10)
@@ -37,13 +37,13 @@ struct CameraCard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(titleize(camera.name))
-                            .font(.system(size: 16, weight: .900))
+                            .font(.system(size: 16, weight: .black))
                             .foregroundStyle(GlassTheme.primary)
                         capabilityBadges
                     }
                     Spacer()
                     Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .900))
+                        .font(.system(size: 14, weight: .black))
                         .foregroundStyle(.white)
                         .frame(width: 36, height: 36)
                         .background(GlassTheme.blue, in: Circle())
@@ -78,14 +78,14 @@ struct CameraCard: View {
             }
         } else {
             Text("Latest frame")
-                .font(.system(size: 12, weight: .700))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(GlassTheme.secondary)
         }
     }
 
     private func badge(_ label: String, tint: Color) -> some View {
         Text(label)
-            .font(.system(size: 10, weight: .900))
+            .font(.system(size: 10, weight: .black))
             .foregroundStyle(tint)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)

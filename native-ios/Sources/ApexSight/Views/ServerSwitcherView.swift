@@ -13,7 +13,7 @@ struct ServerSwitcherView: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 14) {
                             Label("Servers", systemImage: "server.rack")
-                                .font(.system(size: 21, weight: .900))
+                                .font(.system(size: 21, weight: .black))
                                 .foregroundStyle(GlassTheme.primary)
 
                             ForEach(allSessions, id: \.baseURL) { session in
@@ -24,7 +24,7 @@ struct ServerSwitcherView: View {
                                 showAddServer = true
                             } label: {
                                 Label("Add Server", systemImage: "plus.circle.fill")
-                                    .font(.system(size: 15, weight: .900))
+                                    .font(.system(size: 15, weight: .black))
                                     .foregroundStyle(GlassTheme.cyan)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 14)
@@ -52,15 +52,15 @@ struct ServerSwitcherView: View {
         let isActive = appState.session?.baseURL == session.baseURL
         return HStack(spacing: 12) {
             Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 20, weight: .700))
+                .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(isActive ? GlassTheme.green : GlassTheme.secondary)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.baseURL.host() ?? session.baseURL.absoluteString)
-                    .font(.system(size: 15, weight: .900))
+                    .font(.system(size: 15, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 Text(session.username)
-                    .font(.system(size: 12, weight: .700))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
             }
             Spacer()
@@ -68,7 +68,7 @@ struct ServerSwitcherView: View {
                 Button("Switch") {
                     appState.switchTo(session: session)
                 }
-                .font(.system(size: 13, weight: .900))
+                .font(.system(size: 13, weight: .black))
                 .foregroundStyle(GlassTheme.cyan)
             }
             Button {
@@ -77,7 +77,7 @@ struct ServerSwitcherView: View {
                 if isActive { appState.signOut() }
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .700))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(GlassTheme.red)
             }
         }
@@ -105,7 +105,7 @@ private struct AddServerView: View {
                             field("Server URL", text: $baseURL, keyboard: .URL)
                             field("Username", text: $username, keyboard: .default)
                             SecureField("Password", text: $password)
-                                .font(.system(size: 16, weight: .700))
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(GlassTheme.primary)
                                 .padding(14)
                                 .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -113,7 +113,7 @@ private struct AddServerView: View {
                     }
                     if let err = error {
                         Text(err)
-                            .font(.system(size: 13, weight: .800))
+                            .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(GlassTheme.red)
                             .padding(.horizontal, 18)
                     }
@@ -123,7 +123,7 @@ private struct AddServerView: View {
                         HStack {
                             if isLoading { ProgressView().tint(.black) }
                             Text("Connect")
-                                .font(.system(size: 16, weight: .900))
+                                .font(.system(size: 16, weight: .black))
                                 .foregroundStyle(.black)
                         }
                         .frame(maxWidth: .infinity)
@@ -152,7 +152,7 @@ private struct AddServerView: View {
             .keyboardType(keyboard)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
-            .font(.system(size: 16, weight: .700))
+            .font(.system(size: 16, weight: .bold))
             .foregroundStyle(GlassTheme.primary)
             .padding(14)
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))

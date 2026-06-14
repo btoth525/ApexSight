@@ -11,11 +11,11 @@ struct SystemHealthView: View {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("System Health")
-                            .font(.system(size: 28, weight: .900, design: .rounded))
+                            .font(.system(size: 28, weight: .black, design: .rounded))
                             .foregroundStyle(GlassTheme.primary)
 
                         Text("Native Frigate diagnostics")
-                            .font(.system(size: 14, weight: .800))
+                            .font(.system(size: 14, weight: .heavy))
                             .foregroundStyle(GlassTheme.secondary)
 
                         Button {
@@ -37,7 +37,7 @@ struct SystemHealthView: View {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Overview")
-                            .font(.system(size: 21, weight: .900))
+                            .font(.system(size: 21, weight: .black))
                             .foregroundStyle(GlassTheme.primary)
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
@@ -53,7 +53,7 @@ struct SystemHealthView: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Detectors")
-                                .font(.system(size: 21, weight: .900))
+                                .font(.system(size: 21, weight: .black))
                                 .foregroundStyle(GlassTheme.primary)
                             ForEach(detectors.sorted(by: { $0.key < $1.key }), id: \.key) { name, detector in
                                 infoRow(
@@ -70,7 +70,7 @@ struct SystemHealthView: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Camera Performance")
-                                .font(.system(size: 21, weight: .900))
+                                .font(.system(size: 21, weight: .black))
                                 .foregroundStyle(GlassTheme.primary)
                             ForEach(cameras.sorted(by: { $0.key < $1.key }), id: \.key) { name, camera in
                                 infoRow(
@@ -87,12 +87,12 @@ struct SystemHealthView: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Recent Logs")
-                                .font(.system(size: 21, weight: .900))
+                                .font(.system(size: 21, weight: .black))
                                 .foregroundStyle(GlassTheme.primary)
 
                             ForEach(appState.recentLogs.suffix(10), id: \.self) { line in
                                 Text(line)
-                                    .font(.system(size: 11, weight: .600, design: .monospaced))
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(GlassTheme.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .lineLimit(3)
@@ -112,10 +112,10 @@ struct SystemHealthView: View {
     private func metric(_ label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .900))
+                .font(.system(size: 11, weight: .black))
                 .foregroundStyle(GlassTheme.secondary)
             Text(value)
-                .font(.system(size: 15, weight: .900))
+                .font(.system(size: 15, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
                 .lineLimit(1)
         }
@@ -127,17 +127,17 @@ struct SystemHealthView: View {
     private func infoRow(icon: String, title: String, subtitle: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .900))
+                .font(.system(size: 16, weight: .black))
                 .foregroundStyle(GlassTheme.green)
                 .frame(width: 36, height: 36)
                 .background(GlassTheme.green.opacity(0.16), in: Circle())
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .900))
+                    .font(.system(size: 15, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 Text(subtitle)
-                    .font(.system(size: 12, weight: .700))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
             }
             Spacer()

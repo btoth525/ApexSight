@@ -40,10 +40,10 @@ struct EventDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
                 Text("\(NotificationCopy.emoji(for: event.label)) \(titleize(event.label))")
-                    .font(.system(size: 28, weight: .900, design: .rounded))
+                    .font(.system(size: 28, weight: .black, design: .rounded))
                     .foregroundStyle(GlassTheme.primary)
                 Text("\(titleize(event.camera)) · \(timestamp(event.startTime))")
-                    .font(.system(size: 14, weight: .800))
+                    .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(GlassTheme.secondary)
             }
         }
@@ -53,7 +53,7 @@ struct EventDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Details")
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
@@ -71,7 +71,7 @@ struct EventDetailView: View {
                         HStack(spacing: 8) {
                             ForEach(zones, id: \.self) { zone in
                                 Text(titleize(zone))
-                                    .font(.system(size: 12, weight: .900))
+                                    .font(.system(size: 12, weight: .black))
                                     .foregroundStyle(GlassTheme.cyan)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
@@ -88,7 +88,7 @@ struct EventDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Clip")
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 if let clipURL = appState.client?.eventHLSURL(id: event.id),
                    let item = appState.client?.playerItem(for: clipURL) {
@@ -104,12 +104,12 @@ struct EventDetailView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Actions")
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
 
                 if let feedback = actionFeedback {
                     Text(feedback)
-                        .font(.system(size: 13, weight: .800))
+                        .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(GlassTheme.green)
                 }
 
@@ -130,9 +130,9 @@ struct EventDetailView: View {
         Button(action: action) {
             HStack {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .800))
+                    .font(.system(size: 15, weight: .heavy))
                 Text(title)
-                    .font(.system(size: 15, weight: .900))
+                    .font(.system(size: 15, weight: .black))
                 Spacer()
                 if isActing {
                     ProgressView().tint(tint)
@@ -192,10 +192,10 @@ struct EventDetailView: View {
     private func metric(_ label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .900))
+                .font(.system(size: 11, weight: .black))
                 .foregroundStyle(GlassTheme.secondary)
             Text(value)
-                .font(.system(size: 15, weight: .900))
+                .font(.system(size: 15, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
                 .lineLimit(1)
         }

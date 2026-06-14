@@ -45,10 +45,10 @@ struct RecordingBrowserView: View {
     private var sectionTitle: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(titleize(camera.name))
-                .font(.system(size: 28, weight: .900))
+                .font(.system(size: 28, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
             Text("Recording timeline")
-                .font(.system(size: 13, weight: .800))
+                .font(.system(size: 13, weight: .heavy))
                 .foregroundStyle(GlassTheme.secondary)
         }
     }
@@ -70,14 +70,14 @@ struct RecordingBrowserView: View {
         GlassCard {
             HStack(spacing: 12) {
                 Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.system(size: 24, weight: .700))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(GlassTheme.orange)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No recordings")
-                        .font(.system(size: 16, weight: .900))
+                        .font(.system(size: 16, weight: .black))
                         .foregroundStyle(GlassTheme.primary)
                     Text("No recordings found for this date.")
-                        .font(.system(size: 13, weight: .700))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(GlassTheme.secondary)
                 }
             }
@@ -89,12 +89,12 @@ struct RecordingBrowserView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Playing Clip")
-                        .font(.system(size: 16, weight: .900))
+                        .font(.system(size: 16, weight: .black))
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                     if let start = recording.startTime, let end = recording.endTime {
                         Text(formatDuration(end - start))
-                            .font(.system(size: 13, weight: .800))
+                            .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(GlassTheme.cyan)
                     }
                 }
@@ -109,7 +109,7 @@ struct RecordingBrowserView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
                 Text("\(recordings.count) segments")
-                    .font(.system(size: 16, weight: .900))
+                    .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 VStack(spacing: 8) {
                     ForEach(recordings) { recording in
@@ -127,36 +127,36 @@ struct RecordingBrowserView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 24, weight: .700))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(isSelected ? GlassTheme.cyan : GlassTheme.primary.opacity(0.6))
 
                 VStack(alignment: .leading, spacing: 4) {
                     if let start = recording.startTime {
                         Text(Date(timeIntervalSince1970: start), style: .time)
-                            .font(.system(size: 15, weight: .900))
+                            .font(.system(size: 15, weight: .black))
                             .foregroundStyle(GlassTheme.primary)
                     }
                     HStack(spacing: 8) {
                         if let start = recording.startTime, let end = recording.endTime {
                             Text(formatDuration(end - start))
-                                .font(.system(size: 12, weight: .800))
+                                .font(.system(size: 12, weight: .heavy))
                                 .foregroundStyle(GlassTheme.secondary)
                         }
                         if let motion = recording.motion, motion > 0 {
                             Label(String(format: "%.0f%% motion", motion * 100), systemImage: "figure.walk")
-                                .font(.system(size: 11, weight: .800))
+                                .font(.system(size: 11, weight: .heavy))
                                 .foregroundStyle(GlassTheme.orange)
                         }
                         if let objects = recording.objects, objects > 0 {
                             Label("\(Int(objects)) objects", systemImage: "eye.fill")
-                                .font(.system(size: 11, weight: .800))
+                                .font(.system(size: 11, weight: .heavy))
                                 .foregroundStyle(GlassTheme.blue)
                         }
                     }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .700))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
             }
             .padding(12)

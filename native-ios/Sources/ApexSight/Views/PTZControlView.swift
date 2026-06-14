@@ -10,12 +10,12 @@ struct PTZControlView: View {
         VStack(spacing: 20) {
             HStack {
                 Text("PTZ Controls")
-                    .font(.system(size: 14, weight: .900))
+                    .font(.system(size: 14, weight: .black))
                     .foregroundStyle(.white.opacity(0.7))
                 Spacer()
                 if let msg = feedback {
                     Text(msg)
-                        .font(.system(size: 12, weight: .700))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.cyan)
                         .transition(.opacity)
                 }
@@ -34,7 +34,7 @@ struct PTZControlView: View {
                                 send(action: "preset", extra: ["preset": preset])
                             } label: {
                                 Text(preset)
-                                    .font(.system(size: 12, weight: .800))
+                                    .font(.system(size: 12, weight: .heavy))
                                     .foregroundStyle(.black)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 8)
@@ -78,7 +78,7 @@ struct PTZControlView: View {
                 .frame(width: 48, height: 48)
                 .overlay(
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 16, weight: .700))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white.opacity(0.5))
                 )
         }
@@ -93,7 +93,7 @@ struct PTZControlView: View {
                 .frame(width: 48, height: 48)
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .800))
+                        .font(.system(size: 16, weight: .heavy))
                         .foregroundStyle(.white)
                 )
         }

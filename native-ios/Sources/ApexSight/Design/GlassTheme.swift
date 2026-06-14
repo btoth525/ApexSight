@@ -87,7 +87,7 @@ struct PillButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .800))
+            .font(.system(size: 15, weight: .heavy))
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

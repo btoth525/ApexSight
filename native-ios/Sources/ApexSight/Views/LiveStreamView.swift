@@ -61,7 +61,7 @@ struct LiveStreamView: View {
                         .font(.system(size: 44))
                         .foregroundStyle(.orange)
                     Text(error)
-                        .font(.system(size: 15, weight: .700))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
@@ -85,7 +85,7 @@ struct LiveStreamView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .900))
+                    .font(.system(size: 16, weight: .black))
                     .frame(width: 40, height: 40)
                     .background(.white.opacity(0.15), in: Circle())
                     .foregroundStyle(.white)
@@ -93,10 +93,10 @@ struct LiveStreamView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(titleize(camera.name))
-                    .font(.system(size: 18, weight: .900))
+                    .font(.system(size: 18, weight: .black))
                     .foregroundStyle(.white)
                 Text("Live")
-                    .font(.system(size: 12, weight: .800))
+                    .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(.green)
             }
 
@@ -115,7 +115,7 @@ struct LiveStreamView: View {
                     showPTZ.toggle()
                 } label: {
                     Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 16, weight: .900))
+                        .font(.system(size: 16, weight: .black))
                         .frame(width: 40, height: 40)
                         .background(showPTZ ? .cyan.opacity(0.4) : .white.opacity(0.15), in: Circle())
                         .foregroundStyle(.white)
@@ -162,12 +162,12 @@ struct LiveStreamView: View {
     private func actionButtonContent(icon: String, label: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .700))
+                .font(.system(size: 22, weight: .bold))
                 .frame(width: 52, height: 52)
                 .background(.white.opacity(0.15), in: Circle())
                 .foregroundStyle(.white)
             Text(label)
-                .font(.system(size: 11, weight: .800))
+                .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(.white.opacity(0.7))
         }
     }

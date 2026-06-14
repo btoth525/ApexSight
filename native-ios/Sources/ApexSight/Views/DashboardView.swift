@@ -34,7 +34,7 @@ struct DashboardView: View {
                     if let error = appState.errorMessage {
                         GlassCard {
                             Label(error, systemImage: "exclamationmark.triangle")
-                                .font(.system(size: 14, weight: .800))
+                                .font(.system(size: 14, weight: .heavy))
                                 .foregroundStyle(GlassTheme.orange)
                         }
                     }
@@ -127,10 +127,10 @@ struct DashboardView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Apex Command")
-                    .font(.system(size: 38, weight: .900, design: .rounded))
+                    .font(.system(size: 38, weight: .black, design: .rounded))
                     .foregroundStyle(GlassTheme.primary)
                 Text(appState.session?.baseURL.host() ?? "Frigate security overview")
-                    .font(.system(size: 13, weight: .800))
+                    .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(GlassTheme.secondary)
             }
             Spacer()
@@ -138,7 +138,7 @@ struct DashboardView: View {
                 path.append("notifications")
             } label: {
                 Image(systemName: "bell.badge.fill")
-                    .font(.system(size: 18, weight: .800))
+                    .font(.system(size: 18, weight: .heavy))
                     .frame(width: 44, height: 44)
                     .background(.white.opacity(0.12), in: Circle())
             }
@@ -148,7 +148,7 @@ struct DashboardView: View {
                 path.append("system")
             } label: {
                 Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 18, weight: .800))
+                    .font(.system(size: 18, weight: .heavy))
                     .frame(width: 44, height: 44)
                     .background(.white.opacity(0.12), in: Circle())
             }
@@ -158,7 +158,7 @@ struct DashboardView: View {
                 path.append("servers")
             } label: {
                 Image(systemName: "server.rack")
-                    .font(.system(size: 18, weight: .800))
+                    .font(.system(size: 18, weight: .heavy))
                     .frame(width: 44, height: 44)
                     .background(.white.opacity(0.12), in: Circle())
             }
@@ -168,7 +168,7 @@ struct DashboardView: View {
                 appState.signOut()
             } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 18, weight: .800))
+                    .font(.system(size: 18, weight: .heavy))
                     .frame(width: 44, height: 44)
                     .background(.white.opacity(0.12), in: Circle())
             }
@@ -218,18 +218,18 @@ struct DashboardView: View {
     private func commandMetric(icon: String, title: String, value: String, tint: Color) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .900))
+                .font(.system(size: 16, weight: .black))
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)
                 .background(tint.opacity(0.16), in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 11, weight: .900))
+                    .font(.system(size: 11, weight: .black))
                     .foregroundStyle(GlassTheme.secondary)
                     .textCase(.uppercase)
                 Text(value)
-                    .font(.system(size: 16, weight: .900))
+                    .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
             }
         }
@@ -284,7 +284,7 @@ struct DashboardView: View {
         VStack(spacing: 10) {
             if filteredEvents.isEmpty {
                 Text("No matching events.")
-                    .font(.system(size: 14, weight: .700))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -304,10 +304,10 @@ struct DashboardView: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 21, weight: .900))
+                    .font(.system(size: 21, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 Text(subtitle)
-                    .font(.system(size: 12, weight: .800))
+                    .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(GlassTheme.secondary)
             }
             Spacer()
@@ -321,7 +321,7 @@ struct DashboardView: View {
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .900))
+                .font(.system(size: 13, weight: .black))
                 .foregroundStyle(selected ? Color.black : GlassTheme.primary)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 9)

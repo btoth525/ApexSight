@@ -7,7 +7,7 @@ struct CapabilityRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(titleize(capability.camera))
-                    .font(.system(size: 15, weight: .900))
+                    .font(.system(size: 15, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 Spacer()
                 if capability.hasLatestFrame {
@@ -37,7 +37,7 @@ struct CapabilityRow: View {
 
     private func chip(_ label: String, active: Bool) -> some View {
         Text(label)
-            .font(.system(size: 11, weight: .900))
+            .font(.system(size: 11, weight: .black))
             .foregroundStyle(active ? GlassTheme.green : GlassTheme.tertiary)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)

@@ -15,7 +15,7 @@ struct LoginView: View {
 
                 VStack(spacing: 8) {
                     Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 52, weight: .900))
+                        .font(.system(size: 52, weight: .black))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [GlassTheme.cyan, GlassTheme.blue],
@@ -26,11 +26,11 @@ struct LoginView: View {
                         .padding(.bottom, 4)
 
                     Text("ApexSight")
-                        .font(.system(size: 44, weight: .900, design: .rounded))
+                        .font(.system(size: 44, weight: .black, design: .rounded))
                         .foregroundStyle(GlassTheme.primary)
 
                     Text("Native Frigate control")
-                        .font(.system(size: 15, weight: .700))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(GlassTheme.secondary)
                 }
 
@@ -42,7 +42,7 @@ struct LoginView: View {
 
                         if let error = appState.errorMessage {
                             Text(error)
-                                .font(.system(size: 13, weight: .700))
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(GlassTheme.orange)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -76,7 +76,7 @@ struct LoginView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .keyboardType(keyboard)
-            .font(.system(size: 16, weight: .700))
+            .font(.system(size: 16, weight: .bold))
             .foregroundStyle(GlassTheme.primary)
             .padding(14)
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -86,7 +86,7 @@ struct LoginView: View {
         SecureField(title, text: text)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
-            .font(.system(size: 16, weight: .700))
+            .font(.system(size: 16, weight: .bold))
             .foregroundStyle(GlassTheme.primary)
             .padding(14)
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))

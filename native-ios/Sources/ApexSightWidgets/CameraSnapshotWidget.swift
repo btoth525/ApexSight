@@ -46,11 +46,11 @@ struct CameraSnapshotWidgetView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Label(entry.snapshot.map { titleizeWidget($0.camera) } ?? "ApexSight", systemImage: "video.fill")
-                    .font(.system(size: 15, weight: .900, design: .rounded))
+                    .font(.system(size: 15, weight: .black, design: .rounded))
                     .lineLimit(1)
 
                 Text(entry.snapshot.map { "\($0.serverName) - \($0.capturedAt.formatted(date: .omitted, time: .shortened))" } ?? "Open the app to cache a Frigate snapshot")
-                    .font(.system(size: 11, weight: .800))
+                    .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.82))
                     .lineLimit(2)
             }
@@ -88,7 +88,7 @@ struct CameraSnapshotWidgetView: View {
                     endPoint: .bottomTrailing
                 )
                 Image(systemName: "camera.aperture")
-                    .font(.system(size: 38, weight: .800))
+                    .font(.system(size: 38, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.8))
             }
         }

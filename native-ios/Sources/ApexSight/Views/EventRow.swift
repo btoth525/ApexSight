@@ -14,20 +14,20 @@ struct EventRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(titleize(event.label))
-                    .font(.system(size: 16, weight: .900))
+                    .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 Text("\(titleize(event.camera)) - \(relativeTime(event.startTime))")
-                    .font(.system(size: 13, weight: .700))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                 if let score = event.score ?? event.topScore {
                     Text("\(Int(score * 100))% confidence")
-                        .font(.system(size: 12, weight: .700))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(GlassTheme.tertiary)
                 }
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .900))
+                .font(.system(size: 13, weight: .black))
                 .foregroundStyle(GlassTheme.tertiary)
         }
         .padding(10)

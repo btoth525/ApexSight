@@ -44,16 +44,16 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Image(systemName: status.isAuthorized ? "bell.badge.fill" : "bell.slash.fill")
-                        .font(.system(size: 20, weight: .900))
+                        .font(.system(size: 20, weight: .black))
                         .foregroundStyle(status.isAuthorized ? GlassTheme.green : GlassTheme.orange)
                         .frame(width: 36, height: 36)
                         .background((status.isAuthorized ? GlassTheme.green : GlassTheme.orange).opacity(0.16), in: Circle())
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Push Notifications")
-                            .font(.system(size: 16, weight: .900))
+                            .font(.system(size: 16, weight: .black))
                             .foregroundStyle(GlassTheme.primary)
                         Text(status.description)
-                            .font(.system(size: 12, weight: .800))
+                            .font(.system(size: 12, weight: .heavy))
                             .foregroundStyle(GlassTheme.secondary)
                     }
                     Spacer()
@@ -64,7 +64,7 @@ struct NotificationSettingsView: View {
                         Task { await requestPermission() }
                     } label: {
                         Label("Allow Notifications", systemImage: "checkmark.shield.fill")
-                            .font(.system(size: 15, weight: .900))
+                            .font(.system(size: 15, weight: .black))
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -161,11 +161,11 @@ struct NotificationSettingsView: View {
                 if prefsStore.preferences.quietHoursEnabled {
                     Divider().background(GlassTheme.secondary.opacity(0.2))
                     DatePicker("Start", selection: quietStartBinding, displayedComponents: .hourAndMinute)
-                        .font(.system(size: 14, weight: .800))
+                        .font(.system(size: 14, weight: .heavy))
                         .foregroundStyle(GlassTheme.primary)
                         .tint(GlassTheme.cyan)
                     DatePicker("End", selection: quietEndBinding, displayedComponents: .hourAndMinute)
-                        .font(.system(size: 14, weight: .800))
+                        .font(.system(size: 14, weight: .heavy))
                         .foregroundStyle(GlassTheme.primary)
                         .tint(GlassTheme.cyan)
                 }
@@ -180,12 +180,12 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 sectionHeader("Alert Cooldown", icon: "timer", tint: GlassTheme.secondary)
                 Text("Minimum seconds between alerts per camera")
-                    .font(.system(size: 12, weight: .700))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                 ForEach(appState.cameras) { camera in
                     HStack {
                         Text(titleize(camera.name))
-                            .font(.system(size: 14, weight: .800))
+                            .font(.system(size: 14, weight: .heavy))
                             .foregroundStyle(GlassTheme.primary)
                         Spacer()
                         Picker("", selection: Binding(
@@ -212,7 +212,7 @@ struct NotificationSettingsView: View {
                 sectionHeader("Test", icon: "paperplane.fill", tint: GlassTheme.blue)
                 if let msg = message {
                     Text(msg)
-                        .font(.system(size: 13, weight: .800))
+                        .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(GlassTheme.green)
                 }
                 Button {
@@ -221,7 +221,7 @@ struct NotificationSettingsView: View {
                     HStack {
                         if isWorking { ProgressView().tint(.black) }
                         Text("Send Test Alert")
-                            .font(.system(size: 15, weight: .900))
+                            .font(.system(size: 15, weight: .black))
                             .foregroundStyle(.black)
                     }
                     .frame(maxWidth: .infinity)
@@ -238,7 +238,7 @@ struct NotificationSettingsView: View {
 
     private func sectionHeader(_ title: String, icon: String, tint: Color) -> some View {
         Label(title, systemImage: icon)
-            .font(.system(size: 15, weight: .900))
+            .font(.system(size: 15, weight: .black))
             .foregroundStyle(tint)
     }
 
@@ -246,11 +246,11 @@ struct NotificationSettingsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 14, weight: .800))
+                    .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(GlassTheme.primary)
                 if let sub = subtitle {
                     Text(sub)
-                        .font(.system(size: 11, weight: .700))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(GlassTheme.secondary)
                 }
             }
@@ -263,7 +263,7 @@ struct NotificationSettingsView: View {
 
     private func placeholderText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .700))
+            .font(.system(size: 13, weight: .bold))
             .foregroundStyle(GlassTheme.secondary)
     }
 

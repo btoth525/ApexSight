@@ -6,19 +6,19 @@ struct ReviewRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: review.severity == "alert" ? "bell.badge.fill" : "scope")
-                .font(.system(size: 18, weight: .900))
+                .font(.system(size: 18, weight: .black))
                 .foregroundStyle(review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan)
                 .frame(width: 42, height: 42)
                 .background((review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan).opacity(0.16), in: Circle())
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(NotificationCopy.title(for: review))
-                    .font(.system(size: 16, weight: .900))
+                    .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                     .lineLimit(1)
 
                 Text(NotificationCopy.body(for: review))
-                    .font(.system(size: 13, weight: .700))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                     .lineLimit(2)
             }
@@ -27,7 +27,7 @@ struct ReviewRow: View {
 
             if let count = review.data?.detections?.count, count > 0 {
                 Text("\(count)")
-                    .font(.system(size: 12, weight: .900))
+                    .font(.system(size: 12, weight: .black))
                     .foregroundStyle(.black)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)

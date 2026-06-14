@@ -54,7 +54,7 @@ struct RemoteImage: View {
         ZStack {
             Color.white.opacity(0.06)
             Image(systemName: systemName)
-                .font(.system(size: 24, weight: .700))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(GlassTheme.secondary)
         }
     }
