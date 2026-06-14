@@ -13,10 +13,10 @@ struct EventRow: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(titleize(event.label))
+                Text("\(NotificationCopy.emoji(for: event.label)) \(titleize(event.label))")
                     .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
-                Text("\(titleize(event.camera)) - \(relativeTime(event.startTime))")
+                Text("\(titleize(event.camera)) · \(relativeTime(event.startTime))")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                 if let score = event.score ?? event.topScore {

@@ -10,14 +10,17 @@ struct EventDetailView: View {
     @State private var showFalsePositiveConfirm = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                heroCard
-                detailsCard
-                if event.hasClip != false { clipCard }
-                actionsCard
+        ZStack {
+            GlassBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    heroCard
+                    detailsCard
+                    if event.hasClip != false { clipCard }
+                    actionsCard
+                }
+                .padding(18)
             }
-            .padding(18)
         }
         .navigationTitle("Event")
         .navigationBarTitleDisplayMode(.inline)

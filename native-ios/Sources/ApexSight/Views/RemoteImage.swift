@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct RemoteImage: View {
     let url: URL?
@@ -15,47 +16,40 @@ struct RemoteImage: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else if isFailed {
-                placeholder(systemName: "photo")
+                placeholder
             } else {
-                placeholder(systemName: "photo")
-                    .overlay {
-                        ProgressView()
-                            .tint(GlassTheme.cyan)
-                    }
+                placeholder
+                    .overlay { ProgressView().tint(GlassTheme.cyan) }
             }
         }
-        .task(id: url) {
-            await load()
+        .task(id: url) { await load() }
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            Color.white.opacity(0.06)
+            Image(systemName: "photo")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(GlassTheme.secondary)
         }
     }
 
     private func load() async {
+        image = nil
+        isFailed = false
         guard let url, let client = appState.client else {
             isFailed = true
             return
         }
-
         do {
             let data = try await client.imageData(from: url)
-            #if os(iOS)
             if let uiImage = UIImage(data: data) {
                 image = Image(uiImage: uiImage)
-                isFailed = false
-                return
+            } else {
+                isFailed = true
             }
-            #endif
-            isFailed = true
         } catch {
             isFailed = true
-        }
-    }
-
-    private func placeholder(systemName: String) -> some View {
-        ZStack {
-            Color.white.opacity(0.06)
-            Image(systemName: systemName)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(GlassTheme.secondary)
         }
     }
 }

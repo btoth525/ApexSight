@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ServerSwitcherView: View {
     @EnvironmentObject private var appState: AppState

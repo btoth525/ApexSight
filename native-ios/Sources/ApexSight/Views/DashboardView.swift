@@ -26,6 +26,8 @@ struct DashboardView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
+            ZStack {
+            GlassBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
@@ -100,6 +102,7 @@ struct DashboardView: View {
                     await appState.refresh()
                 }
             }
+            } // ZStack
             .onChange(of: appState.deepLink) { _, route in
                 guard let route else { return }
                 handleDeepLink(route)

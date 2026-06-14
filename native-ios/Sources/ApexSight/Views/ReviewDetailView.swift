@@ -10,14 +10,17 @@ struct ReviewDetailView: View {
     @State private var isWorking = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                hero
-                timelineCard
-                objectsCard
-                actionsCard
+        ZStack {
+            GlassBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    hero
+                    timelineCard
+                    objectsCard
+                    actionsCard
+                }
+                .padding(18)
             }
-            .padding(18)
         }
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
@@ -38,8 +41,8 @@ struct ReviewDetailView: View {
     private var hero: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
-                if let url = appState.client?.reviewHLSURL(review: review) {
-                    VideoPlayer(player: AVPlayer(playerItem: appState.client?.playerItem(for: url)))
+                if let client = appState.client, let url = client.reviewHLSURL(review: review) {
+                    VideoPlayer(player: AVPlayer(playerItem: client.playerItem(for: url)))
                         .frame(height: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 } else if let url = appState.client?.latestFrameURL(camera: review.camera) {
@@ -116,13 +119,7 @@ struct ReviewDetailView: View {
 
                 if let camera = appState.cameras.first(where: { $0.name == review.camera }) {
                     NavigationLink {
-                        GlassCard {
-                            CameraCard(camera: camera)
-                                .padding(8)
-                        }
-                        .padding(18)
-                        .navigationTitle(titleize(camera.name))
-                        .navigationBarTitleDisplayMode(.inline)
+                        LiveStreamView(camera: camera)
                     } label: {
                         Label("Open Camera", systemImage: "video.fill")
                             .frame(maxWidth: .infinity)
