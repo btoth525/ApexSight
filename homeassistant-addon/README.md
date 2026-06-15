@@ -58,7 +58,8 @@ git push
 When you change the add-on, bump `version` in `apexsight-push-bridge/config.yaml`,
 add a `CHANGELOG.md` entry, and push — Home Assistant will offer the update.
 
-> Optional polish: drop a 256×256 `icon.png` (and `logo.png`) into
-> `apexsight-push-bridge/` and HA will show it in the store.
+The store branding is included: `apexsight-push-bridge/icon.png` (256×256) and
+`logo.png` (760×256) ship with the add-on, so HA shows the ApexSight mark
+automatically.
 
 See `apexsight-push-bridge/README.md` for full details on how the bridge works.
