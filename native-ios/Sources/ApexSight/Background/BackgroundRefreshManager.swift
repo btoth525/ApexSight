@@ -39,9 +39,24 @@ enum BackgroundRefreshManager {
     /// Loads the saved session directly (no live AppState), fetches recent reviews,
     /// and notifies for new alert items not yet seen. Kept intentionally small.
     static func performRefresh() async {
-        guard let session = KeychainStore().loadSession() else { return }
-        let client = FrigateClient(session: session)
-        guard let reviews = try? await client.reviews(limit: 20) else { return }
+        guard var session = KeychainStore().loadSession() else { return }
+        var client = FrigateClient(session: session)
+
+        // Pull a wider window than before: a busy stretch (or a long gap between
+        // background wakeups) can produce more than 20 reviews, and the older ones
+        // would otherwise be skipped entirely.
+        var reviews = try? await client.reviews(limit: 50)
+
+        // The token may have expired since the app last ran. Re-login once with the
+        // stored credentials, refresh the shared token (so the notification
+        // extension can still authenticate snapshot/GIF downloads), and retry.
+        if reviews == nil, let refreshed = await reauthenticate(from: session) {
+            session = refreshed
+            client = FrigateClient(session: session)
+            reviews = try? await client.reviews(limit: 50)
+        }
+
+        guard let reviews else { return }
 
         let prefs = await NotificationPreferencesStore()
 
@@ -56,5 +71,27 @@ enum BackgroundRefreshManager {
 
             await LocalAlertNotifier.notify(review: review, client: client, session: session)
         }
+    }
+
+    /// Silent re-login from a background task (no live AppState available). Re-runs the
+    /// stored login, persists the fresh session, and mirrors the new token into the app
+    /// group so the notification service extension's fallback auth stays valid too.
+    private static func reauthenticate(from session: FrigateSession) async -> FrigateSession? {
+        guard let password = session.password, !password.isEmpty else { return nil }
+        let loginClient = FrigateClient(baseURL: session.baseURL)
+        guard let token = try? await loginClient.login(username: session.username, password: password) else {
+            return nil
+        }
+        let next = FrigateSession(
+            baseURL: session.baseURL,
+            username: session.username,
+            token: token,
+            password: password
+        )
+        KeychainStore().save(session: next)
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        defaults?.set(next.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
+        defaults?.set(token, forKey: "apex.frigateToken")
+        return next
     }
 }

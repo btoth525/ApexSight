@@ -206,7 +206,6 @@ final class AppState: ObservableObject {
 
     private func handleReview(_ item: FrigateReviewItem, change: ChangeType) {
         guard !locallyViewedIDs.contains(item.id) else { return }
-        let wasNew = !reviews.contains { $0.id == item.id }
         reviews.removeAll { $0.id == item.id }
 
         if change == .end {
@@ -226,7 +225,14 @@ final class AppState: ObservableObject {
             IncidentActivityController.startOrUpdate(review: item)
         }
 
-        guard wasNew, change == .new, item.severity == "alert" else { return }
+        // Notify the first time a review reaches alert severity. This includes a
+        // detection-severity review that later *escalates* to an alert — Frigate
+        // delivers that as an .update (not a .new), so the old `change == .new`
+        // guard silently swallowed it. LastSeenStore only ever records alerts, so
+        // it's the dedup: a brand-new alert and an escalated one each fire exactly
+        // once, while subsequent updates (more objects) refresh only the Live
+        // Activity above, not a second banner.
+        guard item.severity == "alert" else { return }
 
         let label = item.data?.objects?.first ?? "object"
         let zones = item.data?.zones ?? []
