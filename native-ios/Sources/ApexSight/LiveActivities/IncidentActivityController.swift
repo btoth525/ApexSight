@@ -17,6 +17,11 @@ enum IncidentActivityController {
             severity: review.severity ?? "alert"
         )
 
+        // Restore the existing activity from a previous app session if we lost our handle.
+        if current == nil {
+            current = Activity<IncidentActivityAttributes>.activities.first
+        }
+
         if let current {
             Task { await current.update(ActivityContent(state: state, staleDate: nil)) }
         } else {
@@ -39,7 +44,13 @@ enum IncidentActivityController {
         endTask = nil
         let activity = current
         current = nil
-        Task { await activity?.end(nil, dismissalPolicy: .immediate) }
+        // Pass a valid final state so the dismissal is reliable on iOS 16.2+.
+        let finalState = IncidentActivityAttributes.ContentState(
+            title: "Incident ended",
+            detail: "Tap to review",
+            severity: "alert"
+        )
+        Task { await activity?.end(ActivityContent(state: finalState, staleDate: nil), dismissalPolicy: .immediate) }
     }
 
     private static func scheduleAutoEnd() {

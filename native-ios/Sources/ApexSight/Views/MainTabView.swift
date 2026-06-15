@@ -32,11 +32,13 @@ struct MainTabView: View {
     private enum DetailSheet: Identifiable {
         case event(FrigateEvent)
         case review(FrigateReviewItem)
+        case camera(FrigateCamera)
 
         var id: String {
             switch self {
             case .event(let event): return "event-\(event.id)"
             case .review(let review): return "review-\(review.id)"
+            case .camera(let camera): return "camera-\(camera.name)"
             }
         }
     }
@@ -55,6 +57,7 @@ struct MainTabView: View {
                 switch sheet {
                 case .event(let event): EventDetailView(event: event)
                 case .review(let review): ReviewDetailView(review: review)
+                case .camera(let camera): LiveStreamView(camera: camera)
                 }
             }
             .environmentObject(appState)
@@ -120,8 +123,11 @@ struct MainTabView: View {
     private func handleDeepLink(_ route: AppDeepLink?) {
         guard let route else { return }
         switch route {
-        case .camera:
+        case .camera(let name):
             selectedTab = .cameras
+            if let camera = appState.cameras.first(where: { $0.name == name }) {
+                detailSheet = .camera(camera)
+            }
         case .review(let id):
             selectedTab = .review
             if let review = appState.reviews.first(where: { $0.id == id }) {

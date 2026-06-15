@@ -5,10 +5,17 @@ import UserNotifications
 final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     @MainActor private weak var appState: AppState?
 
+    override init() {
+        super.init()
+        // Register as delegate immediately so cold-launch notification taps are
+        // captured before the SwiftUI view hierarchy mounts (.onAppear fires too late).
+        UNUserNotificationCenter.current().delegate = self
+    }
+
     @MainActor
     func configure(appState: AppState) {
         self.appState = appState
-        UNUserNotificationCenter.current().delegate = self
+        // Delegate already registered in init(); this just wires the appState reference.
     }
 
     func userNotificationCenter(
@@ -17,9 +24,12 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
+        // Call completionHandler immediately — the system imposes a tight deadline
+        // and will log an error if it's called after an async network round-trip.
+        // Deep-link navigation and mark-reviewed fire-and-forget after returning.
+        completionHandler()
         Task { @MainActor in
             await handle(response: response, userInfo: userInfo)
-            completionHandler()
         }
     }
 

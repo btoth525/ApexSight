@@ -160,9 +160,22 @@ final class AppState: ObservableObject {
         guard !locallyViewedIDs.contains(item.id) else { return }
         let wasNew = !reviews.contains { $0.id == item.id }
         reviews.removeAll { $0.id == item.id }
-        if change != .end {
-            reviews.insert(item, at: 0)
-            if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
+
+        if change == .end {
+            // Only dismiss the Live Activity for alert reviews — detection reviews ending
+            // should not kill an ongoing alert incident's Dynamic Island banner.
+            if item.severity == "alert" { IncidentActivityController.end() }
+            return
+        }
+
+        reviews.insert(item, at: 0)
+        if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
+
+        // Keep the Live Activity up-to-date on both new and update events (e.g., more
+        // objects detected in the same incident). The guard below still limits banner +
+        // notification to brand-new alert-severity items only.
+        if item.severity == "alert" {
+            IncidentActivityController.startOrUpdate(review: item)
         }
 
         guard wasNew, change == .new, item.severity == "alert" else { return }
@@ -179,8 +192,6 @@ final class AppState: ObservableObject {
             body: NotificationCopy.body(for: item),
             reviewID: item.id
         )
-
-        IncidentActivityController.startOrUpdate(review: item)
 
         if let client, let session {
             Task { await LocalAlertNotifier.notify(review: item, client: client, session: session) }
@@ -249,7 +260,7 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
-            events = try await nextEvents
+            events = (try? await nextEvents) ?? events
             if let r = try? await nextReviews {
                 reviews = r.filter { !locallyViewedIDs.contains($0.id) }
             }
@@ -344,6 +355,7 @@ final class AppState: ObservableObject {
 
     func switchTo(session: FrigateSession) {
         stopRealtime()
+        stopForegroundPolling()
         locallyViewedIDs.removeAll()
         self.session = session
         keychain.save(session: session)

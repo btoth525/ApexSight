@@ -29,6 +29,8 @@ final class FrigateEventStream {
     private var reconnectAttempts = 0
     private var useQueryTokenFallback = false
     private var heartbeat: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
+    private var pendingConnectedEvent = false
 
     init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
@@ -45,6 +47,8 @@ final class FrigateEventStream {
     }
 
     private func teardownSocket() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         heartbeat?.cancel()
         heartbeat = nil
         task?.cancel(with: .goingAway, reason: nil)
@@ -73,8 +77,8 @@ final class FrigateEventStream {
 
         let socket = urlSession.webSocketTask(with: request)
         task = socket
+        pendingConnectedEvent = true  // emitted on first successful message, not at resume
         socket.resume()
-        onEvent?(.connected)
         receiveNext()
         startHeartbeat()
     }
@@ -85,6 +89,10 @@ final class FrigateEventStream {
                 guard let self, self.isActive else { return }
                 switch result {
                 case .success(let message):
+                    if self.pendingConnectedEvent {
+                        self.pendingConnectedEvent = false
+                        self.onEvent?(.connected)
+                    }
                     self.reconnectAttempts = 0
                     self.handle(message: message)
                     self.receiveNext()
@@ -122,8 +130,9 @@ final class FrigateEventStream {
 
         let delay = min(30.0, pow(2.0, Double(reconnectAttempts))) + Double.random(in: 0...0.5)
         reconnectAttempts += 1
-        Task { [weak self] in
+        reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             await self?.openSocket()
         }
     }

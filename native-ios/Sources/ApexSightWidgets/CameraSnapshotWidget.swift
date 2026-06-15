@@ -71,6 +71,7 @@ struct CameraSnapshotWidgetView: View {
             switch family {
             case .accessoryInline:
                 AccessoryInlineView(entry: entry)
+                    .containerBackground(.clear, for: .widget)
             case .accessoryRectangular:
                 AccessoryRectangularView(entry: entry)
                     .containerBackground(.clear, for: .widget)
@@ -527,14 +528,11 @@ private struct AccessoryInlineView: View {
 
     var body: some View {
         if let alert = entry.alert {
-            Label(
-                "\(alertEmoji(alert.label)) \(titleizeWidget(alert.subLabel ?? alert.label)) · \(titleizeWidget(alert.camera))",
-                systemImage: "video.fill"
-            )
+            Text("\(alertEmoji(alert.label)) \(titleizeWidget(alert.subLabel ?? alert.label)) · \(relativeShort(alert.when))")
         } else if let snapshot = entry.snapshot {
-            Label("\(titleizeWidget(snapshot.camera)) · \(relativeShort(snapshot.capturedAt))", systemImage: "video.fill")
+            Text("📹 \(titleizeWidget(snapshot.camera)) · \(relativeShort(snapshot.capturedAt))")
         } else {
-            Label("ApexSight", systemImage: "video.fill")
+            Text("ApexSight")
         }
     }
 }

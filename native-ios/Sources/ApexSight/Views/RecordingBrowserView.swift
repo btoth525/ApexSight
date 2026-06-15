@@ -129,13 +129,14 @@ struct RecordingBrowserView: View {
                 scrubberTrack
                     .frame(height: 110)
 
-                // Hour labels for current range
+                // Hour labels for current range. The range end is exclusive (rangeEndHour+1),
+                // so the right label reflects the actual boundary covered.
                 HStack {
                     Text(hourLabel(rangeStartHour))
                     Spacer()
                     Text(hourLabel((rangeStartHour + rangeEndHour) / 2))
                     Spacer()
-                    Text(hourLabel(rangeEndHour))
+                    Text(hourLabel((rangeEndHour + 1) % 24))
                 }
                 .font(.system(size: 9, weight: .heavy))
                 .foregroundStyle(GlassTheme.tertiary)
@@ -422,7 +423,7 @@ struct RecordingBrowserView: View {
         recordings = ((try? await recs) ?? []).sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
         dayEvents = (try? await evs) ?? []
 
-        // Park the playhead on the most recent detection for a useful default.
+        // Park the playhead on the most recent detection and start playing immediately.
         if let latest = dayEvents.compactMap(\.startTime).max() {
             let rangeStart = startOfDay.timeIntervalSince1970 + Double(rangeStartHour) * 3600
             let rangeEnd = startOfDay.timeIntervalSince1970 + Double(rangeEndHour + 1) * 3600
@@ -430,6 +431,8 @@ struct RecordingBrowserView: View {
             scrubFraction = max(0, min((latest - rangeStart) / rangeSeconds, 1))
         }
         isLoading = false
+        // Auto-play from the parked position so the user sees footage immediately.
+        if !recordings.isEmpty { playFromScrub() }
     }
 
     private func playFromScrub() {

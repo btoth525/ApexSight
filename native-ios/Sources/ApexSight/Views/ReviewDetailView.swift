@@ -45,17 +45,18 @@ struct ReviewDetailView: View {
                 url: client.recordingHLSURL(camera: review.camera, start: start, end: end)
             )
         }
-        .onDisappear { clipModel.pause() }
+        .onDisappear { clipModel.stop() }
         .task(id: review.id) {
             guard let client = appState.client else { return }
+            let ids = review.data?.detections ?? []
+            guard !ids.isEmpty else { return }
             loadingDetections = true
             var loaded: [FrigateEvent] = []
-            for id in review.data?.detections ?? [] {
-                if let event = try? await client.event(id: id) {
-                    loaded.append(event)
-                }
+            await withTaskGroup(of: FrigateEvent?.self) { group in
+                for id in ids { group.addTask { try? await client.event(id: id) } }
+                for await event in group { if let event { loaded.append(event) } }
             }
-            detectionEvents = loaded
+            detectionEvents = loaded.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
             loadingDetections = false
         }
         .confirmationDialog(

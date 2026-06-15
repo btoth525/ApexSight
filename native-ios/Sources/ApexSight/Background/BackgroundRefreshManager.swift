@@ -44,20 +44,17 @@ enum BackgroundRefreshManager {
         guard let reviews = try? await client.reviews(limit: 20) else { return }
 
         let prefs = await NotificationPreferencesStore()
-        var newlySeen: [String] = []
 
         for review in reviews where review.severity == "alert" {
             guard LastSeenStore.isNew(review.id) else { continue }
-            newlySeen.append(review.id)
+            // Mark seen immediately so a mid-task cancellation can't re-deliver on the next run.
+            LastSeenStore.markSeen([review.id])
 
             let label = review.data?.objects?.first ?? "object"
             let zones = review.data?.zones ?? []
-            let deliver = await prefs.shouldDeliver(camera: review.camera, label: label, zones: zones)
-            guard deliver else { continue }
+            guard await prefs.shouldDeliver(camera: review.camera, label: label, zones: zones) else { continue }
 
             await LocalAlertNotifier.notify(review: review, client: client, session: session)
         }
-
-        LastSeenStore.markSeen(newlySeen)
     }
 }

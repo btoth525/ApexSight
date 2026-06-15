@@ -34,7 +34,7 @@ struct ReviewTab: View {
         guard !appState.isLoading && !loadingDetections else { return false }
         switch selectedSeverity {
         case "detection": return detectionItems.isEmpty
-        case "alert": return appState.reviews.filter { $0.severity == "alert" }.isEmpty && !appState.reviews.isEmpty
+        case "alert": return appState.reviews.filter { $0.severity == "alert" }.isEmpty
         default: return appState.reviews.isEmpty
         }
     }
@@ -121,7 +121,7 @@ struct ReviewTab: View {
                 }
             }
             .confirmationDialog(
-                "Mark all \(appState.reviews.count) alerts as reviewed?",
+                "Mark all \(appState.reviews.count) items as reviewed?",
                 isPresented: $showMarkAllConfirm,
                 titleVisibility: .visible
             ) {

@@ -59,8 +59,17 @@ enum LocalAlertNotifier {
             let options: [String: Any]? = isGIF
                 ? [UNNotificationAttachmentOptionsTypeHintKey: UTType.gif.identifier]
                 : nil
-            return try UNNotificationAttachment(identifier: "frigate-media", url: localURL, options: options)
+            let attachment = try UNNotificationAttachment(
+                identifier: UUID().uuidString,
+                url: localURL,
+                options: options
+            )
+            // UNNotificationAttachment copies the file into its own sandbox on creation;
+            // the source temp file is no longer needed.
+            try? FileManager.default.removeItem(at: localURL)
+            return attachment
         } catch {
+            try? FileManager.default.removeItem(at: localURL)
             return nil
         }
     }

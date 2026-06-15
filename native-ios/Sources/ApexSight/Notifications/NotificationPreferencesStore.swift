@@ -54,7 +54,20 @@ final class NotificationPreferencesStore: ObservableObject {
     @Published var preferences = NotificationPreferences()
 
     private let key = "com.brandontoth.apexsight.notificationPreferences"
-    private var lastNotificationTime: [String: Date] = [:]
+    private let cooldownKey = "com.brandontoth.apexsight.lastNotificationTime"
+
+    private var lastNotificationTime: [String: Date] {
+        get {
+            let raw = (UserDefaults(suiteName: "group.com.brandontoth.apexsight") ?? .standard)
+                .dictionary(forKey: cooldownKey) as? [String: Double] ?? [:]
+            return raw.mapValues { Date(timeIntervalSince1970: $0) }
+        }
+        set {
+            let raw = newValue.mapValues { $0.timeIntervalSince1970 }
+            (UserDefaults(suiteName: "group.com.brandontoth.apexsight") ?? .standard)
+                .set(raw, forKey: cooldownKey)
+        }
+    }
 
     init() {
         load()

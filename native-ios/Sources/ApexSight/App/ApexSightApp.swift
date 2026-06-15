@@ -40,6 +40,13 @@ struct ApexSightApp: App {
                 .onAppear {
                     notificationDelegate.configure(appState: appState)
                 }
+                .task {
+                    // Start polling immediately on cold launch for already-signed-in users.
+                    // .onChange(of: scenePhase) doesn't fire for the initial .active value,
+                    // so this ensures the live stream and 15s poller start right away.
+                    appState.startRealtime()
+                    appState.startForegroundPolling()
+                }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
                 }

@@ -23,7 +23,7 @@ struct FrigateSession: Codable, Equatable {
         let withScheme: String
         if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
             withScheme = trimmed
-        } else if trimmed.hasPrefix("192.168.") || trimmed.hasPrefix("10.") || trimmed.hasPrefix("127.") || trimmed == "localhost" {
+        } else if trimmed.hasPrefix("192.168.") || trimmed.hasPrefix("10.") || trimmed.hasPrefix("127.") || trimmed == "localhost" || isLAN172(host: trimmed) {
             withScheme = "http://\(trimmed)"
         } else {
             withScheme = "https://\(trimmed)"
@@ -33,6 +33,15 @@ struct FrigateSession: Codable, Equatable {
             throw FrigateError.invalidURL
         }
         return url
+    }
+
+    private static func isLAN172(host: String) -> Bool {
+        let parts = host.split(separator: ".", maxSplits: 2)
+        guard parts.count >= 2,
+              parts[0] == "172",
+              let second = Int(parts[1]),
+              second >= 16, second <= 31 else { return false }
+        return true
     }
 }
 
