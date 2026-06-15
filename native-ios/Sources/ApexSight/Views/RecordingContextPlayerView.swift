@@ -102,7 +102,9 @@ struct RecordingContextPlayerView: View {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if let player = model.player {
                     let target = CMTime(seconds: max(0, offset - 5), preferredTimescale: 600)
-                    player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+                    // Inside this async `.task`, AVPlayer.seek resolves to the async
+                    // overload, so it must be awaited (and its Bool result discarded).
+                    _ = await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
                 }
             }
         }
