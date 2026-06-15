@@ -218,12 +218,24 @@ struct FrigateClient {
         baseURL.appending(path: "api/review/\(id)/clip.mp4")
     }
 
+    /// Progressive MP4 export of a recording range — used only for downloading a clip to
+    /// Photos (a file, not a stream). For in-app *playback* use `recordingHLSURL`; Frigate's
+    /// docs advise against progressive clip.mp4 for iOS playback.
     func recordingClipURL(camera: String, start: Double, end: Double) -> URL {
         baseURL.appending(path: "api/\(camera)/start/\(Int(start))/end/\(Int(end))/clip.mp4")
     }
 
+    /// VOD HLS playlist for a recording time range — Frigate's documented endpoint
+    /// (`/vod/<camera>/start/<start>/end/<end>/master.m3u8`). The iOS-recommended source
+    /// for recording playback (HLS plays reliably in AVPlayer).
     func recordingHLSURL(camera: String, start: Double, end: Double) -> URL {
         baseURL.appending(path: "vod/\(camera)/start/\(Int(start))/end/\(Int(end))/master.m3u8")
+    }
+
+    /// VOD HLS playlist for a single tracked object / event — Frigate's documented
+    /// `/vod/event/<event_id>/master.m3u8`. Purpose-built for event playback on iOS.
+    func eventVodURL(id: String) -> URL {
+        baseURL.appending(path: "vod/event/\(id)/master.m3u8")
     }
 
     // Events with full filter params

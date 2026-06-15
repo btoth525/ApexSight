@@ -38,12 +38,11 @@ struct ReviewDetailView: View {
         .task {
             guard let client = appState.client, let start = review.startTime else { return }
             let end = review.endTime ?? (start + 20)
-            // Primary: VOD HLS (same source Frigate's web UI uses). Fallback: the
-            // progressive MP4 export — the model swaps automatically if HLS can't play.
+            // VOD HLS for the review's time range — Frigate's documented, iOS-recommended
+            // recording source (`/vod/<camera>/start/<start>/end/<end>/master.m3u8`).
             clipModel.loadIfNeeded(
                 client: client,
-                primary: client.recordingHLSURL(camera: review.camera, start: start, end: end),
-                fallback: client.recordingClipURL(camera: review.camera, start: start, end: end)
+                url: client.recordingHLSURL(camera: review.camera, start: start, end: end)
             )
         }
         .onDisappear { clipModel.pause() }

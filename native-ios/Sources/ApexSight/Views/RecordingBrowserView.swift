@@ -451,11 +451,10 @@ struct RecordingBrowserView: View {
 
         downloadFeedback = nil
         playingTime = time
-        // Primary: VOD HLS for this 5-min window. Fallback: progressive MP4 export.
+        // VOD HLS for this 5-min window — Frigate's documented recording playback source.
         clipModel.load(
             client: client,
-            primary: client.recordingHLSURL(camera: camera.name, start: time, end: time + windowSeconds),
-            fallback: client.recordingClipURL(camera: camera.name, start: time, end: time + windowSeconds)
+            url: client.recordingHLSURL(camera: camera.name, start: time, end: time + windowSeconds)
         )
     }
 

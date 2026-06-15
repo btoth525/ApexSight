@@ -130,23 +130,9 @@ struct EventDetailView: View {
             }
             .task {
                 guard hasClip, let client = appState.client else { return }
-                // Primary: VOD HLS for the event's time range (same source as Frigate's UI).
-                // Fallback: the progressive MP4. For in-progress events with no end time
-                // yet, use the trimmed event clip directly.
-                if let start = event.startTime {
-                    let end = event.endTime ?? (start + 20)
-                    clipModel.loadIfNeeded(
-                        client: client,
-                        primary: client.recordingHLSURL(camera: event.camera, start: start, end: end),
-                        fallback: client.recordingClipURL(camera: event.camera, start: start, end: end)
-                    )
-                } else {
-                    clipModel.loadIfNeeded(
-                        client: client,
-                        primary: client.eventClipURL(id: event.id),
-                        fallback: nil
-                    )
-                }
+                // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`) —
+                // the documented, iOS-recommended way to play an event back.
+                clipModel.loadIfNeeded(client: client, url: client.eventVodURL(id: event.id))
             }
             .onDisappear { clipModel.pause() }
         }
