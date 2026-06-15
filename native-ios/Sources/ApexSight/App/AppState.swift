@@ -95,6 +95,8 @@ final class AppState: ObservableObject {
             reviewID: item.id
         )
 
+        IncidentActivityController.startOrUpdate(review: item)
+
         if let client, let session {
             Task { await LocalAlertNotifier.notify(review: item, client: client, session: session) }
         }

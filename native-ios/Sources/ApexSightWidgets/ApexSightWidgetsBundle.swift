@@ -5,5 +5,6 @@ import SwiftUI
 struct ApexSightWidgetsBundle: WidgetBundle {
     var body: some Widget {
         CameraSnapshotWidget()
+        IncidentLiveActivity()
     }
 }
