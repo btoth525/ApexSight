@@ -18,7 +18,9 @@ enum LiveStreamRules {
 /// Owns one tuned-for-live `AVPlayer`, watches it for stalls/failures, and rebuilds the
 /// stream with exponential-backoff reconnect. On the first failure it tries a token
 /// refresh (reusing stored credentials) before falling back to backoff retries, so an
-/// expired `frigate_token` recovers transparently.
+/// expired `frigate_token` recovers transparently. After 3 consecutive failures on the
+/// main stream it silently downgrades to the sub-stream (if one is provided), resetting
+/// the retry counter so the sub gets its own full backoff budget.
 @MainActor
 final class HLSLiveModel: ObservableObject {
     enum State: Equatable {
@@ -30,8 +32,10 @@ final class HLSLiveModel: ObservableObject {
     @Published private(set) var state: State = .connecting
     @Published private(set) var player: AVPlayer?
     @Published private(set) var isMuted = true
+    @Published private(set) var usingFallback = false
 
     private var makeURL: (() -> URL?)?
+    private var makeSubURL: (() -> URL?)?
     private var makeItem: ((URL) -> AVPlayerItem?)?
     private var reauth: (() async -> Bool)?
 
@@ -46,10 +50,12 @@ final class HLSLiveModel: ObservableObject {
 
     func configure(
         makeURL: @escaping () -> URL?,
+        makeSubURL: (() -> URL?)? = nil,
         makeItem: @escaping (URL) -> AVPlayerItem?,
         reauth: @escaping () async -> Bool
     ) {
         self.makeURL = makeURL
+        self.makeSubURL = makeSubURL
         self.makeItem = makeItem
         self.reauth = reauth
     }
@@ -58,6 +64,7 @@ final class HLSLiveModel: ObservableObject {
         isStopped = false
         retryCount = 0
         didTryReauth = false
+        usingFallback = false
         connect()
     }
 
@@ -87,7 +94,8 @@ final class HLSLiveModel: ObservableObject {
     }
 
     private func connect() {
-        guard !isStopped, let makeURL, let makeItem, let url = makeURL(), let item = makeItem(url) else { return }
+        let urlSource = (usingFallback ? makeSubURL : makeURL) ?? makeURL
+        guard !isStopped, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
         teardownObservers()
         player?.pause()
 
@@ -161,6 +169,24 @@ final class HLSLiveModel: ObservableObject {
     private func scheduleReconnect(reason: String) {
         guard !isStopped, reconnectTask == nil else { return }
         retryCount += 1
+
+        // After 3 failures on main stream, silently downgrade to sub-stream.
+        if !usingFallback, retryCount >= 3, makeSubURL != nil {
+            usingFallback = true
+            retryCount = 0
+            didTryReauth = false
+            state = .connecting
+            reconnectTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await MainActor.run {
+                    guard let self else { return }
+                    self.reconnectTask = nil
+                    self.connect()
+                }
+            }
+            return
+        }
+
         guard retryCount <= 6 else {
             state = .failed(reason)
             return
@@ -192,8 +218,8 @@ final class HLSLiveModel: ObservableObject {
 struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
-    /// Force the lighter substream (grid cells). Fullscreen passes `false` but H.265
-    /// cameras are still forced to sub by `LiveStreamRules`.
+    /// H.265 cameras are always forced to sub by `LiveStreamRules` regardless of this flag.
+    /// Set to `true` only when you explicitly want the sub-stream (never used by default now).
     var preferSub: Bool = false
     /// Show the mute/refresh overlay controls (fullscreen only).
     var showControls: Bool = false
@@ -201,7 +227,8 @@ struct HLSLivePlayerView: View {
 
     @StateObject private var model = HLSLiveModel()
 
-    private var useSub: Bool { preferSub || LiveStreamRules.forcesSubStream(camera.name) }
+    /// H.265 cameras must always use sub; otherwise start with main and fall back to sub.
+    private var alwaysSub: Bool { LiveStreamRules.forcesSubStream(camera.name) || preferSub }
 
     var body: some View {
         ZStack {
@@ -226,11 +253,22 @@ struct HLSLivePlayerView: View {
             }
         }
         .onAppear {
-            model.configure(
-                makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: useSub) },
-                makeItem: { url in appState.client?.playerItem(for: url) },
-                reauth: { await appState.reauthenticate() }
-            )
+            if alwaysSub {
+                // Forced sub: only one URL, no fallback needed.
+                model.configure(
+                    makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
+                    makeItem: { url in appState.client?.playerItem(for: url) },
+                    reauth: { await appState.reauthenticate() }
+                )
+            } else {
+                // Start on main stream; fall back to sub after 3 consecutive failures.
+                model.configure(
+                    makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
+                    makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
+                    makeItem: { url in appState.client?.playerItem(for: url) },
+                    reauth: { await appState.reauthenticate() }
+                )
+            }
             model.start()
         }
         .onDisappear { model.stop() }

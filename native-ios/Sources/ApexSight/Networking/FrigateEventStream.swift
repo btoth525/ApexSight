@@ -65,8 +65,8 @@ final class FrigateEventStream {
         var request = client.webSocketRequest()
 
         // Fallback for reverse proxies that only honor a query-string token.
-        if useQueryTokenFallback, let token = client.streamToken,
-           var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false) {
+        if useQueryTokenFallback, let token = client.streamToken, let reqURL = request.url,
+           var components = URLComponents(url: reqURL, resolvingAgainstBaseURL: false) {
             components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "token", value: token)]
             if let url = components.url { request = URLRequest(url: url) }
         }

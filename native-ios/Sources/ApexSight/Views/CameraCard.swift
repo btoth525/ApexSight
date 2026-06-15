@@ -25,7 +25,6 @@ struct CameraCard: View {
                     }
                     HLSLivePlayerView(
                         camera: camera,
-                        preferSub: true,
                         onPlaying: { playing in
                             withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
                         }

@@ -3,7 +3,7 @@ import UIKit
 
 struct LoginView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var baseURL = "https://frigate.plexserver525.com"
+    @State private var baseURL = ""
     @State private var username = ""
     @State private var password = ""
     @State private var appeared = false

@@ -118,8 +118,7 @@ struct FrigateClient {
 
     /// Continuous live MJPEG stream of a camera's detect feed.
     /// Stock Frigate serves this at `/api/<camera>` (multipart/x-mixed-replace).
-    /// This is the only live transport that works natively over remote HTTPS without
-    /// extra ports — go2rtc exposes NO live `.m3u8`, so AVPlayer can't stream live.
+    /// Used as the "Lite" fallback mode when HLS fails or is unavailable.
     func mjpegURL(camera: String) -> URL {
         baseURL.appending(path: "api/\(camera)")
     }

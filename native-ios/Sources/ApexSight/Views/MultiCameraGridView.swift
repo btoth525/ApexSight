@@ -80,7 +80,7 @@ struct MultiCameraGridView: View {
             if let client = appState.client {
                 // Snapshot first for instant fill, smooth HLS substream on top.
                 RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
-                HLSLivePlayerView(camera: camera, preferSub: true)
+                HLSLivePlayerView(camera: camera)
                     .allowsHitTesting(false)
             }
 
