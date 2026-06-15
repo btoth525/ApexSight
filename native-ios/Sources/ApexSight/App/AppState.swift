@@ -281,9 +281,40 @@ final class AppState: ObservableObject {
             startForegroundPolling()
             Task { _ = try? await NativeNotificationManager.requestPermission() }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.signInErrorMessage(for: error)
         }
         isLoading = false
+    }
+
+    /// Turns the raw sign-in error into something actionable, so the user can tell a
+    /// wrong password apart from an unreachable server instead of seeing a status code.
+    static func signInErrorMessage(for error: Error) -> String {
+        if let frigate = error as? FrigateError {
+            switch frigate {
+            case .loginFailed:
+                return "Wrong username or password."
+            case .invalidURL:
+                return "That server address doesn't look right — include http:// or https://."
+            case .badResponse(let code):
+                if code == 401 || code == 403 { return "Wrong username or password." }
+                return "Frigate returned an error (\(code)). Check that it's running and reachable."
+            }
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
+                 NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost,
+                 NSURLErrorNotConnectedToInternet, NSURLErrorDNSLookupFailed:
+                return "Couldn't reach the server. Check the address and that you're on the right network."
+            case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted,
+                 NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateNotYetValid:
+                return "Secure connection failed — check the server's HTTPS certificate."
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
     }
 
     /// Silently refreshes the `frigate_token` JWT by re-running the stored login.

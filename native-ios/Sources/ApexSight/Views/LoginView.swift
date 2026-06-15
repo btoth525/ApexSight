@@ -6,6 +6,7 @@ struct LoginView: View {
     @State private var baseURL = ""
     @State private var username = ""
     @State private var password = ""
+    @State private var showPassword = false
     @State private var appeared = false
 
     @FocusState private var focus: Field?
@@ -68,7 +69,7 @@ struct LoginView: View {
                         formField("Username", text: $username, keyboard: .default, focusField: .username, submitLabel: .next) {
                             focus = .password
                         }
-                        secureFormField("Password", text: $password, focusField: .password, submitLabel: .go) {
+                        passwordField("Password", text: $password, focusField: .password, submitLabel: .go) {
                             submitIfReady()
                         }
 
@@ -157,26 +158,45 @@ struct LoginView: View {
             .onSubmit(onSubmit)
     }
 
-    private func secureFormField(
+    private func passwordField(
         _ title: String,
         text: Binding<String>,
         focusField: Field,
         submitLabel: SubmitLabel,
         onSubmit: @escaping () -> Void
     ) -> some View {
-        SecureField(title, text: text)
+        HStack(spacing: 8) {
+            Group {
+                if showPassword {
+                    TextField(title, text: text)
+                } else {
+                    SecureField(title, text: text)
+                }
+            }
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+            .textContentType(.password)
             .font(.system(size: 16, weight: .bold))
             .foregroundStyle(GlassTheme.primary)
-            .padding(14)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(focus == focusField ? GlassTheme.cyan.opacity(0.6) : .clear, lineWidth: 1.5)
-            )
             .focused($focus, equals: focusField)
             .submitLabel(submitLabel)
             .onSubmit(onSubmit)
+
+            Button {
+                showPassword.toggle()
+            } label: {
+                Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(GlassTheme.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showPassword ? "Hide password" : "Show password")
+        }
+        .padding(14)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(focus == focusField ? GlassTheme.cyan.opacity(0.6) : .clear, lineWidth: 1.5)
+        )
     }
 }

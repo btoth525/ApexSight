@@ -2,9 +2,10 @@ import SwiftUI
 
 struct ActivityTab: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedCamera = "all"
-    @State private var selectedLabel = "all"
-    @State private var sortNewest = true
+    // Persisted so the chosen filters survive navigating away and back (and relaunches).
+    @AppStorage("activity.selectedCamera") private var selectedCamera = "all"
+    @AppStorage("activity.selectedLabel") private var selectedLabel = "all"
+    @AppStorage("activity.sortNewest") private var sortNewest = true
     @State private var path = NavigationPath()
 
     private var labels: [String] {

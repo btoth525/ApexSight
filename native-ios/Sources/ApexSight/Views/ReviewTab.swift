@@ -2,8 +2,9 @@ import SwiftUI
 
 struct ReviewTab: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedSeverity = "all"
-    @State private var sortNewest = true
+    // Persisted so the filter/sort choice survives navigating away and back.
+    @AppStorage("review.selectedSeverity") private var selectedSeverity = "all"
+    @AppStorage("review.sortNewest") private var sortNewest = true
     @State private var path = NavigationPath()
     /// Detection-severity reviews are fetched on demand — Frigate's default review list
     /// is dominated by alerts, so a dedicated `severity=detection` query is needed.
