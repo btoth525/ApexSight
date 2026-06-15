@@ -33,11 +33,10 @@ struct ReviewDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task {
-            guard reviewPlayer == nil,
-                  let client = appState.client,
-                  let url = client.reviewHLSURL(review: review) else { return }
+            guard reviewPlayer == nil, let client = appState.client else { return }
+            let url = client.reviewClipURL(id: review.id)
             let player = AVPlayer(playerItem: client.playerItem(for: url))
-            player.play()   // auto-play the review clip
+            player.play()   // auto-play the review clip (direct MP4)
             reviewPlayer = player
         }
         .onDisappear { reviewPlayer?.pause() }
@@ -105,7 +104,8 @@ struct ReviewDetailView: View {
     }
 
     private var snapshotURL: URL? {
-        appState.client?.reviewPreviewURL(id: review.id)
+        appState.client?.reviewSnapshotURL(review: review)
+            ?? appState.client?.reviewThumbnailURL(review: review)
     }
 
     private var timelineCard: some View {

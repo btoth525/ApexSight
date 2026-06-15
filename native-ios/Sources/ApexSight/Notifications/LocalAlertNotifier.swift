@@ -15,16 +15,21 @@ enum LocalAlertNotifier {
         content.threadIdentifier = "apex-\(review.camera)"
         content.categoryIdentifier = NativeNotificationManager.frigateAlertCategory
 
-        let snapshotURL = client.reviewPreviewURL(id: review.id)
-        content.userInfo = [
+        // Prefer the first detection's snapshot; fall back to its cropped thumbnail.
+        let snapshotURL = client.reviewSnapshotURL(review: review)
+            ?? client.reviewThumbnailURL(review: review)
+        var userInfo: [String: Any] = [
             "review_id": review.id,
             "camera": review.camera,
             "apex_url": "apex://review?id=\(review.id)",
-            "frigate_token": session.token,
-            "snapshot_url": snapshotURL.absoluteString
+            "frigate_token": session.token
         ]
+        if let snapshotURL {
+            userInfo["snapshot_url"] = snapshotURL.absoluteString
+        }
+        content.userInfo = userInfo
 
-        if let attachment = await downloadAttachment(url: snapshotURL, client: client) {
+        if let snapshotURL, let attachment = await downloadAttachment(url: snapshotURL, client: client) {
             content.attachments = [attachment]
         }
 

@@ -1,13 +1,10 @@
-import AVFoundation
 import SwiftUI
 
 struct CameraCard: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
 
-    @State private var player: AVPlayer?
     @State private var isLive = false
-    @State private var statusObserver: NSKeyValueObservation?
 
     private var capability: CameraCapability? {
         appState.capabilities.first(where: { $0.camera == camera.name })
@@ -19,35 +16,39 @@ struct CameraCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
-                    // Reliable snapshot underneath; live stream overlays once ready.
+                    Color.black
+                    // Reliable snapshot underneath; live MJPEG overlays once the first
+                    // frame decodes. Both full-frame (aspect-fit) so nothing is cut off.
                     if let url = appState.client?.latestFrameURL(camera: camera.name) {
-                        RemoteImage(url: url)
-                            .frame(height: 170)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
+                        RemoteImage(url: url, contentMode: .fit)
                     }
-                    if isLive, let player {
-                        GridPlayerCell(player: player)
-                            .frame(height: 170)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-                            .transition(.opacity)
+                    if let client = appState.client {
+                        MJPEGStreamView(
+                            url: client.mjpegURL(camera: camera.name),
+                            client: client,
+                            contentMode: .scaleAspectFit,
+                            onFirstFrame: {
+                                withAnimation(.easeIn(duration: 0.3)) { isLive = true }
+                            }
+                        )
+                        .opacity(isLive ? 1 : 0)
                     }
                     liveBadge
                 }
-                .frame(height: 170)
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .task { startLive() }
-                .onDisappear { stopLive() }
 
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(titleize(camera.name))
                             .font(.system(size: 16, weight: .black))
                             .foregroundStyle(GlassTheme.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         capabilityBadges
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     Image(systemName: "play.fill")
                         .font(.system(size: 14, weight: .black))
                         .foregroundStyle(.white)
@@ -72,7 +73,7 @@ struct CameraCard: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
                     if cap.hasGo2RtcStream {
-                        badge("WebRTC", tint: GlassTheme.blue)
+                        badge("HD", tint: GlassTheme.blue)
                     }
                     if cap.hasRecordings {
                         badge("Rec", tint: GlassTheme.green)
@@ -83,7 +84,7 @@ struct CameraCard: View {
                 }
             }
         } else {
-            Text("Latest frame")
+            Text("Live")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(GlassTheme.secondary)
         }
@@ -111,28 +112,5 @@ struct CameraCard: View {
         .padding(.vertical, 5)
         .background(.black.opacity(0.55), in: Capsule())
         .padding(10)
-    }
-
-    private func startLive() {
-        guard player == nil, let client = appState.client else { return }
-        let item = client.playerItem(for: client.liveHLSURL(camera: camera.name))
-        let newPlayer = AVPlayer(playerItem: item)
-        newPlayer.isMuted = true
-        newPlayer.play()
-        player = newPlayer
-        statusObserver = item.observe(\.status, options: [.new]) { playerItem, _ in
-            DispatchQueue.main.async {
-                withAnimation(.easeIn(duration: 0.3)) {
-                    isLive = (playerItem.status == .readyToPlay)
-                }
-            }
-        }
-    }
-
-    private func stopLive() {
-        statusObserver = nil
-        player?.pause()
-        player = nil
-        isLive = false
     }
 }

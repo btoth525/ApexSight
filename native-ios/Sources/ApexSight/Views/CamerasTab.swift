@@ -22,12 +22,7 @@ struct CamerasTab: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Status strip
-                        statusStrip
-
-                        groupsStrip
-
+                    VStack(alignment: .leading, spacing: 14) {
                         if let error = appState.errorMessage {
                             GlassCard {
                                 Label(error, systemImage: "exclamationmark.triangle")
@@ -40,6 +35,10 @@ struct CamerasTab: View {
                             ForEach(appState.cameras) { camera in
                                 CameraCard(camera: camera)
                             }
+                        }
+
+                        if appState.cameras.isEmpty && !appState.isLoading {
+                            emptyState
                         }
                     }
                     .padding(16)
@@ -56,13 +55,7 @@ struct CamerasTab: View {
                         if appState.isLoading {
                             ProgressView().tint(GlassTheme.cyan)
                         }
-                        Button {
-                            liveWall = .all
-                        } label: {
-                            Image(systemName: "rectangle.grid.2x2.fill")
-                                .font(.system(size: 18, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
-                        }
+                        multiViewMenu
                     }
                 }
             }
@@ -85,76 +78,51 @@ struct CamerasTab: View {
         }
     }
 
-    private var groupsStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(groupStore.groups) { group in
-                    Button { liveWall = .group(group) } label: {
-                        groupChip(icon: "square.grid.2x2.fill", title: group.name, subtitle: "\(group.cameraNames.count) cams", tint: GlassTheme.cyan)
+    private var multiViewMenu: some View {
+        Menu {
+            Button {
+                liveWall = .all
+            } label: {
+                Label("All Cameras Wall", systemImage: "rectangle.grid.2x2.fill")
+            }
+            if !groupStore.groups.isEmpty {
+                Section("Saved Grids") {
+                    ForEach(groupStore.groups) { group in
+                        Button {
+                            liveWall = .group(group)
+                        } label: {
+                            Label("\(group.name) (\(group.cameraNames.count))", systemImage: "square.grid.2x2")
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
-                Button { path.append("groups") } label: {
-                    groupChip(icon: "plus", title: "Groups", subtitle: "Manage", tint: GlassTheme.blue)
-                }
-                .buttonStyle(.plain)
             }
+            Divider()
+            Button {
+                path.append("groups")
+            } label: {
+                Label("Manage Grids", systemImage: "slider.horizontal.3")
+            }
+        } label: {
+            Image(systemName: "rectangle.grid.2x2.fill")
+                .font(.system(size: 18, weight: .black))
+                .foregroundStyle(GlassTheme.cyan)
         }
     }
 
-    private func groupChip(icon: String, title: String, subtitle: String, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .black))
-                .foregroundStyle(tint)
-                .frame(width: 32, height: 32)
-                .background(tint.opacity(0.16), in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-                    .lineLimit(1)
-                Text(subtitle.uppercased())
-                    .font(.system(size: 10, weight: .black))
-                    .foregroundStyle(GlassTheme.secondary)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private var statusStrip: some View {
-        HStack(spacing: 8) {
-            statusMetric(icon: "video.fill", title: "Live", value: "\(appState.cameras.count)", tint: GlassTheme.blue)
-            statusMetric(icon: "bell.badge.fill", title: "Review", value: "\(appState.reviews.count)", tint: GlassTheme.orange)
-            statusMetric(icon: "tag.fill", title: "Labels", value: "\(appState.labels.count)", tint: GlassTheme.cyan)
-            statusMetric(icon: "waveform.path.ecg", title: "Health",
-                         value: appState.errorMessage == nil ? "Good" : "Check",
-                         tint: appState.errorMessage == nil ? GlassTheme.green : GlassTheme.red)
-        }
-    }
-
-    private func statusMetric(icon: String, title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .black))
-                    .foregroundStyle(tint)
-                Text(title.uppercased())
-                    .font(.system(size: 9, weight: .black))
-                    .foregroundStyle(GlassTheme.secondary)
-                    .lineLimit(1)
-            }
-            Text(value)
-                .font(.system(size: 17, weight: .black))
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "video.slash.fill")
+                .font(.system(size: 44, weight: .black))
+                .foregroundStyle(GlassTheme.secondary)
+            Text("No Cameras")
+                .font(.system(size: 20, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            Text("Pull to refresh, or check your Frigate connection in Settings.")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(GlassTheme.secondary)
+                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 10)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
     }
 }

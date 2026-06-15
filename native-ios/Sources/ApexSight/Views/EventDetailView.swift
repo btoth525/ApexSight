@@ -99,7 +99,7 @@ struct EventDetailView: View {
             }
             .task {
                 guard hasClip, clipPlayer == nil,
-                      let clipURL = appState.client?.eventHLSURL(id: event.id),
+                      let clipURL = appState.client?.eventClipURL(id: event.id),
                       let item = appState.client?.playerItem(for: clipURL) else { return }
                 let player = AVPlayer(playerItem: item)
                 player.play()   // auto-play the event clip

@@ -63,6 +63,10 @@ struct MainTabView: View {
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)
         }
+        .task {
+            // Catch a deep link set before this view started observing (cold launch from a push).
+            if appState.deepLink != nil { handleDeepLink(appState.deepLink) }
+        }
     }
 
     // MARK: - Layouts
@@ -122,6 +126,12 @@ struct MainTabView: View {
             selectedTab = .review
             if let review = appState.reviews.first(where: { $0.id == id }) {
                 detailSheet = .review(review)
+            } else {
+                Task {
+                    if let review = try? await appState.client?.review(id: id) {
+                        detailSheet = .review(review)
+                    }
+                }
             }
         case .event(let id):
             selectedTab = .activity

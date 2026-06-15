@@ -1,48 +1,28 @@
 import SwiftUI
-import AVKit
-import CoreMedia
 import WebKit
 
 struct LiveStreamView: View {
     let camera: FrigateCamera
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var player: AVPlayer?
-    @State private var streamMode: StreamMode = .webrtc
-    @State private var isLoading = true
-    @State private var errorMessage: String?
+    @State private var streamMode: StreamMode = .live
+    @State private var isLive = false
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
-    @State private var stallObserver: NSKeyValueObservation?
-    @State private var statusObserver: NSKeyValueObservation?
+    @State private var reloadToken = UUID()
 
     enum StreamMode: String, CaseIterable {
-        case webrtc = "WebRTC"
-        case hls = "HLS"
+        case live = "Live"
+        case hd = "HD"
         case snapshot = "Snapshot"
-    }
-
-    private var hlsURL: URL? {
-        appState.client?.liveHLSURL(camera: camera.name)
-    }
-
-    private var webrtcURL: URL? {
-        guard let base = appState.session?.baseURL else { return nil }
-        return base.appending(path: "/live/webrtc").appending(queryItems: [URLQueryItem(name: "src", value: camera.name)])
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            switch streamMode {
-            case .webrtc:
-                webrtcView
-            case .hls:
-                hlsPlayerView
-            case .snapshot:
-                snapshotView
-            }
+            content
+                .ignoresSafeArea()
 
             VStack {
                 topBar
@@ -53,66 +33,53 @@ struct LiveStreamView: View {
         .navigationBarHidden(true)
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
-            // Default to HLS — more reliable. WebRTC only if user explicitly selects it.
-            streamMode = .hls
-            startHLS()
         }
-        .onChange(of: streamMode) { _, mode in
-            statusObserver = nil
-            if mode == .hls {
-                startHLS()
-            } else {
-                stallObserver = nil
-                player?.pause()
-                player = nil
-                isLoading = false
+        .onChange(of: streamMode) { _, _ in
+            isLive = false
+            reloadToken = UUID()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch streamMode {
+        case .live:
+            liveMJPEG
+        case .hd:
+            webrtcView
+        case .snapshot:
+            snapshotView
+        }
+    }
+
+    private var liveMJPEG: some View {
+        ZStack {
+            // Snapshot underneath for instant feedback while the stream connects.
+            if let client = appState.client {
+                RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
+                    .opacity(isLive ? 0 : 1)
+                MJPEGStreamView(
+                    url: client.mjpegURL(camera: camera.name),
+                    client: client,
+                    contentMode: .scaleAspectFit,
+                    onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { isLive = true } }
+                )
+                .id(reloadToken)
+                .opacity(isLive ? 1 : 0)
             }
-        }
-        .onDisappear {
-            player?.pause()
-            stallObserver = nil
-            statusObserver = nil
+            if !isLive {
+                ProgressView().tint(.white).scaleEffect(1.4)
+            }
         }
     }
 
     private var webrtcView: some View {
         Group {
-            if let url = webrtcURL, let session = appState.session {
-                WebRTCView(url: url, session: session)
-                    .ignoresSafeArea()
+            if let client = appState.client, let session = appState.session {
+                WebRTCView(url: client.webRTCPlayerURL(camera: camera.name), session: session)
+                    .id(reloadToken)
             } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 44))
-                        .foregroundStyle(.orange)
-                    Text("WebRTC not available")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-            }
-        }
-    }
-
-    private var hlsPlayerView: some View {
-        Group {
-            if let player {
-                PiPPlayerView(player: player, showsControls: false)
-                    .ignoresSafeArea()
-            } else if isLoading {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(1.5)
-            } else if let error = errorMessage {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 44))
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
+                unavailable("HD stream not available")
             }
         }
     }
@@ -121,8 +88,21 @@ struct LiveStreamView: View {
         Group {
             if let client = appState.client {
                 RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
-                    .ignoresSafeArea()
+                    .id(reloadToken)
             }
+        }
+    }
+
+    private func unavailable(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
         }
     }
 
@@ -146,11 +126,11 @@ struct LiveStreamView: View {
                     .minimumScaleFactor(0.7)
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(streamMode == .snapshot ? .orange : .green)
+                        .fill(statusColor)
                         .frame(width: 6, height: 6)
-                    Text(streamMode == .snapshot ? "Snapshot" : "Live")
+                    Text(statusText)
                         .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(streamMode == .snapshot ? .orange : .green)
+                        .foregroundStyle(statusColor)
                 }
             }
 
@@ -193,10 +173,25 @@ struct LiveStreamView: View {
         .padding(.top, 54)
     }
 
+    private var statusColor: Color {
+        switch streamMode {
+        case .snapshot: return .orange
+        case .live, .hd: return isLive || streamMode == .hd ? .green : .yellow
+        }
+    }
+
+    private var statusText: String {
+        switch streamMode {
+        case .snapshot: return "Snapshot"
+        case .hd: return "HD Live"
+        case .live: return isLive ? "Live" : "Connecting…"
+        }
+    }
+
     private func icon(for mode: StreamMode) -> String {
         switch mode {
-        case .webrtc: return "dot.radiowaves.up.forward"
-        case .hls: return "play.tv.fill"
+        case .live: return "dot.radiowaves.up.forward"
+        case .hd: return "tv.fill"
         case .snapshot: return "photo.fill"
         }
     }
@@ -210,7 +205,8 @@ struct LiveStreamView: View {
 
             HStack(spacing: 20) {
                 actionButton(icon: "arrow.clockwise", label: "Refresh") {
-                    if streamMode == .hls { startHLS() }
+                    isLive = false
+                    reloadToken = UUID()
                 }
                 actionButton(icon: "photo", label: "Snapshot") {
                     streamMode = .snapshot
@@ -246,59 +242,6 @@ struct LiveStreamView: View {
                 .foregroundStyle(.white.opacity(0.7))
         }
     }
-
-    private func startHLS() {
-        player?.pause()
-        stallObserver = nil
-        statusObserver = nil
-        player = nil
-        isLoading = true
-        errorMessage = nil
-
-        guard let url = hlsURL, let client = appState.client else {
-            errorMessage = "No Frigate connection."
-            isLoading = false
-            return
-        }
-
-        let item = client.playerItem(for: url)
-        item.preferredForwardBufferDuration = 4
-        let newPlayer = AVPlayer(playerItem: item)
-        newPlayer.automaticallyWaitsToMinimizeStalling = true
-        newPlayer.play()
-        player = newPlayer
-
-        // Show video once ready, error if failed.
-        // Note: LiveStreamView is a struct, so self cannot be captured weakly.
-        // @State storage is reference-backed, so direct mutation from this escaping closure is valid.
-        statusObserver = item.observe(\.status, options: [.new]) { playerItem, _ in
-            DispatchQueue.main.async {
-                switch playerItem.status {
-                case .readyToPlay:
-                    isLoading = false
-                    errorMessage = nil
-                    // Seek to live edge
-                    if let range = playerItem.seekableTimeRanges.last?.timeRangeValue {
-                        newPlayer.seek(to: CMTimeRangeGetEnd(range))
-                    }
-                case .failed:
-                    isLoading = false
-                    errorMessage = playerItem.error?.localizedDescription ?? "Stream failed to load."
-                    player = nil
-                default:
-                    break
-                }
-            }
-        }
-
-        // Stall recovery
-        stallObserver = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak newPlayer] p, _ in
-            guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
-            if let range = p.currentItem?.seekableTimeRanges.last?.timeRangeValue {
-                p.seek(to: CMTimeRangeGetEnd(range), toleranceBefore: .zero, toleranceAfter: .zero) { _ in p.play() }
-            }
-        }
-    }
 }
 
 // MARK: - WebRTC via go2rtc embedded player
@@ -315,14 +258,14 @@ struct WebRTCView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
         webView.isOpaque = false
+        webView.scrollView.isScrollEnabled = false
         injectCookie(into: webView)
+        // Load once here; the parent uses .id(reloadToken) to force a fresh instance on refresh.
+        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
         return webView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
-        webView.load(request)
-    }
+    func updateUIView(_ webView: WKWebView, context: Context) {}
 
     private func injectCookie(into webView: WKWebView) {
         let props: [HTTPCookiePropertyKey: Any] = [

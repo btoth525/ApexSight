@@ -12,10 +12,15 @@ final class GridPlayerUIView: UIView {
         set { playerLayer.player = newValue }
     }
 
+    var gravity: AVLayerVideoGravity {
+        get { playerLayer.videoGravity }
+        set { playerLayer.videoGravity = newValue }
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
-        playerLayer.videoGravity = .resizeAspectFill
+        playerLayer.videoGravity = .resizeAspect
         layer.addSublayer(playerLayer)
     }
 
@@ -29,10 +34,14 @@ final class GridPlayerUIView: UIView {
 
 struct GridPlayerCell: UIViewRepresentable {
     let player: AVPlayer
+    /// `.resizeAspect` (default) shows the whole frame — no sides cut off.
+    /// `.resizeAspectFill` fills the tile (used by the full-screen wall).
+    var gravity: AVLayerVideoGravity = .resizeAspect
 
     func makeUIView(context: Context) -> GridPlayerUIView {
         let view = GridPlayerUIView()
         view.player = player
+        view.gravity = gravity
         return view
     }
 
@@ -40,5 +49,6 @@ struct GridPlayerCell: UIViewRepresentable {
         if uiView.player !== player {
             uiView.player = player
         }
+        uiView.gravity = gravity
     }
 }

@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 
 struct MultiCameraGridView: View {
@@ -9,7 +8,6 @@ struct MultiCameraGridView: View {
 
     /// Number of columns: 1, 2 (default), or 3
     @State private var columns: Int
-    @State private var players: [String: AVPlayer] = [:]
     @State private var selectedCamera: FrigateCamera?
 
     init(group: CameraGroup? = nil) {
@@ -51,8 +49,6 @@ struct MultiCameraGridView: View {
             }
             .toolbarBackground(.black.opacity(0.8), for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .task { await startAllStreams() }
-            .onDisappear { pauseAll() }
             .sheet(item: $selectedCamera) { camera in
                 NavigationStack {
                     LiveStreamView(camera: camera)
@@ -80,16 +76,15 @@ struct MultiCameraGridView: View {
 
     private func cameraCell(_ camera: FrigateCamera) -> some View {
         ZStack(alignment: .bottomLeading) {
-            if let player = players[camera.name] {
-                GridPlayerCell(player: player)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .background(Color.black)
-            } else {
-                // placeholder while stream loads
-                ZStack {
-                    Color.black.aspectRatio(16 / 9, contentMode: .fit)
-                    ProgressView().tint(GlassTheme.cyan)
-                }
+            Color.black
+            if let client = appState.client {
+                // Snapshot first for instant fill, native MJPEG live on top.
+                RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
+                MJPEGStreamView(
+                    url: client.mjpegURL(camera: camera.name),
+                    client: client,
+                    contentMode: .scaleAspectFit
+                )
             }
 
             // camera name pill
@@ -101,6 +96,7 @@ struct MultiCameraGridView: View {
                 .background(.black.opacity(0.55), in: Capsule())
                 .padding(6)
         }
+        .aspectRatio(16 / 9, contentMode: .fit)
         .clipped()
         .contentShape(Rectangle())
         .onTapGesture { selectedCamera = camera }
@@ -133,28 +129,6 @@ struct MultiCameraGridView: View {
         case 3:  return "rectangle.grid.3x2"
         default: return "rectangle.grid.2x2"
         }
-    }
-
-    // MARK: - Stream management
-
-    private func startAllStreams() async {
-        guard let client = appState.client else { return }
-
-        for camera in displayedCameras {
-            guard players[camera.name] == nil else { continue }
-
-            let url = client.liveHLSURL(camera: camera.name)
-            let item = client.playerItem(for: url)
-            item.preferredForwardBufferDuration = 2     // keep buffer small in grid
-            let player = AVPlayer(playerItem: item)
-            player.isMuted = true           // muted in grid; unmuted in full-screen LiveStreamView
-            player.play()
-            players[camera.name] = player
-        }
-    }
-
-    private func pauseAll() {
-        players.values.forEach { $0.pause() }
     }
 
     // MARK: - Empty state
