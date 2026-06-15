@@ -6,7 +6,7 @@ struct EventRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let url = appState.client?.eventSnapshotURL(id: event.id) {
+            if let url = appState.client?.eventThumbnailURL(id: event.id) {
                 RemoteImage(url: url)
                 .frame(width: 84, height: 84)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))

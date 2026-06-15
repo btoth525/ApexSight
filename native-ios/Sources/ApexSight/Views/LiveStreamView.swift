@@ -211,12 +211,11 @@ struct LiveStreamView: View {
                 actionButton(icon: "photo", label: "Snapshot") {
                     streamMode = .snapshot
                 }
-                if capability?.hasRecordings == true {
-                    NavigationLink {
-                        RecordingBrowserView(camera: camera)
-                    } label: {
-                        actionButtonContent(icon: "clock.arrow.circlepath", label: "Recordings")
-                    }
+                // Always available — every Frigate camera with recordings exposes a timeline.
+                NavigationLink {
+                    RecordingBrowserView(camera: camera)
+                } label: {
+                    actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
                 }
             }
             .padding(.horizontal, 32)
