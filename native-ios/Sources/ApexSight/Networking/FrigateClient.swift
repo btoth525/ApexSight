@@ -144,14 +144,6 @@ struct FrigateClient {
         return components?.url ?? endpoint
     }
 
-    /// go2rtc's own WebRTC player page, proxied by Frigate at /live/webrtc/webrtc.html.
-    /// HD + audio; needs WebRTC connectivity (LAN always, remote needs port 8555/TURN).
-    func webRTCPlayerURL(camera: String) -> URL {
-        baseURL
-            .appending(path: "live/webrtc/webrtc.html")
-            .appending(queryItems: [URLQueryItem(name: "src", value: camera)])
-    }
-
     func latestFrameURL(camera: String) -> URL {
         baseURL.appending(path: "api/\(camera)/latest.jpg")
     }

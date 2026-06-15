@@ -1,5 +1,4 @@
 import SwiftUI
-import WebKit
 
 struct LiveStreamView: View {
     let camera: FrigateCamera
@@ -12,9 +11,8 @@ struct LiveStreamView: View {
     @State private var reloadToken = UUID()
 
     enum StreamMode: String, CaseIterable {
-        case live = "Live"          // go2rtc HLS (fMP4) via AVPlayer — native, auto-starts, PiP
-        case hd = "WebRTC"          // go2rtc WebRTC in a web view — LAN ultra-low latency
-        case lite = "MJPEG"         // MJPEG detect stream — last-resort fallback, always works
+        case live = "Live"
+        case mjpeg = "MJPEG"
         case snapshot = "Snapshot"
     }
 
@@ -46,30 +44,25 @@ struct LiveStreamView: View {
         switch streamMode {
         case .live:
             liveHLS
-        case .hd:
-            webrtcView
-        case .lite:
-            liteMJPEG
+        case .mjpeg:
+            liveMJPEG
         case .snapshot:
             snapshotView
         }
     }
 
     private var liveHLS: some View {
-        // AVPlayer HLS (go2rtc fMP4). Pinch/pan/double-tap zoom + reconnect are built in.
         HLSLivePlayerView(
             camera: camera,
-            preferSub: false,
             showControls: true,
             onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
         )
         .id(reloadToken)
     }
 
-    private var liteMJPEG: some View {
+    private var liveMJPEG: some View {
         ZoomableScrollView {
             ZStack {
-                // Snapshot underneath for instant feedback while the stream connects.
                 if let client = appState.client {
                     RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
                         .opacity(isLive ? 0 : 1)
@@ -89,36 +82,12 @@ struct LiveStreamView: View {
         }
     }
 
-    private var webrtcView: some View {
-        Group {
-            if let client = appState.client, let session = appState.session {
-                WebRTCView(url: client.webRTCPlayerURL(camera: camera.name), session: session)
-                    .id(reloadToken)
-            } else {
-                unavailable("HD stream not available")
-            }
-        }
-    }
-
     private var snapshotView: some View {
         ZoomableScrollView {
             if let client = appState.client {
                 RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
                     .id(reloadToken)
             }
-        }
-    }
-
-    private func unavailable(_ message: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(.orange)
-            Text(message)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white.opacity(0.8))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
         }
     }
 
@@ -192,16 +161,14 @@ struct LiveStreamView: View {
     private var statusColor: Color {
         switch streamMode {
         case .snapshot: return .orange
-        case .hd: return .green
-        case .live, .lite: return isLive ? .green : .yellow
+        case .live, .mjpeg: return isLive ? .green : .yellow
         }
     }
 
     private var statusText: String {
         switch streamMode {
         case .snapshot: return "Snapshot"
-        case .hd: return "HD Live"
-        case .lite: return isLive ? "Lite" : "Connecting…"
+        case .mjpeg: return isLive ? "MJPEG" : "Connecting…"
         case .live: return isLive ? "Live" : "Connecting…"
         }
     }
@@ -209,8 +176,7 @@ struct LiveStreamView: View {
     private func icon(for mode: StreamMode) -> String {
         switch mode {
         case .live: return "dot.radiowaves.up.forward"
-        case .hd: return "tv.fill"
-        case .lite: return "bolt.horizontal.fill"
+        case .mjpeg: return "bolt.horizontal.fill"
         case .snapshot: return "photo.fill"
         }
     }
@@ -230,7 +196,6 @@ struct LiveStreamView: View {
                 actionButton(icon: "photo", label: "Snapshot") {
                     streamMode = .snapshot
                 }
-                // Always available — every Frigate camera with recordings exposes a timeline.
                 NavigationLink {
                     RecordingBrowserView(camera: camera)
                 } label: {
@@ -258,44 +223,6 @@ struct LiveStreamView: View {
             Text(label)
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(.white.opacity(0.7))
-        }
-    }
-}
-
-// MARK: - WebRTC via go2rtc embedded player
-
-struct WebRTCView: UIViewRepresentable {
-    let url: URL
-    let session: FrigateSession
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
-        webView.isOpaque = false
-        webView.scrollView.isScrollEnabled = false
-        injectCookie(into: webView)
-        // Load once here; the parent uses .id(reloadToken) to force a fresh instance on refresh.
-        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {}
-
-    private func injectCookie(into webView: WKWebView) {
-        let props: [HTTPCookiePropertyKey: Any] = [
-            .name: "frigate_token",
-            .value: session.token,
-            .domain: session.baseURL.host() ?? "",
-            .path: "/",
-            .secure: session.baseURL.scheme == "https"
-        ]
-        if let cookie = HTTPCookie(properties: props) {
-            webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
         }
     }
 }
