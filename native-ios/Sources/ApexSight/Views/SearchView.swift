@@ -313,7 +313,7 @@ struct SearchView: View {
                 HStack(spacing: 6) {
                     Image(systemName: showDateFilter ? "calendar.badge.minus" : "calendar.badge.plus")
                         .font(.system(size: 14, weight: .heavy))
-                    Text(afterDate != nil ? "From: \(afterDate!.formatted(date: .abbreviated, time: .omitted))" : "Date Filter")
+                    Text(afterDate.map { "From: \($0.formatted(date: .abbreviated, time: .omitted))" } ?? "Date Filter")
                         .font(.system(size: 13, weight: .heavy))
                 }
                 .foregroundStyle(showDateFilter ? GlassTheme.cyan : GlassTheme.secondary)

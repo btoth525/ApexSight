@@ -5,9 +5,13 @@ final class KeychainStore {
     private let key = "com.brandontoth.apexsight.native.session"
     private let allSessionsKey = "com.brandontoth.apexsight.native.sessions"
 
-    func save(session: FrigateSession) {
-        guard let data = try? JSONEncoder().encode(session) else { return }
-        keychainSet(key: key, data: data)
+    /// Persists the active session (and the multi-server list). Returns whether the
+    /// active-session write actually landed in the Keychain, so callers can tell the
+    /// difference between "signed in" and "signed in but won't survive a relaunch".
+    @discardableResult
+    func save(session: FrigateSession) -> Bool {
+        guard let data = try? JSONEncoder().encode(session) else { return false }
+        let ok = keychainSet(key: key, data: data)
 
         var all = loadAllSessions()
         all.removeAll { $0.baseURL == session.baseURL }
@@ -15,6 +19,7 @@ final class KeychainStore {
         if let allData = try? JSONEncoder().encode(all) {
             keychainSet(key: allSessionsKey, data: allData)
         }
+        return ok
     }
 
     func loadSession() -> FrigateSession? {
@@ -43,19 +48,39 @@ final class KeychainStore {
         keychainDelete(key: allSessionsKey)
     }
 
-    private func keychainSet(key: String, data: Data) {
+    /// Writes a value, updating an existing item in place rather than delete-then-add.
+    /// This both checks the result (the old code ignored `SecItemAdd`'s status, so a
+    /// failed write silently logged the user out on next launch) and closes the brief
+    /// delete-before-add window where a concurrent read could see no item. Returns
+    /// whether the value is now stored.
+    @discardableResult
+    private func keychainSet(key: String, data: Data) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key
         ]
-        SecItemDelete(query as CFDictionary)
-        let add: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: data
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        SecItemAdd(add as CFDictionary, nil)
+
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess { return true }
+
+        if updateStatus == errSecItemNotFound {
+            var add = query
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            add[kSecValueData as String] = data
+            return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+        }
+
+        // Unexpected error (e.g. a stale item with mismatched attributes): fall back to
+        // a clean replace so we still end up persisted rather than silently failing.
+        SecItemDelete(query as CFDictionary)
+        var add = query
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        add[kSecValueData as String] = data
+        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
     private func keychainGet(key: String) -> Data? {

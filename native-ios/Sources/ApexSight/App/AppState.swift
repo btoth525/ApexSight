@@ -15,6 +15,16 @@ extension Error {
         let nsError = self as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
+
+    /// True when the server rejected our credentials — i.e. the Frigate session
+    /// token has expired and we should silently re-login before giving up.
+    var isUnauthorized: Bool {
+        if let frigate = self as? FrigateError, case .badResponse(let code) = frigate {
+            return code == 401 || code == 403
+        }
+        let nsError = self as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorUserAuthenticationRequired
+    }
 }
 
 @MainActor
@@ -103,17 +113,24 @@ final class AppState: ObservableObject {
     }
 
     /// Lightweight refresh of just the things that need to feel live: reviews + events.
-    func refreshAlerts() async {
+    func refreshAlerts(retryOnAuthFailure: Bool = true) async {
         guard let client else { return }
-        async let nextReviews = client.reviews(limit: 30)
-        async let nextEvents = client.events(limit: 50)
-        if let r = try? await nextReviews {
+        do {
+            async let nextReviews = client.reviews(limit: 30)
+            async let nextEvents = client.events(limit: 50)
+            let r = try await nextReviews
+            let e = try await nextEvents
             reviews = r.filter { !locallyViewedIDs.contains($0.id) }
-        }
-        if let e = try? await nextEvents {
             events = e
+            cacheLatestAlertForWidget()
+        } catch {
+            // Token expired mid-session: silently re-login once, then retry so the
+            // live lists keep updating instead of quietly going stale.
+            if error.isUnauthorized, retryOnAuthFailure, await reauthenticate() {
+                await refreshAlerts(retryOnAuthFailure: false)
+            }
+            // Any other transient failure: keep the last-known lists, try again next poll.
         }
-        cacheLatestAlertForWidget()
     }
 
     /// Marks every currently-shown review as handled in one tap (Frigate `reviews/viewed`).
@@ -288,6 +305,10 @@ final class AppState: ObservableObject {
     }
 
     func refresh() async {
+        await refresh(retryOnAuthFailure: true)
+    }
+
+    private func refresh(retryOnAuthFailure: Bool) async {
         guard let client else { return }
         isLoading = true
         errorMessage = nil
@@ -316,6 +337,13 @@ final class AppState: ObservableObject {
             await cacheWidgetSnapshot(from: loadedCameras)
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
         } catch {
+            // Token expired mid-session: silently re-login once and retry the whole
+            // refresh with a fresh client, so the user never lands on blank screens.
+            if error.isUnauthorized, retryOnAuthFailure, await reauthenticate() {
+                isLoading = false
+                await refresh(retryOnAuthFailure: false)
+                return
+            }
             // Ignore transient cancellations (interrupted refreshes, view teardown).
             if !error.isCancellation {
                 errorMessage = error.localizedDescription
