@@ -78,13 +78,10 @@ struct MultiCameraGridView: View {
         ZStack(alignment: .bottomLeading) {
             Color.black
             if let client = appState.client {
-                // Snapshot first for instant fill, native MJPEG live on top.
+                // Snapshot first for instant fill, smooth HLS substream on top.
                 RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
-                MJPEGStreamView(
-                    url: client.mjpegURL(camera: camera.name),
-                    client: client,
-                    contentMode: .scaleAspectFit
-                )
+                HLSLivePlayerView(camera: camera, preferSub: true)
+                    .allowsHitTesting(false)
             }
 
             // camera name pill

@@ -4,6 +4,17 @@ struct FrigateSession: Codable, Equatable {
     let baseURL: URL
     let username: String
     let token: String
+    /// Retained in the device-only Keychain so the app can silently refresh the
+    /// `frigate_token` JWT on a 401 (e.g. mid-stream token expiry) by re-running the
+    /// existing login. Optional so previously-stored sessions still decode.
+    let password: String?
+
+    init(baseURL: URL, username: String, token: String, password: String? = nil) {
+        self.baseURL = baseURL
+        self.username = username
+        self.token = token
+        self.password = password
+    }
 
     static func normalizedBaseURL(_ rawValue: String) throws -> URL {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)

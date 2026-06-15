@@ -118,7 +118,7 @@ final class AppState: ObservableObject {
             let normalized = try FrigateSession.normalizedBaseURL(baseURL)
             let client = FrigateClient(baseURL: normalized)
             let token = try await client.login(username: username, password: password)
-            let next = FrigateSession(baseURL: normalized, username: username, token: token)
+            let next = FrigateSession(baseURL: normalized, username: username, token: token, password: password)
             keychain.save(session: next)
             session = next
             await refresh()
@@ -128,6 +128,30 @@ final class AppState: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    /// Silently refreshes the `frigate_token` JWT by re-running the stored login.
+    /// Called when a stream/API request 401s mid-session (token expiry). Reuses the
+    /// existing credentials — never prompts or builds a second credential store.
+    /// Returns `true` if a fresh token was obtained.
+    @discardableResult
+    func reauthenticate() async -> Bool {
+        guard let session, let password = session.password, !password.isEmpty else { return false }
+        do {
+            let client = FrigateClient(baseURL: session.baseURL)
+            let token = try await client.login(username: session.username, password: password)
+            let next = FrigateSession(
+                baseURL: session.baseURL,
+                username: session.username,
+                token: token,
+                password: password
+            )
+            keychain.save(session: next)
+            self.session = next
+            return true
+        } catch {
+            return false
+        }
     }
 
     func refresh() async {

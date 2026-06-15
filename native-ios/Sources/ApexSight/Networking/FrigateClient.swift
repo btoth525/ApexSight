@@ -124,6 +124,27 @@ struct FrigateClient {
         baseURL.appending(path: "api/\(camera)")
     }
 
+    /// Live HLS (fMP4) via go2rtc, proxied by Frigate's main port at `/api/go2rtc/`.
+    ///
+    /// go2rtc's own REST API lives under `/api/go2rtc/`, so its `/api/stream.m3u8`
+    /// endpoint resolves to `/api/go2rtc/api/stream.m3u8`. The valueless `mp4` flag is
+    /// REQUIRED — it makes go2rtc package HLS/fMP4 that Apple's AVPlayer accepts (without
+    /// it you get MPEG-TS that fails). This needs NO extra ports (1984/8555) and works
+    /// through any HTTPS reverse proxy, including the Cloudflare-tunnelled auth port.
+    ///
+    /// - Parameter sub: request the lighter `<camera>_sub` H.264 substream (faster start,
+    ///   and the safe choice for cameras whose main stream is H.265/HEVC).
+    func liveHLSURL(camera: String, sub: Bool = false) -> URL {
+        let streamName = sub ? "\(camera)_sub" : camera
+        let endpoint = baseURL.appending(path: "api/go2rtc/api/stream.m3u8")
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "src", value: streamName),
+            URLQueryItem(name: "mp4", value: nil)   // renders as the bare `&mp4` flag go2rtc requires
+        ]
+        return components?.url ?? endpoint
+    }
+
     /// go2rtc's own WebRTC player page, proxied by Frigate at /live/webrtc/webrtc.html.
     /// HD + audio; needs WebRTC connectivity (LAN always, remote needs port 8555/TURN).
     func webRTCPlayerURL(camera: String) -> URL {

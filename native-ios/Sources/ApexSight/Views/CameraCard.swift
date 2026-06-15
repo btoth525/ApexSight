@@ -17,22 +17,21 @@ struct CameraCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
                     Color.black
-                    // Reliable snapshot underneath; live MJPEG overlays once the first
-                    // frame decodes. Both full-frame (aspect-fit) so nothing is cut off.
+                    // Reliable snapshot underneath; smooth go2rtc HLS substream overlays
+                    // once it's playing. Both full-frame (aspect-fit) so nothing is cut off.
                     if let url = appState.client?.latestFrameURL(camera: camera.name) {
                         RemoteImage(url: url, contentMode: .fit)
+                            .opacity(isLive ? 0 : 1)
                     }
-                    if let client = appState.client {
-                        MJPEGStreamView(
-                            url: client.mjpegURL(camera: camera.name),
-                            client: client,
-                            contentMode: .scaleAspectFit,
-                            onFirstFrame: {
-                                withAnimation(.easeIn(duration: 0.3)) { isLive = true }
-                            }
-                        )
-                        .opacity(isLive ? 1 : 0)
-                    }
+                    HLSLivePlayerView(
+                        camera: camera,
+                        preferSub: true,
+                        onPlaying: { playing in
+                            withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
+                        }
+                    )
+                    .opacity(isLive ? 1 : 0)
+                    .allowsHitTesting(false)
                     liveBadge
                 }
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)

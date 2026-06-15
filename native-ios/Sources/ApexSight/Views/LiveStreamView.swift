@@ -12,8 +12,9 @@ struct LiveStreamView: View {
     @State private var reloadToken = UUID()
 
     enum StreamMode: String, CaseIterable {
-        case live = "Live"
-        case hd = "HD"
+        case live = "Live"      // go2rtc HLS (fMP4) via AVPlayer — smooth, full quality
+        case hd = "HD"          // go2rtc WebRTC in a web view — lowest latency on LAN
+        case lite = "Lite"      // MJPEG detect stream — last-resort fallback, always works
         case snapshot = "Snapshot"
     }
 
@@ -44,15 +45,28 @@ struct LiveStreamView: View {
     private var content: some View {
         switch streamMode {
         case .live:
-            liveMJPEG
+            liveHLS
         case .hd:
             webrtcView
+        case .lite:
+            liteMJPEG
         case .snapshot:
             snapshotView
         }
     }
 
-    private var liveMJPEG: some View {
+    private var liveHLS: some View {
+        // AVPlayer HLS (go2rtc fMP4). Pinch/pan/double-tap zoom + reconnect are built in.
+        HLSLivePlayerView(
+            camera: camera,
+            preferSub: false,
+            showControls: true,
+            onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
+        )
+        .id(reloadToken)
+    }
+
+    private var liteMJPEG: some View {
         ZoomableScrollView {
             ZStack {
                 // Snapshot underneath for instant feedback while the stream connects.
@@ -178,7 +192,8 @@ struct LiveStreamView: View {
     private var statusColor: Color {
         switch streamMode {
         case .snapshot: return .orange
-        case .live, .hd: return isLive || streamMode == .hd ? .green : .yellow
+        case .hd: return .green
+        case .live, .lite: return isLive ? .green : .yellow
         }
     }
 
@@ -186,6 +201,7 @@ struct LiveStreamView: View {
         switch streamMode {
         case .snapshot: return "Snapshot"
         case .hd: return "HD Live"
+        case .lite: return isLive ? "Lite" : "Connecting…"
         case .live: return isLive ? "Live" : "Connecting…"
         }
     }
@@ -194,6 +210,7 @@ struct LiveStreamView: View {
         switch mode {
         case .live: return "dot.radiowaves.up.forward"
         case .hd: return "tv.fill"
+        case .lite: return "bolt.horizontal.fill"
         case .snapshot: return "photo.fill"
         }
     }

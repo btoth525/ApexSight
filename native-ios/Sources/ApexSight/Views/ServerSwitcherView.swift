@@ -168,7 +168,7 @@ private struct AddServerView: View {
             let normalized = try FrigateSession.normalizedBaseURL(baseURL)
             let client = FrigateClient(baseURL: normalized)
             let token = try await client.login(username: username, password: password)
-            let session = FrigateSession(baseURL: normalized, username: username, token: token)
+            let session = FrigateSession(baseURL: normalized, username: username, token: token, password: password)
             onSave(session)
             dismiss()
         } catch {
