@@ -16,8 +16,9 @@ services:
     env_file: .env
     volumes:
       - relay-data:/data
+    # Host:container port. Both follow APEX_PORT from .env (default 3421).
     ports:
-      - "3421:3421"
+      - "${APEX_PORT:-3421}:${APEX_PORT:-3421}"
     # If your Cloudflare Tunnel (or other proxy) runs in Docker, join its network
     # instead of / in addition to publishing the port, and route it to relay:3421:
     # networks:
