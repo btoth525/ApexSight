@@ -71,8 +71,17 @@ struct FrigateClient {
         try await get("api/stats")
     }
 
-    func reviews(limit: Int = 30) async throws -> [FrigateReviewItem] {
-        try await get("api/review?limit=\(limit)")
+    func reviews(limit: Int = 30, severity: String? = nil) async throws -> [FrigateReviewItem] {
+        var components = URLComponents(url: baseURL.appending(path: "api/review"), resolvingAgainstBaseURL: false)
+        var query = [URLQueryItem(name: "limit", value: "\(limit)")]
+        if let severity { query.append(URLQueryItem(name: "severity", value: severity)) }
+        components?.queryItems = query
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        return try JSONDecoder.frigate.decode([FrigateReviewItem].self, from: data)
     }
 
     func review(id: String) async throws -> FrigateReviewItem {

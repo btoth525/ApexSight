@@ -208,17 +208,23 @@ struct HLSLivePlayerView: View {
 
             // Snapshot placeholder — shows instantly so there's never a black gap.
             // Sits behind the video layer and fades out the moment the stream is live.
+            // Never hit-testable so it can't swallow the player's zoom gestures.
             if let url = appState.client?.latestFrameURL(camera: camera.name) {
                 RemoteImage(url: url, contentMode: .fit)
                     .opacity(isPlaying ? 0 : 1)
                     .animation(.easeOut(duration: 0.4), value: isPlaying)
+                    .allowsHitTesting(false)
             }
 
             // AVPlayer layer — invisible until actually playing, then fades in cleanly.
+            // Pinch / pan / double-tap zoom live in PlayerLayerUIView. Hit-testing is
+            // enabled only when controls are shown (fullscreen), so grid/card taps still
+            // pass through to the NavigationLink underneath.
             if let player = model.player {
                 ZoomablePlayerView(player: player)
                     .opacity(isPlaying ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: isPlaying)
+                    .allowsHitTesting(showControls)
             }
 
             // Subtle connecting pill at the bottom — non-intrusive, out of the way.
@@ -227,7 +233,7 @@ struct HLSLivePlayerView: View {
                     Spacer()
                     HStack(spacing: 6) {
                         ProgressView().tint(.white).scaleEffect(0.65)
-                        Text("Connecting…")
+                        Text(model.usingFallback ? "Reconnecting…" : "Connecting…")
                             .font(.system(size: 11, weight: .heavy))
                             .foregroundStyle(.white)
                     }
@@ -263,21 +269,23 @@ struct HLSLivePlayerView: View {
     }
 
     private var muteButton: some View {
-        HStack {
+        VStack {
             Spacer()
-            VStack {
+            HStack {
+                Spacer()
                 Button { model.toggleMute() } label: {
                     Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 15, weight: .black))
-                        .frame(width: 44, height: 44)
+                        .font(.system(size: 14, weight: .black))
+                        .frame(width: 40, height: 40)
                         .background(.ultraThinMaterial, in: Circle())
                         .foregroundStyle(.white)
                 }
-                .padding(.top, 100)
-                .padding(.trailing, 16)
-                Spacer()
+                .padding(.trailing, 14)
+                .padding(.bottom, 8)
             }
         }
+        // Only the button itself is tappable — the rest passes zoom gestures through.
+        .allowsHitTesting(true)
     }
 
     private func failureOverlay(_ message: String) -> some View {

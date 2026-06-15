@@ -105,9 +105,18 @@ struct EventDetailView: View {
                 }
             }
             .task {
-                guard hasClip, clipPlayer == nil,
-                      let clipURL = appState.client?.eventClipURL(id: event.id),
-                      let item = appState.client?.playerItem(for: clipURL) else { return }
+                guard hasClip, clipPlayer == nil, let client = appState.client else { return }
+                // Prefer the recording clip spanning the event's time range — the same
+                // endpoint the timeline uses, reliable on stock Frigate. Fall back to the
+                // trimmed event clip when an end time isn't known yet (in-progress event).
+                let clipURL: URL
+                if let start = event.startTime {
+                    let end = event.endTime ?? (start + 20)
+                    clipURL = client.recordingClipURL(camera: event.camera, start: start, end: end)
+                } else {
+                    clipURL = client.eventClipURL(id: event.id)
+                }
+                let item = client.playerItem(for: clipURL)
                 let player = AVPlayer(playerItem: item)
                 clipPlayer = player
                 NotificationCenter.default.addObserver(

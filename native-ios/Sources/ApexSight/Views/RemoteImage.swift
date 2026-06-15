@@ -35,15 +35,22 @@ struct RemoteImage: View {
     }
 
     private func load() async {
-        image = nil
-        isFailed = false
         guard let url, let client = appState.client else {
             isFailed = true
             return
         }
+        // Show the cached image instantly — no black flash when a cell reappears.
+        if let cached = ImageCache.shared.image(for: url) {
+            image = Image(uiImage: cached)
+            isFailed = false
+            return
+        }
+        image = nil
+        isFailed = false
         do {
             let data = try await client.imageData(from: url)
             if let uiImage = UIImage(data: data) {
+                ImageCache.shared.insert(uiImage, for: url)
                 image = Image(uiImage: uiImage)
             } else {
                 isFailed = true

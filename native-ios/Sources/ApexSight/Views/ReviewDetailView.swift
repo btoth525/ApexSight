@@ -37,7 +37,12 @@ struct ReviewDetailView: View {
         .glassNavBar()
         .task {
             guard reviewPlayer == nil, let client = appState.client else { return }
-            let url = client.reviewClipURL(id: review.id)
+            // Play the recording spanning the review's time range — this is the same
+            // endpoint the timeline uses and works reliably on stock Frigate. The
+            // `/api/review/{id}/clip.mp4` path does not exist on stock Frigate.
+            guard let start = review.startTime else { return }
+            let end = review.endTime ?? (start + 20)
+            let url = client.recordingClipURL(camera: review.camera, start: start, end: end)
             let item = client.playerItem(for: url)
             let player = AVPlayer(playerItem: item)
             reviewPlayer = player

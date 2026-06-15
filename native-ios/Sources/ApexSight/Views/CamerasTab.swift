@@ -47,7 +47,7 @@ struct CamerasTab: View {
                 .task { if appState.cameras.isEmpty { await appState.refresh() } }
             }
             .navigationTitle("Cameras")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {

@@ -5,12 +5,28 @@ struct ReviewTab: View {
     @State private var selectedSeverity = "all"
     @State private var sortNewest = true
     @State private var path = NavigationPath()
+    /// Detection-severity reviews are fetched on demand — Frigate's default review list
+    /// is dominated by alerts, so a dedicated `severity=detection` query is needed.
+    @State private var detectionItems: [FrigateReviewItem] = []
+    @State private var loadingDetections = false
 
     private var filtered: [FrigateReviewItem] {
-        let base = appState.reviews.filter { selectedSeverity == "all" || $0.severity == selectedSeverity }
+        let base: [FrigateReviewItem]
+        switch selectedSeverity {
+        case "detection": base = detectionItems
+        case "alert":     base = appState.reviews.filter { $0.severity == "alert" }
+        default:          base = appState.reviews
+        }
         return sortNewest
             ? base.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
             : base.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+    }
+
+    private func loadDetections() async {
+        guard let client = appState.client else { return }
+        loadingDetections = true
+        detectionItems = (try? await client.reviews(limit: 100, severity: "detection")) ?? []
+        loadingDetections = false
     }
 
     var body: some View {
@@ -18,7 +34,7 @@ struct ReviewTab: View {
             ZStack {
                 GlassBackground()
                 Group {
-                    if appState.reviews.isEmpty && !appState.isLoading {
+                    if filtered.isEmpty && !appState.isLoading && !loadingDetections {
                         emptyState
                     } else {
                         ScrollView {
@@ -51,7 +67,10 @@ struct ReviewTab: View {
                                 .padding(.bottom, 20)
                             }
                         }
-                        .refreshable { await appState.refresh() }
+                        .refreshable {
+                            await appState.refresh()
+                            if selectedSeverity == "detection" { await loadDetections() }
+                        }
                     }
                 }
             }
@@ -79,6 +98,11 @@ struct ReviewTab: View {
                 EventDetailView(event: event)
             }
             .task { if appState.reviews.isEmpty { await appState.refresh() } }
+            .task(id: selectedSeverity) {
+                if selectedSeverity == "detection" && detectionItems.isEmpty {
+                    await loadDetections()
+                }
+            }
         }
     }
 
