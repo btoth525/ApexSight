@@ -6,10 +6,11 @@ import UIKit
 // MARK: - Stream rules
 
 enum LiveStreamRules {
-    /// Cameras whose MAIN stream is H.265/HEVC, which iOS AVPlayer often can't decode
-    /// (black screen). These always fall back to the H.264 `_sub` stream.
+    /// Returns true for cameras that must always use the sub-stream (e.g. confirmed H.265
+    /// main streams that iOS AVPlayer can't decode). Currently none are forced — all cameras
+    /// start on the main stream and fall back to sub after 3 consecutive failures.
     static func forcesSubStream(_ camera: String) -> Bool {
-        camera.lowercased().contains("front_driveway")
+        false
     }
 }
 
