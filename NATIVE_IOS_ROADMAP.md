@@ -8,8 +8,19 @@ Goal: make ApexSight feel like a first-class SwiftUI-style Frigate client while 
 - Native event filters by camera, object, and confidence.
 - Native event detail view with snapshot, zones, confidence, clip action, and in-app Frigate review handoff.
 - Local native notifications from Frigate events with basic cooldown.
-- Production direction now removes the experimental phone-call doorbell path and focuses on stock-Frigate native alerts.
+- Production direction focuses on stock-Frigate native alerts only — zero server modifications.
 - Real SwiftUI app foundation under `native-ios/` with native login, dashboard, event details, authenticated media loading, clip playback, system health, Keychain session storage, and XcodeGen project config.
+
+## Shipped (native-ios)
+
+- Real-time alerts via Frigate's stock `/ws` WebSocket: live review/event/stats updates, in-app banner, connection indicator, auto-reconnect.
+- Background alerts via BGAppRefreshTask with app-group dedupe (LastSeenStore) and rich local notifications.
+- Optional instant-push companion (clearly optional): in-app APNs registration + copyable device token; standalone notifier documented in `frigate-integration/` (no committed secrets).
+- Picture-in-Picture, multi-camera live wall (1–4 up), camera groups & saved grids.
+- iPad sidebar layout + landscape camera wall.
+- Live Activities (Lock Screen + Dynamic Island) for in-progress alert incidents.
+- Face & license-plate recognition surfaced in rows, detail, notifications, and search (Frigate 0.15+).
+- Per-camera notification snooze, quiet hours, per-object/zone toggles.
 
 ## Native SwiftUI Build Step
 

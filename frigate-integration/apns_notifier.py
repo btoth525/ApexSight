@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Optional ApexSight push companion.
+
+Subscribes to Frigate's stock MQTT `frigate/reviews` topic and forwards new
+alert-severity reviews to Apple Push Notification service (APNs) so ApexSight can
+alert instantly even when fully closed. This does NOT modify Frigate.
+
+All credentials are read from environment variables; nothing is embedded here.
+See README.md for setup.
+"""
+
+import json
+import os
+import sys
+import time
+
+try:
+    import jwt  # pyjwt
+    import httpx
+    import paho.mqtt.client as mqtt
+except ImportError:
+    sys.exit("Install deps first: pip3 install paho-mqtt pyjwt cryptography httpx")
+
+
+def env(name: str, required: bool = True, default: str | None = None) -> str | None:
+    value = os.environ.get(name, default)
+    if required and not value:
+        sys.exit(f"Missing required env var: {name}")
+    return value
+
+
+KEY_PATH = env("APEX_APNS_KEY_PATH")
+KEY_ID = env("APEX_APNS_KEY_ID")
+TEAM_ID = env("APEX_APNS_TEAM_ID")
+BUNDLE_ID = env("APEX_BUNDLE_ID", default="com.brandontoth.apexsight.native")
+DEVICE_TOKEN = env("APEX_DEVICE_TOKEN")
+FRIGATE_BASE_URL = env("APEX_FRIGATE_BASE_URL").rstrip("/")
+FRIGATE_TOKEN = env("APEX_FRIGATE_TOKEN", required=False)
+MQTT_HOST = env("APEX_MQTT_HOST")
+MQTT_PORT = int(env("APEX_MQTT_PORT", required=False, default="1883"))
+# Use api.development.push.apple.com while testing with a development build.
+APNS_HOST = env("APEX_APNS_HOST", required=False, default="api.push.apple.com")
+
+
+def make_jwt() -> str:
+    with open(KEY_PATH, "r") as handle:
+        private_key = handle.read()
+    return jwt.encode(
+        {"iss": TEAM_ID, "iat": int(time.time())},
+        private_key,
+        algorithm="ES256",
+        headers={"kid": KEY_ID},
+    )
+
+
+def send_push(review: dict) -> None:
+    review_id = review.get("id", "")
+    camera = review.get("camera", "camera")
+    severity = review.get("severity", "alert")
+    data = review.get("data") or {}
+    objects = data.get("objects") or []
+    zones = data.get("zones") or []
+
+    title = (objects[0].title() if objects else "Camera activity")
+    body_parts = [camera.replace("_", " ").title(), severity.title()]
+    if zones:
+        body_parts.append("Zone: " + ", ".join(z.replace("_", " ").title() for z in zones))
+
+    payload = {
+        "aps": {
+            "alert": {"title": title, "body": " • ".join(body_parts)},
+            "mutable-content": 1,
+            "sound": "default",
+        },
+        "review_id": review_id,
+        "camera": camera,
+        "apex_url": f"apex://review?id={review_id}",
+        "snapshot_url": f"{FRIGATE_BASE_URL}/api/review/{review_id}/preview",
+    }
+    if FRIGATE_TOKEN:
+        payload["frigate_token"] = FRIGATE_TOKEN
+
+    headers = {
+        "authorization": f"bearer {make_jwt()}",
+        "apns-topic": BUNDLE_ID,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+    }
+    url = f"https://{APNS_HOST}/3/device/{DEVICE_TOKEN}"
+    with httpx.Client(http2=True, timeout=10) as client:
+        resp = client.post(url, headers=headers, content=json.dumps(payload))
+    if resp.status_code != 200:
+        print(f"APNs error {resp.status_code}: {resp.text}", file=sys.stderr)
+    else:
+        print(f"Pushed alert for {camera} ({review_id})")
+
+
+def on_message(_client, _userdata, msg) -> None:
+    try:
+        envelope = json.loads(msg.payload.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return
+    if envelope.get("type") != "new":
+        return
+    review = envelope.get("after") or envelope.get("before") or {}
+    if review.get("severity") == "alert":
+        send_push(review)
+
+
+def main() -> None:
+    client = mqtt.Client()
+    client.on_message = on_message
+    client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+    client.subscribe("frigate/reviews")
+    print(f"Listening on mqtt://{MQTT_HOST}:{MQTT_PORT} frigate/reviews → APNs ({APNS_HOST})")
+    client.loop_forever()
+
+
+if __name__ == "__main__":
+    main()
