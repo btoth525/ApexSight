@@ -223,6 +223,7 @@ struct HLSLivePlayerView: View {
     private var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
+                guard zoomScale > 1.05 else { return }   // only pan while zoomed in
                 panOffset = CGSize(
                     width: basePan.width + value.translation.width,
                     height: basePan.height + value.translation.height
@@ -231,6 +232,37 @@ struct HLSLivePlayerView: View {
             .onEnded { _ in
                 basePan = panOffset
             }
+    }
+
+    /// The AVPlayer layer with pinch / pan / double-tap zoom applied only in the
+    /// fullscreen player (`showControls`). Split into a ViewBuilder branch so we never
+    /// pass an optional gesture (which doesn't compile reliably across SDKs).
+    @ViewBuilder
+    private func playerLayer(_ player: AVPlayer) -> some View {
+        let base = ZoomablePlayerView(player: player)
+            .opacity(isPlaying ? 1 : 0)
+            .animation(.easeIn(duration: 0.3), value: isPlaying)
+
+        if showControls {
+            base
+                .scaleEffect(zoomScale, anchor: .center)
+                .offset(panOffset)
+                .simultaneousGesture(magnifyGesture)
+                .simultaneousGesture(dragGesture)
+                .onTapGesture(count: 2) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        if zoomScale > 1.05 {
+                            zoomScale = 1; baseZoom = 1; panOffset = .zero; basePan = .zero
+                        } else {
+                            zoomScale = 2.5; baseZoom = 2.5
+                        }
+                    }
+                }
+                .clipped()
+                .allowsHitTesting(true)
+        } else {
+            base.allowsHitTesting(false)
+        }
     }
 
     var body: some View {
@@ -250,25 +282,7 @@ struct HLSLivePlayerView: View {
             // AVPlayer layer — invisible until actually playing, then fades in cleanly.
             // Pinch / pan / double-tap zoom handled via SwiftUI gestures when showControls.
             if let player = model.player {
-                ZoomablePlayerView(player: player)
-                    .opacity(isPlaying ? 1 : 0)
-                    .animation(.easeIn(duration: 0.3), value: isPlaying)
-                    .scaleEffect(showControls ? zoomScale : 1, anchor: .center)
-                    .offset(showControls ? panOffset : .zero)
-                    .gesture(showControls ? magnifyGesture : nil)
-                    .gesture(showControls && zoomScale > 1.05 ? dragGesture : nil)
-                    .onTapGesture(count: 2) {
-                        guard showControls else { return }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            if zoomScale > 1.05 {
-                                zoomScale = 1; baseZoom = 1; panOffset = .zero; basePan = .zero
-                            } else {
-                                zoomScale = 2.5; baseZoom = 2.5
-                            }
-                        }
-                    }
-                    .allowsHitTesting(showControls)
-                    .clipped()
+                playerLayer(player)
             }
 
             // Subtle connecting pill at the bottom — non-intrusive, out of the way.

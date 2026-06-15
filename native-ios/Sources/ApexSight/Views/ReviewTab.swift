@@ -58,10 +58,11 @@ struct ReviewTab: View {
                     Group {
                         if showEmptyState {
                             emptyState
-                        } else if appState.isLoading || loadingDetections {
-                            Spacer()
-                            ProgressView().tint(GlassTheme.cyan)
-                            Spacer()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if (appState.isLoading || loadingDetections) && filtered.isEmpty {
+                            ProgressView()
+                                .tint(GlassTheme.cyan)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 14) {
