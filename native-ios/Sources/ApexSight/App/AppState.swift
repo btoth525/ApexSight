@@ -67,6 +67,7 @@ final class AppState: ObservableObject {
         eventStream.onEvent = { [weak self] event in
             self?.handleStreamEvent(event)
         }
+        WatchSyncManager.shared.activate()
     }
 
     /// Mirrors the active Frigate base URL + token into the app group so the
@@ -180,6 +181,8 @@ final class AppState: ObservableObject {
                 )
             }
             WidgetCenter.shared.reloadAllTimelines()
+            // Mirror the same recent-activity feed to the paired Apple Watch.
+            WatchSyncManager.shared.push(alerts: alerts, heroJPEG: heroData)
         }
     }
 

@@ -66,6 +66,8 @@ targets:
         embed: true
       - target: ApexSightNotificationService
         embed: true
+      - target: ApexSightWatch
+        embed: true
     scheme:
       testTargets: []
 
@@ -88,6 +90,25 @@ targets:
         CFBundleDisplayName: ApexSight Widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  ApexSightWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: Sources/ApexSightWatch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.watchkitapp
+        INFOPLIST_FILE: Sources/ApexSightWatch/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
+    info:
+      path: Sources/ApexSightWatch/Info.plist
+      properties:
+        CFBundleDisplayName: ApexSight
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.brandontoth.apexsight.native
 
   ApexSightNotificationService:
     type: app-extension
