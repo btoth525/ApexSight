@@ -57,7 +57,7 @@ def titleize(value: str) -> str:
     return value.replace("_", " ").title()
 
 
-def send_push(review: dict) -> None:
+def send_push(review: dict, final: bool = False) -> None:
     review_id = review.get("id", "")
     camera = review.get("camera", "camera")
     data = review.get("data") or {}
@@ -90,12 +90,17 @@ def send_push(review: dict) -> None:
         gif_url = f"{FRIGATE_BASE_URL}/api/events/{detections[0]}/preview.gif"
         thumb_url = f"{FRIGATE_BASE_URL}/api/events/{detections[0]}/thumbnail.jpg"
 
+    aps = {
+        "alert": {"title": title, "body": " • ".join(body_parts)},
+        "mutable-content": 1,
+    }
+    if final:
+        # Follow-up update with the complete GIF — swap it in without a second buzz.
+        aps["interruption-level"] = "passive"
+    else:
+        aps["sound"] = "default"
     payload = {
-        "aps": {
-            "alert": {"title": title, "body": " • ".join(body_parts)},
-            "mutable-content": 1,
-            "sound": "default",
-        },
+        "aps": aps,
         "review_id": review_id,
         "camera": camera,
         "apex_url": f"apex://review?id={review_id}",
@@ -113,6 +118,10 @@ def send_push(review: dict) -> None:
         "apns-push-type": "alert",
         "apns-priority": "10",
     }
+    if review_id:
+        # Same collapse id on both pushes so the full-GIF "end" update replaces
+        # the instant alert in place rather than stacking a duplicate.
+        headers["apns-collapse-id"] = review_id[:64]
     url = f"https://{APNS_HOST}/3/device/{DEVICE_TOKEN}"
     with httpx.Client(http2=True, timeout=10) as client:
         resp = client.post(url, headers=headers, content=json.dumps(payload))
@@ -127,11 +136,15 @@ def on_message(_client, _userdata, msg) -> None:
         envelope = json.loads(msg.payload.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return
-    if envelope.get("type") != "new":
+    msg_type = envelope.get("type")
+    if msg_type not in ("new", "end"):
         return
     review = envelope.get("after") or envelope.get("before") or {}
-    if review.get("severity") == "alert":
-        send_push(review)
+    if review.get("severity") != "alert":
+        return
+    # Instant alert on "new" (GIF may be partial/absent), then a follow-up on
+    # "end" carrying the now-complete GIF, collapsed onto the same notification.
+    send_push(review, final=(msg_type == "end"))
 
 
 def main() -> None:

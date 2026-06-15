@@ -86,6 +86,11 @@ final class NotificationService: UNNotificationServiceExtension {
         let remaining = Array(urls.dropFirst())
 
         var urlRequest = URLRequest(url: url)
+        // The extension has a hard ~30s budget before iOS kills it and delivers the
+        // notification without media. Cap each attempt so a slow/unreachable Frigate
+        // fails fast and we can still try the next candidate (or give up cleanly)
+        // well inside that window.
+        urlRequest.timeoutInterval = 8
         if let token, !token.isEmpty {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             urlRequest.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")

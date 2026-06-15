@@ -80,6 +80,8 @@ class NotifyIn(BaseModel):
     thumbnail_url: str = ""
     snapshot_path: str = ""
     frigate_token: str = ""
+    collapse_id: str = ""
+    silent: bool = False
 
 
 # ---- public API -------------------------------------------------------------
@@ -144,6 +146,7 @@ async def notify(body: NotifyIn, _: None = Depends(rate_limit)) -> dict:
         thumbnail_url=body.thumbnail_url,
         snapshot_path=body.snapshot_path,
         frigate_token=body.frigate_token,
+        silent=body.silent,
     )
-    result = await apns.deliver_to_pairing(code, payload)
+    result = await apns.deliver_to_pairing(code, payload, collapse_id=body.collapse_id)
     return {"ok": result["sent"] > 0 or result["devices"] == 0, **result}
