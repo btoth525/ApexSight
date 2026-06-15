@@ -35,7 +35,7 @@ struct RemoteImage: View {
     }
 
     private func load() async {
-        guard let url, let client = appState.client else {
+        guard let url else {
             isFailed = true
             return
         }
@@ -47,16 +47,28 @@ struct RemoteImage: View {
         }
         image = nil
         isFailed = false
-        do {
-            let data = try await client.imageData(from: url)
-            if let uiImage = UIImage(data: data) {
-                ImageCache.shared.insert(uiImage, for: url)
-                image = Image(uiImage: uiImage)
-            } else {
-                isFailed = true
+
+        // A few quick retries smooth over transient network blips and the brief
+        // window while an expired token is being refreshed, so a thumbnail recovers
+        // on its own instead of leaving a permanent blank tile. The client is
+        // re-read each pass so a freshly re-authenticated session is picked up.
+        for attempt in 0..<3 {
+            guard let client = appState.client else { break }
+            do {
+                let data = try await client.imageData(from: url)
+                if let uiImage = UIImage(data: data) {
+                    ImageCache.shared.insert(uiImage, for: url)
+                    image = Image(uiImage: uiImage)
+                    isFailed = false
+                    return
+                }
+            } catch {
+                if error.isCancellation { return }
             }
-        } catch {
-            isFailed = true
+            if attempt < 2 {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+            }
         }
+        isFailed = true
     }
 }

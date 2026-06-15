@@ -61,10 +61,16 @@ struct ActivityTab: View {
                             .padding(.horizontal, 16)
 
                         if filtered.isEmpty {
-                            Text("No matching events.")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(GlassTheme.secondary)
-                                .padding(.horizontal, 16)
+                            if appState.isLoading && appState.events.isEmpty {
+                                SkeletonList(rows: 6)
+                                    .padding(.top, 4)
+                            } else {
+                                let filtering = selectedCamera != "all" || selectedLabel != "all"
+                                Text(filtering ? "No events match these filters. Tap a chip to clear them." : "No events yet.")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(GlassTheme.secondary)
+                                    .padding(.horizontal, 16)
+                            }
                         } else {
                             LazyVStack(spacing: 10) {
                                 ForEach(filtered) { event in
