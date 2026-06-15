@@ -25,13 +25,10 @@ struct EventRow: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(GlassTheme.tertiary)
                     }
-                    if let sub = event.subLabel, !sub.isEmpty {
-                        Text(titleize(sub))
-                            .font(.system(size: 11, weight: .black))
-                            .foregroundStyle(GlassTheme.cyan)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(GlassTheme.cyan.opacity(0.14), in: Capsule())
+                    if let plate = event.recognizedLicensePlate, !plate.isEmpty {
+                        chip("🔎 \(plate.uppercased())", tint: GlassTheme.purple)
+                    } else if let sub = event.subLabel, !sub.isEmpty {
+                        chip(titleize(sub), tint: GlassTheme.cyan)
                     }
                 }
             }
@@ -42,6 +39,15 @@ struct EventRow: View {
         }
         .padding(10)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func chip(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .black))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.14), in: Capsule())
     }
 
     private func relativeTime(_ epoch: Double?) -> String {

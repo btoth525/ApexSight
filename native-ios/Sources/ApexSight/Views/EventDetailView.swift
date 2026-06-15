@@ -65,8 +65,13 @@ struct EventDetailView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                     metric("Confidence", value: confidence)
                     metric("Camera", value: titleize(event.camera))
-                    if let sub = event.subLabel, !sub.isEmpty {
+                    if let face = event.recognizedFace {
+                        metric("Face", value: "👤 \(titleize(face))")
+                    } else if let sub = event.subLabel, !sub.isEmpty {
                         metric("Sub-Label", value: "\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(sub))")
+                    }
+                    if let plate = event.recognizedLicensePlate, !plate.isEmpty {
+                        metric("Plate", value: "🔎 \(plate.uppercased())")
                     }
                     metric("Clip", value: event.hasClip == false ? "No" : "Available")
                     metric("Snapshot", value: event.hasSnapshot == false ? "No" : "Available")

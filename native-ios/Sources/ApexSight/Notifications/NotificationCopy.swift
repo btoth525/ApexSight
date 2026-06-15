@@ -7,7 +7,11 @@ enum NotificationCopy {
 
     static func body(for event: FrigateEvent) -> String {
         var parts = [titleize(event.camera)]
-        if let score = event.score ?? event.topScore {
+        if let plate = event.recognizedLicensePlate, !plate.isEmpty {
+            parts.append("Plate \(plate.uppercased())")
+        } else if let face = event.recognizedFace {
+            parts.append(titleize(face))
+        } else if let score = event.score ?? event.topScore {
             parts.append("\(Int(score * 100))% confidence")
         }
         if let zones = event.zones, !zones.isEmpty {

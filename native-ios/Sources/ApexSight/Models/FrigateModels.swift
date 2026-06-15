@@ -45,10 +45,18 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     let zones: [String]?
     let hasClip: Bool?
     let hasSnapshot: Bool?
+    let recognizedLicensePlate: String?
+    let recognizedLicensePlateScore: Double?
 
     var displayLabel: String {
         if let sub = subLabel, !sub.isEmpty { return sub }
         return label
+    }
+
+    /// A recognized face is surfaced by Frigate as the sub_label on a person event.
+    var recognizedFace: String? {
+        guard label.lowercased() == "person", let sub = subLabel, !sub.isEmpty else { return nil }
+        return sub
     }
 
     enum CodingKeys: String, CodingKey {
@@ -64,6 +72,8 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case zones
         case hasClip = "has_clip"
         case hasSnapshot = "has_snapshot"
+        case recognizedLicensePlate = "recognized_license_plate"
+        case recognizedLicensePlateScore = "recognized_license_plate_score"
     }
 
     init(from decoder: Decoder) throws {
@@ -85,6 +95,8 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         zones = try? c.decodeIfPresent([String].self, forKey: .zones)
         hasClip = try? c.decodeIfPresent(Bool.self, forKey: .hasClip)
         hasSnapshot = try? c.decodeIfPresent(Bool.self, forKey: .hasSnapshot)
+        recognizedLicensePlate = try? c.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)
+        recognizedLicensePlateScore = try? c.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)
     }
 }
 

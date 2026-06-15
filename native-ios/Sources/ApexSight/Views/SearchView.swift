@@ -14,6 +14,7 @@ struct SearchView: View {
     @State private var hasSearched = false
     @State private var errorMessage: String?
     @State private var useSemanticSearch = false
+    @State private var plateQuery = ""
     @State private var path = NavigationPath()
 
     private var allLabels: [String] {
@@ -94,6 +95,19 @@ struct SearchView: View {
                                 .foregroundStyle(GlassTheme.secondary)
                         }
                     }
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: "car.fill")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(GlassTheme.purple)
+                    TextField("License plate (optional)", text: $plateQuery)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(GlassTheme.primary)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                        .submitLabel(.search)
+                        .onSubmit { Task { await performSearch() } }
                 }
 
                 HStack {
@@ -329,6 +343,13 @@ struct SearchView: View {
                     zone: zone,
                     after: afterDate
                 )
+            }
+
+            let plate = plateQuery.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if !plate.isEmpty {
+                results = results.filter {
+                    ($0.recognizedLicensePlate ?? "").uppercased().contains(plate)
+                }
             }
         } catch {
             errorMessage = error.localizedDescription
