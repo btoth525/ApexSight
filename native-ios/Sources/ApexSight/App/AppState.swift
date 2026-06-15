@@ -123,6 +123,7 @@ final class AppState: ObservableObject {
             session = next
             await refresh()
             startRealtime()
+            Task { _ = try? await NativeNotificationManager.requestPermission() }
         } catch {
             errorMessage = error.localizedDescription
         }

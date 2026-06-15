@@ -6,8 +6,6 @@ struct EventDetailView: View {
     let event: FrigateEvent
     @State private var actionFeedback: String?
     @State private var isActing = false
-    @State private var showDeleteConfirm = false
-    @State private var showFalsePositiveConfirm = false
     @State private var clipPlayer: AVPlayer?
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
@@ -35,14 +33,6 @@ struct EventDetailView: View {
         .navigationTitle("Event")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
-        .confirmationDialog("Delete this event?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await deleteEvent() } }
-            Button("Cancel", role: .cancel) {}
-        }
-        .confirmationDialog("Mark as false positive?", isPresented: $showFalsePositiveConfirm, titleVisibility: .visible) {
-            Button("Mark False Positive", role: .destructive) { Task { await markFalsePositive() } }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     private var heroCard: some View {
@@ -192,11 +182,24 @@ struct EventDetailView: View {
                 actionButton("Retain Event", icon: "pin.fill", tint: GlassTheme.blue) {
                     Task { await retainEvent() }
                 }
-                actionButton("Mark False Positive", icon: "xmark.circle.fill", tint: GlassTheme.orange) {
-                    showFalsePositiveConfirm = true
-                }
-                actionButton("Delete Event", icon: "trash.fill", tint: GlassTheme.red) {
-                    showDeleteConfirm = true
+
+                if let camera = appState.cameras.first(where: { $0.name == event.camera }) {
+                    NavigationLink {
+                        LiveStreamView(camera: camera)
+                    } label: {
+                        HStack {
+                            Image(systemName: "video.fill")
+                                .font(.system(size: 15, weight: .heavy))
+                            Text("Open Live Camera")
+                                .font(.system(size: 15, weight: .black))
+                            Spacer()
+                        }
+                        .foregroundStyle(GlassTheme.cyan)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
+                        .background(GlassTheme.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -230,31 +233,6 @@ struct EventDetailView: View {
         do {
             try await client.retainEvent(id: event.id)
             actionFeedback = "Event retained."
-        } catch {
-            actionFeedback = error.localizedDescription
-        }
-    }
-
-    private func deleteEvent() async {
-        guard let client = appState.client else { return }
-        isActing = true
-        defer { isActing = false }
-        do {
-            try await client.deleteEvent(id: event.id)
-            actionFeedback = "Event deleted."
-            appState.events.removeAll { $0.id == event.id }
-        } catch {
-            actionFeedback = error.localizedDescription
-        }
-    }
-
-    private func markFalsePositive() async {
-        guard let client = appState.client else { return }
-        isActing = true
-        defer { isActing = false }
-        do {
-            try await client.markFalsePositive(id: event.id)
-            actionFeedback = "Marked as false positive."
         } catch {
             actionFeedback = error.localizedDescription
         }

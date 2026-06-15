@@ -36,42 +36,9 @@ struct CamerasTab: View {
                             }
                         }
 
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 14) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Live Cameras")
-                                            .font(.system(size: 21, weight: .black))
-                                            .foregroundStyle(GlassTheme.primary)
-                                        Text("\(appState.cameras.count) online")
-                                            .font(.system(size: 12, weight: .heavy))
-                                            .foregroundStyle(GlassTheme.secondary)
-                                    }
-                                    Spacer()
-                                    if appState.isLoading {
-                                        ProgressView().tint(GlassTheme.cyan)
-                                    }
-                                }
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
-                                    ForEach(appState.cameras) { camera in
-                                        CameraCard(camera: camera)
-                                    }
-                                }
-                            }
-                        }
-
-                        if !appState.capabilities.isEmpty {
-                            GlassCard {
-                                VStack(alignment: .leading, spacing: 14) {
-                                    Text("Camera Capabilities")
-                                        .font(.system(size: 21, weight: .black))
-                                        .foregroundStyle(GlassTheme.primary)
-                                    VStack(spacing: 10) {
-                                        ForEach(appState.capabilities) { cap in
-                                            CapabilityRow(capability: cap)
-                                        }
-                                    }
-                                }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
+                            ForEach(appState.cameras) { camera in
+                                CameraCard(camera: camera)
                             }
                         }
                     }
@@ -80,31 +47,21 @@ struct CamerasTab: View {
                 .refreshable { await appState.refresh() }
                 .task { if appState.cameras.isEmpty { await appState.refresh() } }
             }
-            .navigationTitle("Apex Command")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Cameras")
+            .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 14) {
+                        if appState.isLoading {
+                            ProgressView().tint(GlassTheme.cyan)
+                        }
                         Button {
                             liveWall = .all
                         } label: {
                             Image(systemName: "rectangle.grid.2x2.fill")
-                                .font(.system(size: 16, weight: .black))
+                                .font(.system(size: 18, weight: .black))
                                 .foregroundStyle(GlassTheme.cyan)
-                        }
-                        if let host = appState.session?.baseURL.host() {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(appState.isLive ? GlassTheme.green : GlassTheme.tertiary)
-                                    .frame(width: 7, height: 7)
-                                Text(host)
-                                    .font(.system(size: 11, weight: .heavy))
-                                    .foregroundStyle(GlassTheme.cyan)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(GlassTheme.cyan.opacity(0.15), in: Capsule())
                         }
                     }
                 }

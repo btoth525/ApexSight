@@ -98,6 +98,9 @@ struct OnboardingView: View {
                 if page < pages.count - 1 {
                     withAnimation { page += 1 }
                 } else {
+                    Task {
+                        _ = try? await NativeNotificationManager.requestPermission()
+                    }
                     hasCompletedOnboarding = true
                 }
             } label: {

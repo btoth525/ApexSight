@@ -23,20 +23,22 @@ enum NotificationCopy {
     static func title(for review: FrigateReviewItem) -> String {
         let objects = review.data?.objects ?? []
         let subLabels = review.data?.subLabels ?? []
-        if objects.isEmpty {
-            return "📹 Camera activity"
-        }
+        if objects.isEmpty { return "📹 Camera activity" }
         let firstSub = subLabels.first
         let firstObj = objects.first ?? ""
         let e = emoji(for: firstObj, subLabel: firstSub)
-        let names = objects.map { titleize($0) }.joined(separator: ", ")
-        return "\(e) \(names)"
+        // Prefer sub-label name when it adds meaning (face, plate, carrier)
+        if let sub = firstSub, !sub.isEmpty {
+            return "\(e) \(titleize(sub))"
+        }
+        return "\(e) \(objects.map { titleize($0) }.joined(separator: ", "))"
     }
 
     static func body(for review: FrigateReviewItem) -> String {
         var parts = [titleize(review.camera)]
-        if let severity = review.severity {
-            parts.append(titleize(severity))
+        let subs = (review.data?.subLabels ?? []).filter { !$0.isEmpty }
+        if !subs.isEmpty {
+            parts.append(subs.map { titleize($0) }.joined(separator: ", "))
         }
         if let zones = review.data?.zones, !zones.isEmpty {
             parts.append("Zone: \(zones.map(titleize).joined(separator: ", "))")

@@ -25,6 +25,14 @@ struct SettingsTab: View {
                                     .font(.system(size: 18, weight: .black))
                                     .foregroundStyle(GlassTheme.primary)
                                 if let session = appState.session {
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(appState.isLive ? GlassTheme.green : GlassTheme.tertiary)
+                                            .frame(width: 8, height: 8)
+                                        Text(appState.isLive ? "Connected" : "Disconnected")
+                                            .font(.system(size: 12, weight: .black))
+                                            .foregroundStyle(appState.isLive ? GlassTheme.green : GlassTheme.secondary)
+                                    }
                                     HStack {
                                         Image(systemName: "server.rack")
                                             .foregroundStyle(GlassTheme.cyan)

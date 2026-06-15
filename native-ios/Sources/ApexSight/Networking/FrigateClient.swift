@@ -113,11 +113,9 @@ struct FrigateClient {
     }
 
     func liveHLSURL(camera: String) -> URL {
-        // go2rtc serves iOS-native (fMP4) HLS that AVPlayer can play. Frigate proxies
-        // go2rtc under /api/go2rtc/ (same prefix as the working /api/go2rtc/streams call).
-        baseURL
-            .appending(path: "api/go2rtc/stream.m3u8")
-            .appending(queryItems: [URLQueryItem(name: "src", value: camera)])
+        // Frigate proxies go2rtc HLS at /live/hls/<camera>/index.m3u8
+        // (nginx: /live/hls/<cam>/index.m3u8 → go2rtc :1984/stream.m3u8?src=<cam>)
+        baseURL.appending(path: "live/hls/\(camera)/index.m3u8")
     }
 
     /// Current frame straight from go2rtc — a reliable still even when the live

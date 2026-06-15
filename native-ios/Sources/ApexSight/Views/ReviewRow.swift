@@ -6,9 +6,11 @@ struct ReviewRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Thumbnail
+            // Thumbnail — thumbPath is the real Frigate field (e.g. /media/frigate/clips/review/...)
             ZStack(alignment: .bottomLeading) {
-                if let url = appState.client?.reviewPreviewURL(id: review.id) {
+                if let base = appState.session?.baseURL,
+                   let path = review.thumbPath,
+                   let url = URL(string: base.absoluteString.trimmingCharacters(in: ["/"]) + "/" + path.trimmingCharacters(in: ["/"])) {
                     RemoteImage(url: url)
                         .frame(width: 80, height: 80)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
