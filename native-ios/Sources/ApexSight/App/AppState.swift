@@ -44,6 +44,10 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var isLive = false
+    /// Whether the server is currently reachable — driven by the 15s poller and full
+    /// refreshes. False means our last fetch failed (network/server down), so the UI
+    /// can show an offline indicator instead of silently serving stale data.
+    @Published var isReachable = true
     @Published var liveBanner: LiveBannerModel?
 
     let keychain = KeychainStore()
@@ -124,13 +128,16 @@ final class AppState: ObservableObject {
             reviews = r.filter { !locallyViewedIDs.contains($0.id) }
             events = e
             cacheLatestAlertForWidget()
+            isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once, then retry so the
             // live lists keep updating instead of quietly going stale.
             if error.isUnauthorized, retryOnAuthFailure, await reauthenticate() {
                 await refreshAlerts(retryOnAuthFailure: false)
+            } else if !error.isCancellation {
+                // Network/server down: keep the last-known lists, flag offline.
+                isReachable = false
             }
-            // Any other transient failure: keep the last-known lists, try again next poll.
         }
     }
 
@@ -378,6 +385,7 @@ final class AppState: ObservableObject {
             let streams = (try? await nextStreams) ?? [:]
             await cacheWidgetSnapshot(from: loadedCameras)
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
+            isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once and retry the whole
             // refresh with a fresh client, so the user never lands on blank screens.
@@ -389,6 +397,7 @@ final class AppState: ObservableObject {
             // Ignore transient cancellations (interrupted refreshes, view teardown).
             if !error.isCancellation {
                 errorMessage = error.localizedDescription
+                isReachable = false
             }
         }
         isLoading = false

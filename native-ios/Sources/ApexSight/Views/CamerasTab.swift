@@ -286,6 +286,7 @@ struct CamerasTab: View {
                 .font(.system(size: 18, weight: .black))
                 .foregroundStyle(GlassTheme.cyan)
         }
+        .accessibilityLabel("Multi-camera views")
     }
 
     private var emptyState: some View {

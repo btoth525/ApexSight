@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ReviewTab: View {
     @EnvironmentObject private var appState: AppState
@@ -120,6 +121,8 @@ struct ReviewTab: View {
                                 .font(.system(size: 18, weight: .black))
                                 .foregroundStyle(GlassTheme.cyan)
                         }
+                        .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
+                        .accessibilityHint("Toggles sort order")
                     }
                 }
             }
@@ -129,7 +132,10 @@ struct ReviewTab: View {
                 titleVisibility: .visible
             ) {
                 Button("Mark All Reviewed") {
-                    Task { await appState.markAllReviewsViewed() }
+                    Task {
+                        await appState.markAllReviewsViewed()
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             }

@@ -36,6 +36,10 @@ struct ApexSightApp: App {
                     LiveAlertBanner()
                         .environmentObject(appState)
                 }
+                .overlay(alignment: .top) {
+                    OfflineBanner()
+                        .environmentObject(appState)
+                }
                 .preferredColorScheme(preferredColorScheme)
                 .onAppear {
                     notificationDelegate.configure(appState: appState)

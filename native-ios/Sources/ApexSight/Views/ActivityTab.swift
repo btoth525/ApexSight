@@ -102,6 +102,8 @@ struct ActivityTab: View {
                                 .font(.system(size: 18, weight: .black))
                                 .foregroundStyle(GlassTheme.cyan)
                         }
+                        .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
+                        .accessibilityHint("Toggles sort order")
                     }
                 }
             }
