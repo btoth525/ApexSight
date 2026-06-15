@@ -42,7 +42,6 @@ struct IncidentLiveActivity: Widget {
                 Image(systemName: severityIcon(context.state.severity))
                     .foregroundStyle(severityColor(context.state.severity))
             }
-            .widgetURL(URL(string: "apex://camera?name=\(context.attributes.camera)"))
         }
     }
 
@@ -71,6 +70,7 @@ struct IncidentLiveActivity: Widget {
                 .frame(maxWidth: 56)
         }
         .padding(16)
+        .widgetURL(URL(string: "apex://camera?name=\(context.attributes.camera)"))
     }
 
     private func severityColor(_ severity: String) -> Color {
