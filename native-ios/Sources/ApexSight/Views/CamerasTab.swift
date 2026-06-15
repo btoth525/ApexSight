@@ -176,7 +176,7 @@ struct CamerasTab: View {
             Image(systemName: isHidden ? "circle" : "checkmark.circle.fill")
                 .font(.system(size: 20, weight: .black))
                 .foregroundStyle(isHidden ? Color.white.opacity(0.75) : GlassTheme.green)
-                .background(Circle().fill(.black.opacity(0.55)).padding(2))
+                .background { Circle().fill(.black.opacity(0.55)) }
                 .padding(6)
         }
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -196,11 +196,12 @@ struct CamerasTab: View {
     /// A small per-camera wobble so arrange mode reads like the iOS Home Screen jiggle,
     /// slightly desynced per tile so they don't all move in lockstep.
     private func wobbleAmount(for camera: FrigateCamera) -> Double {
-        1.0 + Double(abs(camera.name.hashValue) % 6) * 0.08   // 1.0°…~1.4°
+        // Mask the sign bit instead of abs() — abs(Int.min) would trap.
+        1.0 + Double((camera.name.hashValue & Int.max) % 6) * 0.08   // 1.0°…~1.4°
     }
 
     private func wobbleDuration(for camera: FrigateCamera) -> Double {
-        0.15 + Double(abs(camera.name.hashValue) % 5) * 0.012  // 0.15s…~0.20s
+        0.15 + Double((camera.name.hashValue & Int.max) % 5) * 0.012  // 0.15s…~0.20s
     }
 
     // MARK: - Toolbar

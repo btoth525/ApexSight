@@ -216,8 +216,8 @@ private struct MediumWidgetView: View {
     var body: some View {
         HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
+                Color.black
                 HeroSnapshotImage(imageURL: entry.heroURL)
-                    .clipped()
 
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.78)],
@@ -240,6 +240,8 @@ private struct MediumWidgetView: View {
                 }
             }
             .frame(width: 150)
+            .frame(maxHeight: .infinity)
+            .clipped()
 
             VStack(alignment: .leading, spacing: 6) {
                 WidgetHeader()
