@@ -35,17 +35,18 @@ ever leaves this server.
 
 ```bash
 cd push-relay
-cp .env.example .env          # set APEX_ADMIN_PASSWORD + your Cloudflare token
-docker compose up -d
+cp .env.example .env          # set APEX_ADMIN_USERNAME + APEX_ADMIN_PASSWORD
+docker compose up -d          # publishes the relay on port 8080
 ```
 
-1. **Cloudflare Tunnel** — in Cloudflare Zero Trust → Networks → Tunnels, create
-   a tunnel, add a public hostname like `push.yourdomain.com` routing to
-   `http://relay:8080`, and copy the tunnel **token** into `CLOUDFLARE_TUNNEL_TOKEN`
-   in `.env`. (`docker compose up -d` starts both the relay and `cloudflared`.)
+1. **Expose it** — you already run a Cloudflare Tunnel / reverse proxy, so just
+   point a public hostname like `push.yourdomain.com` at `http://<this-host>:8080`.
+   (If your tunnel runs in Docker, attach the relay to its network and route to
+   `http://relay:8080` — see the commented `networks:` block in
+   `docker-compose.yml`.)
 
 2. **Upload your key** — open `https://push.yourdomain.com/admin`, sign in with
-   `APEX_ADMIN_PASSWORD`, go to **Settings**, and:
+   your `APEX_ADMIN_USERNAME` / `APEX_ADMIN_PASSWORD`, go to **Settings**, and:
    - Upload the `.p8` (the page has step-by-step instructions to create one).
    - Paste the **Key ID** and **Team ID**. Bundle ID is pre-filled.
    - Leave Environment on **Auto**. Save.

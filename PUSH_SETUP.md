@@ -25,18 +25,25 @@ You now have: the `.p8` file, a **Key ID**, and a **Team ID**. That's everything
 
 ---
 
-## Part B — Host the relay (on your home server, via Cloudflare Tunnel)
+## Part B — Host the relay (on your home server)
 
 ```bash
 cd push-relay
 cp .env.example .env
-# edit .env: set APEX_ADMIN_PASSWORD, and CLOUDFLARE_TUNNEL_TOKEN (Part B.2)
-docker compose up -d
+# edit .env: set APEX_ADMIN_USERNAME + APEX_ADMIN_PASSWORD
+docker compose up -d          # publishes the relay on port 8080
 ```
 
-1. **Cloudflare Tunnel** (free, no port-forwarding): Cloudflare **Zero Trust → Networks → Tunnels → Create**. Add a **Public Hostname** like `push.yourdomain.com` → service `http://relay:8080`. Copy the tunnel **token** into `CLOUDFLARE_TUNNEL_TOKEN` in `.env`, then `docker compose up -d`.
-2. Open **`https://push.yourdomain.com/admin`**, sign in with `APEX_ADMIN_PASSWORD`.
-3. **Settings → upload your `.p8`**, paste **Key ID** + **Team ID** (Bundle ID is pre-filled). Save. The dashboard should show **APNs ● Configured**.
+1. **Expose it** — you already run a Cloudflare Tunnel / reverse proxy, so just
+   point a public hostname like `push.yourdomain.com` at `http://<this-host>:8080`.
+   (If your tunnel runs in Docker, attach the relay to its network and route to
+   `http://relay:8080` — see the commented `networks:` block in
+   `push-relay/docker-compose.yml`.)
+2. Open **`https://push.yourdomain.com/admin`**, sign in with your
+   **username + password**. (The login is brute-force protected: 5 wrong tries
+   from an IP → locked out for 15 minutes.)
+3. **Settings → upload your `.p8`**, paste **Key ID** + **Team ID** (Bundle ID is
+   pre-filled). Save. The dashboard should show **APNs ● Configured**.
 
 > Your `.p8` lives only in the relay's `/data` volume — never in the app or this repo.
 
@@ -59,14 +66,23 @@ docker compose up -d
 
 ## Part D — Forward alerts from Home Assistant
 
-1. HA → **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add
-   `https://github.com/btoth525/apexsight`.
-2. Install **ApexSight Push Bridge**. In its **Configuration**:
-   - `relay_url`: `https://push.yourdomain.com`
-   - `pairing_code`: the code from the app
-   - `frigate_base_url`: a URL your phone can reach Frigate at (for the snapshot/GIF)
-   - `alerts_only`: `true`
-3. **Start** the add-on. Trigger motion → instant rich notification, app closed. 🎉
+Install the **ApexSight Push Bridge** add-on (full guide:
+`homeassistant-addon/README.md`). Two ways:
+
+- **Local (fastest, for yourself):** copy `homeassistant-addon/apexsight-push-bridge/`
+  into your HA `/addons` folder (via the Samba/File-editor add-on or `scp`), then
+  HA → **Settings → Add-ons → Add-on Store → ⟳** → it appears under **Local add-ons**.
+- **Repository (for testers):** copy `repository.yaml` + the `apexsight-push-bridge/`
+  folder into a dedicated public GitHub repo (folders must sit at the repo root),
+  then in HA → **Add-on Store → ⋮ → Repositories**, add that repo URL.
+
+Then open the add-on → **Configuration**:
+- `relay_url`: `https://push.yourdomain.com`
+- `pairing_code`: the code from the app
+- `frigate_base_url`: a URL your phone can reach Frigate at (for the snapshot/GIF)
+- `alerts_only`: `true`
+
+**Start** the add-on → trigger motion → instant rich notification, app closed. 🎉
 
 ---
 

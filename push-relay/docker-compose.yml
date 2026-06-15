@@ -1,31 +1,32 @@
-# ApexSight push relay + Cloudflare Tunnel (no port-forwarding needed).
+# ApexSight push relay.
 #
-# 1. cp .env.example .env  and fill it in
-# 2. Create a Cloudflare Tunnel, point a public hostname (e.g.
-#    push.yourdomain.com) at  http://relay:8080 , copy the tunnel token
-#    into CLOUDFLARE_TUNNEL_TOKEN in .env
-# 3. docker compose up -d
-# 4. Open https://push.yourdomain.com/admin  → upload your .p8
+# You already expose containers to the web (your own Cloudflare Tunnel / reverse
+# proxy), so this just runs the relay and publishes port 8080. Point your tunnel
+# / proxy at http://<this-host>:8080  (or, if your tunnel runs in Docker, attach
+# this service to its network and route to  http://relay:8080 ).
+#
+#   cp .env.example .env   # set APEX_ADMIN_USERNAME + APEX_ADMIN_PASSWORD
+#   docker compose up -d
+#   open https://push.yourdomain.com/admin   → upload your .p8
 services:
   relay:
     build: .
+    container_name: apexsight-relay
     restart: unless-stopped
     env_file: .env
     volumes:
       - relay-data:/data
-    # Only exposed to the internal compose network; Cloudflare reaches it by name.
-    expose:
-      - "8080"
-    # Uncomment to also reach it on your LAN at http://<host>:8080
-    # ports:
-    #   - "8080:8080"
+    ports:
+      - "8080:8080"
+    # If your Cloudflare Tunnel (or other proxy) runs in Docker, join its network
+    # instead of / in addition to publishing the port, and route it to relay:8080:
+    # networks:
+    #   - proxy
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - relay
+# networks:
+#   proxy:
+#     external: true
+#     name: <your-existing-proxy-network>
 
 volumes:
   relay-data:

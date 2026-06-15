@@ -7,6 +7,8 @@ held in a signed session cookie.
 """
 import hmac
 import os
+import time
+from collections import defaultdict, deque
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,6 +18,48 @@ from . import apns, config, db
 
 router = APIRouter(prefix="/admin")
 _templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+
+# ---- brute-force lockout for the admin login (fail2ban-style) ---------------
+# After MAX_FAILS bad attempts from one IP within FAIL_WINDOW seconds, that IP is
+# blocked from logging in for LOCKOUT seconds. Successful login clears the count.
+MAX_FAILS = 5
+FAIL_WINDOW = 15 * 60
+LOCKOUT = 15 * 60
+_fails: dict[str, deque] = defaultdict(deque)
+_locked_until: dict[str, float] = {}
+
+
+def _client_ip(request: Request) -> str:
+    # Behind a tunnel/proxy the socket peer is the proxy, so prefer the real
+    # client IP from the standard forwarding headers.
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _lock_remaining(ip: str) -> int:
+    until = _locked_until.get(ip, 0)
+    return max(0, int(until - time.time()))
+
+
+def _record_failure(ip: str) -> None:
+    now = time.time()
+    window = _fails[ip]
+    window.append(now)
+    while window and now - window[0] > FAIL_WINDOW:
+        window.popleft()
+    if len(window) >= MAX_FAILS:
+        _locked_until[ip] = now + LOCKOUT
+        window.clear()
+
+
+def _clear_failures(ip: str) -> None:
+    _fails.pop(ip, None)
+    _locked_until.pop(ip, None)
 
 
 def _authed(request: Request) -> bool:
@@ -46,14 +90,30 @@ def login_form(request: Request):
 
 
 @router.post("/login")
-def login(request: Request, password: str = Form(...)):
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
     if not config.ADMIN_PASSWORD:
         raise HTTPException(status_code=503, detail="Admin UI disabled: set APEX_ADMIN_PASSWORD.")
-    if hmac.compare_digest(password, config.ADMIN_PASSWORD):
+
+    ip = _client_ip(request)
+    remaining = _lock_remaining(ip)
+    if remaining > 0:
+        return _templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": f"Too many attempts. Try again in {remaining // 60 + 1} min."},
+            status_code=429,
+        )
+
+    # Evaluate both with constant-time compares, then AND (no short-circuit).
+    user_ok = hmac.compare_digest(username.strip(), config.ADMIN_USERNAME)
+    pass_ok = hmac.compare_digest(password, config.ADMIN_PASSWORD)
+    if user_ok and pass_ok:
+        _clear_failures(ip)
         request.session["admin"] = True
         return RedirectResponse(url="/admin", status_code=303)
+
+    _record_failure(ip)
     return _templates.TemplateResponse(
-        "login.html", {"request": request, "error": "Wrong password."}, status_code=401
+        "login.html", {"request": request, "error": "Wrong username or password."}, status_code=401
     )
 
 

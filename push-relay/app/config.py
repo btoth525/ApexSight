@@ -16,8 +16,9 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "relay.db"
 
-# Password for the admin web GUI. If unset, the admin UI is locked entirely
-# (the public /v1 API still works) and a warning is logged.
+# Username + password for the admin web GUI. If the password is unset, the admin
+# UI is locked entirely (the public /v1 API still works).
+ADMIN_USERNAME = os.environ.get("APEX_ADMIN_USERNAME", "admin").strip()
 ADMIN_PASSWORD = os.environ.get("APEX_ADMIN_PASSWORD", "").strip()
 
 # Non-secret defaults — pre-filled in the GUI, editable there. The bundle id
