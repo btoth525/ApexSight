@@ -5,7 +5,7 @@ struct LiveStreamView: View {
     let camera: FrigateCamera
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var streamMode: StreamMode = .live
+    @State private var streamMode: StreamMode = .hd
     @State private var isLive = false
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
