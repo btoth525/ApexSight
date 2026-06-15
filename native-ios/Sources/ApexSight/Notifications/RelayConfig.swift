@@ -8,6 +8,6 @@ import Foundation
 /// so testers are paired automatically with zero configuration. Users can still
 /// override it in Settings → Instant Push.
 enum RelayConfig {
-    /// e.g. "https://push.yourdomain.com" — leave empty to require manual entry.
-    static let defaultURL = ""
+    /// The relay every copy of the app talks to. Baked in so testers need zero setup.
+    static let defaultURL = "https://relay.plexserver525.com"
 }

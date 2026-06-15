@@ -51,16 +51,19 @@ docker compose up -d          # publishes the relay on port 8080
 
 ## Part C — Pair your phone
 
-1. (Before shipping to testers) set `RelayConfig.defaultURL` in
-   `native-ios/Sources/ApexSight/Notifications/RelayConfig.swift` to your relay
-   URL so every install is pre-pointed. For your own testing you can skip this and
-   type it in the app.
-2. In **ApexSight → Settings → Instant Push**: toggle **Enable instant push**,
-   confirm the **Relay URL**, and note the **Pairing Code** (e.g. `APEX-7F3K-2Q9P`).
-   The status should turn to **Registered ✓**.
-3. On the relay dashboard, enter that code and click **Send test** — your phone
+The relay URL is **baked into the app** (`relay.plexserver525.com`), so there's
+nothing to type — testers just flip the switch.
+
+1. In **ApexSight → Settings → Instant Push**: toggle **Enable instant push**.
+   The status dot turns **🟢 Connected** once the relay is reachable and this
+   device is registered (🔴 if the relay is unreachable). Note the **Pairing
+   Code** (e.g. `APEX-7F3K-2Q9P`).
+2. On the relay dashboard, enter that code and click **Send test** — your phone
    should buzz. (If it fails with `BadDeviceToken` on a Debug build from Xcode, set
    the relay Environment to **Force sandbox** and retry.)
+
+> Make sure your relay is served at **https://relay.plexserver525.com** (point a
+> Cloudflare Tunnel / proxy public hostname at `http://<host>:8080`).
 
 ---
 

@@ -2,25 +2,33 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-/// Instant-push setup. Enabling it registers this device for APNs and then
-/// registers the token with your push relay under a household pairing code. The
-/// user pastes that code into the Home Assistant bridge addon — no manual token
-/// copying. The app is fully functional without this (real-time while open +
-/// background refresh); this adds instant alerts when the app is fully closed.
+/// Instant-push setup. The relay URL is baked in (RelayConfig.defaultURL), so the
+/// user only sees a connection status and their pairing code. Enabling it
+/// registers this device for APNs and with the relay; the user pastes the pairing
+/// code into the Home Assistant bridge addon. The app is fully functional without
+/// this — it adds instant alerts when the app is completely closed.
 struct PushCompanionSettingsView: View {
     @State private var pushEnabled = DeviceTokenStore.pushEnabled
-    @State private var relayURL = DeviceTokenStore.relayURL
     @State private var pairingCode = DeviceTokenStore.ensurePairingCode()
     @State private var token = DeviceTokenStore.deviceTokenHex
     @State private var error = DeviceTokenStore.lastError
     @State private var registerStatus: RegisterStatus = .idle
+    @State private var connection: ConnectionState = .checking
     @State private var lastRegisteredToken: String?
     @State private var copiedCode = false
     @State private var showJoinField = false
     @State private var joinCode = ""
 
+    private var relayURL: String { DeviceTokenStore.relayURL }
+
     private enum RegisterStatus: Equatable {
         case idle, registering, registered, failed(String)
+    }
+
+    private enum ConnectionState: Equatable {
+        case checking
+        case online(apnsConfigured: Bool)
+        case offline
     }
 
     var body: some View {
@@ -31,9 +39,8 @@ struct PushCompanionSettingsView: View {
                     explainerCard
                     toggleCard
                     if pushEnabled {
-                        relayCard
+                        connectionCard
                         pairingCard
-                        statusCard
                         instructionsCard
                         advancedCard
                     }
@@ -44,14 +51,21 @@ struct PushCompanionSettingsView: View {
         .navigationTitle("Instant Push")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
-        .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
+        .task {
+            if pushEnabled { await checkHealth() }
+        }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            guard pushEnabled else { return }
             token = DeviceTokenStore.deviceTokenHex
             error = DeviceTokenStore.lastError
-            // Auto-register once the token arrives (or changes), if enabled + paired.
-            if pushEnabled, let token, !token.isEmpty, token != lastRegisteredToken,
-               !relayURL.isEmpty, !pairingCode.isEmpty, registerStatus != .registering {
+            // Auto-register once the token arrives (or changes).
+            if let token, !token.isEmpty, token != lastRegisteredToken,
+               !pairingCode.isEmpty, registerStatus != .registering {
                 Task { await registerWithRelay() }
             }
+        }
+        .onReceive(Timer.publish(every: 6, on: .main, in: .common).autoconnect()) { _ in
+            if pushEnabled { Task { await checkHealth() } }
         }
     }
 
@@ -63,10 +77,10 @@ struct PushCompanionSettingsView: View {
                 Label("Instant alerts, app closed", systemImage: "bolt.horizontal.fill")
                     .font(.system(size: 17, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
-                Text("This device registers with your push relay and shows a pairing code. Paste that code into the ApexSight Push Bridge add-on in Home Assistant, and Frigate alerts arrive instantly even when ApexSight is fully closed.")
+                Text("Turn this on, then paste the pairing code below into the ApexSight Push Bridge add-on in Home Assistant. Frigate alerts then arrive instantly even when ApexSight is fully closed.")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(GlassTheme.secondary)
-                Text("Requires the relay set up with your Apple APNs key. Everything else in the app works without this.")
+                Text("Everything else in the app works without this.")
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(GlassTheme.tertiary)
             }
@@ -80,7 +94,9 @@ struct PushCompanionSettingsView: View {
                 set: { newValue in
                     pushEnabled = newValue
                     DeviceTokenStore.pushEnabled = newValue
-                    if newValue { Task { await enablePush() } }
+                    if newValue {
+                        Task { await enablePush(); await checkHealth() }
+                    }
                 }
             )) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -96,26 +112,33 @@ struct PushCompanionSettingsView: View {
         }
     }
 
-    private var relayCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Relay URL")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-                TextField("https://push.yourdomain.com", text: $relayURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(GlassTheme.cyan)
-                    .padding(12)
-                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .onChange(of: relayURL) { _, newValue in
-                        DeviceTokenStore.relayURL = newValue
+    /// The single green/red status the user asked for.
+    private var connectionCard: some View {
+        let s = status
+        return GlassCard {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(s.color)
+                    .frame(width: 12, height: 12)
+                    .shadow(color: s.color.opacity(0.7), radius: 5)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(s.title)
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    Text(s.subtitle)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.secondary)
+                }
+                Spacer()
+                if s.spinning {
+                    ProgressView().tint(GlassTheme.cyan)
+                } else if s.showRetry {
+                    Button("Retry") {
+                        Task { await checkHealth(); await registerWithRelay() }
                     }
-                Text("Your self-hosted relay (Cloudflare Tunnel URL).")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(GlassTheme.secondary)
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(GlassTheme.cyan)
+                }
             }
         }
     }
@@ -174,40 +197,11 @@ struct PushCompanionSettingsView: View {
                                 lastRegisteredToken = nil   // force re-register under new code
                                 showJoinField = false
                                 joinCode = ""
+                                Task { await registerWithRelay() }
                             }
                             .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
                         }
                     }
-                }
-            }
-        }
-    }
-
-    private var statusCard: some View {
-        GlassCard {
-            HStack(spacing: 10) {
-                switch registerStatus {
-                case .idle:
-                    Image(systemName: "circle.dashed").foregroundStyle(GlassTheme.tertiary)
-                    Text("Waiting for APNs token…").foregroundStyle(GlassTheme.secondary)
-                case .registering:
-                    ProgressView().tint(GlassTheme.cyan)
-                    Text("Registering with relay…").foregroundStyle(GlassTheme.secondary)
-                case .registered:
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(GlassTheme.green)
-                    Text("Registered ✓ — paste the code into Home Assistant.").foregroundStyle(GlassTheme.green)
-                case let .failed(message):
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(GlassTheme.orange)
-                    Text(message).foregroundStyle(GlassTheme.orange)
-                }
-                Spacer(minLength: 0)
-            }
-            .font(.system(size: 13, weight: .heavy))
-            .overlay(alignment: .bottomTrailing) {
-                if case .failed = registerStatus {
-                    Button("Retry") { Task { await registerWithRelay() } }
-                        .font(.system(size: 12, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
                 }
             }
         }
@@ -220,7 +214,7 @@ struct PushCompanionSettingsView: View {
                     .font(.system(size: 15, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 stepRow(1, "Install the “ApexSight Push Bridge” add-on.")
-                stepRow(2, "Set the relay URL and paste this pairing code.")
+                stepRow(2, "Paste this pairing code into its settings.")
                 stepRow(3, "Set your Frigate URL so alerts include a snapshot.")
             }
         }
@@ -229,11 +223,16 @@ struct PushCompanionSettingsView: View {
     private var advancedCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Device Token (advanced)")
+                Text("Details (advanced)")
                     .font(.system(size: 13, weight: .black))
                     .foregroundStyle(GlassTheme.secondary)
+                Text("Relay: \(relayURL)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(GlassTheme.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 if let token, !token.isEmpty {
-                    Text(token)
+                    Text("Token: \(token)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(GlassTheme.tertiary)
                         .textSelection(.enabled)
@@ -243,10 +242,6 @@ struct PushCompanionSettingsView: View {
                     Text(error)
                         .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(GlassTheme.orange)
-                } else {
-                    Text("Not registered yet.")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(GlassTheme.tertiary)
                 }
             }
         }
@@ -265,6 +260,31 @@ struct PushCompanionSettingsView: View {
         }
     }
 
+    // MARK: - Status derivation
+
+    private var status: (color: Color, title: String, subtitle: String, spinning: Bool, showRetry: Bool) {
+        switch connection {
+        case .checking:
+            return (GlassTheme.tertiary, "Checking…", "Contacting the relay", true, false)
+        case .offline:
+            return (GlassTheme.red, "Disconnected", "Relay unreachable — check your connection", false, true)
+        case let .online(apnsConfigured):
+            if !apnsConfigured {
+                return (GlassTheme.orange, "Relay online", "APNs key not uploaded on the relay yet", false, true)
+            }
+            switch registerStatus {
+            case .registered:
+                return (GlassTheme.green, "Connected", "Ready — paste the code into Home Assistant", false, false)
+            case .registering:
+                return (GlassTheme.orange, "Connecting…", "Registering this device", true, false)
+            case let .failed(message):
+                return (GlassTheme.red, "Not registered", message, false, true)
+            case .idle:
+                return (GlassTheme.orange, "Almost there", "Waiting for the APNs token", true, false)
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func enablePush() async {
@@ -275,17 +295,22 @@ struct PushCompanionSettingsView: View {
         }
     }
 
+    private func checkHealth() async {
+        if case .checking = connection {} else if connection == .offline { connection = .checking }
+        let health = await RelayClient.health(relayURL: relayURL)
+        if let health {
+            connection = .online(apnsConfigured: health.apns_configured ?? false)
+        } else {
+            connection = .offline
+        }
+    }
+
     private func registerWithRelay() async {
         guard let token = DeviceTokenStore.deviceTokenHex, !token.isEmpty else { return }
-        let relay = relayURL.trimmingCharacters(in: .whitespaces)
-        guard !relay.isEmpty else {
-            registerStatus = .failed("Enter your relay URL above.")
-            return
-        }
         registerStatus = .registering
         do {
             try await RelayClient.register(
-                relayURL: relay,
+                relayURL: relayURL,
                 deviceToken: token,
                 pairingCode: pairingCode,
                 environment: APNSEnvironment.current

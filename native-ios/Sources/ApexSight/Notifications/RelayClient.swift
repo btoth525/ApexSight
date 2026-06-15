@@ -27,6 +27,29 @@ enum RelayClient {
         let device_token: String
     }
 
+    /// Result of a `/healthz` probe used for the green/red status dot.
+    struct Health: Decodable {
+        let ok: Bool
+        let apns_configured: Bool?
+    }
+
+    /// Returns the relay's health, or nil if it's unreachable.
+    static func health(relayURL: String) async -> Health? {
+        var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard let url = URL(string: trimmed + "/healthz") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
+            guard ok else { return nil }
+            return try? JSONDecoder().decode(Health.self, from: data)
+        } catch {
+            return nil
+        }
+    }
+
     static func register(relayURL: String, deviceToken: String, pairingCode: String, environment: String) async throws {
         let body = RegisterBody(
             device_token: deviceToken,
