@@ -9,6 +9,6 @@ COPY app ./app
 
 ENV APEX_DATA_DIR=/data
 VOLUME ["/data"]
-EXPOSE 8080
+EXPOSE 3421
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3421"]

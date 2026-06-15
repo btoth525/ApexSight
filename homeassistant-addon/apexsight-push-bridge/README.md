@@ -16,7 +16,7 @@ addon holds **no Apple secrets** — only your relay URL and a pairing code.
 
    | Option | What to enter |
    |--------|---------------|
-   | `relay_url` | Your relay, e.g. `https://push.yourdomain.com` |
+   | `relay_url` | Your relay, e.g. `https://relay.plexserver525.com` |
    | `pairing_code` | The code shown in ApexSight → Settings → Instant Push |
    | `frigate_base_url` | A URL where your phone can reach Frigate, e.g. `https://frigate.yourdomain.com` (used for the notification image) |
    | `alerts_only` | `true` = only alerts; `false` = also detections |

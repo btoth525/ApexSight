@@ -46,7 +46,7 @@ your-ha-addons-repo/
 
 | Option | Value |
 |--------|-------|
-| `relay_url` | Your relay, e.g. `https://push.yourdomain.com` |
+| `relay_url` | Your relay, e.g. `https://relay.plexserver525.com` |
 | `pairing_code` | The code shown in ApexSight → Settings → Instant Push |
 | `frigate_base_url` | URL your phone can reach Frigate at (for the snapshot/GIF) |
 | `alerts_only` | `true` = only alerts; `false` = also detections |

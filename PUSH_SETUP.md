@@ -31,15 +31,15 @@ You now have: the `.p8` file, a **Key ID**, and a **Team ID**. That's everything
 cd push-relay
 cp .env.example .env
 # edit .env: set APEX_ADMIN_USERNAME + APEX_ADMIN_PASSWORD
-docker compose up -d          # publishes the relay on port 8080
+docker compose up -d          # publishes the relay on port 3421
 ```
 
 1. **Expose it** — you already run a Cloudflare Tunnel / reverse proxy, so just
-   point a public hostname like `push.yourdomain.com` at `http://<this-host>:8080`.
+   point a public hostname like `relay.plexserver525.com` at `http://<this-host>:3421`.
    (If your tunnel runs in Docker, attach the relay to its network and route to
-   `http://relay:8080` — see the commented `networks:` block in
+   `http://relay:3421` — see the commented `networks:` block in
    `push-relay/docker-compose.yml`.)
-2. Open **`https://push.yourdomain.com/admin`**, sign in with your
+2. Open **`https://relay.plexserver525.com/admin`**, sign in with your
    **username + password**. (The login is brute-force protected: 5 wrong tries
    from an IP → locked out for 15 minutes.)
 3. **Settings → upload your `.p8`**, paste **Key ID** + **Team ID** (Bundle ID is
@@ -63,7 +63,7 @@ nothing to type — testers just flip the switch.
    the relay Environment to **Force sandbox** and retry.)
 
 > Make sure your relay is served at **https://relay.plexserver525.com** (point a
-> Cloudflare Tunnel / proxy public hostname at `http://<host>:8080`).
+> Cloudflare Tunnel / proxy public hostname at `http://<host>:3421`).
 
 ---
 
@@ -80,7 +80,7 @@ Install the **ApexSight Push Bridge** add-on (full guide:
   then in HA → **Add-on Store → ⋮ → Repositories**, add that repo URL.
 
 Then open the add-on → **Configuration**:
-- `relay_url`: `https://push.yourdomain.com`
+- `relay_url`: `https://relay.plexserver525.com`
 - `pairing_code`: the code from the app
 - `frigate_base_url`: a URL your phone can reach Frigate at (for the snapshot/GIF)
 - `alerts_only`: `true`

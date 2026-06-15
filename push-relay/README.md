@@ -36,24 +36,24 @@ ever leaves this server.
 ```bash
 cd push-relay
 cp .env.example .env          # set APEX_ADMIN_USERNAME + APEX_ADMIN_PASSWORD
-docker compose up -d          # publishes the relay on port 8080
+docker compose up -d          # publishes the relay on port 3421
 ```
 
 1. **Expose it** — you already run a Cloudflare Tunnel / reverse proxy, so just
-   point a public hostname like `push.yourdomain.com` at `http://<this-host>:8080`.
+   point `relay.plexserver525.com` at `http://<this-host>:3421`.
    (If your tunnel runs in Docker, attach the relay to its network and route to
-   `http://relay:8080` — see the commented `networks:` block in
+   `http://relay:3421` — see the commented `networks:` block in
    `docker-compose.yml`.)
 
-2. **Upload your key** — open `https://push.yourdomain.com/admin`, sign in with
+2. **Upload your key** — open `https://relay.plexserver525.com/admin`, sign in with
    your `APEX_ADMIN_USERNAME` / `APEX_ADMIN_PASSWORD`, go to **Settings**, and:
    - Upload the `.p8` (the page has step-by-step instructions to create one).
    - Paste the **Key ID** and **Team ID**. Bundle ID is pre-filled.
    - Leave Environment on **Auto**. Save.
 
-3. **Point the app at the relay** — in ApexSight → Settings → Instant Push, set
-   the Relay URL to `https://push.yourdomain.com`, toggle Instant Push on, and
-   copy the **pairing code** it shows.
+3. **Pair the app** — the relay URL is baked into the app
+   (`relay.plexserver525.com`), so in ApexSight → Settings → Instant Push just
+   toggle it on. The status turns 🟢 **Connected**; copy the **pairing code** it shows.
 
 4. **Install the bridge addon** at each home (see `../homeassistant-addon/`) and
    paste in the relay URL + pairing code.

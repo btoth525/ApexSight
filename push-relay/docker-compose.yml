@@ -1,13 +1,13 @@
 # ApexSight push relay.
 #
 # You already expose containers to the web (your own Cloudflare Tunnel / reverse
-# proxy), so this just runs the relay and publishes port 8080. Point your tunnel
-# / proxy at http://<this-host>:8080  (or, if your tunnel runs in Docker, attach
-# this service to its network and route to  http://relay:8080 ).
+# proxy), so this just runs the relay and publishes port 3421. Point your tunnel
+# / proxy at http://<this-host>:3421  (or, if your tunnel runs in Docker, attach
+# this service to its network and route to  http://relay:3421 ).
 #
 #   cp .env.example .env   # set APEX_ADMIN_USERNAME + APEX_ADMIN_PASSWORD
 #   docker compose up -d
-#   open https://push.yourdomain.com/admin   → upload your .p8
+#   open https://relay.plexserver525.com/admin   → upload your .p8
 services:
   relay:
     build: .
@@ -17,9 +17,9 @@ services:
     volumes:
       - relay-data:/data
     ports:
-      - "8080:8080"
+      - "3421:3421"
     # If your Cloudflare Tunnel (or other proxy) runs in Docker, join its network
-    # instead of / in addition to publishing the port, and route it to relay:8080:
+    # instead of / in addition to publishing the port, and route it to relay:3421:
     # networks:
     #   - proxy
 
