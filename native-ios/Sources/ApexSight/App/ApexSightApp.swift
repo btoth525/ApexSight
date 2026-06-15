@@ -47,8 +47,10 @@ struct ApexSightApp: App {
                     switch phase {
                     case .active:
                         appState.startRealtime()
+                        appState.startForegroundPolling()
                     case .background:
                         appState.stopRealtime()
+                        appState.stopForegroundPolling()
                         BackgroundRefreshManager.schedule()
                     default:
                         break

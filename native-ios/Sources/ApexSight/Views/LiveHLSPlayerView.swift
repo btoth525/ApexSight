@@ -199,69 +199,26 @@ struct HLSLivePlayerView: View {
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
-    @State private var zoomScale: CGFloat = 1
-    @State private var baseZoom: CGFloat = 1
-    @State private var panOffset: CGSize = .zero
-    @State private var basePan: CGSize = .zero
 
     private var isPlaying: Bool { model.state == .playing }
 
-    private var magnifyGesture: some Gesture {
-        MagnificationGesture()
-            .onChanged { value in
-                zoomScale = max(1, min(baseZoom * value, 6))
-            }
-            .onEnded { value in
-                baseZoom = max(1, min(baseZoom * value, 6))
-                zoomScale = baseZoom
-                if zoomScale < 1.05 {
-                    withAnimation(.spring()) { zoomScale = 1; baseZoom = 1; panOffset = .zero; basePan = .zero }
-                }
-            }
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                guard zoomScale > 1.05 else { return }   // only pan while zoomed in
-                panOffset = CGSize(
-                    width: basePan.width + value.translation.width,
-                    height: basePan.height + value.translation.height
-                )
-            }
-            .onEnded { _ in
-                basePan = panOffset
-            }
-    }
-
-    /// The AVPlayer layer with pinch / pan / double-tap zoom applied only in the
-    /// fullscreen player (`showControls`). Split into a ViewBuilder branch so we never
-    /// pass an optional gesture (which doesn't compile reliably across SDKs).
+    /// The AVPlayer layer. In the fullscreen player (`showControls`) it's wrapped in a
+    /// `ZoomableContainer` for pinch / pan / double-tap zoom with strict clamping (can't
+    /// drift off-screen). In grid/card cells it's a plain, non-interactive layer.
     @ViewBuilder
     private func playerLayer(_ player: AVPlayer) -> some View {
-        let base = ZoomablePlayerView(player: player)
+        if showControls {
+            ZoomableContainer {
+                ZoomablePlayerView(player: player)
+            }
             .opacity(isPlaying ? 1 : 0)
             .animation(.easeIn(duration: 0.3), value: isPlaying)
-
-        if showControls {
-            base
-                .scaleEffect(zoomScale, anchor: .center)
-                .offset(panOffset)
-                .simultaneousGesture(magnifyGesture)
-                .simultaneousGesture(dragGesture)
-                .onTapGesture(count: 2) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        if zoomScale > 1.05 {
-                            zoomScale = 1; baseZoom = 1; panOffset = .zero; basePan = .zero
-                        } else {
-                            zoomScale = 2.5; baseZoom = 2.5
-                        }
-                    }
-                }
-                .clipped()
-                .allowsHitTesting(true)
+            .allowsHitTesting(true)
         } else {
-            base.allowsHitTesting(false)
+            ZoomablePlayerView(player: player)
+                .opacity(isPlaying ? 1 : 0)
+                .animation(.easeIn(duration: 0.3), value: isPlaying)
+                .allowsHitTesting(false)
         }
     }
 

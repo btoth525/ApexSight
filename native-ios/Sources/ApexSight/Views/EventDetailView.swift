@@ -77,7 +77,7 @@ struct EventDetailView: View {
 
                 ZStack {
                     if hasClip, mediaMode == .video, let player = clipModel.player {
-                        PiPPlayerView(player: player)
+                        ZoomableClipPlayer(player: player)
                             .frame(height: 230)
                             .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.eventSnapshotURL(id: event.id) {

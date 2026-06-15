@@ -87,7 +87,7 @@ struct ReviewDetailView: View {
 
                 ZStack {
                     if mediaMode == .video, let player = clipModel.player {
-                        PiPPlayerView(player: player)
+                        ZoomableClipPlayer(player: player)
                             .frame(height: 230)
                             .frame(maxWidth: .infinity)
                     } else if let url = snapshotURL {

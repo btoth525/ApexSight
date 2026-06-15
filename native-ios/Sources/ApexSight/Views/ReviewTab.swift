@@ -9,6 +9,7 @@ struct ReviewTab: View {
     /// is dominated by alerts, so a dedicated `severity=detection` query is needed.
     @State private var detectionItems: [FrigateReviewItem] = []
     @State private var loadingDetections = false
+    @State private var showMarkAllConfirm = false
 
     private var filtered: [FrigateReviewItem] {
         let base: [FrigateReviewItem]
@@ -99,6 +100,16 @@ struct ReviewTab: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 12) {
                         if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }
+                        if !appState.reviews.isEmpty {
+                            Button {
+                                showMarkAllConfirm = true
+                            } label: {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 18, weight: .black))
+                                    .foregroundStyle(GlassTheme.green)
+                            }
+                            .accessibilityLabel("Mark all reviewed")
+                        }
                         Button {
                             sortNewest.toggle()
                         } label: {
@@ -108,6 +119,16 @@ struct ReviewTab: View {
                         }
                     }
                 }
+            }
+            .confirmationDialog(
+                "Mark all \(appState.reviews.count) alerts as reviewed?",
+                isPresented: $showMarkAllConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Mark All Reviewed") {
+                    Task { await appState.markAllReviewsViewed() }
+                }
+                Button("Cancel", role: .cancel) {}
             }
             .navigationDestination(for: FrigateReviewItem.self) { review in
                 ReviewDetailView(review: review)

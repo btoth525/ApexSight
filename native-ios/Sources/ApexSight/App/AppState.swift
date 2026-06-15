@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WidgetKit
 
 enum AppDeepLink: Hashable {
     case review(String)
@@ -37,6 +38,13 @@ final class AppState: ObservableObject {
     let notificationPrefs = NotificationPreferencesStore()
     private let eventStream = FrigateEventStream()
 
+    /// Reviews the user just marked viewed — filtered out of fetched results so they
+    /// don't flash back in while the server catches up to the viewed state.
+    private var locallyViewedIDs: Set<String> = []
+    /// Foreground poller — guarantees new alerts/events appear without restarting the app,
+    /// even when the WebSocket can't be established through the user's reverse proxy.
+    private var pollTask: Task<Void, Never>?
+
     var client: FrigateClient? {
         guard let session else { return nil }
         return FrigateClient(session: session)
@@ -58,6 +66,73 @@ final class AppState: ObservableObject {
 
     func stopRealtime() {
         eventStream.disconnect()
+    }
+
+    /// Polls recent reviews + events every 15s while the app is foregrounded so the lists
+    /// stay live without a restart. The WebSocket (when it connects) updates instantly;
+    /// this is the reliable fallback for proxies that don't pass `/ws`.
+    func startForegroundPolling() {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshAlerts()
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+            }
+        }
+    }
+
+    func stopForegroundPolling() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
+    /// Lightweight refresh of just the things that need to feel live: reviews + events.
+    func refreshAlerts() async {
+        guard let client else { return }
+        async let nextReviews = client.reviews(limit: 30)
+        async let nextEvents = client.events(limit: 50)
+        if let r = try? await nextReviews {
+            reviews = r.filter { !locallyViewedIDs.contains($0.id) }
+        }
+        if let e = try? await nextEvents {
+            events = e
+        }
+        cacheLatestAlertForWidget()
+    }
+
+    /// Marks every currently-shown review as handled in one tap (Frigate `reviews/viewed`).
+    func markAllReviewsViewed() async {
+        guard let client else { return }
+        let ids = reviews.map(\.id)
+        guard !ids.isEmpty else { return }
+        do {
+            try await client.markReviewsViewed(ids: ids)
+            locallyViewedIDs.formUnion(ids)
+            reviews.removeAll { ids.contains($0.id) }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Caches the most recent alert (label + camera + thumbnail) into the app group and
+    /// reloads the widget timeline, so the home-screen widget reflects live activity.
+    private func cacheLatestAlertForWidget() {
+        guard let client, let review = reviews.first else { return }
+        let label = review.data?.objects?.first ?? "object"
+        let subLabel = review.data?.subLabels?.first
+        let camera = review.camera
+        let severity = review.severity ?? "alert"
+        let when = Date(timeIntervalSince1970: review.startTime ?? Date().timeIntervalSince1970)
+        let thumbURL = client.reviewThumbnailURL(review: review)
+        Task {
+            var imageData: Data?
+            if let thumbURL { imageData = try? await client.imageData(from: thumbURL) }
+            SharedSnapshotStore.saveLatestAlert(
+                label: label, subLabel: subLabel, camera: camera,
+                severity: severity, when: when, imageData: imageData
+            )
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     private func handleStreamEvent(_ event: StreamEvent) {
@@ -82,6 +157,7 @@ final class AppState: ObservableObject {
     }
 
     private func handleReview(_ item: FrigateReviewItem, change: ChangeType) {
+        guard !locallyViewedIDs.contains(item.id) else { return }
         let wasNew = !reviews.contains { $0.id == item.id }
         reviews.removeAll { $0.id == item.id }
         if change != .end {
@@ -109,6 +185,8 @@ final class AppState: ObservableObject {
         if let client, let session {
             Task { await LocalAlertNotifier.notify(review: item, client: client, session: session) }
         }
+
+        cacheLatestAlertForWidget()
     }
 
     func signIn(baseURL: String, username: String, password: String) async {
@@ -123,6 +201,7 @@ final class AppState: ObservableObject {
             session = next
             await refresh()
             startRealtime()
+            startForegroundPolling()
             Task { _ = try? await NativeNotificationManager.requestPermission() }
         } catch {
             errorMessage = error.localizedDescription
@@ -171,7 +250,9 @@ final class AppState: ObservableObject {
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
             events = try await nextEvents
-            reviews = (try? await nextReviews) ?? reviews
+            if let r = try? await nextReviews {
+                reviews = r.filter { !locallyViewedIDs.contains($0.id) }
+            }
             labels = (try? await nextLabels) ?? labels
             subLabels = (try? await nextSubLabels) ?? subLabels
             if let s = try? await nextStats { stats = s }
@@ -263,6 +344,7 @@ final class AppState: ObservableObject {
 
     func switchTo(session: FrigateSession) {
         stopRealtime()
+        locallyViewedIDs.removeAll()
         self.session = session
         keychain.save(session: session)
         cameras = []
@@ -276,11 +358,14 @@ final class AppState: ObservableObject {
         Task {
             await refresh()
             startRealtime()
+            startForegroundPolling()
         }
     }
 
     func signOut() {
         stopRealtime()
+        stopForegroundPolling()
+        locallyViewedIDs.removeAll()
         keychain.clear()
         session = nil
         cameras = []
@@ -301,6 +386,7 @@ final class AppState: ObservableObject {
         guard let client else { return }
         do {
             try await client.markReviewsViewed(ids: [id])
+            locallyViewedIDs.insert(id)
             reviews.removeAll { $0.id == id }
         } catch {
             errorMessage = error.localizedDescription
