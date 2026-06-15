@@ -12,6 +12,7 @@ struct NotificationPreferences: Codable {
     var quietHoursEndMinute: Int = 0
     var cooldownSeconds: [String: Int] = [:]
     var snoozedUntil: [String: Double] = [:]
+    var useAINotificationBody: Bool = false
 
     func isCameraEnabled(_ name: String) -> Bool {
         cameraEnabled[name] ?? true
@@ -106,5 +107,14 @@ final class NotificationPreferencesStore: ObservableObject {
         }
         lastNotificationTime[camera] = Date()
         return true
+    }
+
+    func shouldDeliverViaTrigger(camera: String, label: String, zones: [String], score: Double, triggers: [NotificationTrigger]) -> Bool {
+        for trigger in triggers where trigger.enabled {
+            guard trigger.matches(camera: camera, label: label, zones: zones, score: score) else { continue }
+            if trigger.respectQuietHours, preferences.isQuietNow() { continue }
+            return true
+        }
+        return false
     }
 }

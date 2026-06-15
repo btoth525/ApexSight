@@ -129,6 +129,7 @@ struct FrigateReviewItem: Identifiable, Codable, Hashable {
     let thumbPath: String?
     let hasBeenReviewed: Bool?
     let data: ReviewData?
+    let description: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -139,6 +140,7 @@ struct FrigateReviewItem: Identifiable, Codable, Hashable {
         case thumbPath = "thumb_path"
         case hasBeenReviewed = "has_been_reviewed"
         case data
+        case description
     }
 }
 

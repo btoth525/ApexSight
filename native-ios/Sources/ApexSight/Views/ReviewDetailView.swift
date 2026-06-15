@@ -13,10 +13,12 @@ struct ReviewDetailView: View {
     @State private var mediaMode: MediaMode = .video
     @State private var detectionEvents: [FrigateEvent] = []
     @State private var loadingDetections = false
+    @State private var reviewAIDescription: String?
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
         case snapshot = "Snapshot"
+        case history = "History"
     }
 
     var body: some View {
@@ -25,6 +27,7 @@ struct ReviewDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     hero
+                    if let reviewAIDescription { aiCard(reviewAIDescription) }
                     timelineCard
                     objectsCard
                     actionsCard
@@ -48,6 +51,7 @@ struct ReviewDetailView: View {
         .onDisappear { clipModel.stop() }
         .task(id: review.id) {
             guard let client = appState.client else { return }
+            reviewAIDescription = try? await client.reviewDescription(id: review.id)
             let ids = review.data?.detections ?? []
             guard !ids.isEmpty else { return }
             loadingDetections = true
@@ -91,6 +95,14 @@ struct ReviewDetailView: View {
                         ZoomableClipPlayer(player: player)
                             .frame(height: 300)
                             .frame(maxWidth: .infinity)
+                    } else if mediaMode == .history, let startTime = review.startTime {
+                        RecordingContextPlayerView(
+                            camera: review.camera,
+                            centerTime: startTime,
+                            eventStart: review.startTime,
+                            eventEnd: review.endTime
+                        )
+                        .frame(maxWidth: .infinity)
                     } else if let url = snapshotURL {
                         ZoomableScrollView {
                             RemoteImage(url: url, contentMode: .fit)
@@ -125,6 +137,25 @@ struct ReviewDetailView: View {
 
                     severityBadge
                 }
+            }
+        }
+    }
+
+    private func aiCard(_ text: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.purple)
+                    Text("AI Summary")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                }
+                Text(text)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(GlassTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

@@ -209,7 +209,19 @@ final class AppState: ObservableObject {
         )
 
         if let client, let session {
-            Task { await LocalAlertNotifier.notify(review: item, client: client, session: session) }
+            Task {
+                // Frigate creates reviews before events finish processing, so the
+                // WebSocket payload often has empty data.detections — which means
+                // reviewGifURL/reviewSnapshotURL return nil and the notification
+                // has no attachment. Fetch the full review first so we get detections.
+                let notifyReview: FrigateReviewItem
+                if item.data?.detections?.isEmpty != false {
+                    notifyReview = (try? await client.review(id: item.id)) ?? item
+                } else {
+                    notifyReview = item
+                }
+                await LocalAlertNotifier.notify(review: notifyReview, client: client, session: session)
+            }
         }
 
         cacheLatestAlertForWidget()

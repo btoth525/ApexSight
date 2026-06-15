@@ -12,10 +12,18 @@ struct EventDetailView: View {
     @State private var downloadFeedback: String?
     @State private var mediaMode: MediaMode = .video
     @State private var genAIDescription: String?
+    @State private var isEditingAIDescription = false
+    @State private var isRegeneratingAI = false
+    @State private var editedAIDescription = ""
+    @State private var showSimilarSheet = false
+    @State private var similarEvents: [FrigateEvent] = []
+    @State private var isLoadingSimilar = false
+    @State private var createTrigger: NotificationTrigger?
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
         case snapshot = "Snapshot"
+        case history = "History"
     }
 
     private var hasClip: Bool { event.hasClip != false }
@@ -25,6 +33,7 @@ struct EventDetailView: View {
         if hasClip, mediaMode == .video, let player = clipModel.player {
             return .player(player)
         }
+        if mediaMode == .history { return nil }
         if let url = appState.client?.eventSnapshotURL(id: event.id) {
             return .image(url)
         }
@@ -50,6 +59,14 @@ struct EventDetailView: View {
         .task(id: event.id) {
             genAIDescription = try? await appState.client?.eventDescription(id: event.id)
         }
+        .sheet(isPresented: $showSimilarSheet) {
+            SimilarEventsSheet(sourceEvent: event, events: similarEvents)
+                .environmentObject(appState)
+        }
+        .sheet(item: $createTrigger) { trigger in
+            TriggerEditorView(store: NotificationTriggerStore(), existing: trigger)
+                .environmentObject(appState)
+        }
     }
 
     private func aiCard(_ text: String) -> some View {
@@ -62,11 +79,55 @@ struct EventDetailView: View {
                     Text("AI Description")
                         .font(.system(size: 16, weight: .black))
                         .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                    Button {
+                        editedAIDescription = text
+                        isEditingAIDescription = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .black))
+                            .foregroundStyle(GlassTheme.purple)
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        Task { await regenerateAIDescription() }
+                    } label: {
+                        if isRegeneratingAI {
+                            ProgressView().tint(GlassTheme.purple).scaleEffect(0.75)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundStyle(GlassTheme.purple)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRegeneratingAI)
                 }
-                Text(text)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(GlassTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if isEditingAIDescription {
+                    TextEditor(text: $editedAIDescription)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(GlassTheme.secondary)
+                        .frame(minHeight: 80)
+                        .scrollContentBackground(.hidden)
+                    HStack(spacing: 10) {
+                        Button("Cancel") {
+                            isEditingAIDescription = false
+                        }
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(GlassTheme.secondary)
+                        Spacer()
+                        Button("Save") {
+                            Task { await saveAIDescription() }
+                        }
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundStyle(GlassTheme.purple)
+                    }
+                } else {
+                    Text(text)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(GlassTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -74,16 +135,14 @@ struct EventDetailView: View {
     private var heroCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
-                if hasClip {
-                    Picker("Media", selection: $mediaMode) {
-                        ForEach(MediaMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
+                Picker("Media", selection: $mediaMode) {
+                    ForEach(MediaMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
-                    .pickerStyle(.segmented)
-                    .onChange(of: mediaMode) { _, mode in
-                        if mode == .video { clipModel.play() } else { clipModel.pause() }
-                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: mediaMode) { _, mode in
+                    if mode == .video { clipModel.play() } else { clipModel.pause() }
                 }
 
                 ZStack {
@@ -91,6 +150,14 @@ struct EventDetailView: View {
                         ZoomableClipPlayer(player: player)
                             .frame(height: 300)
                             .frame(maxWidth: .infinity)
+                    } else if mediaMode == .history, let startTime = event.startTime {
+                        RecordingContextPlayerView(
+                            camera: event.camera,
+                            centerTime: startTime,
+                            eventStart: event.startTime,
+                            eventEnd: event.endTime
+                        )
+                        .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.eventSnapshotURL(id: event.id) {
                         ZoomableScrollView {
                             RemoteImage(url: url, contentMode: .fit)
@@ -224,6 +291,17 @@ struct EventDetailView: View {
                     Task { await retainEvent() }
                 }
 
+                actionButton(isLoadingSimilar ? "Loading…" : "Find Similar Events", icon: "sparkle.magnifyingglass", tint: GlassTheme.purple) {
+                    Task { await loadSimilarEvents() }
+                }
+
+                actionButton("Create Notification Trigger", icon: "bell.badge.fill", tint: GlassTheme.orange) {
+                    var trigger = NotificationTrigger(name: "\(titleize(event.displayLabel)) on \(titleize(event.camera))")
+                    trigger.cameras = [event.camera]
+                    trigger.labels = [event.label]
+                    createTrigger = trigger
+                }
+
                 if let camera = appState.cameras.first(where: { $0.name == event.camera }) {
                     NavigationLink {
                         LiveStreamView(camera: camera)
@@ -277,6 +355,32 @@ struct EventDetailView: View {
         } catch {
             actionFeedback = error.localizedDescription
         }
+    }
+
+    private func saveAIDescription() async {
+        guard let client = appState.client else { return }
+        do {
+            try await client.setEventDescription(id: event.id, description: editedAIDescription)
+            genAIDescription = editedAIDescription.isEmpty ? nil : editedAIDescription
+            isEditingAIDescription = false
+        } catch {
+            actionFeedback = error.localizedDescription
+        }
+    }
+
+    private func regenerateAIDescription() async {
+        guard let client = appState.client else { return }
+        isRegeneratingAI = true
+        defer { isRegeneratingAI = false }
+        genAIDescription = try? await client.eventDescription(id: event.id)
+    }
+
+    private func loadSimilarEvents() async {
+        guard let client = appState.client else { return }
+        isLoadingSimilar = true
+        defer { isLoadingSimilar = false }
+        similarEvents = (try? await client.findSimilar(eventId: event.id)) ?? []
+        showSimilarSheet = true
     }
 
     private var confidence: String {

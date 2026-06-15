@@ -46,6 +46,13 @@ enum NotificationCopy {
         return parts.joined(separator: " • ")
     }
 
+    static func aiBody(for review: FrigateReviewItem) -> String? {
+        guard let desc = review.description, !desc.isEmpty else { return nil }
+        let firstSentence = desc.components(separatedBy: ".").first ?? desc
+        let trimmed = firstSentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(120))
+    }
+
     static func emoji(for label: String, subLabel: String? = nil) -> String {
         if let sub = subLabel, !sub.isEmpty {
             let subEmoji = subLabelEmoji(sub)

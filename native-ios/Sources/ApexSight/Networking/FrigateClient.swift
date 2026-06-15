@@ -75,6 +75,30 @@ struct FrigateClient {
         return (text?.isEmpty == false) ? text : nil
     }
 
+    func setEventDescription(id: String, description: String) async throws {
+        try await post("api/events/\(id)/description", body: ["description": description])
+    }
+
+    func reviewDescription(id: String) async throws -> String? {
+        let item: FrigateReviewItem = try await get("api/review/\(id)")
+        let text = item.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text?.isEmpty == false) ? text : nil
+    }
+
+    func findSimilar(eventId: String, limit: Int = 20) async throws -> [FrigateEvent] {
+        var components = URLComponents(url: baseURL.appending(path: "api/events"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "similarity_event_id", value: eventId),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        return try JSONDecoder.frigate.decode([FrigateEvent].self, from: data)
+    }
+
     func stats() async throws -> FrigateStats {
         try await get("api/stats")
     }

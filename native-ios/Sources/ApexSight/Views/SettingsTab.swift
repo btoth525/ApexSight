@@ -93,6 +93,9 @@ struct SettingsTab: View {
                         settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Optional companion for alerts when closed", tint: GlassTheme.cyan) {
                             path.append("push")
                         }
+                        settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
+                            path.append("triggers")
+                        }
 
                         // About card
                         GlassCard {
@@ -135,6 +138,7 @@ struct SettingsTab: View {
                 else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }
                 else if value == "servers" { ServerSwitcherView() }
                 else if value == "push" { PushCompanionSettingsView() }
+                else if value == "triggers" { TriggersSettingsView().environmentObject(appState) }
             }
         }
     }
