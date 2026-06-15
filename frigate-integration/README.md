@@ -1,59 +1,76 @@
 # ApexSight Push Companion (optional)
 
-ApexSight works fully **without** this. It already gives you:
+ApexSight works fully **without this**. Out of the box you get:
 
-- **Real-time alerts in-app** via Frigate's stock WebSocket (`/ws`) — no setup.
-- **Background alerts** via iOS Background App Refresh — no setup (best-effort, throttled by iOS).
+- **Real-time in-app alerts** via Frigate's stock WebSocket (`/ws`) — zero config.
+- **Background alerts** via iOS Background App Refresh — zero config (best-effort, throttled by iOS).
 
-This optional companion adds **instant push when the app is fully closed**. Stock
-Frigate only speaks WebPush (for browsers), so a tiny separate service is needed to
-forward Frigate alerts to Apple Push Notification service (APNs). This service does
-**not** modify Frigate — it only subscribes to Frigate's MQTT `frigate/reviews` topic.
+This optional companion adds **instant push when the app is fully closed**. Stock Frigate has no APNs integration, so a small separate service is needed to forward Frigate alerts to Apple Push Notification service (APNs). It does **not** modify Frigate — it only subscribes to Frigate's MQTT `frigate/reviews` topic.
 
-## How it fits together
+## How it works
 
 ```
 Frigate (unmodified) ──MQTT frigate/reviews──▶ apns_notifier.py ──APNs──▶ iPhone (ApexSight)
 ```
 
-The app already renders the payload: the notification service extension downloads the
-snapshot, and tapping deep-links to the review. You only provide the device token and
-an APNs auth key.
+The app renders the payload automatically: the notification extension downloads the snapshot and tapping deep-links to the review. You only supply the device token and an APNs auth key.
 
-## One-time setup
+## Setup
 
-1. **Apple Developer → Keys**: create an APNs Auth Key, download the `.p8`. Note the
-   **Key ID** (10 chars) and your **Team ID** (`3Q9ZUDN4QZ`).
-2. **In ApexSight**: Settings → Instant Push → enable → **Copy** the device token.
-3. Run the companion (Python 3) on any always-on host that can reach your MQTT broker:
+### 1. Create an APNs Auth Key
+
+In [Apple Developer → Keys](https://developer.apple.com/account/resources/authkeys/list):
+- Create a new key with **Apple Push Notifications service (APNs)** enabled.
+- Download the `.p8` file and note the **Key ID** (10 characters) and your **Team ID**.
+
+### 2. Get your device token
+
+In ApexSight: **Settings → Instant Push → enable** → copy the device token shown.
+
+### 3. Run the companion
+
+On any always-on host that can reach your MQTT broker:
 
 ```bash
 pip3 install paho-mqtt pyjwt cryptography httpx
-export APEX_APNS_KEY_PATH=/secure/AuthKey_XXXXXXXXXX.p8
-export APEX_APNS_KEY_ID=XXXXXXXXXX
-export APEX_APNS_TEAM_ID=3Q9ZUDN4QZ
-export APEX_BUNDLE_ID=com.brandontoth.apexsight.native
-export APEX_DEVICE_TOKEN=<paste from the app>
+
+export APEX_APNS_KEY_PATH=/path/to/AuthKey_XXXXXXXXXX.p8
+export APEX_APNS_KEY_ID=XXXXXXXXXX        # 10-char Key ID from Apple Developer
+export APEX_APNS_TEAM_ID=XXXXXXXXXX       # 10-char Team ID from Apple Developer
+export APEX_BUNDLE_ID=com.your.bundle.id  # must match your app's bundle identifier
+export APEX_DEVICE_TOKEN=<paste from app>
 export APEX_FRIGATE_BASE_URL=https://frigate.example.com
-export APEX_FRIGATE_TOKEN=<a Frigate API token, used only to fetch the snapshot>
-export APEX_MQTT_HOST=192.168.1.10
+export APEX_FRIGATE_TOKEN=<Frigate API token — only used to fetch the snapshot>
+export APEX_MQTT_HOST=192.168.x.x         # your MQTT broker IP
+
 python3 apns_notifier.py
 ```
 
-> Secrets are read from the environment only. **Never commit the `.p8`, device token,
-> or Frigate token.** `apns_notifier.py` ships with zero embedded credentials.
+> **Never commit the `.p8` file, device token, or Frigate token.** All secrets are read from environment variables only. `apns_notifier.py` ships with zero embedded credentials.
 
-## Payload contract (already consumed by the app)
+## Notification payload
+
+The companion sends:
 
 ```json
 {
-  "aps": { "alert": { "title": "...", "body": "..." }, "mutable-content": 1, "sound": "default" },
+  "aps": {
+    "alert": { "title": "...", "body": "..." },
+    "mutable-content": 1,
+    "sound": "default"
+  },
   "review_id": "1700000000.123-abcd",
   "camera": "front_door",
   "apex_url": "apex://review?id=1700000000.123-abcd",
-  "snapshot_url": "https://frigate.example.com/api/review/<id>/preview",
-  "frigate_token": "<token used by the extension to fetch the snapshot>"
+  "snapshot_url": "https://frigate.example.com/api/events/<id>/snapshot.jpg",
+  "frigate_token": "<token for the extension to fetch the snapshot>"
 }
 ```
 
-`apns-topic` must be `com.brandontoth.apexsight.native` and `apns-push-type: alert`.
+The notification service extension in the app downloads the snapshot and attaches it automatically. Tapping the notification deep-links to the review.
+
+## Security notes
+
+- The `.p8` APNs key and Frigate token should be treated as secrets — store them in a secrets manager or environment file with restricted permissions.
+- The device token identifies your device to APNs; rotate it by toggling Instant Push off and on in Settings.
+- This service runs on your own infrastructure. No data passes through any third-party servers.

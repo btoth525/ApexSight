@@ -1,130 +1,117 @@
-# Apex Sight
+# ApexSight
 
-**Apex Sight** is a native iOS mobile client for [Frigate NVR](https://frigate.video) — your self-hosted AI security camera system, now in your pocket.
+**ApexSight** is a native iOS client for [Frigate NVR](https://frigate.video) — your self-hosted AI security camera system, beautifully packaged for iPhone and iPad.
+
+No cloud account. No subscription. Connects directly to your Frigate instance.
 
 ---
 
 ## Features
 
-### Live Monitoring
-- **Real-time camera grid** — live snapshots refreshing every 2 seconds
-- **Fullscreen streaming** — HLS video with pinch-to-zoom (1x–4x) and double-tap reset
-- **Swipe between cameras** — Snapchat-style swipe navigation in fullscreen
+### Live Cameras
+- **Smooth HLS streaming** via go2rtc — native AVPlayer, no WebView, full quality
+- **Pinch-to-zoom** on live video, recorded clips, and snapshots (up to 6×)
+- **Multi-camera wall** — 1, 2, 3, or 4-up live grid with saved layouts
+- **Instant snapshot placeholder** — camera image shown immediately while stream connects
 - **Picture-in-Picture** — keep watching while using other apps
-- **Camera Tour mode** — landscape slideshow that auto-cycles cameras, interrupts on alerts
-- **Long-press context menu** — Go Live, View Events, or Copy Stream URL from any camera card
 
-### Alerts & Events
-- **Review tab** — full alert history grouped by date with severity badges
-- **Inline clip preview** — tap any event thumbnail to play the clip looping in-place (no modal needed)
-- **Event detail sheet** — full video clip playback, mark reviewed, share clip or snapshot
-- **Explore tab** — visual event grid with similarity search
+### Alerts & Review
+- **Real-time alerts** via Frigate's stock WebSocket — new reviews appear in under a second
+- **In-app banner** for new alert-severity events while the app is open
+- **Review tab** — full history with severity filter, detection chips, date/time stamps
+- **Activity tab** — event list filtered by camera and object label
+- **Event detail** — auto-playing clip, snapshot, zones, confidence, face/plate recognition
 
-### Push Notifications
-- **Real-time Frigate alerts** delivered as push notifications
-- **Action buttons** directly from the notification: View Clip, Mark Reviewed, Go Live, Silence 30 min
-- **Deep linking** — tapping a notification jumps straight to the camera or event
+### Rich Notifications
+- **Background alerts** via iOS Background App Refresh (no setup required)
+- **Instant push** — optional companion service for alerts when the app is closed
+- **Rich attachments** — GIF preview or snapshot thumbnail downloaded by the notification extension
+- **Action buttons** — Open, Reviewed, Snooze directly from the lock screen
+- **Deep links** — tap a notification to jump straight to the review or camera
 
-### AI Hub
-- **Guard Mode** — arm/disarm Frigate's AI guard with one tap
-- **AI Insights** — detection stats, label distribution, camera activity dashboard
-- **VLM Triggers** — create custom Vision Language Model monitors with natural language prompts
+### Timeline & Search
+- **Recording browser** — day picker, hour-by-hour heat map, direct MP4 clip playback
+- **Semantic search** — describe what you saw; also filter by camera, label, zone, date, license plate
+- **Face & license plate recognition** — surfaced in event rows, detail views, and search (Frigate 0.15+)
 
-### Native iOS Polish
-- **Haptic feedback** throughout — light taps, heavy guard toggle, success/error pulses
-- **Face ID / Touch ID** login support
-- **Offline banner** — animated indicator when network drops, green confirmation when restored
-- **Secure credential storage** via iOS Keychain
-- **Dark mode** — pure dark UI optimized for nighttime monitoring
+### Settings & Management
+- **Multiple Frigate servers** — add, switch, and remove servers from Settings
+- **Notification preferences** — per-camera, per-object, per-zone toggles; quiet hours; snooze
+- **PTZ controls** — on-screen directional pad for supported cameras
+- **System health** — detector stats, storage, camera capabilities
+- **Lock Screen & Home Screen widgets** — latest camera snapshot with freshness indicator
+- **Live Activities** — active alert on Lock Screen and Dynamic Island
 
 ---
 
 ## Requirements
 
-- iPhone running iOS 15+
-- Self-hosted [Frigate NVR](https://frigate.video) instance (local or remote)
+- iPhone or iPad running **iOS 17+**
+- Self-hosted [Frigate NVR](https://frigate.video) instance (local or accessible remotely)
 - Frigate authentication enabled
+- go2rtc configured (included with Frigate by default) for live HLS streaming
 
 ---
 
-## Tech Stack
+## Building
 
-| Layer | Technology |
-|---|---|
-| Framework | React Native + Expo (SDK 51) |
-| Navigation | Expo Router (file-based) |
-| Styling | NativeWind (Tailwind CSS) |
-| State | Zustand + expo-secure-store |
-| Video | expo-video (HLS) |
-| Gestures | react-native-gesture-handler + reanimated |
-| Notifications | expo-notifications |
-| Auth | Cookie-based JWT + WebAuthn biometrics |
-| Real-time | WebSocket (auto-reconnect) |
-| Data fetching | SWR via useFrigateApi hook |
-
----
-
-## Getting Started (Development)
-
-### Prerequisites
-- Node.js 18+
-- Xcode 15+ (Mac required for iOS builds)
-- Expo CLI
-
-### Setup
+The app is a native SwiftUI project generated by [XcodeGen](https://github.com/yonaskolb/XcodeGen). A Mac with Xcode 15+ is required.
 
 ```bash
-git clone https://github.com/btoth525/ApexSight.git
-cd ApexSight
-npm install
-npx expo prebuild --platform ios
-open ios/ApexSight.xcworkspace
+# Install XcodeGen (one-time)
+brew install xcodegen
+
+# Clone and generate the Xcode project
+git clone https://github.com/your-username/ApexSight.git
+cd ApexSight/native-ios
+xcodegen generate
+open ApexSightNative.xcodeproj
 ```
 
-Run in iOS Simulator from Xcode, or archive for TestFlight distribution.
+In Xcode: select your device → **⌘R** to build and run.
 
-### Environment
-
-No `.env` file needed. The server URL is configured at runtime in the app's login screen and Settings tab.
+**Signing:** Open project settings → Signing & Capabilities → select your Apple Developer team. Update the bundle ID prefix in `project.yml` to match your own identifier before building.
 
 ---
 
-## Project Structure
+## Project Layout
 
 ```
-app/
-├── (auth)/login.tsx        # Login screen with biometric support
-├── (tabs)/
-│   ├── index.tsx           # Live camera grid
-│   ├── review.tsx          # Alert review timeline
-│   ├── explore.tsx         # Event search & similarity
-│   ├── ai-hub.tsx          # Guard mode + AI insights + VLM triggers
-│   └── settings.tsx        # Server config, notifications, account
-└── camera-tour.tsx         # Landscape auto-tour mode
-
-components/
-├── camera/                 # CameraCard, CameraGrid, LivePlayer
-├── events/                 # ReviewCard, EventCard, EventDetailSheet
-├── ai/                     # GuardStatusCard, InsightsTab, TriggersTab
-├── notifications/          # NotificationHandler
-└── ui/                     # Skeleton, OfflineBanner
-
-hooks/                      # useAuth, useBiometrics, useFrigateApi, useFrigateEvents
-stores/                     # authStore, settingsStore (Zustand)
-utils/                      # apiClient, haptics, labelUtil, timeUtil
+native-ios/
+├── Sources/
+│   ├── ApexSight/
+│   │   ├── App/                  # AppState, AppDelegate, ApexSightApp
+│   │   ├── Background/           # BGAppRefreshTask, LastSeenStore
+│   │   ├── LiveActivities/       # IncidentActivityController
+│   │   ├── Models/               # FrigateModels, CameraGroup
+│   │   ├── Networking/           # FrigateClient, FrigateEventStream
+│   │   ├── Notifications/        # NativeNotificationManager, LocalAlertNotifier
+│   │   ├── Stores/               # KeychainStore, CameraGroupStore
+│   │   └── Views/                # All SwiftUI screens
+│   ├── ApexSightWidgets/         # WidgetKit + ActivityKit extension
+│   └── ApexSightNotificationService/  # UNNotificationServiceExtension
+├── project.yml                   # XcodeGen project definition
+└── Sources/ApexSight/Resources/  # Info.plist, entitlements, assets
+frigate-integration/
+└── apns_notifier.py              # Optional instant-push companion (Python)
 ```
 
 ---
 
-## Distribution
+## Optional: Instant Push Companion
 
-Built and distributed via **TestFlight** / **App Store Connect**.
+For alerts when the app is fully closed, see [`frigate-integration/README.md`](frigate-integration/README.md). This is a small Python service that subscribes to Frigate's MQTT and forwards alerts to APNs — no Frigate modifications required.
 
-- Bundle ID: `com.apexsight.app`
-- Platform: iOS only
+---
+
+## Privacy
+
+- All data stays on your network. Nothing is sent to third-party servers.
+- Frigate credentials are stored only in the iOS Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`).
+- No analytics, no telemetry, no accounts.
 
 ---
 
 ## License
 
-Private — all rights reserved.
+All rights reserved.
