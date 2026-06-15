@@ -4,6 +4,13 @@ struct SettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var path = NavigationPath()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+
+    private var appVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(v) (\(b))"
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -74,6 +81,36 @@ struct SettingsTab: View {
                         }
                         settingsRow(icon: "bell.badge.fill", title: "Notifications", subtitle: "Per-camera preferences, quiet hours", tint: GlassTheme.orange) {
                             path.append("notifications")
+                        }
+
+                        // About card
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("About")
+                                    .font(.system(size: 18, weight: .black))
+                                    .foregroundStyle(GlassTheme.primary)
+                                HStack {
+                                    Image(systemName: "shield.lefthalf.filled")
+                                        .foregroundStyle(GlassTheme.cyan)
+                                    Text("ApexSight")
+                                        .font(.system(size: 14, weight: .heavy))
+                                        .foregroundStyle(GlassTheme.primary)
+                                    Spacer()
+                                    Text(appVersion)
+                                        .font(.system(size: 13, weight: .heavy))
+                                        .foregroundStyle(GlassTheme.secondary)
+                                }
+                                Text("Native Frigate NVR client. Local-first — no accounts, no telemetry.")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(GlassTheme.secondary)
+                                Button {
+                                    hasCompletedOnboarding = false
+                                } label: {
+                                    Label("Replay Intro", systemImage: "sparkles")
+                                        .font(.system(size: 13, weight: .heavy))
+                                }
+                                .buttonStyle(PillButtonStyle(tint: GlassTheme.purple))
+                            }
                         }
                     }
                     .padding(16)

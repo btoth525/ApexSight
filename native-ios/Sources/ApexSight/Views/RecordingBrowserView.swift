@@ -12,8 +12,40 @@ struct RecordingBrowserView: View {
     @State private var errorMessage: String?
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
+    @State private var selectedHour: Int?
 
     private let calendar = Calendar.current
+
+    private struct HourBucket: Identifiable {
+        let hour: Int
+        let segmentCount: Int
+        let motion: Double
+        var id: Int { hour }
+    }
+
+    private var hourBuckets: [HourBucket] {
+        var counts = [Int: (segments: Int, motion: Double)]()
+        for recording in recordings {
+            guard let start = recording.startTime else { continue }
+            let hour = calendar.component(.hour, from: Date(timeIntervalSince1970: start))
+            var bucket = counts[hour] ?? (0, 0)
+            bucket.segments += 1
+            bucket.motion = max(bucket.motion, recording.motion ?? 0)
+            counts[hour] = bucket
+        }
+        return (0..<24).map { hour in
+            let bucket = counts[hour] ?? (0, 0)
+            return HourBucket(hour: hour, segmentCount: bucket.segments, motion: bucket.motion)
+        }
+    }
+
+    private var displayedRecordings: [FrigateRecording] {
+        guard let selectedHour else { return recordings }
+        return recordings.filter { recording in
+            guard let start = recording.startTime else { return false }
+            return calendar.component(.hour, from: Date(timeIntervalSince1970: start)) == selectedHour
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -27,6 +59,7 @@ struct RecordingBrowserView: View {
                     } else if recordings.isEmpty {
                         noRecordingsCard
                     } else {
+                        timelineCard
                         if let recording = selectedRecording, let player {
                             playerCard(recording: recording, player: player)
                         }
@@ -150,14 +183,99 @@ struct RecordingBrowserView: View {
         }
     }
 
+    private var timelineCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Timeline")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                    if let selectedHour {
+                        Button {
+                            withAnimation { self.selectedHour = nil }
+                        } label: {
+                            Text("\(hourLabel(selectedHour)) ✕")
+                                .font(.system(size: 12, weight: .black))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(GlassTheme.cyan, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text("Tap an hour")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                }
+
+                let maxCount = max(1, hourBuckets.map(\.segmentCount).max() ?? 1)
+                HStack(alignment: .bottom, spacing: 3) {
+                    ForEach(hourBuckets) { bucket in
+                        timelineBar(bucket, maxCount: maxCount)
+                    }
+                }
+                .frame(height: 64)
+
+                HStack {
+                    Text("12a")
+                    Spacer()
+                    Text("6a")
+                    Spacer()
+                    Text("12p")
+                    Spacer()
+                    Text("6p")
+                    Spacer()
+                    Text("11p")
+                }
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(GlassTheme.tertiary)
+            }
+        }
+    }
+
+    private func timelineBar(_ bucket: HourBucket, maxCount: Int) -> some View {
+        let isActive = bucket.segmentCount > 0
+        let isSelected = selectedHour == bucket.hour
+        let fraction = isActive ? max(0.18, Double(bucket.segmentCount) / Double(maxCount)) : 0.05
+        let tint = bucket.motion > 0.3 ? GlassTheme.orange : GlassTheme.cyan
+        return Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: 64)
+            .overlay(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(isActive ? (isSelected ? Color.white : tint) : Color.white.opacity(0.08))
+                    .frame(height: 64 * fraction)
+                    .overlay {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .stroke(GlassTheme.cyan, lineWidth: 1.5)
+                        }
+                    }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isActive else { return }
+                withAnimation { selectedHour = isSelected ? nil : bucket.hour }
+            }
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        if hour == 0 { return "12 AM" }
+        if hour < 12 { return "\(hour) AM" }
+        if hour == 12 { return "12 PM" }
+        return "\(hour - 12) PM"
+    }
+
     private var recordingList: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
-                Text("\(recordings.count) segments")
+                Text("\(displayedRecordings.count) segments\(selectedHour != nil ? " · \(hourLabel(selectedHour!))" : "")")
                     .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                 VStack(spacing: 8) {
-                    ForEach(recordings) { recording in
+                    ForEach(displayedRecordings) { recording in
                         recordingRow(recording)
                     }
                 }
@@ -217,6 +335,8 @@ struct RecordingBrowserView: View {
         player?.pause()
         player = nil
         selectedRecording = nil
+        selectedHour = nil
+        downloadFeedback = nil
 
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
