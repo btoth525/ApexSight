@@ -5,13 +5,24 @@ struct MultiCameraGridView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
+    let group: CameraGroup?
+
     /// Number of columns: 1, 2 (default), or 3
-    @State private var columns = 2
+    @State private var columns: Int
     @State private var players: [String: AVPlayer] = [:]
     @State private var selectedCamera: FrigateCamera?
 
+    init(group: CameraGroup? = nil) {
+        self.group = group
+        _columns = State(initialValue: group?.columns ?? 2)
+    }
+
     private var displayedCameras: [FrigateCamera] {
-        appState.cameras
+        guard let group else { return appState.cameras }
+        let order = group.cameraNames
+        return appState.cameras
+            .filter { order.contains($0.name) }
+            .sorted { (order.firstIndex(of: $0.name) ?? 0) < (order.firstIndex(of: $1.name) ?? 0) }
     }
 
     var body: some View {
@@ -24,7 +35,7 @@ struct MultiCameraGridView: View {
                     grid
                 }
             }
-            .navigationTitle("Multi-View")
+            .navigationTitle(group?.name ?? "Multi-View")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

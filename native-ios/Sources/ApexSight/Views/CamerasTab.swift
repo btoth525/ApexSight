@@ -2,16 +2,31 @@ import SwiftUI
 
 struct CamerasTab: View {
     @EnvironmentObject private var appState: AppState
-    @State private var showGrid = false
+    @StateObject private var groupStore = CameraGroupStore()
+    @State private var liveWall: LiveWallTarget?
+    @State private var path = NavigationPath()
+
+    private enum LiveWallTarget: Identifiable {
+        case all
+        case group(CameraGroup)
+        var id: String {
+            switch self {
+            case .all: return "all"
+            case .group(let g): return g.id.uuidString
+            }
+        }
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         // Status strip
                         statusStrip
+
+                        groupsStrip
 
                         if let error = appState.errorMessage {
                             GlassCard {
@@ -71,7 +86,7 @@ struct CamerasTab: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 10) {
                         Button {
-                            showGrid = true
+                            liveWall = .all
                         } label: {
                             Image(systemName: "rectangle.grid.2x2.fill")
                                 .font(.system(size: 16, weight: .black))
@@ -88,11 +103,62 @@ struct CamerasTab: View {
                     }
                 }
             }
-            .fullScreenCover(isPresented: $showGrid) {
-                MultiCameraGridView()
-                    .environmentObject(appState)
+            .fullScreenCover(item: $liveWall) { target in
+                switch target {
+                case .all:
+                    MultiCameraGridView()
+                        .environmentObject(appState)
+                case .group(let group):
+                    MultiCameraGridView(group: group)
+                        .environmentObject(appState)
+                }
+            }
+            .navigationDestination(for: String.self) { value in
+                if value == "groups" {
+                    CameraGroupsView(store: groupStore)
+                        .environmentObject(appState)
+                }
             }
         }
+    }
+
+    private var groupsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(groupStore.groups) { group in
+                    Button { liveWall = .group(group) } label: {
+                        groupChip(icon: "square.grid.2x2.fill", title: group.name, subtitle: "\(group.cameraNames.count) cams", tint: GlassTheme.cyan)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { path.append("groups") } label: {
+                    groupChip(icon: "plus", title: "Groups", subtitle: "Manage", tint: GlassTheme.blue)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func groupChip(icon: String, title: String, subtitle: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .black))
+                .foregroundStyle(tint)
+                .frame(width: 32, height: 32)
+                .background(tint.opacity(0.16), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(GlassTheme.primary)
+                    .lineLimit(1)
+                Text(subtitle.uppercased())
+                    .font(.system(size: 10, weight: .black))
+                    .foregroundStyle(GlassTheme.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var statusStrip: some View {
