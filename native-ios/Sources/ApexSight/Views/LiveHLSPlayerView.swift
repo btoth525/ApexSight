@@ -199,8 +199,39 @@ struct HLSLivePlayerView: View {
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
+    @State private var zoomScale: CGFloat = 1
+    @State private var baseZoom: CGFloat = 1
+    @State private var panOffset: CGSize = .zero
+    @State private var basePan: CGSize = .zero
 
     private var isPlaying: Bool { model.state == .playing }
+
+    private var magnifyGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                zoomScale = max(1, min(baseZoom * value, 6))
+            }
+            .onEnded { value in
+                baseZoom = max(1, min(baseZoom * value, 6))
+                zoomScale = baseZoom
+                if zoomScale < 1.05 {
+                    withAnimation(.spring()) { zoomScale = 1; baseZoom = 1; panOffset = .zero; basePan = .zero }
+                }
+            }
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                panOffset = CGSize(
+                    width: basePan.width + value.translation.width,
+                    height: basePan.height + value.translation.height
+                )
+            }
+            .onEnded { _ in
+                basePan = panOffset
+            }
+    }
 
     var body: some View {
         ZStack {
@@ -217,14 +248,27 @@ struct HLSLivePlayerView: View {
             }
 
             // AVPlayer layer — invisible until actually playing, then fades in cleanly.
-            // Pinch / pan / double-tap zoom live in PlayerLayerUIView. Hit-testing is
-            // enabled only when controls are shown (fullscreen), so grid/card taps still
-            // pass through to the NavigationLink underneath.
+            // Pinch / pan / double-tap zoom handled via SwiftUI gestures when showControls.
             if let player = model.player {
                 ZoomablePlayerView(player: player)
                     .opacity(isPlaying ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: isPlaying)
+                    .scaleEffect(showControls ? zoomScale : 1, anchor: .center)
+                    .offset(showControls ? panOffset : .zero)
+                    .gesture(showControls ? magnifyGesture : nil)
+                    .gesture(showControls && zoomScale > 1.05 ? dragGesture : nil)
+                    .onTapGesture(count: 2) {
+                        guard showControls else { return }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            if zoomScale > 1.05 {
+                                zoomScale = 1; baseZoom = 1; panOffset = .zero; basePan = .zero
+                            } else {
+                                zoomScale = 2.5; baseZoom = 2.5
+                            }
+                        }
+                    }
                     .allowsHitTesting(showControls)
+                    .clipped()
             }
 
             // Subtle connecting pill at the bottom — non-intrusive, out of the way.
@@ -331,79 +375,14 @@ struct ZoomablePlayerView: UIViewRepresentable {
     }
 }
 
-final class PlayerLayerUIView: UIView, UIGestureRecognizerDelegate {
+final class PlayerLayerUIView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
-
-    private var scale: CGFloat = 1
-    private var offset: CGPoint = .zero
-    private let maxScale: CGFloat = 6
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
-        clipsToBounds = true
-
-        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
-        doubleTap.numberOfTapsRequired = 2
-        pinch.delegate = self
-        pan.delegate = self
-        addGestureRecognizer(pinch)
-        addGestureRecognizer(pan)
-        addGestureRecognizer(doubleTap)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
-
-    @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
-        if g.state == .changed {
-            scale = (scale * g.scale).clamped(to: 1...maxScale)
-            g.scale = 1
-            applyTransform()
-        } else if g.state == .ended && scale <= 1.01 {
-            resetZoom()
-        }
-    }
-
-    @objc private func handlePan(_ g: UIPanGestureRecognizer) {
-        guard scale > 1 else { return }
-        let t = g.translation(in: self)
-        offset.x += t.x; offset.y += t.y
-        g.setTranslation(.zero, in: self)
-        clampOffset()
-        applyTransform()
-    }
-
-    @objc private func handleDoubleTap(_ g: UITapGestureRecognizer) {
-        if scale > 1.01 { resetZoom() } else { scale = 2.5; applyTransform() }
-    }
-
-    private func applyTransform() {
-        clampOffset()
-        var t = CGAffineTransform(scaleX: scale, y: scale)
-        t = t.translatedBy(x: offset.x / scale, y: offset.y / scale)
-        UIView.animate(withDuration: 0.1) { self.transform = t }
-    }
-
-    private func resetZoom() {
-        scale = 1; offset = .zero
-        UIView.animate(withDuration: 0.2) { self.transform = .identity }
-    }
-
-    private func clampOffset() {
-        let maxX = (bounds.width * (scale - 1)) / 2
-        let maxY = (bounds.height * (scale - 1)) / 2
-        offset.x = offset.x.clamped(to: -maxX...maxX)
-        offset.y = offset.y.clamped(to: -maxY...maxY)
-    }
-}
-
-private extension CGFloat {
-    func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
-        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
-    }
+    required init?(coder: NSCoder) { fatalError() }
 }

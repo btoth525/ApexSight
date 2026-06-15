@@ -42,7 +42,7 @@ struct ReviewDetailView: View {
             // `/api/review/{id}/clip.mp4` path does not exist on stock Frigate.
             guard let start = review.startTime else { return }
             let end = review.endTime ?? (start + 20)
-            let url = client.recordingClipURL(camera: review.camera, start: start, end: end)
+            let url = client.recordingHLSURL(camera: review.camera, start: start, end: end)
             let item = client.playerItem(for: url)
             let player = AVPlayer(playerItem: item)
             reviewPlayer = player

@@ -29,47 +29,64 @@ struct ReviewTab: View {
         loadingDetections = false
     }
 
+    private var showEmptyState: Bool {
+        guard !appState.isLoading && !loadingDetections else { return false }
+        switch selectedSeverity {
+        case "detection": return detectionItems.isEmpty
+        case "alert": return appState.reviews.filter { $0.severity == "alert" }.isEmpty && !appState.reviews.isEmpty
+        default: return appState.reviews.isEmpty
+        }
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
-                Group {
-                    if filtered.isEmpty && !appState.isLoading && !loadingDetections {
-                        emptyState
-                    } else {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 14) {
-                                // Filter chips
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        chip("All", selected: selectedSeverity == "all") { selectedSeverity = "all" }
-                                        chip("🚨 Alerts", selected: selectedSeverity == "alert") { selectedSeverity = "alert" }
-                                        chip("🔍 Detections", selected: selectedSeverity == "detection") { selectedSeverity = "detection" }
-                                    }
-                                    .padding(.horizontal, 16)
-                                }
-                                .padding(.top, 8)
-
-                                Text("\(filtered.count) items")
-                                    .font(.system(size: 12, weight: .heavy))
-                                    .foregroundStyle(GlassTheme.secondary)
-                                    .padding(.horizontal, 16)
-
-                                LazyVStack(spacing: 10) {
-                                    ForEach(filtered) { review in
-                                        Button { path.append(review) } label: {
-                                            ReviewRow(review: review)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 20)
-                            }
+                VStack(spacing: 0) {
+                    // Filter chips — always visible regardless of content
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            chip("All", selected: selectedSeverity == "all") { selectedSeverity = "all" }
+                            chip("🚨 Alerts", selected: selectedSeverity == "alert") { selectedSeverity = "alert" }
+                            chip("🔍 Detections", selected: selectedSeverity == "detection") { selectedSeverity = "detection" }
                         }
-                        .refreshable {
-                            await appState.refresh()
-                            if selectedSeverity == "detection" { await loadDetections() }
+                        .padding(.horizontal, 16)
+                    }
+                    .padding(.vertical, 8)
+                    .background(GlassTheme.background)
+
+                    Group {
+                        if showEmptyState {
+                            emptyState
+                        } else if appState.isLoading || loadingDetections {
+                            Spacer()
+                            ProgressView().tint(GlassTheme.cyan)
+                            Spacer()
+                        } else {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    Text("\(filtered.count) items")
+                                        .font(.system(size: 12, weight: .heavy))
+                                        .foregroundStyle(GlassTheme.secondary)
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 4)
+
+                                    LazyVStack(spacing: 10) {
+                                        ForEach(filtered) { review in
+                                            Button { path.append(review) } label: {
+                                                ReviewRow(review: review)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 20)
+                                }
+                            }
+                            .refreshable {
+                                await appState.refresh()
+                                if selectedSeverity == "detection" { await loadDetections() }
+                            }
                         }
                     }
                 }
@@ -108,16 +125,17 @@ struct ReviewTab: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            Image(systemName: "checkmark.shield.fill")
+            Image(systemName: selectedSeverity == "detection" ? "magnifyingglass" : "checkmark.shield.fill")
                 .font(.system(size: 52, weight: .black))
-                .foregroundStyle(GlassTheme.green)
-            Text("All Clear")
+                .foregroundStyle(selectedSeverity == "detection" ? GlassTheme.cyan : GlassTheme.green)
+            Text(selectedSeverity == "detection" ? "No Detections" : "All Clear")
                 .font(.system(size: 22, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
-            Text("No review items")
+            Text(selectedSeverity == "detection" ? "No detection events for this filter." : "No review items")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(GlassTheme.secondary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {

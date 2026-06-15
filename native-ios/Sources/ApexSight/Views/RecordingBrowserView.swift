@@ -18,6 +18,8 @@ struct RecordingBrowserView: View {
     @State private var scrubFraction: Double = 0      // 0…1 across the selected day
     @State private var isScrubbing = false
     @State private var playingTime: Double?           // epoch currently playing
+    @State private var rangeStartHour: Int = 0
+    @State private var rangeEndHour: Int = 23
 
     private let calendar = Calendar.current
     private let windowSeconds: Double = 300           // 5-minute clip per scrub
@@ -125,14 +127,45 @@ struct RecordingBrowserView: View {
                 }
 
                 scrubberTrack
-                    .frame(height: 92)
+                    .frame(height: 110)
 
+                // Hour labels for current range
                 HStack {
-                    Text("12a"); Spacer(); Text("6a"); Spacer()
-                    Text("12p"); Spacer(); Text("6p"); Spacer(); Text("11p")
+                    Text(hourLabel(rangeStartHour))
+                    Spacer()
+                    Text(hourLabel((rangeStartHour + rangeEndHour) / 2))
+                    Spacer()
+                    Text(hourLabel(rangeEndHour))
                 }
                 .font(.system(size: 9, weight: .heavy))
                 .foregroundStyle(GlassTheme.tertiary)
+
+                // Time range pickers
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("FROM").font(.system(size: 9, weight: .black)).foregroundStyle(GlassTheme.secondary)
+                        Picker("", selection: $rangeStartHour) {
+                            ForEach(0..<24, id: \.self) { h in
+                                Text(hourLabel(h)).tag(h)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(GlassTheme.cyan)
+                        .labelsHidden()
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("TO").font(.system(size: 9, weight: .black)).foregroundStyle(GlassTheme.secondary)
+                        Picker("", selection: $rangeEndHour) {
+                            ForEach(0..<24, id: \.self) { h in
+                                Text(hourLabel(h)).tag(h)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(GlassTheme.cyan)
+                        .labelsHidden()
+                    }
+                }
 
                 legend
             }
@@ -153,9 +186,12 @@ struct RecordingBrowserView: View {
                     let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
 
                     // coverage strip along the bottom
+                    let rangeStartSec = dayStart + Double(rangeStartHour) * 3600
+                    let rangeEndSec = dayStart + Double(rangeEndHour + 1) * 3600
+                    let rangeDuration = max(1, rangeEndSec - rangeStartSec)
                     for rec in recordings {
                         guard let s = rec.startTime else { continue }
-                        let f = (s - dayStart) / 86400
+                        let f = (s - rangeStartSec) / rangeDuration
                         guard f >= 0, f <= 1 else { continue }
                         let x = f * size.width
                         let cov = CGRect(x: x, y: size.height - 7, width: max(1, size.width / 24 / 12), height: 6)
@@ -165,7 +201,7 @@ struct RecordingBrowserView: View {
                     // event ticks, colored by object
                     for e in dayEvents {
                         guard let s = e.startTime else { continue }
-                        let f = (s - dayStart) / 86400
+                        let f = (s - rangeStartSec) / rangeDuration
                         guard f >= 0, f <= 1 else { continue }
                         let x = f * size.width
                         let rect = CGRect(x: x - 1.25, y: 10, width: 2.5, height: size.height - 24)
@@ -224,8 +260,15 @@ struct RecordingBrowserView: View {
 
     private var scrubTimeLabel: String {
         let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
-        let t = dayStart + scrubFraction * 86400
+        let rangeStart = dayStart + Double(rangeStartHour) * 3600
+        let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600
+        let t = rangeStart + scrubFraction * (rangeEnd - rangeStart)
         return Date(timeIntervalSince1970: t).formatted(date: .omitted, time: .shortened)
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        let h = hour % 12 == 0 ? 12 : hour % 12
+        return "\(h)\(hour < 12 ? "a" : "p")"
     }
 
     private func color(for label: String) -> Color {
@@ -381,14 +424,20 @@ struct RecordingBrowserView: View {
 
         // Park the playhead on the most recent detection for a useful default.
         if let latest = dayEvents.compactMap(\.startTime).max() {
-            scrubFraction = (latest - startOfDay.timeIntervalSince1970) / 86400
+            let rangeStart = startOfDay.timeIntervalSince1970 + Double(rangeStartHour) * 3600
+            let rangeEnd = startOfDay.timeIntervalSince1970 + Double(rangeEndHour + 1) * 3600
+            let rangeSeconds = max(1, rangeEnd - rangeStart)
+            scrubFraction = max(0, min((latest - rangeStart) / rangeSeconds, 1))
         }
         isLoading = false
     }
 
     private func playFromScrub() {
         let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
-        let time = dayStart + scrubFraction * 86400
+        let rangeStart = dayStart + Double(rangeStartHour) * 3600
+        let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600
+        let rangeSeconds = rangeEnd - rangeStart
+        let time = rangeStart + scrubFraction * rangeSeconds
         let cappedNow = Date().timeIntervalSince1970 - windowSeconds
         playFrom(time: min(time, cappedNow))
     }
@@ -396,12 +445,15 @@ struct RecordingBrowserView: View {
     private func playFrom(time: Double) {
         guard let client = appState.client else { return }
         let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
-        scrubFraction = max(0, min((time - dayStart) / 86400, 1))
+        let rangeStart = dayStart + Double(rangeStartHour) * 3600
+        let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600
+        let rangeSeconds = max(1, rangeEnd - rangeStart)
+        scrubFraction = max(0, min((time - rangeStart) / rangeSeconds, 1))
 
         player?.pause()
         downloadFeedback = nil
         playingTime = time
-        let url = client.recordingClipURL(camera: camera.name, start: time, end: time + windowSeconds)
+        let url = client.recordingHLSURL(camera: camera.name, start: time, end: time + windowSeconds)
         let item = client.playerItem(for: url)
         let newPlayer = AVPlayer(playerItem: item)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])

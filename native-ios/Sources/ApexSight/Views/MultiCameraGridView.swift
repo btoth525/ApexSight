@@ -63,14 +63,28 @@ struct MultiCameraGridView: View {
 
     private var grid: some View {
         ScrollView {
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: columns),
-                spacing: 2
-            ) {
-                ForEach(displayedCameras) { camera in
-                    cameraCell(camera)
+            VStack(spacing: 2) {
+                ForEach(cameraRows, id: \.self) { rowIndices in
+                    HStack(spacing: 2) {
+                        ForEach(rowIndices, id: \.self) { idx in
+                            cameraCell(displayedCameras[idx])
+                        }
+                        // Fill partial last row
+                        if rowIndices.count < columns {
+                            ForEach(0..<(columns - rowIndices.count), id: \.self) { _ in
+                                Color.black.aspectRatio(16.0/9.0, contentMode: .fit)
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private var cameraRows: [[Int]] {
+        let count = displayedCameras.count
+        return stride(from: 0, to: count, by: columns).map { start in
+            Array(start..<min(start + columns, count))
         }
     }
 

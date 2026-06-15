@@ -136,7 +136,7 @@ struct EventDetailView: View {
                 let clipURL: URL
                 if let start = event.startTime {
                     let end = event.endTime ?? (start + 20)
-                    clipURL = client.recordingClipURL(camera: event.camera, start: start, end: end)
+                    clipURL = client.recordingHLSURL(camera: event.camera, start: start, end: end)
                 } else {
                     clipURL = client.eventClipURL(id: event.id)
                 }

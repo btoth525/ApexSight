@@ -114,7 +114,7 @@ struct FrigateClient {
             query.append("after=\(Int(after.timeIntervalSince1970))")
         }
         if let end {
-            query.append("end=\(Int(end.timeIntervalSince1970))")
+            query.append("before=\(Int(end.timeIntervalSince1970))")
         }
         let suffix = query.isEmpty ? "" : "?\(query.joined(separator: "&"))"
         return try await get("api/\(camera)/recordings\(suffix)")
