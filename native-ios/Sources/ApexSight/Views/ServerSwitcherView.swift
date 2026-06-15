@@ -40,6 +40,7 @@ struct ServerSwitcherView: View {
         }
         .navigationTitle("Servers")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .onAppear { allSessions = appState.keychain.loadAllSessions() }
         .sheet(isPresented: $showAddServer) {
             AddServerView { session in
@@ -140,6 +141,7 @@ private struct AddServerView: View {
             }
             .navigationTitle("Add Server")
             .navigationBarTitleDisplayMode(.inline)
+            .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

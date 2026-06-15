@@ -122,4 +122,13 @@ extension View {
     func glassBackground() -> some View {
         self.background(GlassBackground())
     }
+
+    /// Apple-style frosted navigation bar: always-visible ultra-thin material with
+    /// a dark scheme so titles and buttons stay legible over the dark glass UI.
+    func glassNavBar() -> some View {
+        self
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+    }
 }

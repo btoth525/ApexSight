@@ -65,6 +65,7 @@ struct SearchView: View {
             }
             .navigationTitle("Explore")
             .navigationBarTitleDisplayMode(.inline)
+            .glassNavBar()
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
             }

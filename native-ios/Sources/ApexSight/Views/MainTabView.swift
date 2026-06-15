@@ -92,6 +92,7 @@ struct MainTabView: View {
                 }
             }
             .navigationTitle("ApexSight")
+            .glassNavBar()
             .preferredColorScheme(.dark)
         } detail: {
             view(for: selectedTab ?? .cameras)

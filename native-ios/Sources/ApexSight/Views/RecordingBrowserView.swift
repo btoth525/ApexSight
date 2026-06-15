@@ -71,6 +71,7 @@ struct RecordingBrowserView: View {
         }
         .navigationTitle("Recordings")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .task { await loadRecordings(for: selectedDate) }
         .onChange(of: selectedDate) { _, date in
             Task { await loadRecordings(for: date) }

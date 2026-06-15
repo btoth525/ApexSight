@@ -25,6 +25,7 @@ struct ReviewDetailView: View {
         }
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .task {
             guard reviewPlayer == nil,
                   let client = appState.client,

@@ -38,6 +38,7 @@ struct NotificationSettingsView: View {
         }
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .task { status = await NativeNotificationManager.status() }
     }
 

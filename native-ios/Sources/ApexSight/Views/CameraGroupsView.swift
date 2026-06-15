@@ -31,6 +31,7 @@ struct CameraGroupsView: View {
         }
         .navigationTitle("Camera Groups")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .sheet(isPresented: $showEditor) {
             CameraGroupEditor(store: store)
                 .environmentObject(appState)
@@ -141,6 +142,7 @@ struct CameraGroupEditor: View {
             }
             .navigationTitle("New Group")
             .navigationBarTitleDisplayMode(.inline)
+            .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }

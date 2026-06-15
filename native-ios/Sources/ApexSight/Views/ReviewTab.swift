@@ -53,6 +53,7 @@ struct ReviewTab: View {
             }
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.large)
+            .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }

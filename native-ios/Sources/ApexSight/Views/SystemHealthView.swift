@@ -119,6 +119,7 @@ struct SystemHealthView: View {
         }
         .navigationTitle("System")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
     }
 
     private func metric(_ label: String, value: String) -> some View {

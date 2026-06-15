@@ -79,6 +79,7 @@ struct ActivityTab: View {
             }
             .navigationTitle("Activity")
             .navigationBarTitleDisplayMode(.large)
+            .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }

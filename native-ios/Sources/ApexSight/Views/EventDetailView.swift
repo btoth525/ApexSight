@@ -27,6 +27,7 @@ struct EventDetailView: View {
         }
         .navigationTitle("Event")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .confirmationDialog("Delete this event?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { await deleteEvent() } }
             Button("Cancel", role: .cancel) {}

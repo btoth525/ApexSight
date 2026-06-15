@@ -82,6 +82,7 @@ struct CamerasTab: View {
             }
             .navigationTitle("Apex Command")
             .navigationBarTitleDisplayMode(.large)
+            .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 10) {

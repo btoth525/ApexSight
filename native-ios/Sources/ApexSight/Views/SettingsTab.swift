@@ -121,6 +121,7 @@ struct SettingsTab: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
+            .glassNavBar()
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }
                 else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }

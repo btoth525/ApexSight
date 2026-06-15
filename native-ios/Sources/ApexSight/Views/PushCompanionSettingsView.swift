@@ -25,6 +25,7 @@ struct PushCompanionSettingsView: View {
         }
         .navigationTitle("Instant Push")
         .navigationBarTitleDisplayMode(.inline)
+        .glassNavBar()
         .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
             // Token arrives asynchronously after registration.
             token = DeviceTokenStore.deviceTokenHex
