@@ -154,6 +154,17 @@ struct FrigateClient {
         baseURL.appending(path: "api/events/\(id)/thumbnail.jpg")
     }
 
+    /// Animated GIF preview of an event — used for rich notification attachments.
+    func eventPreviewGifURL(id: String) -> URL {
+        baseURL.appending(path: "api/events/\(id)/preview.gif")
+    }
+
+    /// Animated GIF for a review (its first detection). Rich-notification attachment.
+    func reviewGifURL(review: FrigateReviewItem) -> URL? {
+        guard let detectionID = review.data?.detections?.first else { return nil }
+        return eventPreviewGifURL(id: detectionID)
+    }
+
     func eventClipURL(id: String) -> URL {
         baseURL.appending(path: "api/events/\(id)/clip.mp4")
     }

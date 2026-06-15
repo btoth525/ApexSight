@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 import UserNotifications
 
 final class NotificationService: UNNotificationServiceExtension {
@@ -19,31 +20,21 @@ final class NotificationService: UNNotificationServiceExtension {
 
         bestAttemptContent = mutableContent
 
-        guard let attachmentURL = attachmentURL(from: request.content.userInfo) else {
+        let token = request.content.userInfo["frigate_token"] as? String
+        let candidates = attachmentURLs(from: request.content.userInfo)
+        guard !candidates.isEmpty else {
             contentHandler(mutableContent)
             return
         }
 
-        var urlRequest = URLRequest(url: attachmentURL)
-        if let token = request.content.userInfo["frigate_token"] as? String, !token.isEmpty {
-            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            urlRequest.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
-        }
-
-        downloadTask = URLSession.shared.downloadTask(with: urlRequest) { [weak self] temporaryURL, _, _ in
-            guard
-                let self,
-                let temporaryURL,
-                let attachment = self.copyAttachment(from: temporaryURL, originalURL: attachmentURL)
-            else {
-                contentHandler(mutableContent)
-                return
+        // Try the animated GIF first, then static fallbacks, until one downloads.
+        download(candidates, token: token) { [weak self] attachment in
+            guard let self else { return }
+            if let attachment {
+                mutableContent.attachments = [attachment]
             }
-
-            mutableContent.attachments = [attachment]
-            contentHandler(mutableContent)
+            self.contentHandler?(mutableContent)
         }
-        downloadTask?.resume()
     }
 
     override func serviceExtensionTimeWillExpire() {
@@ -53,24 +44,58 @@ final class NotificationService: UNNotificationServiceExtension {
         }
     }
 
-    private func attachmentURL(from userInfo: [AnyHashable: Any]) -> URL? {
-        let candidates = ["snapshot_url", "image_url", "thumbnail_url"]
-        for key in candidates {
+    /// Ordered list of media URLs to try: animated GIF (snapshot_url) first, then stills.
+    private func attachmentURLs(from userInfo: [AnyHashable: Any]) -> [URL] {
+        let keys = ["snapshot_url", "thumbnail_url", "image_url"]
+        var urls: [URL] = []
+        for key in keys {
             if let value = userInfo[key] as? String, let url = URL(string: value) {
-                return url
+                urls.append(url)
             }
         }
-        return nil
+        return urls
+    }
+
+    private func download(_ urls: [URL], token: String?, completion: @escaping (UNNotificationAttachment?) -> Void) {
+        guard let url = urls.first else {
+            completion(nil)
+            return
+        }
+        let remaining = Array(urls.dropFirst())
+
+        var urlRequest = URLRequest(url: url)
+        if let token, !token.isEmpty {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            urlRequest.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
+        }
+
+        downloadTask = URLSession.shared.downloadTask(with: urlRequest) { [weak self] temporaryURL, response, _ in
+            guard let self else { return }
+            if let temporaryURL,
+               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+               let attachment = self.copyAttachment(from: temporaryURL, originalURL: url) {
+                completion(attachment)
+            } else {
+                // Fall back to the next candidate (e.g. GIF not ready → static thumbnail).
+                self.download(remaining, token: token, completion: completion)
+            }
+        }
+        downloadTask?.resume()
     }
 
     private func copyAttachment(from temporaryURL: URL, originalURL: URL) -> UNNotificationAttachment? {
-        let fileExtension = originalURL.pathExtension.isEmpty ? "jpg" : originalURL.pathExtension
+        let fileExtension = originalURL.pathExtension.isEmpty ? "jpg" : originalURL.pathExtension.lowercased()
         let localURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("apex-alert-\(UUID().uuidString).\(fileExtension)")
 
         do {
             try FileManager.default.copyItem(at: temporaryURL, to: localURL)
-            return try UNNotificationAttachment(identifier: "frigate-snapshot", url: localURL)
+            // A type hint makes the system animate GIFs reliably in the expanded view.
+            var options: [String: Any]? = nil
+            if fileExtension == "gif" {
+                options = [UNNotificationAttachmentOptionsTypeHintKey: UTType.gif.identifier]
+            }
+            return try UNNotificationAttachment(identifier: "frigate-media", url: localURL, options: options)
         } catch {
             return nil
         }
