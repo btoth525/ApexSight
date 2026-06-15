@@ -42,9 +42,10 @@ enum RelayClient {
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {
-        let trimmed = relayURL.trimmingCharacters(in: .whitespaces)
-        guard let base = URL(string: trimmed), base.scheme != nil else { throw RelayError.invalidURL }
-        let url = base.appendingPathComponent(path)
+        var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard let base = URL(string: trimmed), base.scheme != nil, base.host != nil,
+              let url = URL(string: trimmed + path) else { throw RelayError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
