@@ -5,16 +5,16 @@ struct LiveStreamView: View {
     let camera: FrigateCamera
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    @State private var streamMode: StreamMode = .hd
+    @State private var streamMode: StreamMode = .live
     @State private var isLive = false
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
     @State private var reloadToken = UUID()
 
     enum StreamMode: String, CaseIterable {
-        case live = "Live"      // go2rtc HLS (fMP4) via AVPlayer — smooth, full quality
-        case hd = "HD"          // go2rtc WebRTC in a web view — lowest latency on LAN
-        case lite = "Lite"      // MJPEG detect stream — last-resort fallback, always works
+        case live = "Live"          // go2rtc HLS (fMP4) via AVPlayer — native, auto-starts, PiP
+        case hd = "WebRTC"          // go2rtc WebRTC in a web view — LAN ultra-low latency
+        case lite = "MJPEG"         // MJPEG detect stream — last-resort fallback, always works
         case snapshot = "Snapshot"
     }
 
