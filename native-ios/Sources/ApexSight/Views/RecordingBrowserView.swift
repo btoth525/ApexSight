@@ -10,12 +10,14 @@ struct RecordingBrowserView: View {
     @State private var player: AVPlayer?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var isDownloading = false
+    @State private var downloadFeedback: String?
 
     private let calendar = Calendar.current
 
     var body: some View {
         ZStack {
-            GlassTheme.background.ignoresSafeArea()
+            GlassBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     sectionTitle
@@ -101,7 +103,50 @@ struct RecordingBrowserView: View {
                 VideoPlayer(player: player)
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Button {
+                    Task { await downloadRecording(recording) }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isDownloading {
+                            ProgressView().tint(.black)
+                        } else {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 14, weight: .black))
+                        }
+                        Text(isDownloading ? "Saving…" : "Save to Photos")
+                            .font(.system(size: 13, weight: .black))
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(GlassTheme.cyan, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isDownloading)
+
+                if let downloadFeedback {
+                    Text(downloadFeedback)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.green)
+                }
             }
+        }
+    }
+
+    private func downloadRecording(_ recording: FrigateRecording) async {
+        guard let client = appState.client,
+              let start = recording.startTime,
+              let end = recording.endTime else { return }
+        isDownloading = true
+        downloadFeedback = nil
+        defer { isDownloading = false }
+        do {
+            let url = client.recordingClipURL(camera: camera.name, start: start, end: end)
+            try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(camera.name)-\(Int(start))")
+            downloadFeedback = "Saved to Photos."
+        } catch {
+            downloadFeedback = error.localizedDescription
         }
     }
 
@@ -192,6 +237,7 @@ struct RecordingBrowserView: View {
               let end = recording.endTime else { return }
 
         player?.pause()
+        downloadFeedback = nil
         selectedRecording = recording
         let url = client.recordingHLSURL(camera: camera.name, start: start, end: end)
         let item = client.playerItem(for: url)

@@ -8,6 +8,9 @@ struct EventDetailView: View {
     @State private var isActing = false
     @State private var showDeleteConfirm = false
     @State private var showFalsePositiveConfirm = false
+    @State private var clipPlayer: AVPlayer?
+    @State private var isDownloading = false
+    @State private var downloadFeedback: String?
 
     var body: some View {
         ZStack {
@@ -93,16 +96,66 @@ struct EventDetailView: View {
     private var clipCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Clip")
-                    .font(.system(size: 21, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-                if let clipURL = appState.client?.eventHLSURL(id: event.id),
-                   let item = appState.client?.playerItem(for: clipURL) {
-                    VideoPlayer(player: AVPlayer(playerItem: item))
+                HStack {
+                    Text("Clip")
+                        .font(.system(size: 21, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                    Button {
+                        Task { await downloadClip() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isDownloading {
+                                ProgressView().tint(.black)
+                            } else {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 14, weight: .black))
+                            }
+                            Text(isDownloading ? "Saving…" : "Save to Photos")
+                                .font(.system(size: 13, weight: .black))
+                        }
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(GlassTheme.cyan, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDownloading)
+                }
+
+                if let downloadFeedback {
+                    Text(downloadFeedback)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.green)
+                }
+
+                if let clipPlayer {
+                    VideoPlayer(player: clipPlayer)
                         .frame(height: 240)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
             }
+            .task {
+                guard clipPlayer == nil,
+                      let clipURL = appState.client?.eventHLSURL(id: event.id),
+                      let item = appState.client?.playerItem(for: clipURL) else { return }
+                clipPlayer = AVPlayer(playerItem: item)
+            }
+            .onDisappear { clipPlayer?.pause() }
+        }
+    }
+
+    private func downloadClip() async {
+        guard let client = appState.client else { return }
+        isDownloading = true
+        downloadFeedback = nil
+        defer { isDownloading = false }
+        do {
+            let url = client.eventClipURL(id: event.id)
+            try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(event.id)")
+            downloadFeedback = "Saved to Photos."
+        } catch {
+            downloadFeedback = error.localizedDescription
         }
     }
 

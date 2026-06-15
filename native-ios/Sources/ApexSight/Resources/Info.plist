@@ -4,6 +4,8 @@
 <dict>
   <key>CFBundleDisplayName</key>
   <string>ApexSight</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>ApexSight saves camera clips you download to your photo library.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoads</key>

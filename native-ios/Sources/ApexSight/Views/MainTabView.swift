@@ -32,6 +32,7 @@ struct MainTabView: View {
             case .event: selectedTab = 2
             case .camera: selectedTab = 0
             }
+            appState.deepLink = nil
         }
     }
 }
