@@ -272,6 +272,29 @@ struct WebRTCView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+
+        // Auto-click go2rtc's play button as soon as the page is ready.
+        // The WKWebView trust context counts as user interaction so autoplay is permitted.
+        let autoplay = WKUserScript(
+            source: """
+            (function() {
+                function tryPlay() {
+                    var btn = document.querySelector('button');
+                    if (btn) { btn.click(); return; }
+                    setTimeout(tryPlay, 200);
+                }
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', tryPlay);
+                } else {
+                    tryPlay();
+                }
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(autoplay)
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
