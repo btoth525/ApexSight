@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 
 struct EventDetailView: View {
     @EnvironmentObject private var appState: AppState
@@ -53,14 +54,20 @@ struct EventDetailView: View {
                 ZStack {
                     if hasClip, mediaMode == .video, let clipPlayer {
                         PiPPlayerView(player: clipPlayer)
+                            .frame(height: 230)
+                            .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.eventSnapshotURL(id: event.id) {
-                        RemoteImage(url: url, contentMode: .fit)
+                        ZoomableScrollView {
+                            RemoteImage(url: url, contentMode: .fit)
+                        }
+                        .frame(height: 230)
+                        .frame(maxWidth: .infinity)
                     } else {
                         Color.black
+                            .frame(height: 230)
+                            .frame(maxWidth: .infinity)
                     }
                 }
-                .frame(height: 230)
-                .frame(maxWidth: .infinity)
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
@@ -102,8 +109,18 @@ struct EventDetailView: View {
                       let clipURL = appState.client?.eventClipURL(id: event.id),
                       let item = appState.client?.playerItem(for: clipURL) else { return }
                 let player = AVPlayer(playerItem: item)
-                player.play()   // auto-play the event clip
                 clipPlayer = player
+                NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime,
+                    object: item,
+                    queue: .main
+                ) { _ in
+                    player.seek(to: .zero)
+                    player.play()
+                }
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+                try? AVAudioSession.sharedInstance().setActive(true)
+                player.play()   // auto-play the event clip
             }
             .onDisappear { clipPlayer?.pause() }
         }

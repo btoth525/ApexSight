@@ -41,6 +41,12 @@ struct ReviewRow: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                     .lineLimit(2)
+                if let epoch = review.startTime {
+                    Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()

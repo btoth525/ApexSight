@@ -1,3 +1,4 @@
+import AVFoundation
 import AVKit
 import SwiftUI
 
@@ -10,6 +11,8 @@ struct ReviewDetailView: View {
     @State private var isWorking = false
     @State private var reviewPlayer: AVPlayer?
     @State private var mediaMode: MediaMode = .video
+    @State private var detectionEvents: [FrigateEvent] = []
+    @State private var loadingDetections = false
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -35,11 +38,34 @@ struct ReviewDetailView: View {
         .task {
             guard reviewPlayer == nil, let client = appState.client else { return }
             let url = client.reviewClipURL(id: review.id)
-            let player = AVPlayer(playerItem: client.playerItem(for: url))
-            player.play()   // auto-play the review clip (direct MP4)
+            let item = client.playerItem(for: url)
+            let player = AVPlayer(playerItem: item)
             reviewPlayer = player
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { _ in
+                player.seek(to: .zero)
+                player.play()
+            }
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            try? AVAudioSession.sharedInstance().setActive(true)
+            player.play()   // auto-play the review clip (direct MP4)
         }
         .onDisappear { reviewPlayer?.pause() }
+        .task(id: review.id) {
+            guard let client = appState.client else { return }
+            loadingDetections = true
+            var loaded: [FrigateEvent] = []
+            for id in review.data?.detections ?? [] {
+                if let event = try? await client.event(id: id) {
+                    loaded.append(event)
+                }
+            }
+            detectionEvents = loaded
+            loadingDetections = false
+        }
         .confirmationDialog(
             "Mark this review as handled?",
             isPresented: $showReviewedConfirmation,
@@ -70,14 +96,20 @@ struct ReviewDetailView: View {
                 ZStack {
                     if mediaMode == .video, let reviewPlayer {
                         PiPPlayerView(player: reviewPlayer)
+                            .frame(height: 230)
+                            .frame(maxWidth: .infinity)
                     } else if let url = snapshotURL {
-                        RemoteImage(url: url, contentMode: .fit)
+                        ZoomableScrollView {
+                            RemoteImage(url: url, contentMode: .fit)
+                        }
+                        .frame(height: 230)
+                        .frame(maxWidth: .infinity)
                     } else {
                         Color.black
+                            .frame(height: 230)
+                            .frame(maxWidth: .infinity)
                     }
                 }
-                .frame(height: 230)
-                .frame(maxWidth: .infinity)
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
@@ -134,6 +166,48 @@ struct ReviewDetailView: View {
                 tagSection(title: "Objects", values: review.data?.objects ?? [])
                 tagSection(title: "Zones", values: review.data?.zones ?? [])
                 tagSection(title: "Audio", values: review.data?.audio ?? [])
+
+                if !detectionEvents.isEmpty || loadingDetections {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("DETECTIONS")
+                            .font(.system(size: 11, weight: .black))
+                            .foregroundStyle(GlassTheme.secondary)
+                        if loadingDetections {
+                            ProgressView().tint(GlassTheme.cyan)
+                        } else {
+                            VStack(spacing: 6) {
+                                ForEach(detectionEvents) { event in
+                                    NavigationLink(value: event) {
+                                        HStack(spacing: 10) {
+                                            if let url = appState.client?.eventThumbnailURL(id: event.id) {
+                                                RemoteImage(url: url)
+                                                    .frame(width: 48, height: 48)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                            }
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
+                                                    .font(.system(size: 14, weight: .black))
+                                                    .foregroundStyle(GlassTheme.primary)
+                                                if let epoch = event.startTime {
+                                                    Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
+                                                        .font(.system(size: 11, weight: .bold))
+                                                        .foregroundStyle(GlassTheme.secondary)
+                                                }
+                                            }
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 12, weight: .bold))
+                                                .foregroundStyle(GlassTheme.tertiary)
+                                        }
+                                        .padding(8)
+                                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

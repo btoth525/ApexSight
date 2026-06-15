@@ -41,6 +41,7 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     private var task: URLSessionDataTask?
     private var buffer = Data()
     private var hasDeliveredFrame = false
+    private var isDisplayPending = false
 
     // JPEG start-of-image / end-of-image markers.
     private static let soi = Data([0xFF, 0xD8])
@@ -81,27 +82,31 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         buffer.append(data)
 
-        // Pull every complete JPEG (SOI…EOI) out of the rolling buffer.
+        // Extract all complete frames, keep only the last (drop intermediate frames).
+        var latestFrameData: Data?
         while let soiRange = buffer.range(of: Self.soi),
               let eoiRange = buffer.range(of: Self.eoi, in: soiRange.upperBound..<buffer.endIndex) {
-            let frameData = buffer.subdata(in: soiRange.lowerBound..<eoiRange.upperBound)
+            latestFrameData = buffer.subdata(in: soiRange.lowerBound..<eoiRange.upperBound)
             buffer.removeSubrange(buffer.startIndex..<eoiRange.upperBound)
-
-            if let image = UIImage(data: frameData) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    self.imageView.image = image
-                    if !self.hasDeliveredFrame {
-                        self.hasDeliveredFrame = true
-                        self.onFirstFrame?()
-                    }
-                }
-            }
         }
 
-        // Guard against unbounded growth if a partial frame never completes.
-        if buffer.count > 4_000_000 {
-            buffer.removeAll(keepingCapacity: true)
+        // Guard against unbounded growth if frames never complete.
+        if buffer.count > 2_000_000 { buffer.removeAll(keepingCapacity: true) }
+
+        guard let frameData = latestFrameData else { return }
+        // Drop frame if previous is still being rendered.
+        guard !isDisplayPending else { return }
+        isDisplayPending = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { self.isDisplayPending = false }
+            guard let image = UIImage(data: frameData) else { return }
+            self.imageView.image = image
+            if !self.hasDeliveredFrame {
+                self.hasDeliveredFrame = true
+                self.onFirstFrame?()
+            }
         }
     }
 }

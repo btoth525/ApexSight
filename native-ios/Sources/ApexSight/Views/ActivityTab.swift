@@ -82,7 +82,7 @@ struct ActivityTab: View {
                 .task { if appState.events.isEmpty { await appState.refresh() } }
             }
             .navigationTitle("Activity")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {

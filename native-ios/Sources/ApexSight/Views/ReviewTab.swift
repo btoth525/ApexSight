@@ -56,7 +56,7 @@ struct ReviewTab: View {
                 }
             }
             .navigationTitle("Review")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -74,6 +74,9 @@ struct ReviewTab: View {
             }
             .navigationDestination(for: FrigateReviewItem.self) { review in
                 ReviewDetailView(review: review)
+            }
+            .navigationDestination(for: FrigateEvent.self) { event in
+                EventDetailView(event: event)
             }
             .task { if appState.reviews.isEmpty { await appState.refresh() } }
         }

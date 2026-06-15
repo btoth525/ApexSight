@@ -1,5 +1,6 @@
-import SwiftUI
+import AVFoundation
 import AVKit
+import SwiftUI
 
 struct RecordingBrowserView: View {
     let camera: FrigateCamera
@@ -91,15 +92,50 @@ struct RecordingBrowserView: View {
 
     private var datePicker: some View {
         GlassCard {
-            DatePicker(
-                "Recording date",
-                selection: $selectedDate,
-                in: ...Date(),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.graphical)
-            .tint(GlassTheme.cyan)
+            VStack(spacing: 14) {
+                HStack {
+                    Button { shiftDate(by: -1) } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundStyle(GlassTheme.cyan)
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.10), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                    VStack(spacing: 2) {
+                        Text(selectedDate, style: .date)
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(GlassTheme.primary)
+                        if Calendar.current.isDateInToday(selectedDate) {
+                            Text("Today")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(GlassTheme.cyan)
+                        }
+                    }
+                    Spacer()
+                    Button { shiftDate(by: 1) } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? GlassTheme.tertiary : GlassTheme.cyan)
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.10), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(Calendar.current.isDateInToday(selectedDate))
+                }
+                DatePicker("Pick date", selection: $selectedDate, in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .tint(GlassTheme.cyan)
+            }
         }
+    }
+
+    private func shiftDate(by days: Int) {
+        guard let newDate = Calendar.current.date(byAdding: .day, value: days, to: selectedDate),
+              newDate <= Date() else { return }
+        selectedDate = newDate
     }
 
     private var noRecordingsCard: some View {
@@ -360,9 +396,11 @@ struct RecordingBrowserView: View {
         player?.pause()
         downloadFeedback = nil
         selectedRecording = recording
-        let url = client.recordingHLSURL(camera: camera.name, start: start, end: end)
+        let url = client.recordingClipURL(camera: camera.name, start: start, end: end)
         let item = client.playerItem(for: url)
         let newPlayer = AVPlayer(playerItem: item)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+        try? AVAudioSession.sharedInstance().setActive(true)
         newPlayer.play()
         player = newPlayer
     }

@@ -53,22 +53,24 @@ struct LiveStreamView: View {
     }
 
     private var liveMJPEG: some View {
-        ZStack {
-            // Snapshot underneath for instant feedback while the stream connects.
-            if let client = appState.client {
-                RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
-                    .opacity(isLive ? 0 : 1)
-                MJPEGStreamView(
-                    url: client.mjpegURL(camera: camera.name),
-                    client: client,
-                    contentMode: .scaleAspectFit,
-                    onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { isLive = true } }
-                )
-                .id(reloadToken)
-                .opacity(isLive ? 1 : 0)
-            }
-            if !isLive {
-                ProgressView().tint(.white).scaleEffect(1.4)
+        ZoomableScrollView {
+            ZStack {
+                // Snapshot underneath for instant feedback while the stream connects.
+                if let client = appState.client {
+                    RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
+                        .opacity(isLive ? 0 : 1)
+                    MJPEGStreamView(
+                        url: client.mjpegURL(camera: camera.name),
+                        client: client,
+                        contentMode: .scaleAspectFit,
+                        onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { isLive = true } }
+                    )
+                    .id(reloadToken)
+                    .opacity(isLive ? 1 : 0)
+                }
+                if !isLive {
+                    ProgressView().tint(.white).scaleEffect(1.4)
+                }
             }
         }
     }
@@ -85,7 +87,7 @@ struct LiveStreamView: View {
     }
 
     private var snapshotView: some View {
-        Group {
+        ZoomableScrollView {
             if let client = appState.client {
                 RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
                     .id(reloadToken)

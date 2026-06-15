@@ -31,6 +31,11 @@ struct EventRow: View {
                         chip(titleize(sub), tint: GlassTheme.cyan)
                     }
                 }
+                if let epoch = event.startTime {
+                    Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                }
             }
             Spacer()
             Image(systemName: "chevron.right")
