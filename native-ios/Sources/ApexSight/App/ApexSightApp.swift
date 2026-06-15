@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 @main
 struct ApexSightApp: App {
@@ -8,6 +9,13 @@ struct ApexSightApp: App {
 
     init() {
         NativeNotificationManager.registerCategories()
+        configureAudioSession()
+    }
+
+    private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
     }
 
     private var preferredColorScheme: ColorScheme? {

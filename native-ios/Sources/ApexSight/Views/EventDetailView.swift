@@ -130,7 +130,7 @@ struct EventDetailView: View {
                 }
 
                 if let clipPlayer {
-                    VideoPlayer(player: clipPlayer)
+                    PiPPlayerView(player: clipPlayer)
                         .frame(height: 240)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }

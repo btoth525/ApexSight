@@ -133,7 +133,7 @@ struct RecordingBrowserView: View {
                             .foregroundStyle(GlassTheme.cyan)
                     }
                 }
-                VideoPlayer(player: player)
+                PiPPlayerView(player: player)
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 

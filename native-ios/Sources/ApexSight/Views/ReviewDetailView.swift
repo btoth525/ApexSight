@@ -8,6 +8,7 @@ struct ReviewDetailView: View {
 
     @State private var showReviewedConfirmation = false
     @State private var isWorking = false
+    @State private var reviewPlayer: AVPlayer?
 
     var body: some View {
         ZStack {
@@ -24,6 +25,13 @@ struct ReviewDetailView: View {
         }
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard reviewPlayer == nil,
+                  let client = appState.client,
+                  let url = client.reviewHLSURL(review: review) else { return }
+            reviewPlayer = AVPlayer(playerItem: client.playerItem(for: url))
+        }
+        .onDisappear { reviewPlayer?.pause() }
         .confirmationDialog(
             "Mark this review as handled?",
             isPresented: $showReviewedConfirmation,
@@ -41,8 +49,8 @@ struct ReviewDetailView: View {
     private var hero: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
-                if let client = appState.client, let url = client.reviewHLSURL(review: review) {
-                    VideoPlayer(player: AVPlayer(playerItem: client.playerItem(for: url)))
+                if let reviewPlayer {
+                    PiPPlayerView(player: reviewPlayer)
                         .frame(height: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 } else if let url = appState.client?.latestFrameURL(camera: review.camera) {

@@ -6,6 +6,10 @@
   <string>ApexSight</string>
   <key>NSPhotoLibraryAddUsageDescription</key>
   <string>ApexSight saves camera clips you download to your photo library.</string>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>audio</string>
+  </array>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoads</key>

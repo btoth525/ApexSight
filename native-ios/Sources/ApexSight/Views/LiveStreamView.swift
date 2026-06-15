@@ -96,7 +96,7 @@ struct LiveStreamView: View {
     private var hlsPlayerView: some View {
         Group {
             if let player {
-                VideoPlayer(player: player)
+                PiPPlayerView(player: player, showsControls: false)
                     .ignoresSafeArea()
             } else if isLoading {
                 ProgressView()
@@ -245,21 +245,23 @@ struct LiveStreamView: View {
         newPlayer.play()
         player = newPlayer
 
-        // Show video once ready, error if failed
-        statusObserver = item.observe(\.status, options: [.new]) { [weak self] playerItem, _ in
+        // Show video once ready, error if failed.
+        // Note: LiveStreamView is a struct, so self cannot be captured weakly.
+        // @State storage is reference-backed, so direct mutation from this escaping closure is valid.
+        statusObserver = item.observe(\.status, options: [.new]) { playerItem, _ in
             DispatchQueue.main.async {
                 switch playerItem.status {
                 case .readyToPlay:
-                    self?.isLoading = false
-                    self?.errorMessage = nil
+                    isLoading = false
+                    errorMessage = nil
                     // Seek to live edge
                     if let range = playerItem.seekableTimeRanges.last?.timeRangeValue {
                         newPlayer.seek(to: CMTimeRangeGetEnd(range))
                     }
                 case .failed:
-                    self?.isLoading = false
-                    self?.errorMessage = playerItem.error?.localizedDescription ?? "Stream failed to load."
-                    self?.player = nil
+                    isLoading = false
+                    errorMessage = playerItem.error?.localizedDescription ?? "Stream failed to load."
+                    player = nil
                 default:
                     break
                 }

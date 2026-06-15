@@ -83,6 +83,19 @@ struct SystemHealthView: View {
                     }
                 }
 
+                if let storage = appState.stats?.service?.storage, !storage.isEmpty {
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Storage")
+                                .font(.system(size: 21, weight: .black))
+                                .foregroundStyle(GlassTheme.primary)
+                            ForEach(storage.sorted(by: { $0.key < $1.key }), id: \.key) { mount, value in
+                                storageRow(mount: mount, value: value)
+                            }
+                        }
+                    }
+                }
+
                 if !appState.recentLogs.isEmpty {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
@@ -148,5 +161,57 @@ struct SystemHealthView: View {
     private func format(_ value: Double?, suffix: String) -> String {
         guard let value else { return "n/a" }
         return "\(String(format: value >= 10 ? "%.0f" : "%.1f", value))\(suffix)"
+    }
+
+    // MARK: - Storage
+
+    @ViewBuilder
+    private func storageRow(mount: String, value: JSONValue) -> some View {
+        let total = numberValue(value, key: "total")
+        let used = numberValue(value, key: "used")
+        let fraction = (total ?? 0) > 0 ? min(1, (used ?? 0) / (total ?? 1)) : 0
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "internaldrive.fill")
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(GlassTheme.cyan)
+                Text(mountLabel(mount))
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(GlassTheme.primary)
+                    .lineLimit(1)
+                Spacer()
+                if let used, let total {
+                    Text("\(gb(used)) / \(gb(total))")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.secondary)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.10))
+                    Capsule()
+                        .fill(fraction > 0.9 ? GlassTheme.red : GlassTheme.cyan)
+                        .frame(width: geo.size.width * fraction)
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(12)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func numberValue(_ value: JSONValue, key: String) -> Double? {
+        guard case let .object(obj) = value, case let .number(n) = obj[key] else { return nil }
+        return n
+    }
+
+    private func gb(_ megabytes: Double) -> String {
+        let value = megabytes / 1024
+        return value >= 100 ? String(format: "%.0f GB", value) : String(format: "%.1f GB", value)
+    }
+
+    private func mountLabel(_ mount: String) -> String {
+        (mount as NSString).lastPathComponent.isEmpty ? mount : (mount as NSString).lastPathComponent
     }
 }
