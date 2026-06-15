@@ -158,10 +158,6 @@ struct FrigateClient {
         baseURL.appending(path: "api/events/\(id)/clip.mp4")
     }
 
-    func eventHLSURL(id: String) -> URL {
-        baseURL.appending(path: "vod/event/\(id)/master.m3u8")
-    }
-
     /// A review's best static image: the cropped thumbnail of its first detection.
     /// Stock Frigate has no `/review/{id}/preview` JPEG — `thumb_path` is a server
     /// filesystem path that isn't served over HTTP, so we resolve via the detection.
@@ -180,11 +176,6 @@ struct FrigateClient {
     /// Direct MP4 clip for a review — AVPlayer plays this progressive file reliably.
     func reviewClipURL(id: String) -> URL {
         baseURL.appending(path: "api/review/\(id)/clip.mp4")
-    }
-
-    func reviewHLSURL(review: FrigateReviewItem) -> URL? {
-        guard let start = review.startTime, let end = review.endTime else { return nil }
-        return baseURL.appending(path: "vod/\(review.camera)/start/\(max(0, Int(start) - 2))/end/\(Int(end) + 2)/master.m3u8")
     }
 
     func recordingClipURL(camera: String, start: Double, end: Double) -> URL {
