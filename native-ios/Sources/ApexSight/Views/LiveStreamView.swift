@@ -14,6 +14,7 @@ struct LiveStreamView: View {
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
     @State private var stallObserver: NSKeyValueObservation?
+    @State private var statusObserver: NSKeyValueObservation?
 
     enum StreamMode: String, CaseIterable {
         case webrtc = "WebRTC"
@@ -52,24 +53,25 @@ struct LiveStreamView: View {
         .navigationBarHidden(true)
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
-            if capability?.hasGo2RtcStream == true {
-                streamMode = .webrtc
-            } else {
-                streamMode = .hls
-                startHLS()
-            }
+            // Default to HLS — more reliable. WebRTC only if user explicitly selects it.
+            streamMode = .hls
+            startHLS()
         }
         .onChange(of: streamMode) { _, mode in
+            statusObserver = nil
             if mode == .hls {
                 startHLS()
             } else {
+                stallObserver = nil
                 player?.pause()
                 player = nil
+                isLoading = false
             }
         }
         .onDisappear {
             player?.pause()
             stallObserver = nil
+            statusObserver = nil
         }
     }
 
@@ -225,6 +227,7 @@ struct LiveStreamView: View {
     private func startHLS() {
         player?.pause()
         stallObserver = nil
+        statusObserver = nil
         player = nil
         isLoading = true
         errorMessage = nil
@@ -236,23 +239,38 @@ struct LiveStreamView: View {
         }
 
         let item = client.playerItem(for: url)
-        item.preferredForwardBufferDuration = 2
+        item.preferredForwardBufferDuration = 4
         let newPlayer = AVPlayer(playerItem: item)
-        newPlayer.automaticallyWaitsToMinimizeStalling = false
+        newPlayer.automaticallyWaitsToMinimizeStalling = true
         newPlayer.play()
         player = newPlayer
-        isLoading = false
 
-        // Stall recovery: observe timeControlStatus
-        stallObserver = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak newPlayer] p, _ in
-            guard let p = newPlayer else { return }
-            if p.timeControlStatus == .waitingToPlayAtSpecifiedRate {
-                // Seek to live edge and force restart
-                if let range = p.currentItem?.seekableTimeRanges.last?.timeRangeValue {
-                    p.seek(to: CMTimeRangeGetEnd(range), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
-                        p.play()
+        // Show video once ready, error if failed
+        statusObserver = item.observe(\.status, options: [.new]) { [weak self] playerItem, _ in
+            DispatchQueue.main.async {
+                switch playerItem.status {
+                case .readyToPlay:
+                    self?.isLoading = false
+                    self?.errorMessage = nil
+                    // Seek to live edge
+                    if let range = playerItem.seekableTimeRanges.last?.timeRangeValue {
+                        newPlayer.seek(to: CMTimeRangeGetEnd(range))
                     }
+                case .failed:
+                    self?.isLoading = false
+                    self?.errorMessage = playerItem.error?.localizedDescription ?? "Stream failed to load."
+                    self?.player = nil
+                default:
+                    break
                 }
+            }
+        }
+
+        // Stall recovery
+        stallObserver = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak newPlayer] p, _ in
+            guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+            if let range = p.currentItem?.seekableTimeRanges.last?.timeRangeValue {
+                p.seek(to: CMTimeRangeGetEnd(range), toleranceBefore: .zero, toleranceAfter: .zero) { _ in p.play() }
             }
         }
     }

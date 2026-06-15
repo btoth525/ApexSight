@@ -249,6 +249,18 @@ struct FrigateClient {
     }
 
     func playerItem(for url: URL) -> AVPlayerItem {
+        if let token, !token.isEmpty, let host = url.host {
+            let cookieProps: [HTTPCookiePropertyKey: Any] = [
+                .name: "frigate_token",
+                .value: token,
+                .domain: host,
+                .path: "/",
+                .secure: url.scheme == "https"
+            ]
+            if let cookie = HTTPCookie(properties: cookieProps) {
+                HTTPCookieStorage.shared.setCookie(cookie)
+            }
+        }
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": authHeaders])
         return AVPlayerItem(asset: asset)
     }

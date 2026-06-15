@@ -56,7 +56,7 @@ final class AppState: ObservableObject {
         errorMessage = nil
         do {
             async let nextCameras = client.cameras()
-            async let nextEvents = client.events(limit: 30)
+            async let nextEvents = client.events(limit: 50)
             async let nextReviews = client.reviews(limit: 30)
             async let nextLabels = client.labels()
             async let nextSubLabels = client.subLabels()
@@ -67,11 +67,11 @@ final class AppState: ObservableObject {
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
             events = try await nextEvents
-            reviews = (try? await nextReviews) ?? []
-            labels = (try? await nextLabels) ?? []
-            subLabels = (try? await nextSubLabels) ?? []
-            stats = try await nextStats
-            recentLogs = (try? await nextLogs) ?? []
+            reviews = (try? await nextReviews) ?? reviews
+            labels = (try? await nextLabels) ?? labels
+            subLabels = (try? await nextSubLabels) ?? subLabels
+            if let s = try? await nextStats { stats = s }
+            recentLogs = (try? await nextLogs) ?? recentLogs
 
             let streams = (try? await nextStreams) ?? [:]
             await cacheWidgetSnapshot(from: loadedCameras)

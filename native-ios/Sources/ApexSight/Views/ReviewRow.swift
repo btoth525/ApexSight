@@ -1,24 +1,46 @@
 import SwiftUI
 
 struct ReviewRow: View {
+    @EnvironmentObject private var appState: AppState
     let review: FrigateReviewItem
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: review.severity == "alert" ? "bell.badge.fill" : "scope")
-                .font(.system(size: 18, weight: .black))
-                .foregroundStyle(review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan)
-                .frame(width: 42, height: 42)
-                .background((review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan).opacity(0.16), in: Circle())
+            // Thumbnail
+            ZStack(alignment: .bottomLeading) {
+                if let base = appState.session?.baseURL,
+                   let path = review.thumbPath,
+                   let url = URL(string: "\(base)\(path)") {
+                    RemoteImage(url: url)
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: review.severity == "alert" ? "bell.badge.fill" : "scope")
+                                .font(.system(size: 22, weight: .black))
+                                .foregroundStyle(review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan)
+                        )
+                }
+                // severity badge
+                Text(review.severity == "alert" ? "ALERT" : "DETECT")
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan, in: Capsule())
+                    .padding(4)
+            }
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(NotificationCopy.title(for: review))
-                    .font(.system(size: 16, weight: .black))
+                    .font(.system(size: 15, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                     .lineLimit(1)
-
                 Text(NotificationCopy.body(for: review))
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                     .lineLimit(2)
             }
@@ -34,7 +56,7 @@ struct ReviewRow: View {
                     .background(GlassTheme.cyan, in: Capsule())
             }
         }
-        .padding(12)
+        .padding(10)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }

@@ -65,6 +65,27 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case hasClip = "has_clip"
         case hasSnapshot = "has_snapshot"
     }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        camera = try c.decode(String.self, forKey: .camera)
+        label = try c.decode(String.self, forKey: .label)
+        // sub_label can be String OR [String] in different Frigate versions
+        if let arr = try? c.decodeIfPresent([String].self, forKey: .subLabel) {
+            subLabel = arr.first
+        } else {
+            subLabel = try? c.decodeIfPresent(String.self, forKey: .subLabel)
+        }
+        subLabelScore = try? c.decodeIfPresent(Double.self, forKey: .subLabelScore)
+        startTime = try? c.decodeIfPresent(Double.self, forKey: .startTime)
+        endTime = try? c.decodeIfPresent(Double.self, forKey: .endTime)
+        score = try? c.decodeIfPresent(Double.self, forKey: .score)
+        topScore = try? c.decodeIfPresent(Double.self, forKey: .topScore)
+        zones = try? c.decodeIfPresent([String].self, forKey: .zones)
+        hasClip = try? c.decodeIfPresent(Bool.self, forKey: .hasClip)
+        hasSnapshot = try? c.decodeIfPresent(Bool.self, forKey: .hasSnapshot)
+    }
 }
 
 struct FrigateReviewItem: Identifiable, Codable, Hashable {
@@ -151,7 +172,7 @@ struct DetectorStats: Codable, Hashable {
 struct ServiceStats: Codable, Hashable {
     let uptime: Int?
     let latestVersion: String?
-    let storage: [String: String]?
+    let storage: [String: JSONValue]?
 
     enum CodingKeys: String, CodingKey {
         case uptime
