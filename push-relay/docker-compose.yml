@@ -1,0 +1,31 @@
+# ApexSight push relay + Cloudflare Tunnel (no port-forwarding needed).
+#
+# 1. cp .env.example .env  and fill it in
+# 2. Create a Cloudflare Tunnel, point a public hostname (e.g.
+#    push.yourdomain.com) at  http://relay:8080 , copy the tunnel token
+#    into CLOUDFLARE_TUNNEL_TOKEN in .env
+# 3. docker compose up -d
+# 4. Open https://push.yourdomain.com/admin  → upload your .p8
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - relay-data:/data
+    # Only exposed to the internal compose network; Cloudflare reaches it by name.
+    expose:
+      - "8080"
+    # Uncomment to also reach it on your LAN at http://<host>:8080
+    # ports:
+    #   - "8080:8080"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - relay
+
+volumes:
+  relay-data:

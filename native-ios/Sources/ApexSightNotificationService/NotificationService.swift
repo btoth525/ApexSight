@@ -20,7 +20,11 @@ final class NotificationService: UNNotificationServiceExtension {
 
         bestAttemptContent = mutableContent
 
-        let token = request.content.userInfo["frigate_token"] as? String
+        // Prefer a token sent in the payload; otherwise fall back to the one the
+        // app mirrors into the shared app group (remote pushes from the HA bridge
+        // carry no user token, so this is how authenticated Frigate snapshots load).
+        let payloadToken = request.content.userInfo["frigate_token"] as? String
+        let token = (payloadToken?.isEmpty == false) ? payloadToken : Self.appGroupToken()
         let candidates = attachmentURLs(from: request.content.userInfo)
         guard !candidates.isEmpty else {
             contentHandler(mutableContent)
@@ -45,15 +49,33 @@ final class NotificationService: UNNotificationServiceExtension {
     }
 
     /// Ordered list of media URLs to try: animated GIF (snapshot_url) first, then stills.
+    /// Absolute `*_url` keys are used as-is; a relative `snapshot_path` (e.g.
+    /// "/api/events/<id>/preview.gif") is resolved against the app-group base URL.
     private func attachmentURLs(from userInfo: [AnyHashable: Any]) -> [URL] {
-        let keys = ["snapshot_url", "thumbnail_url", "image_url"]
         var urls: [URL] = []
-        for key in keys {
+        for key in ["snapshot_url", "thumbnail_url", "image_url"] {
             if let value = userInfo[key] as? String, let url = URL(string: value) {
                 urls.append(url)
             }
         }
+        if let path = userInfo["snapshot_path"] as? String,
+           let base = Self.appGroupBaseURL(),
+           let url = URL(string: base.hasSuffix("/") || path.hasPrefix("/") ? base + path : base + "/" + path) {
+            urls.append(url)
+        }
         return urls
+    }
+
+    // MARK: - App-group fallbacks (written by the main app on login/refresh)
+
+    private static let appGroupSuite = "group.com.brandontoth.apexsight"
+
+    private static func appGroupToken() -> String? {
+        UserDefaults(suiteName: appGroupSuite)?.string(forKey: "apex.frigateToken")
+    }
+
+    private static func appGroupBaseURL() -> String? {
+        UserDefaults(suiteName: appGroupSuite)?.string(forKey: "apex.frigateBaseURL")
     }
 
     private func download(_ urls: [URL], token: String?, completion: @escaping (UNNotificationAttachment?) -> Void) {

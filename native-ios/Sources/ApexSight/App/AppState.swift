@@ -19,7 +19,9 @@ extension Error {
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var session: FrigateSession?
+    @Published var session: FrigateSession? {
+        didSet { mirrorSessionToAppGroup() }
+    }
     @Published var cameras: [FrigateCamera] = []
     @Published var events: [FrigateEvent] = []
     @Published var reviews: [FrigateReviewItem] = []
@@ -54,6 +56,20 @@ final class AppState: ObservableObject {
         session = keychain.loadSession()
         eventStream.onEvent = { [weak self] event in
             self?.handleStreamEvent(event)
+        }
+    }
+
+    /// Mirrors the active Frigate base URL + token into the app group so the
+    /// notification service extension can authenticate snapshot/GIF downloads for
+    /// remote pushes that don't carry a token (the HA bridge has no user token).
+    private func mirrorSessionToAppGroup() {
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        if let session {
+            defaults?.set(session.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
+            defaults?.set(session.token, forKey: "apex.frigateToken")
+        } else {
+            defaults?.removeObject(forKey: "apex.frigateBaseURL")
+            defaults?.removeObject(forKey: "apex.frigateToken")
         }
     }
 
