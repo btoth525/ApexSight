@@ -88,22 +88,23 @@ struct ReviewDetailView: View {
                 ZStack {
                     if mediaMode == .video, let player = clipModel.player {
                         ZoomableClipPlayer(player: player)
-                            .frame(height: 230)
+                            .frame(height: 300)
                             .frame(maxWidth: .infinity)
                     } else if let url = snapshotURL {
                         ZoomableScrollView {
                             RemoteImage(url: url, contentMode: .fit)
                         }
-                        .frame(height: 230)
+                        .frame(height: 300)
                         .frame(maxWidth: .infinity)
                     } else {
                         Color.black
-                            .frame(height: 230)
+                            .frame(height: 300)
                             .frame(maxWidth: .infinity)
                     }
                 }
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .expandableMedia(fullscreenMedia)
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -130,6 +131,17 @@ struct ReviewDetailView: View {
     private var snapshotURL: URL? {
         appState.client?.reviewSnapshotURL(review: review)
             ?? appState.client?.reviewThumbnailURL(review: review)
+    }
+
+    /// What the fullscreen viewer should show: the live clip while in Video mode, else the snapshot.
+    private var fullscreenMedia: FullscreenMediaView.Media? {
+        if mediaMode == .video, let player = clipModel.player {
+            return .player(player)
+        }
+        if let url = snapshotURL {
+            return .image(url)
+        }
+        return nil
     }
 
     private var timelineCard: some View {

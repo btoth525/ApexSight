@@ -203,12 +203,12 @@ struct HLSLivePlayerView: View {
     private var isPlaying: Bool { model.state == .playing }
 
     /// The AVPlayer layer. In the fullscreen player (`showControls`) it's wrapped in a
-    /// `ZoomableContainer` for pinch / pan / double-tap zoom with strict clamping (can't
-    /// drift off-screen). In grid/card cells it's a plain, non-interactive layer.
+    /// `ZoomableScrollView` for smooth native pinch / double-tap / pan zoom (the same engine
+    /// the snapshots and clips use). In grid/card cells it's a plain, non-interactive layer.
     @ViewBuilder
     private func playerLayer(_ player: AVPlayer) -> some View {
         if showControls {
-            ZoomableContainer {
+            ZoomableScrollView {
                 ZoomablePlayerView(player: player)
             }
             .opacity(isPlaying ? 1 : 0)

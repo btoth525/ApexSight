@@ -295,8 +295,9 @@ struct RecordingBrowserView: View {
                     Spacer()
                 }
                 PiPPlayerView(player: player)
-                    .frame(height: 220)
+                    .frame(height: 280)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .expandableMedia(.player(player))
 
                 Button {
                     Task { await downloadCurrent() }
