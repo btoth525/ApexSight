@@ -82,7 +82,7 @@ final class WatchAlertStore: NSObject, ObservableObject, WCSessionDelegate {
 
     // MARK: WCSessionDelegate (watchOS)
 
-    func session(_ session: WCSession, activationDidComplete state: WCSessionActivationState, error: Error?) {
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         let context = session.receivedApplicationContext
         if !context.isEmpty { apply(context) }
     }

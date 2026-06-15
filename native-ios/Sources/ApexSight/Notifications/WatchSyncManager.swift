@@ -65,7 +65,7 @@ final class WatchSyncManager: NSObject, WCSessionDelegate {
         }
     }
 
-    func session(_ session: WCSession, activationDidComplete state: WCSessionActivationState, error: Error?) {}
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
     func sessionDidBecomeInactive(_ session: WCSession) {}
     func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 }
