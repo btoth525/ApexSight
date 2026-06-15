@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CamerasTab: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showGrid = false
 
     var body: some View {
         NavigationStack {
@@ -68,15 +69,28 @@ struct CamerasTab: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if let host = appState.session?.baseURL.host() {
-                        Text(host)
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(GlassTheme.cyan)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(GlassTheme.cyan.opacity(0.15), in: Capsule())
+                    HStack(spacing: 10) {
+                        Button {
+                            showGrid = true
+                        } label: {
+                            Image(systemName: "rectangle.grid.2x2.fill")
+                                .font(.system(size: 16, weight: .black))
+                                .foregroundStyle(GlassTheme.cyan)
+                        }
+                        if let host = appState.session?.baseURL.host() {
+                            Text(host)
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(GlassTheme.cyan)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(GlassTheme.cyan.opacity(0.15), in: Capsule())
+                        }
                     }
                 }
+            }
+            .fullScreenCover(isPresented: $showGrid) {
+                MultiCameraGridView()
+                    .environmentObject(appState)
             }
         }
     }
