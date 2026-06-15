@@ -8,9 +8,7 @@ struct ReviewRow: View {
         HStack(spacing: 12) {
             // Thumbnail
             ZStack(alignment: .bottomLeading) {
-                if let base = appState.session?.baseURL,
-                   let path = review.thumbPath,
-                   let url = URL(string: "\(base)\(path)") {
+                if let url = appState.client?.reviewPreviewURL(id: review.id) {
                     RemoteImage(url: url)
                         .frame(width: 80, height: 80)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

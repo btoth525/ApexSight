@@ -15,7 +15,14 @@ struct SearchView: View {
     @State private var errorMessage: String?
     @State private var useSemanticSearch = false
     @State private var plateQuery = ""
+    @State private var sortNewest = true
     @State private var path = NavigationPath()
+
+    private var sortedResults: [FrigateEvent] {
+        sortNewest
+            ? results.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+            : results.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+    }
 
     private var allLabels: [String] {
         Array(Set(appState.labels + appState.events.map(\.label))).sorted()
@@ -251,6 +258,14 @@ struct SearchView: View {
                     Text("\(results.count) events")
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(GlassTheme.secondary)
+                    Button {
+                        sortNewest.toggle()
+                    } label: {
+                        Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(GlassTheme.cyan)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 if let error = errorMessage {
@@ -265,7 +280,7 @@ struct SearchView: View {
                         .foregroundStyle(GlassTheme.secondary)
                 } else {
                     VStack(spacing: 10) {
-                        ForEach(results) { event in
+                        ForEach(sortedResults) { event in
                             Button {
                                 path.append(event)
                             } label: {

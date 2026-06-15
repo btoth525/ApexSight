@@ -3,10 +3,14 @@ import SwiftUI
 struct ReviewTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedSeverity = "all"
+    @State private var sortNewest = true
     @State private var path = NavigationPath()
 
     private var filtered: [FrigateReviewItem] {
-        appState.reviews.filter { selectedSeverity == "all" || $0.severity == selectedSeverity }
+        let base = appState.reviews.filter { selectedSeverity == "all" || $0.severity == selectedSeverity }
+        return sortNewest
+            ? base.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+            : base.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
     }
 
     var body: some View {
@@ -56,7 +60,16 @@ struct ReviewTab: View {
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }
+                    HStack(spacing: 12) {
+                        if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }
+                        Button {
+                            sortNewest.toggle()
+                        } label: {
+                            Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                .font(.system(size: 18, weight: .black))
+                                .foregroundStyle(GlassTheme.cyan)
+                        }
+                    }
                 }
             }
             .navigationDestination(for: FrigateReviewItem.self) { review in

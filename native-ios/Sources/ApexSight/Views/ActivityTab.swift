@@ -4,6 +4,7 @@ struct ActivityTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedCamera = "all"
     @State private var selectedLabel = "all"
+    @State private var sortNewest = true
     @State private var path = NavigationPath()
 
     private var labels: [String] {
@@ -11,10 +12,13 @@ struct ActivityTab: View {
     }
 
     private var filtered: [FrigateEvent] {
-        appState.events.filter { event in
+        let base = appState.events.filter { event in
             (selectedCamera == "all" || event.camera == selectedCamera) &&
             (selectedLabel == "all" || event.label == selectedLabel)
         }
+        return sortNewest
+            ? base.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+            : base.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
     }
 
     var body: some View {
@@ -82,7 +86,16 @@ struct ActivityTab: View {
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }
+                    HStack(spacing: 12) {
+                        if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }
+                        Button {
+                            sortNewest.toggle()
+                        } label: {
+                            Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                .font(.system(size: 18, weight: .black))
+                                .foregroundStyle(GlassTheme.cyan)
+                        }
+                    }
                 }
             }
             .navigationDestination(for: FrigateEvent.self) { event in
