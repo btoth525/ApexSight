@@ -319,11 +319,17 @@ struct NotificationSettingsView: View {
     private func sendTest() async {
         isWorking = true
         defer { isWorking = false }
-        do {
-            try await NativeNotificationManager.sendTestNotification()
+        // Fire a real rich alert from the latest review so the GIF/snapshot pipeline
+        // is exercised exactly as a live alert would be. Falls back to a plain test
+        // when there are no reviews yet.
+        if let review = appState.reviews.first,
+           let client = appState.client,
+           let session = appState.session {
+            await LocalAlertNotifier.notify(review: review, client: client, session: session)
+            message = "Rich test alert sent (with GIF) — check your lock screen."
+        } else {
+            try? await NativeNotificationManager.sendTestNotification()
             message = "Test alert sent — check your lock screen."
-        } catch {
-            message = error.localizedDescription
         }
     }
 }
