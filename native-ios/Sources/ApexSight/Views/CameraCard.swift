@@ -37,21 +37,13 @@ struct CameraCard: View {
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(titleize(camera.name))
-                            .font(.system(size: 16, weight: .black))
-                            .foregroundStyle(GlassTheme.primary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        capabilityBadges
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .black))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(GlassTheme.blue, in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(titleize(camera.name))
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    capabilityBadges
                 }
                 .padding(.top, 12)
             }
