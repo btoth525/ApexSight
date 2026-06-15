@@ -361,6 +361,8 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
+            // Mirror camera names to the app group so Siri/Watch/CarPlay can list them.
+            SharedSnapshotStore.saveCameraNames(loadedCameras.map(\.name))
             events = (try? await nextEvents) ?? events
             if let r = try? await nextReviews {
                 reviews = r.filter { !locallyViewedIDs.contains($0.id) }
@@ -511,6 +513,16 @@ final class AppState: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Applies an apex:// link an App Intent stashed in the app group before opening the
+    /// app (Siri "show the front door"). Cleared once consumed so it fires only once.
+    func consumePendingIntentLink() {
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        guard let raw = defaults?.string(forKey: "apex.pendingIntentLink"),
+              let url = URL(string: raw) else { return }
+        defaults?.removeObject(forKey: "apex.pendingIntentLink")
+        handleDeepLink(url)
     }
 
     func handleDeepLink(_ url: URL) {

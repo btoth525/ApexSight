@@ -46,6 +46,7 @@ struct ApexSightApp: App {
                     // so this ensures the live stream and 15s poller start right away.
                     appState.startRealtime()
                     appState.startForegroundPolling()
+                    appState.consumePendingIntentLink()
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
@@ -55,6 +56,7 @@ struct ApexSightApp: App {
                     case .active:
                         appState.startRealtime()
                         appState.startForegroundPolling()
+                        appState.consumePendingIntentLink()
                     case .background:
                         appState.stopRealtime()
                         appState.stopForegroundPolling()

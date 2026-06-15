@@ -153,4 +153,16 @@ enum SharedSnapshotStore {
         }
         return (alerts, heroURL)
     }
+
+    // MARK: - Camera catalog (names, for Siri / Watch / CarPlay pickers)
+
+    private static let cameraNamesKey = "apex.cameraNames"
+
+    static func saveCameraNames(_ names: [String]) {
+        UserDefaults(suiteName: ApexAppGroup.identifier)?.set(names, forKey: cameraNamesKey)
+    }
+
+    static func loadCameraNames() -> [String] {
+        UserDefaults(suiteName: ApexAppGroup.identifier)?.stringArray(forKey: cameraNamesKey) ?? []
+    }
 }

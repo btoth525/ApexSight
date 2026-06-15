@@ -92,6 +92,8 @@ final class NotificationPreferencesStore: ObservableObject {
     }
 
     func shouldDeliver(camera: String, label: String, zones: [String]) -> Bool {
+        // Global "snooze all" set from Siri / App Intents takes priority over everything.
+        guard !GlobalSnooze.isActive else { return false }
         guard preferences.isCameraEnabled(camera) else { return false }
         guard !preferences.isSnoozed(camera) else { return false }
         guard preferences.isObjectEnabled(label) else { return false }
