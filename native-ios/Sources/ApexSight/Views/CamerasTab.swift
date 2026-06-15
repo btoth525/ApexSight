@@ -93,12 +93,17 @@ struct CamerasTab: View {
                                 .foregroundStyle(GlassTheme.cyan)
                         }
                         if let host = appState.session?.baseURL.host() {
-                            Text(host)
-                                .font(.system(size: 11, weight: .heavy))
-                                .foregroundStyle(GlassTheme.cyan)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(GlassTheme.cyan.opacity(0.15), in: Capsule())
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(appState.isLive ? GlassTheme.green : GlassTheme.tertiary)
+                                    .frame(width: 7, height: 7)
+                                Text(host)
+                                    .font(.system(size: 11, weight: .heavy))
+                                    .foregroundStyle(GlassTheme.cyan)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(GlassTheme.cyan.opacity(0.15), in: Capsule())
                         }
                     }
                 }

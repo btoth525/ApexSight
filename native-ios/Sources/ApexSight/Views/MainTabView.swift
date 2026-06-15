@@ -84,10 +84,12 @@ struct MainTabView: View {
 
     private var sidebarLayout: some View {
         NavigationSplitView {
-            List(Tab.allCases, selection: $selectedTab) { tab in
-                Label(tab.title, systemImage: tab.icon)
-                    .font(.system(size: 16, weight: .heavy))
-                    .tag(tab)
+            List(selection: $selectedTab) {
+                ForEach(Tab.allCases) { tab in
+                    Label(tab.title, systemImage: tab.icon)
+                        .font(.system(size: 16, weight: .heavy))
+                        .tag(tab)
+                }
             }
             .navigationTitle("ApexSight")
             .preferredColorScheme(.dark)
