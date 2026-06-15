@@ -81,7 +81,7 @@ struct CamerasTab: View {
                 .task { if appState.cameras.isEmpty { await appState.refresh() } }
             }
             .navigationTitle("Apex Command")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -168,35 +168,36 @@ struct CamerasTab: View {
     }
 
     private var statusStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                statusMetric(icon: "video.fill", title: "Live", value: "\(appState.cameras.count)", tint: GlassTheme.blue)
-                statusMetric(icon: "bell.badge.fill", title: "Review", value: "\(appState.reviews.count)", tint: GlassTheme.orange)
-                statusMetric(icon: "tag.fill", title: "Labels", value: "\(appState.labels.count)", tint: GlassTheme.cyan)
-                statusMetric(icon: "waveform.path.ecg", title: "Health",
-                             value: appState.errorMessage == nil ? "Good" : "Check",
-                             tint: appState.errorMessage == nil ? GlassTheme.green : GlassTheme.red)
-            }
+        HStack(spacing: 8) {
+            statusMetric(icon: "video.fill", title: "Live", value: "\(appState.cameras.count)", tint: GlassTheme.blue)
+            statusMetric(icon: "bell.badge.fill", title: "Review", value: "\(appState.reviews.count)", tint: GlassTheme.orange)
+            statusMetric(icon: "tag.fill", title: "Labels", value: "\(appState.labels.count)", tint: GlassTheme.cyan)
+            statusMetric(icon: "waveform.path.ecg", title: "Health",
+                         value: appState.errorMessage == nil ? "Good" : "Check",
+                         tint: appState.errorMessage == nil ? GlassTheme.green : GlassTheme.red)
         }
     }
 
     private func statusMetric(icon: String, title: String, value: String, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .black))
-                .foregroundStyle(tint)
-                .frame(width: 32, height: 32)
-                .background(tint.opacity(0.16), in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .black))
+                    .foregroundStyle(tint)
                 Text(title.uppercased())
-                    .font(.system(size: 10, weight: .black))
+                    .font(.system(size: 9, weight: .black))
                     .foregroundStyle(GlassTheme.secondary)
-                Text(value)
-                    .font(.system(size: 15, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+                    .lineLimit(1)
             }
+            Text(value)
+                .font(.system(size: 17, weight: .black))
+                .foregroundStyle(GlassTheme.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

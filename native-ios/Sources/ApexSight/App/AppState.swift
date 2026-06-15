@@ -7,6 +7,15 @@ enum AppDeepLink: Hashable {
     case camera(String)
 }
 
+extension Error {
+    /// True for URLSession/Task cancellations that shouldn't surface as user-facing errors.
+    var isCancellation: Bool {
+        if self is CancellationError { return true }
+        let nsError = self as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var session: FrigateSession?
@@ -147,7 +156,10 @@ final class AppState: ObservableObject {
             await cacheWidgetSnapshot(from: loadedCameras)
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
         } catch {
-            errorMessage = error.localizedDescription
+            // Ignore transient cancellations (interrupted refreshes, view teardown).
+            if !error.isCancellation {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
     }

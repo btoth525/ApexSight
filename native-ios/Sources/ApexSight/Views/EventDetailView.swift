@@ -11,18 +11,25 @@ struct EventDetailView: View {
     @State private var clipPlayer: AVPlayer?
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
+    @State private var mediaMode: MediaMode = .video
+
+    private enum MediaMode: String, CaseIterable {
+        case video = "Video"
+        case snapshot = "Snapshot"
+    }
+
+    private var hasClip: Bool { event.hasClip != false }
 
     var body: some View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
                     heroCard
                     detailsCard
-                    if event.hasClip != false { clipCard }
                     actionsCard
                 }
-                .padding(18)
+                .padding(16)
             }
         }
         .navigationTitle("Event")
@@ -40,19 +47,75 @@ struct EventDetailView: View {
 
     private var heroCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                if let url = appState.client?.eventSnapshotURL(id: event.id) {
-                    RemoteImage(url: url)
-                        .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            VStack(alignment: .leading, spacing: 12) {
+                if hasClip {
+                    Picker("Media", selection: $mediaMode) {
+                        ForEach(MediaMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: mediaMode) { _, mode in
+                        if mode == .video { clipPlayer?.play() } else { clipPlayer?.pause() }
+                    }
                 }
-                Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
-                    .font(.system(size: 28, weight: .black, design: .rounded))
-                    .foregroundStyle(GlassTheme.primary)
-                Text("\(titleize(event.camera)) · \(timestamp(event.startTime))")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(GlassTheme.secondary)
+
+                ZStack {
+                    if hasClip, mediaMode == .video, let clipPlayer {
+                        PiPPlayerView(player: clipPlayer)
+                    } else if let url = appState.client?.eventSnapshotURL(id: event.id) {
+                        RemoteImage(url: url, contentMode: .fit)
+                    } else {
+                        Color.black
+                    }
+                }
+                .frame(height: 230)
+                .frame(maxWidth: .infinity)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
+                            .font(.system(size: 22, weight: .black, design: .rounded))
+                            .foregroundStyle(GlassTheme.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text("\(titleize(event.camera)) · \(timestamp(event.startTime))")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(GlassTheme.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if hasClip {
+                        Button {
+                            Task { await downloadClip() }
+                        } label: {
+                            Image(systemName: isDownloading ? "arrow.down.circle" : "arrow.down.circle.fill")
+                                .font(.system(size: 26, weight: .black))
+                                .foregroundStyle(GlassTheme.cyan)
+                                .symbolEffect(.pulse, isActive: isDownloading)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isDownloading)
+                    }
+                }
+
+                if let downloadFeedback {
+                    Text(downloadFeedback)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.green)
+                }
             }
+            .task {
+                guard hasClip, clipPlayer == nil,
+                      let clipURL = appState.client?.eventHLSURL(id: event.id),
+                      let item = appState.client?.playerItem(for: clipURL) else { return }
+                let player = AVPlayer(playerItem: item)
+                player.play()   // auto-play the event clip
+                clipPlayer = player
+            }
+            .onDisappear { clipPlayer?.pause() }
         }
     }
 
@@ -96,58 +159,6 @@ struct EventDetailView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var clipCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Clip")
-                        .font(.system(size: 21, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Spacer()
-                    Button {
-                        Task { await downloadClip() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isDownloading {
-                                ProgressView().tint(.black)
-                            } else {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .font(.system(size: 14, weight: .black))
-                            }
-                            Text(isDownloading ? "Saving…" : "Save to Photos")
-                                .font(.system(size: 13, weight: .black))
-                        }
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(GlassTheme.cyan, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDownloading)
-                }
-
-                if let downloadFeedback {
-                    Text(downloadFeedback)
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(GlassTheme.green)
-                }
-
-                if let clipPlayer {
-                    PiPPlayerView(player: clipPlayer)
-                        .frame(height: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-            }
-            .task {
-                guard clipPlayer == nil,
-                      let clipURL = appState.client?.eventHLSURL(id: event.id),
-                      let item = appState.client?.playerItem(for: clipURL) else { return }
-                clipPlayer = AVPlayer(playerItem: item)
-            }
-            .onDisappear { clipPlayer?.pause() }
         }
     }
 

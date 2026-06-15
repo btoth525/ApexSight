@@ -127,55 +127,78 @@ struct LiveStreamView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .black))
-                    .frame(width: 40, height: 40)
-                    .background(.white.opacity(0.15), in: Circle())
+                    .font(.system(size: 15, weight: .black))
+                    .frame(width: 38, height: 38)
+                    .background(.ultraThinMaterial, in: Circle())
                     .foregroundStyle(.white)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(titleize(camera.name))
-                    .font(.system(size: 18, weight: .black))
+                    .font(.system(size: 16, weight: .black))
                     .foregroundStyle(.white)
-                HStack(spacing: 6) {
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                HStack(spacing: 5) {
                     Circle()
-                        .fill(.green)
-                        .frame(width: 7, height: 7)
-                    Text("Live")
+                        .fill(streamMode == .snapshot ? .orange : .green)
+                        .frame(width: 6, height: 6)
+                    Text(streamMode == .snapshot ? "Snapshot" : "Live")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(streamMode == .snapshot ? .orange : .green)
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            Menu {
+                Picker("Stream", selection: $streamMode) {
+                    ForEach(StreamMode.allCases, id: \.self) { mode in
+                        Label(mode.rawValue, systemImage: icon(for: mode)).tag(mode)
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: icon(for: streamMode))
+                        .font(.system(size: 12, weight: .black))
+                    Text(streamMode.rawValue)
                         .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(.green)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .black))
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(.ultraThinMaterial, in: Capsule())
             }
-
-            Spacer()
-
-            Picker("Stream", selection: $streamMode) {
-                ForEach(StreamMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 200)
 
             if capability?.hasPtz == true {
                 Button {
                     showPTZ.toggle()
                 } label: {
                     Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 16, weight: .black))
-                        .frame(width: 40, height: 40)
-                        .background(showPTZ ? .cyan.opacity(0.4) : .white.opacity(0.15), in: Circle())
+                        .font(.system(size: 15, weight: .black))
+                        .frame(width: 38, height: 38)
+                        .background(showPTZ ? AnyShapeStyle(GlassTheme.cyan.opacity(0.4)) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
                         .foregroundStyle(.white)
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 56)
+        .padding(.horizontal, 14)
+        .padding(.top, 54)
+    }
+
+    private func icon(for mode: StreamMode) -> String {
+        switch mode {
+        case .webrtc: return "dot.radiowaves.up.forward"
+        case .hls: return "play.tv.fill"
+        case .snapshot: return "photo.fill"
+        }
     }
 
     private var bottomBar: some View {

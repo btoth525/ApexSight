@@ -1,8 +1,13 @@
+import AVFoundation
 import SwiftUI
 
 struct CameraCard: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
+
+    @State private var player: AVPlayer?
+    @State private var isLive = false
+    @State private var statusObserver: NSKeyValueObservation?
 
     private var capability: CameraCapability? {
         appState.capabilities.first(where: { $0.camera == camera.name })
@@ -14,25 +19,26 @@ struct CameraCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
+                    // Reliable snapshot underneath; live stream overlays once ready.
                     if let url = appState.client?.latestFrameURL(camera: camera.name) {
                         RemoteImage(url: url)
                             .frame(height: 170)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .frame(maxWidth: .infinity)
+                            .clipped()
                     }
-
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 7, height: 7)
-                        Text("LIVE")
-                            .font(.system(size: 10, weight: .black))
-                            .foregroundStyle(.white)
+                    if isLive, let player {
+                        GridPlayerCell(player: player)
+                            .frame(height: 170)
+                            .frame(maxWidth: .infinity)
+                            .clipped()
+                            .transition(.opacity)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .padding(10)
+                    liveBadge
                 }
+                .frame(height: 170)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .task { startLive() }
+                .onDisappear { stopLive() }
 
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
@@ -90,5 +96,43 @@ struct CameraCard: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(tint.opacity(0.16), in: Capsule())
+    }
+
+    private var liveBadge: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(isLive ? .green : .yellow)
+                .frame(width: 7, height: 7)
+            Text(isLive ? "LIVE" : "…")
+                .font(.system(size: 10, weight: .black))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.black.opacity(0.55), in: Capsule())
+        .padding(10)
+    }
+
+    private func startLive() {
+        guard player == nil, let client = appState.client else { return }
+        let item = client.playerItem(for: client.liveHLSURL(camera: camera.name))
+        let newPlayer = AVPlayer(playerItem: item)
+        newPlayer.isMuted = true
+        newPlayer.play()
+        player = newPlayer
+        statusObserver = item.observe(\.status, options: [.new]) { playerItem, _ in
+            DispatchQueue.main.async {
+                withAnimation(.easeIn(duration: 0.3)) {
+                    isLive = (playerItem.status == .readyToPlay)
+                }
+            }
+        }
+    }
+
+    private func stopLive() {
+        statusObserver = nil
+        player?.pause()
+        player = nil
+        isLive = false
     }
 }

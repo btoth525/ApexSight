@@ -9,6 +9,12 @@ struct ReviewDetailView: View {
     @State private var showReviewedConfirmation = false
     @State private var isWorking = false
     @State private var reviewPlayer: AVPlayer?
+    @State private var mediaMode: MediaMode = .video
+
+    private enum MediaMode: String, CaseIterable {
+        case video = "Video"
+        case snapshot = "Snapshot"
+    }
 
     var body: some View {
         ZStack {
@@ -30,7 +36,9 @@ struct ReviewDetailView: View {
             guard reviewPlayer == nil,
                   let client = appState.client,
                   let url = client.reviewHLSURL(review: review) else { return }
-            reviewPlayer = AVPlayer(playerItem: client.playerItem(for: url))
+            let player = AVPlayer(playerItem: client.playerItem(for: url))
+            player.play()   // auto-play the review clip
+            reviewPlayer = player
         }
         .onDisappear { reviewPlayer?.pause() }
         .confirmationDialog(
@@ -49,27 +57,43 @@ struct ReviewDetailView: View {
 
     private var hero: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                if let reviewPlayer {
-                    PiPPlayerView(player: reviewPlayer)
-                        .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                } else if let url = appState.client?.latestFrameURL(camera: review.camera) {
-                    RemoteImage(url: url)
-                        .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Media", selection: $mediaMode) {
+                    ForEach(MediaMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: mediaMode) { _, mode in
+                    if mode == .video { reviewPlayer?.play() } else { reviewPlayer?.pause() }
                 }
 
+                ZStack {
+                    if mediaMode == .video, let reviewPlayer {
+                        PiPPlayerView(player: reviewPlayer)
+                    } else if let url = snapshotURL {
+                        RemoteImage(url: url, contentMode: .fit)
+                    } else {
+                        Color.black
+                    }
+                }
+                .frame(height: 230)
+                .frame(maxWidth: .infinity)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
                 HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(NotificationCopy.title(for: review))
-                            .font(.system(size: 28, weight: .black, design: .rounded))
+                            .font(.system(size: 22, weight: .black, design: .rounded))
                             .foregroundStyle(GlassTheme.primary)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
 
                         Text(NotificationCopy.body(for: review))
-                            .font(.system(size: 14, weight: .heavy))
+                            .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(GlassTheme.secondary)
+                            .lineLimit(1)
                     }
 
                     Spacer()
@@ -78,6 +102,10 @@ struct ReviewDetailView: View {
                 }
             }
         }
+    }
+
+    private var snapshotURL: URL? {
+        appState.client?.reviewPreviewURL(id: review.id)
     }
 
     private var timelineCard: some View {
