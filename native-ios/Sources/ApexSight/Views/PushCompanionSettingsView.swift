@@ -2,19 +2,19 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-/// Instant-push setup. The relay URL is baked in (RelayConfig.defaultURL), so the
-/// user only sees a connection status and their pairing code. Enabling it
-/// registers this device for APNs and with the relay; the user pastes the pairing
-/// code into the Home Assistant bridge addon. The app is fully functional without
-/// this — it adds instant alerts when the app is completely closed.
+/// Instant push — always on. The relay URL and (for shared cameras) the pairing
+/// code are baked in, so there's nothing to configure: this device registers for
+/// APNs and with the relay automatically on appear. The screen shows a single
+/// connection status (green/red) and a Test button to verify the pipeline.
 struct PushCompanionSettingsView: View {
-    @State private var pushEnabled = DeviceTokenStore.pushEnabled
     @State private var pairingCode = DeviceTokenStore.ensurePairingCode()
     @State private var token = DeviceTokenStore.deviceTokenHex
-    @State private var error = DeviceTokenStore.lastError
     @State private var registerStatus: RegisterStatus = .idle
     @State private var connection: ConnectionState = .checking
     @State private var lastRegisteredToken: String?
+    @State private var permissionDenied = false
+    @State private var testResult: String?
+    @State private var testSending = false
     @State private var copiedCode = false
     @State private var showJoinField = false
     @State private var joinCode = ""
@@ -37,13 +37,9 @@ struct PushCompanionSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     explainerCard
-                    toggleCard
-                    if pushEnabled {
-                        connectionCard
-                        pairingCard
-                        instructionsCard
-                        advancedCard
-                    }
+                    connectionCard
+                    testCard
+                    advancedCard
                 }
                 .padding(18)
             }
@@ -52,20 +48,19 @@ struct PushCompanionSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task {
-            if pushEnabled { await checkHealth() }
+            DeviceTokenStore.pushEnabled = true   // always on
+            await enablePush()
+            await checkHealth()
         }
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
-            guard pushEnabled else { return }
             token = DeviceTokenStore.deviceTokenHex
-            error = DeviceTokenStore.lastError
-            // Auto-register once the token arrives (or changes).
             if let token, !token.isEmpty, token != lastRegisteredToken,
                !pairingCode.isEmpty, registerStatus != .registering {
                 Task { await registerWithRelay() }
             }
         }
         .onReceive(Timer.publish(every: 6, on: .main, in: .common).autoconnect()) { _ in
-            if pushEnabled { Task { await checkHealth() } }
+            Task { await checkHealth() }
         }
     }
 
@@ -73,57 +68,29 @@ struct PushCompanionSettingsView: View {
 
     private var explainerCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 Label("Instant alerts, app closed", systemImage: "bolt.horizontal.fill")
                     .font(.system(size: 17, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
-                Text("Turn this on, then paste the pairing code below into the ApexSight Push Bridge add-on in Home Assistant. Frigate alerts then arrive instantly even when ApexSight is fully closed.")
+                Text("Always on. This device is set up for push automatically — the status below shows whether it's connected.")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(GlassTheme.secondary)
-                Text("Everything else in the app works without this.")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(GlassTheme.tertiary)
             }
         }
     }
 
-    private var toggleCard: some View {
-        GlassCard {
-            Toggle(isOn: Binding(
-                get: { pushEnabled },
-                set: { newValue in
-                    pushEnabled = newValue
-                    DeviceTokenStore.pushEnabled = newValue
-                    if newValue {
-                        Task { await enablePush(); await checkHealth() }
-                    }
-                }
-            )) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Enable instant push")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Text("Registers this device for APNs")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(GlassTheme.secondary)
-                }
-            }
-            .tint(GlassTheme.cyan)
-        }
-    }
-
-    /// The single green/red status the user asked for.
+    /// The single green/red status.
     private var connectionCard: some View {
         let s = status
         return GlassCard {
             HStack(spacing: 12) {
                 Circle()
                     .fill(s.color)
-                    .frame(width: 12, height: 12)
-                    .shadow(color: s.color.opacity(0.7), radius: 5)
+                    .frame(width: 14, height: 14)
+                    .shadow(color: s.color.opacity(0.7), radius: 6)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(s.title)
-                        .font(.system(size: 15, weight: .black))
+                        .font(.system(size: 16, weight: .black))
                         .foregroundStyle(GlassTheme.primary)
                     Text(s.subtitle)
                         .font(.system(size: 12, weight: .heavy))
@@ -134,7 +101,7 @@ struct PushCompanionSettingsView: View {
                     ProgressView().tint(GlassTheme.cyan)
                 } else if s.showRetry {
                     Button("Retry") {
-                        Task { await checkHealth(); await registerWithRelay() }
+                        Task { await enablePush(); await checkHealth(); await registerWithRelay() }
                     }
                     .font(.system(size: 13, weight: .black))
                     .foregroundStyle(GlassTheme.cyan)
@@ -143,102 +110,34 @@ struct PushCompanionSettingsView: View {
         }
     }
 
-    private var pairingCard: some View {
+    private var testCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Pairing Code")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-
-                Text(pairingCode)
-                    .font(.system(size: 22, weight: .black, design: .monospaced))
-                    .foregroundStyle(GlassTheme.cyan)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(GlassTheme.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                HStack(spacing: 10) {
-                    Button {
-                        UIPasteboard.general.string = pairingCode
-                        copiedCode = true
-                    } label: {
-                        Label(copiedCode ? "Copied" : "Copy", systemImage: copiedCode ? "checkmark" : "doc.on.doc")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PillButtonStyle(tint: copiedCode ? GlassTheme.green : GlassTheme.blue))
-
-                    Button {
-                        showJoinField.toggle()
-                    } label: {
-                        Label("Join household", systemImage: "person.2.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PillButtonStyle(tint: GlassTheme.purple))
-                }
-
-                if showJoinField {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Use another device's code so both get the same alerts:")
-                            .font(.system(size: 12, weight: .heavy))
-                            .foregroundStyle(GlassTheme.secondary)
-                        HStack(spacing: 8) {
-                            TextField("APEX-XXXX-XXXX", text: $joinCode)
-                                .textInputAutocapitalization(.characters)
-                                .autocorrectionDisabled()
-                                .font(.system(size: 14, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(GlassTheme.primary)
-                                .padding(10)
-                                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            Button("Set") {
-                                let code = joinCode.uppercased().trimmingCharacters(in: .whitespaces)
-                                guard !code.isEmpty else { return }
-                                pairingCode = code
-                                DeviceTokenStore.pairingCode = code
-                                DeviceTokenStore.pairingOverridden = true
-                                lastRegisteredToken = nil   // force re-register under new code
-                                showJoinField = false
-                                joinCode = ""
-                                Task { await registerWithRelay() }
-                            }
-                            .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                Button {
+                    Task { await sendTest() }
+                } label: {
+                    HStack {
+                        if testSending {
+                            ProgressView().tint(.black)
+                        } else {
+                            Image(systemName: "paperplane.fill")
                         }
-                    }
-                }
-            }
-        }
-    }
-
-    private var usingSharedDefault: Bool {
-        !RelayConfig.defaultPairingCode.isEmpty && !DeviceTokenStore.pairingOverridden
-    }
-
-    @ViewBuilder
-    private var instructionsCard: some View {
-        if usingSharedDefault {
-            GlassCard {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 18, weight: .black))
-                        .foregroundStyle(GlassTheme.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Paired automatically")
+                        Text(testSending ? "Sending…" : "Send Test Push")
                             .font(.system(size: 15, weight: .black))
-                            .foregroundStyle(GlassTheme.primary)
-                        Text("You're on the shared household — alerts arrive whenever this is on. Nothing to set up.")
-                            .font(.system(size: 12, weight: .heavy))
-                            .foregroundStyle(GlassTheme.secondary)
                     }
+                    .frame(maxWidth: .infinity)
                 }
-            }
-        } else {
-            GlassCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Next: Home Assistant")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    stepRow(1, "Install the “ApexSight Push Bridge” add-on.")
-                    stepRow(2, "Paste this pairing code into its settings.")
-                    stepRow(3, "Set your Frigate URL so alerts include a snapshot.")
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                .disabled(testSending || !isConnected)
+
+                if let testResult {
+                    Text(testResult)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(testResult.hasPrefix("Sent") ? GlassTheme.green : GlassTheme.orange)
+                } else {
+                    Text("Sends a real push to this phone through the relay. Lock your screen to see it land.")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.secondary)
                 }
             }
         }
@@ -246,47 +145,74 @@ struct PushCompanionSettingsView: View {
 
     private var advancedCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Details (advanced)")
                     .font(.system(size: 13, weight: .black))
                     .foregroundStyle(GlassTheme.secondary)
+
+                HStack(spacing: 8) {
+                    Text("Pairing: \(pairingCode)")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .foregroundStyle(GlassTheme.cyan)
+                    Button {
+                        UIPasteboard.general.string = pairingCode
+                        copiedCode = true
+                    } label: {
+                        Image(systemName: copiedCode ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundStyle(copiedCode ? GlassTheme.green : GlassTheme.blue)
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                    Button(showJoinField ? "Cancel" : "Use private code") { showJoinField.toggle() }
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundStyle(GlassTheme.purple)
+                }
+
+                if showJoinField {
+                    HStack(spacing: 8) {
+                        TextField("APEX-XXXX-XXXX", text: $joinCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(GlassTheme.primary)
+                            .padding(9)
+                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        Button("Set") {
+                            let code = joinCode.uppercased().trimmingCharacters(in: .whitespaces)
+                            guard !code.isEmpty else { return }
+                            pairingCode = code
+                            DeviceTokenStore.pairingCode = code
+                            DeviceTokenStore.pairingOverridden = true
+                            lastRegisteredToken = nil
+                            showJoinField = false
+                            joinCode = ""
+                            Task { await registerWithRelay() }
+                        }
+                        .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                    }
+                }
+
                 Text("Relay: \(relayURL)")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(GlassTheme.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if let token, !token.isEmpty {
-                    Text("Token: \(token)")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(GlassTheme.tertiary)
-                        .textSelection(.enabled)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                } else if let error {
-                    Text(error)
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(GlassTheme.orange)
-                }
             }
-        }
-    }
-
-    private func stepRow(_ n: Int, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("\(n)")
-                .font(.system(size: 12, weight: .black))
-                .foregroundStyle(.black)
-                .frame(width: 22, height: 22)
-                .background(GlassTheme.cyan, in: Circle())
-            Text(text)
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(GlassTheme.secondary)
         }
     }
 
     // MARK: - Status derivation
 
+    private var isConnected: Bool {
+        if case .online(true) = connection, registerStatus == .registered { return true }
+        return false
+    }
+
     private var status: (color: Color, title: String, subtitle: String, spinning: Bool, showRetry: Bool) {
+        if permissionDenied {
+            return (GlassTheme.red, "Notifications off", "Turn on notifications for ApexSight in iOS Settings", false, true)
+        }
         switch connection {
         case .checking:
             return (GlassTheme.tertiary, "Checking…", "Contacting the relay", true, false)
@@ -298,11 +224,11 @@ struct PushCompanionSettingsView: View {
             }
             switch registerStatus {
             case .registered:
-                return (GlassTheme.green, "Connected", "Ready — paste the code into Home Assistant", false, false)
+                return (GlassTheme.green, "Connected", "Push is active — you'll get alerts with the app closed", false, false)
             case .registering:
                 return (GlassTheme.orange, "Connecting…", "Registering this device", true, false)
             case let .failed(message):
-                return (GlassTheme.red, "Not registered", message, false, true)
+                return (GlassTheme.red, "Not connected", message, false, true)
             case .idle:
                 return (GlassTheme.orange, "Almost there", "Waiting for the APNs token", true, false)
             }
@@ -312,21 +238,18 @@ struct PushCompanionSettingsView: View {
     // MARK: - Actions
 
     private func enablePush() async {
-        _ = try? await UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .badge, .sound])
-        await MainActor.run {
-            UIApplication.shared.registerForRemoteNotifications()
+        let granted = (try? await UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+        permissionDenied = !granted
+        if granted {
+            await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
         }
     }
 
     private func checkHealth() async {
-        if case .checking = connection {} else if connection == .offline { connection = .checking }
+        if connection == .offline { connection = .checking }
         let health = await RelayClient.health(relayURL: relayURL)
-        if let health {
-            connection = .online(apnsConfigured: health.apns_configured ?? false)
-        } else {
-            connection = .offline
-        }
+        connection = health.map { .online(apnsConfigured: $0.apns_configured ?? false) } ?? .offline
     }
 
     private func registerWithRelay() async {
@@ -343,6 +266,21 @@ struct PushCompanionSettingsView: View {
             registerStatus = .registered
         } catch {
             registerStatus = .failed(error.localizedDescription)
+        }
+    }
+
+    private func sendTest() async {
+        guard let token = DeviceTokenStore.deviceTokenHex, !token.isEmpty else {
+            testResult = "No device token yet — give it a moment."
+            return
+        }
+        testSending = true
+        defer { testSending = false }
+        do {
+            try await RelayClient.sendTest(relayURL: relayURL, deviceToken: token, environment: APNSEnvironment.current)
+            testResult = "Sent ✓ — lock your phone to see it land."
+        } catch {
+            testResult = error.localizedDescription
         }
     }
 }

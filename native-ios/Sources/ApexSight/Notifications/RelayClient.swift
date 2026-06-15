@@ -27,6 +27,11 @@ enum RelayClient {
         let device_token: String
     }
 
+    private struct TestBody: Encodable {
+        let device_token: String
+        let environment: String
+    }
+
     /// Result of a `/healthz` probe used for the green/red status dot.
     struct Health: Decodable {
         let ok: Bool
@@ -62,6 +67,11 @@ enum RelayClient {
 
     static func unregister(relayURL: String, deviceToken: String) async throws {
         try await post(relayURL: relayURL, path: "/v1/unregister", body: UnregisterBody(device_token: deviceToken))
+    }
+
+    /// Asks the relay to send a test push to this device.
+    static func sendTest(relayURL: String, deviceToken: String, environment: String) async throws {
+        try await post(relayURL: relayURL, path: "/v1/test", body: TestBody(device_token: deviceToken, environment: environment))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {

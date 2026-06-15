@@ -64,6 +64,11 @@ class UnregisterIn(BaseModel):
     device_token: str
 
 
+class TestIn(BaseModel):
+    device_token: str
+    environment: str = "production"
+
+
 class NotifyIn(BaseModel):
     pairing_code: str
     title: str
@@ -99,6 +104,25 @@ def register(body: RegisterIn, _: None = Depends(rate_limit)) -> dict:
 @app.post("/v1/unregister")
 def unregister(body: UnregisterIn, _: None = Depends(rate_limit)) -> dict:
     db.delete_device(body.device_token)
+    return {"ok": True}
+
+
+@app.post("/v1/test")
+async def test_push(body: TestIn, _: None = Depends(rate_limit)) -> dict:
+    """Send a test push to one device token — powers the in-app Test button."""
+    if not apns.is_configured():
+        raise HTTPException(status_code=503, detail="APNs not configured on relay")
+    env = body.environment if body.environment in ("production", "sandbox") else "production"
+    payload = apns.build_payload(
+        title="\U0001f6a8 ApexSight test alert",
+        body="Instant push is working — you'll get alerts with the app closed.",
+        camera="relay_test",
+        review_id="relay-test",
+        apex_url="apex://review?id=relay-test",
+    )
+    ok, detail = await apns.send_to_token(body.device_token, env, payload)
+    if not ok:
+        raise HTTPException(status_code=502, detail=detail)
     return {"ok": True}
 
 

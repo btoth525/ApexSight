@@ -90,7 +90,7 @@ struct SettingsTab: View {
                         settingsRow(icon: "bell.badge.fill", title: "Notifications", subtitle: "Per-camera preferences, quiet hours", tint: GlassTheme.orange) {
                             path.append("notifications")
                         }
-                        settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Optional companion for alerts when closed", tint: GlassTheme.cyan) {
+                        settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Status & test for alerts when closed", tint: GlassTheme.cyan) {
                             path.append("push")
                         }
                         settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
