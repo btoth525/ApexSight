@@ -9,6 +9,7 @@ enum DeviceTokenStore {
     private static let enabledKey = "apex.pushEnabled"
     private static let relayKey = "apex.relayURL"
     private static let pairingKey = "apex.pairingCode"
+    private static let pairingOverriddenKey = "apex.pairingOverridden"
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: ApexAppGroup.identifier)
@@ -46,10 +47,28 @@ enum DeviceTokenStore {
         set { defaults?.set(newValue, forKey: pairingKey) }
     }
 
-    /// Returns the existing pairing code or generates a new one (APEX-XXXX-XXXX)
-    /// using an unambiguous alphabet (no 0/O/1/I).
+    /// True once the user explicitly picked a code via "Join household" — then we
+    /// stop overriding it with the baked shared default.
+    static var pairingOverridden: Bool {
+        get { defaults?.bool(forKey: pairingOverriddenKey) ?? false }
+        set { defaults?.set(newValue, forKey: pairingOverriddenKey) }
+    }
+
+    /// Resolves the pairing code to use:
+    ///   1. an explicit user override ("Join household"),
+    ///   2. else the baked shared household code (RelayConfig.defaultPairingCode),
+    ///   3. else a stored per-device code,
+    ///   4. else a freshly generated one (APEX-XXXX-XXXX, unambiguous alphabet).
     @discardableResult
     static func ensurePairingCode() -> String {
+        if pairingOverridden, let existing = pairingCode, !existing.isEmpty { return existing }
+
+        let shared = RelayConfig.defaultPairingCode
+        if !shared.isEmpty {
+            if pairingCode != shared { pairingCode = shared }
+            return shared
+        }
+
         if let existing = pairingCode, !existing.isEmpty { return existing }
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
         func block() -> String { String((0..<4).map { _ in alphabet.randomElement()! }) }

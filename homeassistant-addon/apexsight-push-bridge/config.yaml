@@ -17,7 +17,7 @@ services:
 # Frigate URL in the Configuration tab → Start. The relay URL is already correct.
 options:
   relay_url: "https://relay.plexserver525.com"
-  pairing_code: ""
+  pairing_code: "APEX-PLEX-5250"
   frigate_base_url: ""
   alerts_only: true
   topic: "frigate/reviews"

@@ -7,8 +7,9 @@ configuration:
   pairing_code:
     name: Pairing code
     description: >-
-      The code shown in the ApexSight app under Settings → Instant Push
-      (looks like APEX-XXXX-XXXX). This links alerts to your phone(s).
+      Pre-filled with the shared household code, so for a shared-camera setup you
+      can leave it as-is. (It's the same APEX-XXXX-XXXX shown in the app under
+      Settings → Instant Push.) Change it only if you use a private code.
   frigate_base_url:
     name: Frigate URL (for the snapshot)
     description: >-

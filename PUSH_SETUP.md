@@ -49,19 +49,23 @@ docker compose up -d          # publishes the relay on port 3421
 
 ---
 
-## Part C — Pair your phone
+## Part C — Pair your phone (zero steps for users)
 
-The relay URL is **baked into the app** (`relay.plexserver525.com`), so there's
-nothing to type — testers just flip the switch.
+Both the relay URL **and** a shared household pairing code (`APEX-PLEX-5250`) are
+**baked into the app**, so for your shared-camera setup users don't type anything.
 
 1. In **ApexSight → Settings → Instant Push**: toggle **Enable instant push**.
-   The status dot turns **🟢 Connected** once the relay is reachable and this
-   device is registered (🔴 if the relay is unreachable). Note the **Pairing
-   Code** (e.g. `APEX-7F3K-2Q9P`).
-2. On the relay dashboard, enter that code and click **Send test** — your phone
-   should buzz. (If it fails with `BadDeviceToken` on a Debug build from Xcode, set
-   the relay Environment to **Force sandbox** and retry.)
+   The status dot turns **🟢 Connected** and it shows **"Paired automatically"** —
+   that's it. (🔴 means the relay isn't reachable yet.)
+2. On the relay dashboard, enter `APEX-PLEX-5250` and click **Send test** — every
+   registered phone should buzz. (If it fails with `BadDeviceToken` on a Debug
+   build from Xcode, set the relay Environment to **Force sandbox** and retry.)
 
+> The shared code lives in `RelayConfig.swift` (app) and the add-on's
+> `config.yaml`. Anyone who installs the app + enables push will get these alerts —
+> intended for sharing your own cameras. Someone with their own Frigate can tap
+> **Join household** in the app to use a private code instead.
+>
 > Make sure your relay is served at **https://relay.plexserver525.com** (point a
 > Cloudflare Tunnel / proxy public hostname at `http://<host>:3421`).
 
@@ -79,13 +83,15 @@ Install the **ApexSight Push Bridge** add-on (full guide:
   folder into a dedicated public GitHub repo (folders must sit at the repo root),
   then in HA → **Add-on Store → ⋮ → Repositories**, add that repo URL.
 
-Then open the add-on → **Configuration**:
-- `relay_url`: `https://relay.plexserver525.com`
-- `pairing_code`: the code from the app
+Then open the add-on → **Configuration**. For the shared-camera setup, `relay_url`
+and `pairing_code` are **already pre-filled** — you only set:
 - `frigate_base_url`: a URL your phone can reach Frigate at (for the snapshot/GIF)
-- `alerts_only`: `true`
+- `alerts_only`: `true` (default)
 
 **Start** the add-on → trigger motion → instant rich notification, app closed. 🎉
+
+> You set up this **one** add-on (your Home Assistant). Your users do **nothing** —
+> their app auto-registers to the shared code on launch.
 
 ---
 

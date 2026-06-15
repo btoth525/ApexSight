@@ -194,6 +194,7 @@ struct PushCompanionSettingsView: View {
                                 guard !code.isEmpty else { return }
                                 pairingCode = code
                                 DeviceTokenStore.pairingCode = code
+                                DeviceTokenStore.pairingOverridden = true
                                 lastRegisteredToken = nil   // force re-register under new code
                                 showJoinField = false
                                 joinCode = ""
@@ -207,15 +208,38 @@ struct PushCompanionSettingsView: View {
         }
     }
 
+    private var usingSharedDefault: Bool {
+        !RelayConfig.defaultPairingCode.isEmpty && !DeviceTokenStore.pairingOverridden
+    }
+
+    @ViewBuilder
     private var instructionsCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Next: Home Assistant")
-                    .font(.system(size: 15, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-                stepRow(1, "Install the “ApexSight Push Bridge” add-on.")
-                stepRow(2, "Paste this pairing code into its settings.")
-                stepRow(3, "Set your Frigate URL so alerts include a snapshot.")
+        if usingSharedDefault {
+            GlassCard {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 18, weight: .black))
+                        .foregroundStyle(GlassTheme.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Paired automatically")
+                            .font(.system(size: 15, weight: .black))
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("You're on the shared household — alerts arrive whenever this is on. Nothing to set up.")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                }
+            }
+        } else {
+            GlassCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Next: Home Assistant")
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    stepRow(1, "Install the “ApexSight Push Bridge” add-on.")
+                    stepRow(2, "Paste this pairing code into its settings.")
+                    stepRow(3, "Set your Frigate URL so alerts include a snapshot.")
+                }
             }
         }
     }
