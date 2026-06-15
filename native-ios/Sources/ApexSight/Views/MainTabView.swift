@@ -2,8 +2,32 @@ import SwiftUI
 
 struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedTab = 0
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var selectedTab: Tab? = .cameras
     @State private var detailSheet: DetailSheet?
+
+    enum Tab: Int, Hashable, CaseIterable, Identifiable {
+        case cameras, review, activity, explore, settings
+        var id: Int { rawValue }
+        var title: String {
+            switch self {
+            case .cameras: return "Cameras"
+            case .review: return "Review"
+            case .activity: return "Activity"
+            case .explore: return "Explore"
+            case .settings: return "Settings"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .cameras: return "video.fill"
+            case .review: return "bell.badge.fill"
+            case .activity: return "list.bullet.rectangle.portrait.fill"
+            case .explore: return "magnifyingglass"
+            case .settings: return "gearshape.fill"
+            }
+        }
+    }
 
     private enum DetailSheet: Identifiable {
         case event(FrigateEvent)
@@ -18,26 +42,14 @@ struct MainTabView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            CamerasTab()
-                .tabItem { Label("Cameras", systemImage: "video.fill") }
-                .tag(0)
-            ReviewTab()
-                .tabItem { Label("Review", systemImage: "bell.badge.fill") }
-                .tag(1)
-            ActivityTab()
-                .tabItem { Label("Activity", systemImage: "list.bullet.rectangle.portrait.fill") }
-                .tag(2)
-            SearchView()
-                .tabItem { Label("Explore", systemImage: "magnifyingglass") }
-                .tag(3)
-            SettingsTab()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(4)
+        Group {
+            if horizontalSizeClass == .regular {
+                sidebarLayout
+            } else {
+                tabLayout
+            }
         }
         .tint(GlassTheme.cyan)
-        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-        .toolbarColorScheme(.dark, for: .tabBar)
         .sheet(item: $detailSheet) { sheet in
             NavigationStack {
                 switch sheet {
@@ -53,18 +65,63 @@ struct MainTabView: View {
         }
     }
 
+    // MARK: - Layouts
+
+    private var tabLayout: some View {
+        TabView(selection: Binding(
+            get: { selectedTab ?? .cameras },
+            set: { selectedTab = $0 }
+        )) {
+            ForEach(Tab.allCases) { tab in
+                view(for: tab)
+                    .tabItem { Label(tab.title, systemImage: tab.icon) }
+                    .tag(tab)
+            }
+        }
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarColorScheme(.dark, for: .tabBar)
+    }
+
+    private var sidebarLayout: some View {
+        NavigationSplitView {
+            List(Tab.allCases, selection: $selectedTab) { tab in
+                Label(tab.title, systemImage: tab.icon)
+                    .font(.system(size: 16, weight: .heavy))
+                    .tag(tab)
+            }
+            .navigationTitle("ApexSight")
+            .preferredColorScheme(.dark)
+        } detail: {
+            view(for: selectedTab ?? .cameras)
+                .id(selectedTab)
+        }
+    }
+
+    @ViewBuilder
+    private func view(for tab: Tab) -> some View {
+        switch tab {
+        case .cameras: CamerasTab()
+        case .review: ReviewTab()
+        case .activity: ActivityTab()
+        case .explore: SearchView()
+        case .settings: SettingsTab()
+        }
+    }
+
+    // MARK: - Deep links
+
     private func handleDeepLink(_ route: AppDeepLink?) {
         guard let route else { return }
         switch route {
         case .camera:
-            selectedTab = 0
+            selectedTab = .cameras
         case .review(let id):
-            selectedTab = 1
+            selectedTab = .review
             if let review = appState.reviews.first(where: { $0.id == id }) {
                 detailSheet = .review(review)
             }
         case .event(let id):
-            selectedTab = 2
+            selectedTab = .activity
             if let event = appState.events.first(where: { $0.id == id }) {
                 detailSheet = .event(event)
             } else {

@@ -110,12 +110,12 @@ struct MultiCameraGridView: View {
 
     private var columnPicker: some View {
         Menu {
-            ForEach([1, 2, 3], id: \.self) { n in
+            ForEach([1, 2, 3, 4], id: \.self) { n in
                 Button {
                     columns = n
                 } label: {
                     Label(
-                        n == 1 ? "Single" : "\(n)×\(n) Grid",
+                        n == 1 ? "Single" : "\(n)-up Wall",
                         systemImage: n == 1 ? "rectangle" : (n == 2 ? "rectangle.grid.2x2" : "rectangle.grid.3x2")
                     )
                 }
