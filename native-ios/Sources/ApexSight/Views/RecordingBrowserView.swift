@@ -8,7 +8,7 @@ struct RecordingBrowserView: View {
     @State private var selectedDate = Date()
     @State private var recordings: [FrigateRecording] = []
     @State private var dayEvents: [FrigateEvent] = []
-    @State private var player: AVPlayer?
+    @StateObject private var clipModel = ClipPlayerModel()
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var isDownloading = false
@@ -35,7 +35,7 @@ struct RecordingBrowserView: View {
                         ProgressView().tint(GlassTheme.cyan).frame(maxWidth: .infinity).padding(.top, 30)
                     } else {
                         scrubberCard
-                        if let player {
+                        if let player = clipModel.player {
                             playerCard(player)
                         }
                         if recordings.isEmpty {
@@ -406,8 +406,7 @@ struct RecordingBrowserView: View {
         guard let client = appState.client else { return }
         isLoading = true
         errorMessage = nil
-        player?.pause()
-        player = nil
+        clipModel.stop()
         playingTime = nil
         downloadFeedback = nil
 
@@ -450,16 +449,14 @@ struct RecordingBrowserView: View {
         let rangeSeconds = max(1, rangeEnd - rangeStart)
         scrubFraction = max(0, min((time - rangeStart) / rangeSeconds, 1))
 
-        player?.pause()
         downloadFeedback = nil
         playingTime = time
-        let url = client.recordingHLSURL(camera: camera.name, start: time, end: time + windowSeconds)
-        let item = client.playerItem(for: url)
-        let newPlayer = AVPlayer(playerItem: item)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-        try? AVAudioSession.sharedInstance().setActive(true)
-        newPlayer.play()
-        player = newPlayer
+        // Primary: VOD HLS for this 5-min window. Fallback: progressive MP4 export.
+        clipModel.load(
+            client: client,
+            primary: client.recordingHLSURL(camera: camera.name, start: time, end: time + windowSeconds),
+            fallback: client.recordingClipURL(camera: camera.name, start: time, end: time + windowSeconds)
+        )
     }
 
     private func downloadCurrent() async {

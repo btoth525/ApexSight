@@ -7,7 +7,7 @@ struct EventDetailView: View {
     let event: FrigateEvent
     @State private var actionFeedback: String?
     @State private var isActing = false
-    @State private var clipPlayer: AVPlayer?
+    @StateObject private var clipModel = ClipPlayerModel()
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
     @State private var mediaMode: MediaMode = .video
@@ -71,13 +71,13 @@ struct EventDetailView: View {
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: mediaMode) { _, mode in
-                        if mode == .video { clipPlayer?.play() } else { clipPlayer?.pause() }
+                        if mode == .video { clipModel.play() } else { clipModel.pause() }
                     }
                 }
 
                 ZStack {
-                    if hasClip, mediaMode == .video, let clipPlayer {
-                        PiPPlayerView(player: clipPlayer)
+                    if hasClip, mediaMode == .video, let player = clipModel.player {
+                        PiPPlayerView(player: player)
                             .frame(height: 230)
                             .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.eventSnapshotURL(id: event.id) {
@@ -129,33 +129,26 @@ struct EventDetailView: View {
                 }
             }
             .task {
-                guard hasClip, clipPlayer == nil, let client = appState.client else { return }
-                // Prefer the recording clip spanning the event's time range — the same
-                // endpoint the timeline uses, reliable on stock Frigate. Fall back to the
-                // trimmed event clip when an end time isn't known yet (in-progress event).
-                let clipURL: URL
+                guard hasClip, let client = appState.client else { return }
+                // Primary: VOD HLS for the event's time range (same source as Frigate's UI).
+                // Fallback: the progressive MP4. For in-progress events with no end time
+                // yet, use the trimmed event clip directly.
                 if let start = event.startTime {
                     let end = event.endTime ?? (start + 20)
-                    clipURL = client.recordingHLSURL(camera: event.camera, start: start, end: end)
+                    clipModel.loadIfNeeded(
+                        client: client,
+                        primary: client.recordingHLSURL(camera: event.camera, start: start, end: end),
+                        fallback: client.recordingClipURL(camera: event.camera, start: start, end: end)
+                    )
                 } else {
-                    clipURL = client.eventClipURL(id: event.id)
+                    clipModel.loadIfNeeded(
+                        client: client,
+                        primary: client.eventClipURL(id: event.id),
+                        fallback: nil
+                    )
                 }
-                let item = client.playerItem(for: clipURL)
-                let player = AVPlayer(playerItem: item)
-                clipPlayer = player
-                NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime,
-                    object: item,
-                    queue: .main
-                ) { _ in
-                    player.seek(to: .zero)
-                    player.play()
-                }
-                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-                try? AVAudioSession.sharedInstance().setActive(true)
-                player.play()   // auto-play the event clip
             }
-            .onDisappear { clipPlayer?.pause() }
+            .onDisappear { clipModel.pause() }
         }
     }
 

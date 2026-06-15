@@ -9,7 +9,7 @@ struct ReviewDetailView: View {
 
     @State private var showReviewedConfirmation = false
     @State private var isWorking = false
-    @State private var reviewPlayer: AVPlayer?
+    @StateObject private var clipModel = ClipPlayerModel()
     @State private var mediaMode: MediaMode = .video
     @State private var detectionEvents: [FrigateEvent] = []
     @State private var loadingDetections = false
@@ -36,29 +36,17 @@ struct ReviewDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task {
-            guard reviewPlayer == nil, let client = appState.client else { return }
-            // Play the recording spanning the review's time range — this is the same
-            // endpoint the timeline uses and works reliably on stock Frigate. The
-            // `/api/review/{id}/clip.mp4` path does not exist on stock Frigate.
-            guard let start = review.startTime else { return }
+            guard let client = appState.client, let start = review.startTime else { return }
             let end = review.endTime ?? (start + 20)
-            let url = client.recordingHLSURL(camera: review.camera, start: start, end: end)
-            let item = client.playerItem(for: url)
-            let player = AVPlayer(playerItem: item)
-            reviewPlayer = player
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { _ in
-                player.seek(to: .zero)
-                player.play()
-            }
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-            try? AVAudioSession.sharedInstance().setActive(true)
-            player.play()   // auto-play the review clip (direct MP4)
+            // Primary: VOD HLS (same source Frigate's web UI uses). Fallback: the
+            // progressive MP4 export — the model swaps automatically if HLS can't play.
+            clipModel.loadIfNeeded(
+                client: client,
+                primary: client.recordingHLSURL(camera: review.camera, start: start, end: end),
+                fallback: client.recordingClipURL(camera: review.camera, start: start, end: end)
+            )
         }
-        .onDisappear { reviewPlayer?.pause() }
+        .onDisappear { clipModel.pause() }
         .task(id: review.id) {
             guard let client = appState.client else { return }
             loadingDetections = true
@@ -95,12 +83,12 @@ struct ReviewDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: mediaMode) { _, mode in
-                    if mode == .video { reviewPlayer?.play() } else { reviewPlayer?.pause() }
+                    if mode == .video { clipModel.play() } else { clipModel.pause() }
                 }
 
                 ZStack {
-                    if mediaMode == .video, let reviewPlayer {
-                        PiPPlayerView(player: reviewPlayer)
+                    if mediaMode == .video, let player = clipModel.player {
+                        PiPPlayerView(player: player)
                             .frame(height: 230)
                             .frame(maxWidth: .infinity)
                     } else if let url = snapshotURL {
