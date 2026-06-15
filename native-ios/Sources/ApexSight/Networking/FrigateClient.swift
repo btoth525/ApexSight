@@ -249,21 +249,45 @@ struct FrigateClient {
     }
 
     func playerItem(for url: URL) -> AVPlayerItem {
-        if let token, !token.isEmpty, let host = url.host {
-            let cookieProps: [HTTPCookiePropertyKey: Any] = [
-                .name: "frigate_token",
-                .value: token,
-                .domain: host,
-                .path: "/",
-                .secure: url.scheme == "https"
-            ]
-            if let cookie = HTTPCookie(properties: cookieProps) {
-                HTTPCookieStorage.shared.setCookie(cookie)
-            }
-        }
+        seedCookie(for: url)
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": authHeaders])
         return AVPlayerItem(asset: asset)
     }
+
+    /// Stores the `frigate_token` cookie in the shared storage so AVFoundation and
+    /// URLSessionWebSocketTask upgrades both pass auth without per-request headers.
+    @discardableResult
+    func seedCookie(for url: URL) -> HTTPCookie? {
+        guard let token, !token.isEmpty, let host = url.host else { return nil }
+        let cookieProps: [HTTPCookiePropertyKey: Any] = [
+            .name: "frigate_token",
+            .value: token,
+            .domain: host,
+            .path: "/",
+            .secure: url.scheme == "https"
+        ]
+        guard let cookie = HTTPCookie(properties: cookieProps) else { return nil }
+        HTTPCookieStorage.shared.setCookie(cookie)
+        return cookie
+    }
+
+    /// Authenticated upgrade request for Frigate's stock `/ws` event stream.
+    /// Sends both Bearer and Cookie headers and pre-seeds the cookie jar; callers
+    /// may append `?token=` as a last-resort fallback for proxies that only accept query auth.
+    func webSocketRequest() -> URLRequest {
+        var components = URLComponents(url: baseURL.appending(path: "ws"), resolvingAgainstBaseURL: false)
+        if let scheme = components?.scheme {
+            components?.scheme = (scheme == "https") ? "wss" : "ws"
+        }
+        let url = components?.url ?? baseURL.appending(path: "ws")
+        seedCookie(for: baseURL)
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        return request
+    }
+
+    /// The session token, exposed only for building the `?token=` WebSocket fallback.
+    var streamToken: String? { token }
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)

@@ -3,9 +3,11 @@ import AVFoundation
 
 @main
 struct ApexSightApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState = AppState()
     @StateObject private var notificationDelegate = NotificationResponseDelegate()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         NativeNotificationManager.registerCategories()
@@ -30,12 +32,27 @@ struct ApexSightApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .overlay(alignment: .top) {
+                    LiveAlertBanner()
+                        .environmentObject(appState)
+                }
                 .preferredColorScheme(preferredColorScheme)
                 .onAppear {
                     notificationDelegate.configure(appState: appState)
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .active:
+                        appState.startRealtime()
+                    case .background:
+                        appState.stopRealtime()
+                        BackgroundRefreshManager.schedule()
+                    default:
+                        break
+                    }
                 }
         }
     }

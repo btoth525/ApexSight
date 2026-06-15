@@ -23,6 +23,15 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
         }
     }
 
+    // Show banners/sounds even when the app is foregrounded.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .badge])
+    }
+
     @MainActor
     private func handle(response: UNNotificationResponse, userInfo: [AnyHashable: Any]) async {
         guard let appState else { return }
@@ -30,6 +39,12 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
         if response.actionIdentifier == NativeNotificationManager.markReviewedAction,
            let reviewID = userInfo["review_id"] as? String {
             await appState.markReviewViewed(id: reviewID)
+            return
+        }
+
+        if response.actionIdentifier == NativeNotificationManager.snoozeCameraAction,
+           let camera = userInfo["camera"] as? String {
+            appState.notificationPrefs.snooze(camera: camera, minutes: 60)
             return
         }
 

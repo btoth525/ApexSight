@@ -82,6 +82,9 @@ struct SettingsTab: View {
                         settingsRow(icon: "bell.badge.fill", title: "Notifications", subtitle: "Per-camera preferences, quiet hours", tint: GlassTheme.orange) {
                             path.append("notifications")
                         }
+                        settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Optional companion for alerts when closed", tint: GlassTheme.cyan) {
+                            path.append("push")
+                        }
 
                         // About card
                         GlassCard {
@@ -120,8 +123,9 @@ struct SettingsTab: View {
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }
-                else if value == "notifications" { NotificationSettingsView() }
+                else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }
                 else if value == "servers" { ServerSwitcherView() }
+                else if value == "push" { PushCompanionSettingsView() }
             }
         }
     }

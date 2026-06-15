@@ -11,9 +11,15 @@ struct NotificationPreferences: Codable {
     var quietHoursEndHour: Int = 7
     var quietHoursEndMinute: Int = 0
     var cooldownSeconds: [String: Int] = [:]
+    var snoozedUntil: [String: Double] = [:]
 
     func isCameraEnabled(_ name: String) -> Bool {
         cameraEnabled[name] ?? true
+    }
+
+    func isSnoozed(_ camera: String) -> Bool {
+        guard let until = snoozedUntil[camera] else { return false }
+        return Date().timeIntervalSince1970 < until
     }
 
     func isObjectEnabled(_ label: String) -> Bool {
@@ -66,8 +72,14 @@ final class NotificationPreferencesStore: ObservableObject {
         preferences = prefs
     }
 
+    func snooze(camera: String, minutes: Int = 60) {
+        preferences.snoozedUntil[camera] = Date().addingTimeInterval(TimeInterval(minutes * 60)).timeIntervalSince1970
+        save()
+    }
+
     func shouldDeliver(camera: String, label: String, zones: [String]) -> Bool {
         guard preferences.isCameraEnabled(camera) else { return false }
+        guard !preferences.isSnoozed(camera) else { return false }
         guard preferences.isObjectEnabled(label) else { return false }
         if !zones.isEmpty {
             let anyZoneEnabled = zones.contains { preferences.isZoneEnabled($0) }

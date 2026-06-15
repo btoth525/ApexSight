@@ -2,8 +2,12 @@ import SwiftUI
 
 struct NotificationSettingsView: View {
     @EnvironmentObject private var appState: AppState
-    @StateObject private var prefsStore = NotificationPreferencesStore()
+    @ObservedObject private var prefsStore: NotificationPreferencesStore
     @State private var status = NotificationStatus(isAuthorized: false, description: "Checking")
+
+    init(prefsStore: NotificationPreferencesStore) {
+        _prefsStore = ObservedObject(wrappedValue: prefsStore)
+    }
     @State private var message: String?
     @State private var isWorking = false
 

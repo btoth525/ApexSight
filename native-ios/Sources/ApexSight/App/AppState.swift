@@ -21,8 +21,12 @@ final class AppState: ObservableObject {
     @Published var deepLink: AppDeepLink?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var isLive = false
+    @Published var liveBanner: LiveBannerModel?
 
     let keychain = KeychainStore()
+    let notificationPrefs = NotificationPreferencesStore()
+    private let eventStream = FrigateEventStream()
 
     var client: FrigateClient? {
         guard let session else { return nil }
@@ -31,6 +35,69 @@ final class AppState: ObservableObject {
 
     init() {
         session = keychain.loadSession()
+        eventStream.onEvent = { [weak self] event in
+            self?.handleStreamEvent(event)
+        }
+    }
+
+    // MARK: - Real-time
+
+    func startRealtime() {
+        guard let session else { return }
+        eventStream.connect(session: session)
+    }
+
+    func stopRealtime() {
+        eventStream.disconnect()
+    }
+
+    private func handleStreamEvent(_ event: StreamEvent) {
+        switch event {
+        case .connected:
+            isLive = true
+        case .disconnected:
+            isLive = false
+        case .stats(let s):
+            stats = s
+        case .event(let item, _):
+            upsertEvent(item)
+        case .review(let item, let change):
+            handleReview(item, change: change)
+        }
+    }
+
+    private func upsertEvent(_ item: FrigateEvent) {
+        events.removeAll { $0.id == item.id }
+        events.insert(item, at: 0)
+        if events.count > 50 { events = Array(events.prefix(50)) }
+    }
+
+    private func handleReview(_ item: FrigateReviewItem, change: ChangeType) {
+        let wasNew = !reviews.contains { $0.id == item.id }
+        reviews.removeAll { $0.id == item.id }
+        if change != .end {
+            reviews.insert(item, at: 0)
+            if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
+        }
+
+        guard wasNew, change == .new, item.severity == "alert" else { return }
+
+        let label = item.data?.objects?.first ?? "object"
+        let zones = item.data?.zones ?? []
+        guard notificationPrefs.shouldDeliver(camera: item.camera, label: label, zones: zones) else { return }
+        guard LastSeenStore.isNew(item.id) else { return }
+        LastSeenStore.markSeen([item.id])
+
+        liveBanner = LiveBannerModel(
+            id: item.id,
+            title: NotificationCopy.title(for: item),
+            body: NotificationCopy.body(for: item),
+            reviewID: item.id
+        )
+
+        if let client, let session {
+            Task { await LocalAlertNotifier.notify(review: item, client: client, session: session) }
+        }
     }
 
     func signIn(baseURL: String, username: String, password: String) async {
@@ -44,6 +111,7 @@ final class AppState: ObservableObject {
             keychain.save(session: next)
             session = next
             await refresh()
+            startRealtime()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -155,6 +223,7 @@ final class AppState: ObservableObject {
     }
 
     func switchTo(session: FrigateSession) {
+        stopRealtime()
         self.session = session
         keychain.save(session: session)
         cameras = []
@@ -165,10 +234,14 @@ final class AppState: ObservableObject {
         stats = nil
         capabilities = []
         recentLogs = []
-        Task { await refresh() }
+        Task {
+            await refresh()
+            startRealtime()
+        }
     }
 
     func signOut() {
+        stopRealtime()
         keychain.clear()
         session = nil
         cameras = []

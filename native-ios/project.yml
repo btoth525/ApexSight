@@ -51,6 +51,16 @@ targets:
         NSFaceIDUsageDescription: Use Face ID to unlock your saved Frigate sign-in.
         NSLocalNetworkUsageDescription: ApexSight connects to Frigate on your local network.
         NSCameraUsageDescription: Camera access is reserved for future visual search and setup features.
+        NSPhotoLibraryAddUsageDescription: ApexSight saves camera clips you download to your photo library.
+        NSSupportsLiveActivities: true
+        UIBackgroundModes:
+          - audio
+          - fetch
+          - remote-notification
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.brandontoth.apexsight.refresh
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
     dependencies:
       - target: ApexSightWidgets
         embed: true
