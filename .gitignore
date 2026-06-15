@@ -1,15 +1,28 @@
-node_modules/
-.expo/
-dist/
-ios/build/
-android/build/
-*.orig.*
-*.jks
+# macOS / Xcode
+.DS_Store
+native-ios/*.xcodeproj
+native-ios/DerivedData/
+native-ios/build/
+*.xcuserstate
+xcuserdata/
+
+# Python (push relay / HA add-on / Frigate integration)
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.sqlite
+*.db
+
+# Secrets — never commit signing keys or certs
 *.p8
 *.p12
 *.key
+*.pem
 *.mobileprovision
+*.jks
+.env
+
+# Misc
 *.orig.*
-web-build/
-.DS_Store
 .claude/worktrees/
