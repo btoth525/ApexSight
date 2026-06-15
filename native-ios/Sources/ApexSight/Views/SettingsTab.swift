@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var path = NavigationPath()
+    @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -53,6 +54,20 @@ struct SettingsTab: View {
                             }
                         }
 
+                        // Appearance card
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Appearance")
+                                    .font(.system(size: 18, weight: .black))
+                                    .foregroundStyle(GlassTheme.primary)
+                                HStack(spacing: 10) {
+                                    appearanceOption(label: "System", icon: "circle.lefthalf.filled", value: "system")
+                                    appearanceOption(label: "Dark", icon: "moon.fill", value: "dark")
+                                    appearanceOption(label: "Light", icon: "sun.max.fill", value: "light")
+                                }
+                            }
+                        }
+
                         // Quick nav cards
                         settingsRow(icon: "waveform.path.ecg", title: "System Health", subtitle: "Cameras, detectors, storage", tint: GlassTheme.green) {
                             path.append("system")
@@ -72,6 +87,26 @@ struct SettingsTab: View {
                 else if value == "servers" { ServerSwitcherView() }
             }
         }
+    }
+
+    private func appearanceOption(label: String, icon: String, value: String) -> some View {
+        let selected = colorSchemePreference == value
+        return Button {
+            colorSchemePreference = value
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .black))
+                    .foregroundStyle(selected ? Color.black : GlassTheme.primary)
+                    .frame(width: 48, height: 48)
+                    .background(selected ? GlassTheme.cyan : .white.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Text(label)
+                    .font(.system(size: 11, weight: .black))
+                    .foregroundStyle(selected ? GlassTheme.cyan : GlassTheme.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String, tint: Color, action: @escaping () -> Void) -> some View {
