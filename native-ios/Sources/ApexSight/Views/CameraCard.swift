@@ -16,21 +16,14 @@ struct CameraCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
-                    Color.black
-                    // Reliable snapshot underneath; smooth go2rtc HLS substream overlays
-                    // once it's playing. Both full-frame (aspect-fit) so nothing is cut off.
-                    if let url = appState.client?.latestFrameURL(camera: camera.name) {
-                        RemoteImage(url: url, contentMode: .fit)
-                            .opacity(isLive ? 0 : 1)
-                    }
+                    // HLSLivePlayerView shows its own snapshot placeholder internally,
+                    // so there's never a black gap regardless of stream state.
                     HLSLivePlayerView(
                         camera: camera,
                         onPlaying: { playing in
                             withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
                         }
                     )
-                    .opacity(isLive ? 1 : 0)
-                    .allowsHitTesting(false)
                     liveBadge
                 }
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -62,15 +55,9 @@ struct CameraCard: View {
         if let cap = capability {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
-                    if cap.hasGo2RtcStream {
-                        badge("HD", tint: GlassTheme.blue)
-                    }
-                    if cap.hasRecordings {
-                        badge("Rec", tint: GlassTheme.green)
-                    }
-                    if cap.hasPtz {
-                        badge("PTZ", tint: GlassTheme.orange)
-                    }
+                    if cap.hasGo2RtcStream { badge("HD", tint: GlassTheme.blue) }
+                    if cap.hasRecordings    { badge("Rec", tint: GlassTheme.green) }
+                    if cap.hasPtz          { badge("PTZ", tint: GlassTheme.orange) }
                 }
             }
         } else {
@@ -92,7 +79,7 @@ struct CameraCard: View {
     private var liveBadge: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(isLive ? .green : .yellow)
+                .fill(isLive ? Color.green : Color.yellow)
                 .frame(width: 7, height: 7)
             Text(isLive ? "LIVE" : "…")
                 .font(.system(size: 10, weight: .black))

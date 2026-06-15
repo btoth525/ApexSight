@@ -6,22 +6,17 @@ import UIKit
 // MARK: - Stream rules
 
 enum LiveStreamRules {
-    /// Returns true for cameras that must always use the sub-stream (e.g. confirmed H.265
-    /// main streams that iOS AVPlayer can't decode). Currently none are forced — all cameras
-    /// start on the main stream and fall back to sub after 3 consecutive failures.
-    static func forcesSubStream(_ camera: String) -> Bool {
-        false
-    }
+    /// Returns true for cameras that must always use the sub-stream (confirmed H.265 main
+    /// that iOS AVPlayer can't decode). Currently none — all cameras start on main and fall
+    /// back to sub after 3 consecutive failures.
+    static func forcesSubStream(_ camera: String) -> Bool { false }
 }
 
 // MARK: - Live HLS model
 
-/// Owns one tuned-for-live `AVPlayer`, watches it for stalls/failures, and rebuilds the
-/// stream with exponential-backoff reconnect. On the first failure it tries a token
-/// refresh (reusing stored credentials) before falling back to backoff retries, so an
-/// expired `frigate_token` recovers transparently. After 3 consecutive failures on the
-/// main stream it silently downgrades to the sub-stream (if one is provided), resetting
-/// the retry counter so the sub gets its own full backoff budget.
+/// Owns one tuned-for-live `AVPlayer`, watches for stalls/failures, and rebuilds with
+/// exponential-backoff reconnect. On the first failure it tries a silent token refresh
+/// before backoff. After 3 main-stream failures it downgrades to the sub-stream.
 @MainActor
 final class HLSLiveModel: ObservableObject {
     enum State: Equatable {
@@ -81,7 +76,6 @@ final class HLSLiveModel: ObservableObject {
     func toggleMute() {
         isMuted.toggle()
         if !isMuted {
-            // Only claim the audio session when the user actually wants sound.
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
             try? AVAudioSession.sharedInstance().setActive(true)
         }
@@ -91,6 +85,7 @@ final class HLSLiveModel: ObservableObject {
     func reload() {
         retryCount = 0
         didTryReauth = false
+        usingFallback = false
         connect()
     }
 
@@ -100,7 +95,6 @@ final class HLSLiveModel: ObservableObject {
         teardownObservers()
         player?.pause()
 
-        // Live tuning: tiny forward buffer + don't wait to minimize stalling = low latency.
         item.preferredForwardBufferDuration = 2
 
         let newPlayer = AVPlayer(playerItem: item)
@@ -131,9 +125,9 @@ final class HLSLiveModel: ObservableObject {
         failObs = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
         ) { [weak self] note in
-            let message = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
+            let msg = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
                 .localizedDescription ?? "Playback failed"
-            Task { @MainActor in self?.handleFailure(message) }
+            Task { @MainActor in self?.handleFailure(msg) }
         }
 
         newPlayer.play()
@@ -152,15 +146,10 @@ final class HLSLiveModel: ObservableObject {
 
     private func handleFailure(_ message: String) {
         guard !isStopped else { return }
-        // First failure on this run → try one token refresh, then fall back to backoff.
         if !didTryReauth, let reauth {
             didTryReauth = true
             Task { @MainActor in
-                if await reauth() {
-                    connect()
-                } else {
-                    scheduleReconnect(reason: message)
-                }
+                if await reauth() { connect() } else { scheduleReconnect(reason: message) }
             }
         } else {
             scheduleReconnect(reason: message)
@@ -171,7 +160,7 @@ final class HLSLiveModel: ObservableObject {
         guard !isStopped, reconnectTask == nil else { return }
         retryCount += 1
 
-        // After 3 failures on main stream, silently downgrade to sub-stream.
+        // After 3 main-stream failures silently downgrade to sub-stream.
         if !usingFallback, retryCount >= 3, makeSubURL != nil {
             usingFallback = true
             retryCount = 0
@@ -179,38 +168,25 @@ final class HLSLiveModel: ObservableObject {
             state = .connecting
             reconnectTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                await MainActor.run {
-                    guard let self else { return }
-                    self.reconnectTask = nil
-                    self.connect()
-                }
+                await MainActor.run { self?.reconnectTask = nil; self?.connect() }
             }
             return
         }
 
-        guard retryCount <= 6 else {
-            state = .failed(reason)
-            return
-        }
+        guard retryCount <= 6 else { state = .failed(reason); return }
         state = .connecting
-        let delay = min(pow(2.0, Double(retryCount - 1)), 16)   // 1,2,4,8,16,16s
+        let delay = min(pow(2.0, Double(retryCount - 1)), 16)
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            await MainActor.run {
-                guard let self else { return }
-                self.reconnectTask = nil
-                self.connect()
-            }
+            await MainActor.run { self?.reconnectTask = nil; self?.connect() }
         }
     }
 
     private func teardownObservers() {
         statusObs?.invalidate(); statusObs = nil
         timeControlObs?.invalidate(); timeControlObs = nil
-        if let stallObs { NotificationCenter.default.removeObserver(stallObs) }
-        stallObs = nil
-        if let failObs { NotificationCenter.default.removeObserver(failObs) }
-        failObs = nil
+        if let stallObs { NotificationCenter.default.removeObserver(stallObs) }; stallObs = nil
+        if let failObs { NotificationCenter.default.removeObserver(failObs) }; failObs = nil
     }
 }
 
@@ -219,57 +195,65 @@ final class HLSLiveModel: ObservableObject {
 struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
-    /// H.265 cameras are always forced to sub by `LiveStreamRules` regardless of this flag.
-    /// Set to `true` only when you explicitly want the sub-stream (never used by default now).
-    var preferSub: Bool = false
-    /// Show the mute/refresh overlay controls (fullscreen only).
     var showControls: Bool = false
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
 
-    /// H.265 cameras must always use sub; otherwise start with main and fall back to sub.
-    private var alwaysSub: Bool { LiveStreamRules.forcesSubStream(camera.name) || preferSub }
+    private var isPlaying: Bool { model.state == .playing }
 
     var body: some View {
         ZStack {
-            if let player = model.player {
-                ZoomablePlayerView(player: player)
+            Color.black
+
+            // Snapshot placeholder — shows instantly so there's never a black gap.
+            // Sits behind the video layer and fades out the moment the stream is live.
+            if let url = appState.client?.latestFrameURL(camera: camera.name) {
+                RemoteImage(url: url, contentMode: .fit)
+                    .opacity(isPlaying ? 0 : 1)
+                    .animation(.easeOut(duration: 0.4), value: isPlaying)
             }
 
-            switch model.state {
-            case .connecting:
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(1.3)
-                    .allowsHitTesting(false)
-            case .failed(let message):
+            // AVPlayer layer — invisible until actually playing, then fades in cleanly.
+            if let player = model.player {
+                ZoomablePlayerView(player: player)
+                    .opacity(isPlaying ? 1 : 0)
+                    .animation(.easeIn(duration: 0.3), value: isPlaying)
+            }
+
+            // Subtle connecting pill at the bottom — non-intrusive, out of the way.
+            if model.state == .connecting {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 6) {
+                        ProgressView().tint(.white).scaleEffect(0.65)
+                        Text("Connecting…")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(.bottom, 14)
+                }
+                .allowsHitTesting(false)
+            }
+
+            if case .failed(let message) = model.state {
                 failureOverlay(message)
-            case .playing:
-                EmptyView()
             }
 
             if showControls {
-                controls
+                muteButton
             }
         }
         .onAppear {
-            if alwaysSub {
-                // Forced sub: only one URL, no fallback needed.
-                model.configure(
-                    makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
-                    makeItem: { url in appState.client?.playerItem(for: url) },
-                    reauth: { await appState.reauthenticate() }
-                )
-            } else {
-                // Start on main stream; fall back to sub after 3 consecutive failures.
-                model.configure(
-                    makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
-                    makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
-                    makeItem: { url in appState.client?.playerItem(for: url) },
-                    reauth: { await appState.reauthenticate() }
-                )
-            }
+            model.configure(
+                makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
+                makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
+                makeItem: { url in appState.client?.playerItem(for: url) },
+                reauth: { await appState.reauthenticate() }
+            )
             model.start()
         }
         .onDisappear { model.stop() }
@@ -278,17 +262,21 @@ struct HLSLivePlayerView: View {
         }
     }
 
-    private var controls: some View {
+    private var muteButton: some View {
         HStack {
             Spacer()
-            Button { model.toggleMute() } label: {
-                Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 15, weight: .black))
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .foregroundStyle(.white)
+            VStack {
+                Button { model.toggleMute() } label: {
+                    Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 15, weight: .black))
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .foregroundStyle(.white)
+                }
+                .padding(.top, 100)
+                .padding(.trailing, 16)
+                Spacer()
             }
-            .padding(.trailing, 16)
         }
     }
 
@@ -302,9 +290,7 @@ struct HLSLivePlayerView: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
-            Button {
-                model.reload()
-            } label: {
+            Button { model.reload() } label: {
                 Label("Retry", systemImage: "arrow.clockwise")
                     .font(.system(size: 14, weight: .black))
                     .foregroundStyle(.black)
@@ -316,12 +302,8 @@ struct HLSLivePlayerView: View {
     }
 }
 
-// MARK: - AVPlayerLayer-backed view with pinch / pan / double-tap zoom
+// MARK: - AVPlayerLayer view with pinch / pan / double-tap zoom
 
-/// A bare `AVPlayerLayer` view (no transport chrome) that supports pinch-to-zoom,
-/// pan-while-zoomed, and double-tap. Zoom is applied as a UIView transform so it
-/// survives `AVPlayer` swaps on reconnect (the same UIView is reused; only the
-/// layer's `player` is replaced in `updateUIView`).
 struct ZoomablePlayerView: UIViewRepresentable {
     let player: AVPlayer
     var videoGravity: AVLayerVideoGravity = .resizeAspect
@@ -351,7 +333,7 @@ final class PlayerLayerUIView: UIView, UIGestureRecognizerDelegate {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .black
+        backgroundColor = .clear
         clipsToBounds = true
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
@@ -367,51 +349,40 @@ final class PlayerLayerUIView: UIView, UIGestureRecognizerDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
-    ) -> Bool { true }
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
-    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        if gesture.state == .changed {
-            let newScale = (scale * gesture.scale).clamped(to: 1...maxScale)
-            scale = newScale
-            gesture.scale = 1
+    @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
+        if g.state == .changed {
+            scale = (scale * g.scale).clamped(to: 1...maxScale)
+            g.scale = 1
             applyTransform()
-        } else if gesture.state == .ended && scale <= 1.01 {
+        } else if g.state == .ended && scale <= 1.01 {
             resetZoom()
         }
     }
 
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+    @objc private func handlePan(_ g: UIPanGestureRecognizer) {
         guard scale > 1 else { return }
-        let translation = gesture.translation(in: self)
-        offset.x += translation.x
-        offset.y += translation.y
-        gesture.setTranslation(.zero, in: self)
+        let t = g.translation(in: self)
+        offset.x += t.x; offset.y += t.y
+        g.setTranslation(.zero, in: self)
         clampOffset()
         applyTransform()
     }
 
-    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
-        if scale > 1.01 {
-            resetZoom()
-        } else {
-            scale = 2.5
-            applyTransform()
-        }
+    @objc private func handleDoubleTap(_ g: UITapGestureRecognizer) {
+        if scale > 1.01 { resetZoom() } else { scale = 2.5; applyTransform() }
     }
 
     private func applyTransform() {
         clampOffset()
-        var transform = CGAffineTransform(scaleX: scale, y: scale)
-        transform = transform.translatedBy(x: offset.x / scale, y: offset.y / scale)
-        UIView.animate(withDuration: 0.1) { self.transform = transform }
+        var t = CGAffineTransform(scaleX: scale, y: scale)
+        t = t.translatedBy(x: offset.x / scale, y: offset.y / scale)
+        UIView.animate(withDuration: 0.1) { self.transform = t }
     }
 
     private func resetZoom() {
-        scale = 1
-        offset = .zero
+        scale = 1; offset = .zero
         UIView.animate(withDuration: 0.2) { self.transform = .identity }
     }
 
