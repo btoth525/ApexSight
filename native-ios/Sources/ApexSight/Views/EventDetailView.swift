@@ -11,6 +11,7 @@ struct EventDetailView: View {
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
     @State private var mediaMode: MediaMode = .video
+    @State private var genAIDescription: String?
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -25,6 +26,7 @@ struct EventDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     heroCard
+                    if let genAIDescription { aiCard(genAIDescription) }
                     detailsCard
                     actionsCard
                 }
@@ -34,6 +36,28 @@ struct EventDetailView: View {
         .navigationTitle("Event")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        .task(id: event.id) {
+            genAIDescription = try? await appState.client?.eventDescription(id: event.id)
+        }
+    }
+
+    private func aiCard(_ text: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.purple)
+                    Text("AI Description")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                }
+                Text(text)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(GlassTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var heroCard: some View {

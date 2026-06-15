@@ -67,6 +67,14 @@ struct FrigateClient {
         try await get("api/events/\(id)")
     }
 
+    /// GenAI-generated description for a tracked object (Frigate 0.16+ with GenAI enabled).
+    /// Returns nil when GenAI is off or no description has been generated yet.
+    func eventDescription(id: String) async throws -> String? {
+        let response: EventDescriptionResponse = try await get("api/events/\(id)")
+        let text = response.data?.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text?.isEmpty == false) ? text : nil
+    }
+
     func stats() async throws -> FrigateStats {
         try await get("api/stats")
     }
@@ -407,6 +415,12 @@ struct FrigateClient {
 }
 
 private struct EmptyBody: Encodable {}
+
+/// Decodes just the GenAI description from a full event payload (`data.description`).
+private struct EventDescriptionResponse: Decodable {
+    struct EventData: Decodable { let description: String? }
+    let data: EventData?
+}
 
 private struct LogResponse: Decodable {
     let lines: [String]
