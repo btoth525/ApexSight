@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- `relay_url` and `pairing_code` now pre-filled with the shared defaults
+  (`https://relay.plexserver525.com`, `APEX-PLEX-5250`) — for a shared-camera
+  setup you only set the Frigate URL.
+- Friendly GUI form via `translations/en.yaml`; pairing code validated.
+- Added store branding (`icon.png`, `logo.png`).
+
 ## 1.0.0
 
 - Initial release.
