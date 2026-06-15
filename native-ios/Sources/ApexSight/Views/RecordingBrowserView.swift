@@ -7,46 +7,20 @@ struct RecordingBrowserView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedDate = Date()
     @State private var recordings: [FrigateRecording] = []
-    @State private var selectedRecording: FrigateRecording?
+    @State private var dayEvents: [FrigateEvent] = []
     @State private var player: AVPlayer?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
-    @State private var selectedHour: Int?
+
+    // Scrubber state
+    @State private var scrubFraction: Double = 0      // 0…1 across the selected day
+    @State private var isScrubbing = false
+    @State private var playingTime: Double?           // epoch currently playing
 
     private let calendar = Calendar.current
-
-    private struct HourBucket: Identifiable {
-        let hour: Int
-        let segmentCount: Int
-        let motion: Double
-        var id: Int { hour }
-    }
-
-    private var hourBuckets: [HourBucket] {
-        var counts = [Int: (segments: Int, motion: Double)]()
-        for recording in recordings {
-            guard let start = recording.startTime else { continue }
-            let hour = calendar.component(.hour, from: Date(timeIntervalSince1970: start))
-            var bucket = counts[hour] ?? (0, 0)
-            bucket.segments += 1
-            bucket.motion = max(bucket.motion, recording.motion ?? 0)
-            counts[hour] = bucket
-        }
-        return (0..<24).map { hour in
-            let bucket = counts[hour] ?? (0, 0)
-            return HourBucket(hour: hour, segmentCount: bucket.segments, motion: bucket.motion)
-        }
-    }
-
-    private var displayedRecordings: [FrigateRecording] {
-        guard let selectedHour else { return recordings }
-        return recordings.filter { recording in
-            guard let start = recording.startTime else { return false }
-            return calendar.component(.hour, from: Date(timeIntervalSince1970: start)) == selectedHour
-        }
-    }
+    private let windowSeconds: Double = 300           // 5-minute clip per scrub
 
     var body: some View {
         ZStack {
@@ -56,15 +30,17 @@ struct RecordingBrowserView: View {
                     sectionTitle
                     datePicker
                     if isLoading {
-                        ProgressView().tint(GlassTheme.cyan).frame(maxWidth: .infinity)
-                    } else if recordings.isEmpty {
-                        noRecordingsCard
+                        ProgressView().tint(GlassTheme.cyan).frame(maxWidth: .infinity).padding(.top, 30)
                     } else {
-                        timelineCard
-                        if let recording = selectedRecording, let player {
-                            playerCard(recording: recording, player: player)
+                        scrubberCard
+                        if let player {
+                            playerCard(player)
                         }
-                        recordingList
+                        if recordings.isEmpty {
+                            noRecordingsCard
+                        } else {
+                            recordingList
+                        }
                     }
                 }
                 .padding(18)
@@ -73,11 +49,13 @@ struct RecordingBrowserView: View {
         .navigationTitle("Recordings")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
-        .task { await loadRecordings(for: selectedDate) }
+        .task { await loadDay(selectedDate) }
         .onChange(of: selectedDate) { _, date in
-            Task { await loadRecordings(for: date) }
+            Task { await loadDay(date) }
         }
     }
+
+    // MARK: - Header
 
     private var sectionTitle: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -92,50 +70,215 @@ struct RecordingBrowserView: View {
 
     private var datePicker: some View {
         GlassCard {
-            VStack(spacing: 14) {
-                HStack {
-                    Button { shiftDate(by: -1) } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .black))
-                            .foregroundStyle(GlassTheme.cyan)
-                            .frame(width: 44, height: 44)
-                            .background(.white.opacity(0.10), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    VStack(spacing: 2) {
-                        Text(selectedDate, style: .date)
-                            .font(.system(size: 18, weight: .black))
-                            .foregroundStyle(GlassTheme.primary)
-                        if Calendar.current.isDateInToday(selectedDate) {
-                            Text("Today")
-                                .font(.system(size: 11, weight: .heavy))
-                                .foregroundStyle(GlassTheme.cyan)
-                        }
-                    }
-                    Spacer()
-                    Button { shiftDate(by: 1) } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 16, weight: .black))
-                            .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? GlassTheme.tertiary : GlassTheme.cyan)
-                            .frame(width: 44, height: 44)
-                            .background(.white.opacity(0.10), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(Calendar.current.isDateInToday(selectedDate))
+            HStack {
+                Button { shiftDate(by: -1) } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(GlassTheme.cyan)
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.10), in: Circle())
                 }
-                DatePicker("Pick date", selection: $selectedDate, in: ...Date(), displayedComponents: .date)
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
-                    .tint(GlassTheme.cyan)
+                .buttonStyle(.plain)
+                Spacer()
+                VStack(spacing: 2) {
+                    Text(selectedDate, style: .date)
+                        .font(.system(size: 17, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    if calendar.isDateInToday(selectedDate) {
+                        Text("Today").font(.system(size: 11, weight: .heavy)).foregroundStyle(GlassTheme.cyan)
+                    }
+                }
+                Spacer()
+                Button { shiftDate(by: 1) } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(calendar.isDateInToday(selectedDate) ? GlassTheme.tertiary : GlassTheme.cyan)
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.10), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(calendar.isDateInToday(selectedDate))
             }
         }
     }
 
     private func shiftDate(by days: Int) {
-        guard let newDate = Calendar.current.date(byAdding: .day, value: days, to: selectedDate),
+        guard let newDate = calendar.date(byAdding: .day, value: days, to: selectedDate),
               newDate <= Date() else { return }
         selectedDate = newDate
+    }
+
+    // MARK: - Scrubber
+
+    private var scrubberCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Timeline")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                    Text(scrubTimeLabel)
+                        .font(.system(size: 14, weight: .black))
+                        .foregroundStyle(GlassTheme.cyan)
+                        .monospacedDigit()
+                }
+
+                scrubberTrack
+                    .frame(height: 92)
+
+                HStack {
+                    Text("12a"); Spacer(); Text("6a"); Spacer()
+                    Text("12p"); Spacer(); Text("6p"); Spacer(); Text("11p")
+                }
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(GlassTheme.tertiary)
+
+                legend
+            }
+        }
+    }
+
+    private var scrubberTrack: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            ZStack(alignment: .topLeading) {
+                // Track background
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.black.opacity(0.35))
+
+                // Recording coverage + colored event ticks
+                Canvas { ctx, size in
+                    let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
+
+                    // coverage strip along the bottom
+                    for rec in recordings {
+                        guard let s = rec.startTime else { continue }
+                        let f = (s - dayStart) / 86400
+                        guard f >= 0, f <= 1 else { continue }
+                        let x = f * size.width
+                        let cov = CGRect(x: x, y: size.height - 7, width: max(1, size.width / 24 / 12), height: 6)
+                        ctx.fill(Path(cov), with: .color(.white.opacity(0.16)))
+                    }
+
+                    // event ticks, colored by object
+                    for e in dayEvents {
+                        guard let s = e.startTime else { continue }
+                        let f = (s - dayStart) / 86400
+                        guard f >= 0, f <= 1 else { continue }
+                        let x = f * size.width
+                        let rect = CGRect(x: x - 1.25, y: 10, width: 2.5, height: size.height - 24)
+                        ctx.fill(Path(rect), with: .color(color(for: e.label)))
+                    }
+                }
+                .padding(.horizontal, 2)
+
+                // Playhead
+                let px = CGFloat(scrubFraction) * w
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: 2, height: h)
+                    .offset(x: px.clampedX(in: w))
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 16, height: 16)
+                    .overlay { Circle().stroke(GlassTheme.cyan, lineWidth: 3) }
+                    .offset(x: px.clampedX(in: w) - 8, y: -8)
+                    .shadow(radius: 3)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isScrubbing = true
+                        scrubFraction = Double(max(0, min(value.location.x / w, 1)))
+                    }
+                    .onEnded { _ in
+                        isScrubbing = false
+                        playFromScrub()
+                    }
+            )
+        }
+    }
+
+    private var legend: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                legendDot("Person", .red)
+                legendDot("Vehicle", .green)
+                legendDot("Animal", .yellow)
+                legendDot("Bike", .orange)
+                legendDot("Package", .cyan)
+                legendDot("Other", .purple)
+            }
+        }
+    }
+
+    private func legendDot(_ title: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(title).font(.system(size: 10, weight: .heavy)).foregroundStyle(GlassTheme.secondary)
+        }
+    }
+
+    private var scrubTimeLabel: String {
+        let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
+        let t = dayStart + scrubFraction * 86400
+        return Date(timeIntervalSince1970: t).formatted(date: .omitted, time: .shortened)
+    }
+
+    private func color(for label: String) -> Color {
+        switch label.lowercased() {
+        case "person": return .red
+        case "car", "truck", "bus", "vehicle", "motorcycle_vehicle": return .green
+        case "dog", "cat", "bird", "deer", "fox", "raccoon", "horse", "bear", "rabbit", "squirrel", "animal":
+            return .yellow
+        case "bicycle", "motorcycle": return .orange
+        case "package": return .cyan
+        default: return .purple
+        }
+    }
+
+    // MARK: - Player
+
+    private func playerCard(_ player: AVPlayer) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text(playingTime != nil ? "Playing from \(Date(timeIntervalSince1970: playingTime!).formatted(date: .omitted, time: .shortened))" : "Playing Clip")
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                }
+                PiPPlayerView(player: player)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Button {
+                    Task { await downloadCurrent() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isDownloading { ProgressView().tint(.black) }
+                        else { Image(systemName: "arrow.down.circle.fill").font(.system(size: 14, weight: .black)) }
+                        Text(isDownloading ? "Saving…" : "Save to Photos")
+                            .font(.system(size: 13, weight: .black))
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(GlassTheme.cyan, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isDownloading || playingTime == nil)
+
+                if let downloadFeedback {
+                    Text(downloadFeedback)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(GlassTheme.green)
+                }
+            }
+        }
     }
 
     private var noRecordingsCard: some View {
@@ -156,247 +299,109 @@ struct RecordingBrowserView: View {
         }
     }
 
-    private func playerCard(recording: FrigateRecording, player: AVPlayer) -> some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Playing Clip")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Spacer()
-                    if let start = recording.startTime, let end = recording.endTime {
-                        Text(formatDuration(end - start))
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(GlassTheme.cyan)
-                    }
-                }
-                PiPPlayerView(player: player)
-                    .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                Button {
-                    Task { await downloadRecording(recording) }
-                } label: {
-                    HStack(spacing: 6) {
-                        if isDownloading {
-                            ProgressView().tint(.black)
-                        } else {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(.system(size: 14, weight: .black))
-                        }
-                        Text(isDownloading ? "Saving…" : "Save to Photos")
-                            .font(.system(size: 13, weight: .black))
-                    }
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(GlassTheme.cyan, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(isDownloading)
-
-                if let downloadFeedback {
-                    Text(downloadFeedback)
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(GlassTheme.green)
-                }
-            }
-        }
-    }
-
-    private func downloadRecording(_ recording: FrigateRecording) async {
-        guard let client = appState.client,
-              let start = recording.startTime,
-              let end = recording.endTime else { return }
-        isDownloading = true
-        downloadFeedback = nil
-        defer { isDownloading = false }
-        do {
-            let url = client.recordingClipURL(camera: camera.name, start: start, end: end)
-            try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(camera.name)-\(Int(start))")
-            downloadFeedback = "Saved to Photos."
-        } catch {
-            downloadFeedback = error.localizedDescription
-        }
-    }
-
-    private var timelineCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Timeline")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Spacer()
-                    if let selectedHour {
-                        Button {
-                            withAnimation { self.selectedHour = nil }
-                        } label: {
-                            Text("\(hourLabel(selectedHour)) ✕")
-                                .font(.system(size: 12, weight: .black))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(GlassTheme.cyan, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Text("Tap an hour")
-                            .font(.system(size: 12, weight: .heavy))
-                            .foregroundStyle(GlassTheme.secondary)
-                    }
-                }
-
-                let maxCount = max(1, hourBuckets.map(\.segmentCount).max() ?? 1)
-                HStack(alignment: .bottom, spacing: 3) {
-                    ForEach(hourBuckets) { bucket in
-                        timelineBar(bucket, maxCount: maxCount)
-                    }
-                }
-                .frame(height: 64)
-
-                HStack {
-                    Text("12a")
-                    Spacer()
-                    Text("6a")
-                    Spacer()
-                    Text("12p")
-                    Spacer()
-                    Text("6p")
-                    Spacer()
-                    Text("11p")
-                }
-                .font(.system(size: 9, weight: .heavy))
-                .foregroundStyle(GlassTheme.tertiary)
-            }
-        }
-    }
-
-    private func timelineBar(_ bucket: HourBucket, maxCount: Int) -> some View {
-        let isActive = bucket.segmentCount > 0
-        let isSelected = selectedHour == bucket.hour
-        let fraction = isActive ? max(0.18, Double(bucket.segmentCount) / Double(maxCount)) : 0.05
-        let tint = bucket.motion > 0.3 ? GlassTheme.orange : GlassTheme.cyan
-        return Color.clear
-            .frame(maxWidth: .infinity)
-            .frame(height: 64)
-            .overlay(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(isActive ? (isSelected ? Color.white : tint) : Color.white.opacity(0.08))
-                    .frame(height: 64 * fraction)
-                    .overlay {
-                        if isSelected {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .stroke(GlassTheme.cyan, lineWidth: 1.5)
-                        }
-                    }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard isActive else { return }
-                withAnimation { selectedHour = isSelected ? nil : bucket.hour }
-            }
-    }
-
-    private func hourLabel(_ hour: Int) -> String {
-        if hour == 0 { return "12 AM" }
-        if hour < 12 { return "\(hour) AM" }
-        if hour == 12 { return "12 PM" }
-        return "\(hour - 12) PM"
-    }
+    // MARK: - Event jump list (recent detections that day)
 
     private var recordingList: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
-                Text("\(displayedRecordings.count) segments\(selectedHour != nil ? " · \(hourLabel(selectedHour!))" : "")")
+                Text(dayEvents.isEmpty ? "\(recordings.count) recording segments" : "\(dayEvents.count) detections")
                     .font(.system(size: 16, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
-                VStack(spacing: 8) {
-                    ForEach(displayedRecordings) { recording in
-                        recordingRow(recording)
+
+                if dayEvents.isEmpty {
+                    Text("Scrub the timeline above to play any moment.")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(GlassTheme.secondary)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(dayEvents.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }) { event in
+                            eventJumpRow(event)
+                        }
                     }
                 }
             }
         }
     }
 
-    private func recordingRow(_ recording: FrigateRecording) -> some View {
-        let isSelected = selectedRecording?.id == recording.id
-        return Button {
-            selectRecording(recording)
+    private func eventJumpRow(_ event: FrigateEvent) -> some View {
+        Button {
+            if let start = event.startTime { playFrom(time: start) }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: isSelected ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(isSelected ? GlassTheme.cyan : GlassTheme.primary.opacity(0.6))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    if let start = recording.startTime {
+                Circle()
+                    .fill(color(for: event.label))
+                    .frame(width: 10, height: 10)
+                if let url = appState.client?.eventThumbnailURL(id: event.id) {
+                    RemoteImage(url: url, contentMode: .fill)
+                        .frame(width: 52, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                    if let start = event.startTime {
                         Text(Date(timeIntervalSince1970: start), style: .time)
-                            .font(.system(size: 15, weight: .black))
-                            .foregroundStyle(GlassTheme.primary)
-                    }
-                    HStack(spacing: 8) {
-                        if let start = recording.startTime, let end = recording.endTime {
-                            Text(formatDuration(end - start))
-                                .font(.system(size: 12, weight: .heavy))
-                                .foregroundStyle(GlassTheme.secondary)
-                        }
-                        if let motion = recording.motion, motion > 0 {
-                            Label(String(format: "%.0f%% motion", motion * 100), systemImage: "figure.walk")
-                                .font(.system(size: 11, weight: .heavy))
-                                .foregroundStyle(GlassTheme.orange)
-                        }
-                        if let objects = recording.objects, objects > 0 {
-                            Label("\(Int(objects)) objects", systemImage: "eye.fill")
-                                .font(.system(size: 11, weight: .heavy))
-                                .foregroundStyle(GlassTheme.blue)
-                        }
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(GlassTheme.secondary)
                     }
                 }
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(GlassTheme.secondary)
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(GlassTheme.cyan)
             }
-            .padding(12)
-            .background(isSelected ? GlassTheme.cyan.opacity(0.12) : .white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(10)
+            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }
 
-    private func loadRecordings(for date: Date) async {
+    // MARK: - Data + playback
+
+    private func loadDay(_ date: Date) async {
         guard let client = appState.client else { return }
         isLoading = true
         errorMessage = nil
         player?.pause()
         player = nil
-        selectedRecording = nil
-        selectedHour = nil
+        playingTime = nil
         downloadFeedback = nil
 
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
 
-        do {
-            recordings = try await client.recordings(camera: camera.name, after: startOfDay, end: endOfDay)
-                .sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
-        } catch {
-            errorMessage = error.localizedDescription
-            recordings = []
+        async let recs = client.recordings(camera: camera.name, after: startOfDay, end: endOfDay)
+        async let evs = client.events(
+            camera: camera.name, after: startOfDay, before: endOfDay, limit: 500
+        )
+
+        recordings = ((try? await recs) ?? []).sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+        dayEvents = (try? await evs) ?? []
+
+        // Park the playhead on the most recent detection for a useful default.
+        if let latest = dayEvents.compactMap(\.startTime).max() {
+            scrubFraction = (latest - startOfDay.timeIntervalSince1970) / 86400
         }
         isLoading = false
     }
 
-    private func selectRecording(_ recording: FrigateRecording) {
-        guard let client = appState.client,
-              let start = recording.startTime,
-              let end = recording.endTime else { return }
+    private func playFromScrub() {
+        let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
+        let time = dayStart + scrubFraction * 86400
+        let cappedNow = Date().timeIntervalSince1970 - windowSeconds
+        playFrom(time: min(time, cappedNow))
+    }
+
+    private func playFrom(time: Double) {
+        guard let client = appState.client else { return }
+        let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
+        scrubFraction = max(0, min((time - dayStart) / 86400, 1))
 
         player?.pause()
         downloadFeedback = nil
-        selectedRecording = recording
-        let url = client.recordingClipURL(camera: camera.name, start: start, end: end)
+        playingTime = time
+        let url = client.recordingClipURL(camera: camera.name, start: time, end: time + windowSeconds)
         let item = client.playerItem(for: url)
         let newPlayer = AVPlayer(playerItem: item)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
@@ -405,9 +410,24 @@ struct RecordingBrowserView: View {
         player = newPlayer
     }
 
-    private func formatDuration(_ seconds: Double) -> String {
-        let s = Int(seconds)
-        if s < 60 { return "\(s)s" }
-        return "\(s / 60)m \(s % 60)s"
+    private func downloadCurrent() async {
+        guard let client = appState.client, let start = playingTime else { return }
+        isDownloading = true
+        downloadFeedback = nil
+        defer { isDownloading = false }
+        do {
+            let url = client.recordingClipURL(camera: camera.name, start: start, end: start + windowSeconds)
+            try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(camera.name)-\(Int(start))")
+            downloadFeedback = "Saved to Photos."
+        } catch {
+            downloadFeedback = error.localizedDescription
+        }
+    }
+}
+
+private extension CGFloat {
+    /// Keeps the playhead handle inside the track bounds.
+    func clampedX(in width: CGFloat) -> CGFloat {
+        Swift.max(0, Swift.min(self, width))
     }
 }
