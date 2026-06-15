@@ -11,7 +11,8 @@ struct SharedCameraSnapshot: Codable, Hashable {
     let imageFileName: String
 }
 
-struct SharedAlert: Codable, Hashable {
+struct SharedAlert: Codable, Hashable, Identifiable {
+    var id: String? = nil    // review id — lets the widget deep-link straight to the event
     let label: String        // e.g. "person", "car"
     let subLabel: String?    // e.g. a recognized face/plate, may be nil
     let camera: String
@@ -26,6 +27,9 @@ enum SharedSnapshotStore {
 
     private static let alertDefaultsKey = "latest-alert"
     private static let alertImageFileName = "latest-alert.jpg"
+
+    private static let recentAlertsKey = "recent-alerts"
+    private static let recentHeroFileName = "recent-hero.jpg"
 
     static func save(imageData: Data, camera: String, serverName: String) {
         guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) else {
@@ -109,5 +113,44 @@ enum SharedSnapshotStore {
         }
 
         return (alert, containerURL.appendingPathComponent(imageFileName))
+    }
+
+    // MARK: - Recent activity feed (for the widget)
+
+    /// Persists a short list of the most recent alerts plus a single hero image (the
+    /// newest event's snapshot). The widget renders the list as a recent-activity feed
+    /// and uses the hero as its large image — no live streaming in the widget.
+    static func saveRecentAlerts(_ alerts: [SharedAlert], heroImageData: Data?) {
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+
+        if let heroImageData,
+           let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) {
+            let heroURL = containerURL.appendingPathComponent(recentHeroFileName)
+            try? heroImageData.write(to: heroURL, options: [.atomic])
+        }
+
+        if let encoded = try? JSONEncoder().encode(Array(alerts.prefix(8))) {
+            defaults?.set(encoded, forKey: recentAlertsKey)
+        }
+    }
+
+    static func loadRecentAlerts() -> (alerts: [SharedAlert], heroImageURL: URL?) {
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        let alerts: [SharedAlert]
+        if let data = defaults?.data(forKey: recentAlertsKey),
+           let decoded = try? JSONDecoder().decode([SharedAlert].self, from: data) {
+            alerts = decoded
+        } else {
+            alerts = []
+        }
+
+        var heroURL: URL?
+        if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) {
+            let candidate = containerURL.appendingPathComponent(recentHeroFileName)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                heroURL = candidate
+            }
+        }
+        return (alerts, heroURL)
     }
 }

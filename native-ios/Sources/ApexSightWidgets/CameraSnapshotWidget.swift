@@ -25,16 +25,21 @@ private enum WidgetTheme {
 struct CameraSnapshotEntry: TimelineEntry {
     let date: Date
     let snapshot: SharedCameraSnapshot?
-    let imageURL: URL?
-    let alert: SharedAlert?
-    let alertImageURL: URL?
+    let snapshotImageURL: URL?      // cached live frame (fallback hero only)
+    let alerts: [SharedAlert]       // recent activity feed, newest first
+    let heroImageURL: URL?          // snapshot of the most recent event
+
+    /// The most recent event, if any.
+    var latest: SharedAlert? { alerts.first }
+    /// The image to show as the widget hero: the latest event snapshot, else a camera frame.
+    var heroURL: URL? { heroImageURL ?? snapshotImageURL }
 }
 
 // MARK: - Provider
 
 struct CameraSnapshotProvider: TimelineProvider {
     func placeholder(in context: Context) -> CameraSnapshotEntry {
-        CameraSnapshotEntry(date: Date(), snapshot: nil, imageURL: nil, alert: nil, alertImageURL: nil)
+        CameraSnapshotEntry(date: Date(), snapshot: nil, snapshotImageURL: nil, alerts: [], heroImageURL: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (CameraSnapshotEntry) -> Void) {
@@ -49,13 +54,13 @@ struct CameraSnapshotProvider: TimelineProvider {
 
     private func entry() -> CameraSnapshotEntry {
         let cached = SharedSnapshotStore.load()
-        let latestAlert = SharedSnapshotStore.loadLatestAlert()
+        let recent = SharedSnapshotStore.loadRecentAlerts()
         return CameraSnapshotEntry(
             date: Date(),
             snapshot: cached?.snapshot,
-            imageURL: cached?.imageURL,
-            alert: latestAlert?.alert,
-            alertImageURL: latestAlert?.imageURL
+            snapshotImageURL: cached?.imageURL,
+            alerts: recent.alerts,
+            heroImageURL: recent.heroImageURL
         )
     }
 }
@@ -93,15 +98,20 @@ struct CameraSnapshotWidgetView: View {
     }
 
     private var widgetURL: URL? {
-        // Prefer the alert's camera when an alert is present.
-        if let alertCamera = entry.alert?.camera,
-           let encoded = alertCamera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-            return URL(string: "apex://camera?name=\(encoded)")
+        // Tap → open the exact event if we have one, otherwise its camera, otherwise the app.
+        if let latest = entry.latest {
+            if let id = latest.id,
+               let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                return URL(string: "apex://review?id=\(encoded)")
+            }
+            if let encoded = latest.camera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                return URL(string: "apex://camera?name=\(encoded)")
+            }
         }
-        guard let camera = entry.snapshot?.camera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return URL(string: "apex://")
+        if let camera = entry.snapshot?.camera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            return URL(string: "apex://camera?name=\(camera)")
         }
-        return URL(string: "apex://camera?name=\(camera)")
+        return URL(string: "apex://")
     }
 }
 
@@ -125,18 +135,17 @@ private struct PlaceholderHero: View {
     var body: some View {
         ZStack {
             WidgetTheme.panelGradient
-            // Subtle accent glow
             RadialGradient(
                 colors: [WidgetTheme.accent.opacity(0.18), .clear],
                 center: .center,
                 startRadius: 4,
                 endRadius: 140
             )
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Image(systemName: "video.badge.waveform")
-                    .font(.system(size: 32, weight: .heavy))
+                    .font(.system(size: 28, weight: .heavy))
                     .foregroundStyle(WidgetTheme.accent)
-                Text("Open ApexSight to start")
+                Text("No events yet")
                     .font(.system(size: 11, weight: .black, design: .rounded))
                     .foregroundStyle(.white.opacity(0.55))
                     .multilineTextAlignment(.center)
@@ -146,141 +155,111 @@ private struct PlaceholderHero: View {
     }
 }
 
-// MARK: - Small
+// MARK: - Small (hero of the latest event)
 
 private struct SmallWidgetView: View {
     let entry: CameraSnapshotEntry
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            HeroSnapshotImage(imageURL: entry.imageURL)
+            HeroSnapshotImage(imageURL: entry.heroURL)
 
             LinearGradient(
-                colors: [.clear, .black.opacity(0.78)],
+                colors: [.clear, .black.opacity(0.82)],
                 startPoint: .center,
                 endPoint: .bottom
             )
 
-            // Freshness badge (top-trailing)
             VStack {
                 HStack {
-                    if let alert = entry.alert {
-                        AlertPill(alert: alert)
+                    if let latest = entry.latest {
+                        SeverityChip(severity: latest.severity, when: latest.when)
                     }
                     Spacer()
-                    if let snapshot = entry.snapshot {
-                        FreshnessBadge(capturedAt: snapshot.capturedAt)
-                    }
                 }
                 Spacer()
             }
-            .padding(10)
+            .padding(9)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Label(entry.snapshot.map { titleizeWidget($0.camera) } ?? "ApexSight", systemImage: "video.fill")
-                    .font(.system(size: 15, weight: .black, design: .rounded))
-                    .lineLimit(1)
-
-                Text(snapshotSubtitle)
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                if let latest = entry.latest {
+                    Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text("\(titleizeWidget(latest.camera)) · \(relativeShort(latest.when))")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                } else {
+                    Text("All clear")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .lineLimit(1)
+                    Text("No recent events")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
             }
             .foregroundStyle(.white)
-            .padding(12)
+            .padding(11)
         }
-    }
-
-    private var snapshotSubtitle: String {
-        guard let snapshot = entry.snapshot else { return "Cache a snapshot" }
-        return "\(snapshot.serverName) · \(relativeShort(snapshot.capturedAt))"
     }
 }
 
-// MARK: - Medium
+// MARK: - Medium (hero left, recent feed right)
 
 private struct MediumWidgetView: View {
     let entry: CameraSnapshotEntry
 
     var body: some View {
         HStack(spacing: 0) {
-            // Hero image, leading ~55%
-            GeometryReader { proxy in
-                ZStack(alignment: .bottomLeading) {
-                    HeroSnapshotImage(imageURL: entry.imageURL)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
+            ZStack(alignment: .bottomLeading) {
+                HeroSnapshotImage(imageURL: entry.heroURL)
+                    .clipped()
 
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.72)],
-                        startPoint: .center,
-                        endPoint: .bottom
-                    )
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.78)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
 
+                if let latest = entry.latest {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.snapshot.map { titleizeWidget($0.camera) } ?? "ApexSight")
-                            .font(.system(size: 13, weight: .black, design: .rounded))
+                        Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
+                            .font(.system(size: 12, weight: .black, design: .rounded))
                             .lineLimit(1)
-                        if let snapshot = entry.snapshot {
-                            Text(relativeShort(snapshot.capturedAt))
-                                .font(.system(size: 10, weight: .heavy))
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
+                            .minimumScaleFactor(0.8)
+                        Text(relativeShort(latest.when))
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.white.opacity(0.8))
                     }
                     .foregroundStyle(.white)
-                    .padding(10)
+                    .padding(9)
+                }
+            }
+            .frame(width: 150)
 
-                    VStack {
-                        HStack {
-                            Spacer()
-                            if let snapshot = entry.snapshot {
-                                FreshnessBadge(capturedAt: snapshot.capturedAt)
-                            }
-                        }
-                        Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                WidgetHeader()
+                if entry.alerts.isEmpty {
+                    AllClearCompact()
+                } else {
+                    ForEach(Array(entry.alerts.prefix(3).enumerated()), id: \.offset) { _, alert in
+                        EventFeedRow(alert: alert)
                     }
-                    .padding(8)
                 }
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
-            .layoutPriority(0.55)
-
-            // Info column, trailing
-            InfoColumn(entry: entry)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(0.45)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-private struct InfoColumn: View {
-    let entry: CameraSnapshotEntry
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            WidgetHeader()
-
-            if let alert = entry.alert {
-                AlertDetail(alert: alert)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No recent activity")
-                        .font(.system(size: 12, weight: .black, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.85))
-                    Text("You're all clear")
-                        .font(.system(size: 10, weight: .heavy))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-// MARK: - Large
+// MARK: - Large (hero on top, recent feed below)
 
 private struct LargeWidgetView: View {
     let entry: CameraSnapshotEntry
@@ -292,91 +271,59 @@ private struct LargeWidgetView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 8)
 
-            // Hero
             ZStack(alignment: .bottomLeading) {
-                HeroSnapshotImage(imageURL: entry.imageURL)
+                HeroSnapshotImage(imageURL: entry.heroURL)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 200)
+                    .frame(height: 150)
                     .clipped()
 
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.72)],
+                    colors: [.clear, .black.opacity(0.74)],
                     startPoint: .center,
                     endPoint: .bottom
                 )
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Label(entry.snapshot.map { titleizeWidget($0.camera) } ?? "ApexSight", systemImage: "video.fill")
-                        .font(.system(size: 16, weight: .black, design: .rounded))
-                        .lineLimit(1)
-                    if let snapshot = entry.snapshot {
-                        Text("\(snapshot.serverName) · \(relativeShort(snapshot.capturedAt))")
+                if let latest = entry.latest {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
+                            .font(.system(size: 16, weight: .black, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Text("\(titleizeWidget(latest.camera)) · \(relativeShort(latest.when))")
                             .font(.system(size: 11, weight: .heavy))
                             .foregroundStyle(.white.opacity(0.82))
+                            .lineLimit(1)
                     }
+                    .foregroundStyle(.white)
+                    .padding(13)
                 }
-                .foregroundStyle(.white)
-                .padding(14)
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        if let snapshot = entry.snapshot {
-                            FreshnessBadge(capturedAt: snapshot.capturedAt)
-                        }
-                    }
-                    Spacer()
-                }
-                .padding(12)
             }
-            .frame(height: 200)
+            .frame(height: 150)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 14)
 
-            // Divider
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [WidgetTheme.accent.opacity(0.5), WidgetTheme.accentBlue.opacity(0.0)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 1)
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
-            // Latest activity row
             HStack {
-                Text("LATEST ACTIVITY")
+                Text("RECENT ACTIVITY")
                     .font(.system(size: 10, weight: .black, design: .rounded))
                     .foregroundStyle(WidgetTheme.accent)
                     .tracking(1.2)
                 Spacer()
             }
             .padding(.horizontal, 14)
-            .padding(.bottom, 6)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
 
-            if let alert = entry.alert {
-                AlertDetail(alert: alert, large: true)
+            if entry.alerts.isEmpty {
+                AllClearLarge()
                     .padding(.horizontal, 14)
             } else {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(WidgetTheme.accent)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("No recent activity")
-                            .font(.system(size: 14, weight: .black, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.9))
-                        Text("All your cameras are quiet")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(.white.opacity(0.5))
+                VStack(spacing: 6) {
+                    ForEach(Array(entry.alerts.prefix(4).enumerated()), id: \.offset) { _, alert in
+                        EventFeedRow(alert: alert, large: true)
                     }
-                    Spacer()
                 }
                 .padding(.horizontal, 14)
+                .padding(.top, 2)
             }
 
             Spacer(minLength: 0)
@@ -386,6 +333,34 @@ private struct LargeWidgetView: View {
 }
 
 // MARK: - Shared components
+
+private struct EventFeedRow: View {
+    let alert: SharedAlert
+    var large: Bool = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(alertEmoji(alert.label))
+                .font(.system(size: large ? 18 : 15))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    SeverityDot(severity: alert.severity)
+                    Text(titleizeWidget(alert.subLabel ?? alert.label))
+                        .font(.system(size: large ? 13 : 12, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                Text("\(titleizeWidget(alert.camera)) · \(relativeShort(alert.when))")
+                    .font(.system(size: large ? 11 : 10, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
 
 private struct WidgetHeader: View {
     var body: some View {
@@ -402,44 +377,50 @@ private struct WidgetHeader: View {
     }
 }
 
-private struct AlertDetail: View {
-    let alert: SharedAlert
-    var large: Bool = false
-
+private struct AllClearCompact: View {
     var body: some View {
-        HStack(alignment: .center, spacing: large ? 12 : 8) {
-            Text(alertEmoji(alert.label))
-                .font(.system(size: large ? 32 : 24))
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    SeverityDot(severity: alert.severity)
-                    Text(titleizeWidget(alert.subLabel ?? alert.label))
-                        .font(.system(size: large ? 16 : 13, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                }
-                Text(titleizeWidget(alert.camera))
-                    .font(.system(size: large ? 12 : 11, weight: .heavy))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-                Text(relativeShort(alert.when))
-                    .font(.system(size: large ? 11 : 10, weight: .heavy))
-                    .foregroundStyle(WidgetTheme.accent.opacity(0.9))
-            }
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 3) {
+            Text("No recent activity")
+                .font(.system(size: 12, weight: .black, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+            Text("You're all clear")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white.opacity(0.5))
+                .lineLimit(1)
         }
     }
 }
 
-private struct AlertPill: View {
-    let alert: SharedAlert
+private struct AllClearLarge: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(WidgetTheme.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No recent activity")
+                    .font(.system(size: 14, weight: .black, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                Text("All your cameras are quiet")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            Spacer()
+        }
+    }
+}
+
+private struct SeverityChip: View {
+    let severity: String
+    let when: Date
 
     var body: some View {
         HStack(spacing: 3) {
-            Text(alertEmoji(alert.label))
-                .font(.system(size: 10))
-            Text(relativeShort(alert.when))
+            Circle()
+                .fill(severityColor(severity))
+                .frame(width: 6, height: 6)
+            Text(relativeShort(when))
                 .font(.system(size: 9, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
         }
@@ -447,7 +428,7 @@ private struct AlertPill: View {
         .padding(.vertical, 3)
         .background(.black.opacity(0.55), in: Capsule())
         .overlay(
-            Capsule().strokeBorder(severityColor(alert.severity).opacity(0.8), lineWidth: 1)
+            Capsule().strokeBorder(severityColor(severity).opacity(0.8), lineWidth: 1)
         )
     }
 }
@@ -458,25 +439,7 @@ private struct SeverityDot: View {
     var body: some View {
         Circle()
             .fill(severityColor(severity))
-            .frame(width: 8, height: 8)
-            .overlay(
-                Circle().fill(severityColor(severity).opacity(0.4)).frame(width: 14, height: 14)
-                    .blur(radius: 3)
-            )
-    }
-}
-
-private struct FreshnessBadge: View {
-    let capturedAt: Date
-
-    var body: some View {
-        let age = ageMinutes(capturedAt)
-        Text(age == 0 ? "LIVE" : "\(age)m")
-            .font(.system(size: 9, weight: .black, design: .rounded))
-            .foregroundStyle(.black)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(age > 5 ? Color.orange : WidgetTheme.accent, in: Capsule())
+            .frame(width: 7, height: 7)
     }
 }
 
@@ -486,7 +449,7 @@ private struct AccessoryRectangularView: View {
     let entry: CameraSnapshotEntry
 
     var body: some View {
-        if let alert = entry.alert {
+        if let alert = entry.latest {
             HStack(spacing: 6) {
                 Text(alertEmoji(alert.label))
                     .font(.system(size: 16))
@@ -501,23 +464,8 @@ private struct AccessoryRectangularView: View {
                 }
                 Spacer(minLength: 0)
             }
-        } else if let snapshot = entry.snapshot {
-            HStack(spacing: 6) {
-                Image(systemName: "video.fill")
-                    .font(.system(size: 12, weight: .black))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(titleizeWidget(snapshot.camera))
-                        .font(.system(size: 13, weight: .black))
-                        .lineLimit(1)
-                    Text(relativeShort(snapshot.capturedAt))
-                        .font(.system(size: 11, weight: .heavy))
-                        .opacity(0.8)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
         } else {
-            Label("ApexSight", systemImage: "video.badge.waveform")
+            Label("All clear", systemImage: "checkmark.shield.fill")
                 .font(.system(size: 13, weight: .black))
         }
     }
@@ -527,12 +475,10 @@ private struct AccessoryInlineView: View {
     let entry: CameraSnapshotEntry
 
     var body: some View {
-        if let alert = entry.alert {
+        if let alert = entry.latest {
             Text("\(alertEmoji(alert.label)) \(titleizeWidget(alert.subLabel ?? alert.label)) · \(relativeShort(alert.when))")
-        } else if let snapshot = entry.snapshot {
-            Text("📹 \(titleizeWidget(snapshot.camera)) · \(relativeShort(snapshot.capturedAt))")
         } else {
-            Text("ApexSight")
+            Text("ApexSight · All clear")
         }
     }
 }
@@ -546,8 +492,8 @@ struct CameraSnapshotWidget: Widget {
         StaticConfiguration(kind: kind, provider: CameraSnapshotProvider()) { entry in
             CameraSnapshotWidgetView(entry: entry)
         }
-        .configurationDisplayName("ApexSight Live")
-        .description("Your live camera snapshot plus the latest detection from your cameras.")
+        .configurationDisplayName("ApexSight Activity")
+        .description("A snapshot of your latest detection plus a recent-activity feed from your cameras.")
         .supportedFamilies([
             .systemSmall,
             .systemMedium,
@@ -584,10 +530,6 @@ private func alertEmoji(_ label: String) -> String {
 
 private func severityColor(_ severity: String) -> Color {
     severity.lowercased() == "alert" ? WidgetTheme.alertDot : WidgetTheme.detectionDot
-}
-
-private func ageMinutes(_ date: Date) -> Int {
-    max(0, Int(Date().timeIntervalSince(date) / 60))
 }
 
 private func relativeShort(_ date: Date) -> String {

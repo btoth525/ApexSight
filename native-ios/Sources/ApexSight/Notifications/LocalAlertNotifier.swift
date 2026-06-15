@@ -12,7 +12,10 @@ import UserNotifications
 /// expanded notification plays back what happened; it falls back to the cropped
 /// detection thumbnail when a GIF isn't available yet.
 enum LocalAlertNotifier {
-    static func notify(review: FrigateReviewItem, client: FrigateClient, session: FrigateSession) async {
+    /// - Parameter asTest: when true, the notification gets a unique identifier and a short
+    ///   trigger so repeated "Send Test Alert" taps each present a fresh banner (a stable
+    ///   per-review identifier would otherwise be coalesced/replaced silently by the system).
+    static func notify(review: FrigateReviewItem, client: FrigateClient, session: FrigateSession, asTest: Bool = false) async {
         let content = UNMutableNotificationContent()
         content.title = NotificationCopy.title(for: review)
         content.body = NotificationCopy.body(for: review)
@@ -35,39 +38,42 @@ enum LocalAlertNotifier {
         content.userInfo = userInfo
 
         // Try the animated GIF first, then the static thumbnail.
-        if let gifURL, let attachment = await downloadAttachment(url: gifURL, client: client, isGIF: true) {
-            content.attachments = [attachment]
-        } else if let thumbURL, let attachment = await downloadAttachment(url: thumbURL, client: client, isGIF: false) {
-            content.attachments = [attachment]
+        var tempURL: URL?
+        if let gifURL, let result = await downloadAttachment(url: gifURL, client: client, isGIF: true) {
+            content.attachments = [result.attachment]
+            tempURL = result.fileURL
+        } else if let thumbURL, let result = await downloadAttachment(url: thumbURL, client: client, isGIF: false) {
+            content.attachments = [result.attachment]
+            tempURL = result.fileURL
         }
 
-        let request = UNNotificationRequest(
-            identifier: "apex-review-\(review.id)",
-            content: content,
-            trigger: nil
-        )
+        let identifier = asTest ? "apex-test-\(UUID().uuidString)" : "apex-review-\(review.id)"
+        let trigger: UNNotificationTrigger? = asTest
+            ? UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            : nil
+
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
         try? await UNUserNotificationCenter.current().add(request)
+
+        // The system ingests the attachment into its own store during add(); the source temp
+        // file is now safe to delete. (Deleting right after attachment init risks yanking a
+        // GIF before the system has copied it.)
+        if let tempURL { try? FileManager.default.removeItem(at: tempURL) }
     }
 
-    private static func downloadAttachment(url: URL, client: FrigateClient, isGIF: Bool) async -> UNNotificationAttachment? {
+    private static func downloadAttachment(url: URL, client: FrigateClient, isGIF: Bool) async -> (attachment: UNNotificationAttachment, fileURL: URL)? {
         guard let data = try? await client.imageData(from: url), !data.isEmpty else { return nil }
         let ext = isGIF ? "gif" : "jpg"
         let localURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("apex-alert-\(UUID().uuidString).\(ext)")
         do {
             try data.write(to: localURL, options: [.atomic])
+            // A type hint makes the system animate GIFs reliably in the expanded view.
             let options: [String: Any]? = isGIF
                 ? [UNNotificationAttachmentOptionsTypeHintKey: UTType.gif.identifier]
                 : nil
-            let attachment = try UNNotificationAttachment(
-                identifier: UUID().uuidString,
-                url: localURL,
-                options: options
-            )
-            // UNNotificationAttachment copies the file into its own sandbox on creation;
-            // the source temp file is no longer needed.
-            try? FileManager.default.removeItem(at: localURL)
-            return attachment
+            let attachment = try UNNotificationAttachment(identifier: UUID().uuidString, url: localURL, options: options)
+            return (attachment, localURL)
         } catch {
             try? FileManager.default.removeItem(at: localURL)
             return nil

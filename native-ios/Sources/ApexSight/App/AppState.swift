@@ -114,23 +114,38 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Caches the most recent alert (label + camera + thumbnail) into the app group and
-    /// reloads the widget timeline, so the home-screen widget reflects live activity.
+    /// Caches a short feed of recent reviews (label + camera + time, newest-first) plus a
+    /// single hero thumbnail (the newest event) into the app group, then reloads the widget
+    /// timeline so the home-screen widget shows a recent-activity list — no live streaming.
     private func cacheLatestAlertForWidget() {
-        guard let client, let review = reviews.first else { return }
-        let label = review.data?.objects?.first ?? "object"
-        let subLabel = review.data?.subLabels?.first
-        let camera = review.camera
-        let severity = review.severity ?? "alert"
-        let when = Date(timeIntervalSince1970: review.startTime ?? Date().timeIntervalSince1970)
-        let thumbURL = client.reviewThumbnailURL(review: review)
-        Task {
-            var imageData: Data?
-            if let thumbURL { imageData = try? await client.imageData(from: thumbURL) }
-            SharedSnapshotStore.saveLatestAlert(
-                label: label, subLabel: subLabel, camera: camera,
-                severity: severity, when: when, imageData: imageData
+        guard let client else { return }
+        let recent = Array(reviews.prefix(8))
+        guard !recent.isEmpty else { return }
+
+        let alerts: [SharedAlert] = recent.map { review in
+            SharedAlert(
+                id: review.id,
+                label: review.data?.objects?.first ?? "object",
+                subLabel: review.data?.subLabels?.first,
+                camera: review.camera,
+                severity: review.severity ?? "alert",
+                when: Date(timeIntervalSince1970: review.startTime ?? Date().timeIntervalSince1970),
+                imageFileName: nil
             )
+        }
+        let thumbURL = recent.first.flatMap { client.reviewThumbnailURL(review: $0) }
+
+        Task {
+            var heroData: Data?
+            if let thumbURL { heroData = try? await client.imageData(from: thumbURL) }
+            SharedSnapshotStore.saveRecentAlerts(alerts, heroImageData: heroData)
+            // Keep the single-latest-alert store in sync for any legacy reader.
+            if let first = alerts.first {
+                SharedSnapshotStore.saveLatestAlert(
+                    label: first.label, subLabel: first.subLabel, camera: first.camera,
+                    severity: first.severity, when: first.when, imageData: heroData
+                )
+            }
             WidgetCenter.shared.reloadAllTimelines()
         }
     }

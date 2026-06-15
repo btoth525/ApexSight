@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MultiCameraGridView: View {
     @EnvironmentObject private var appState: AppState
@@ -12,7 +13,9 @@ struct MultiCameraGridView: View {
 
     init(group: CameraGroup? = nil) {
         self.group = group
-        _columns = State(initialValue: group?.columns ?? 2)
+        // Default to one camera per row on iPhone (big, easy to read) and two-up on iPad.
+        let deviceDefault = UIDevice.current.userInterfaceIdiom == .pad ? 2 : 1
+        _columns = State(initialValue: group?.columns ?? deviceDefault)
     }
 
     private var displayedCameras: [FrigateCamera] {

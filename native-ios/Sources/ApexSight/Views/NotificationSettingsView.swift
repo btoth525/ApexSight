@@ -319,20 +319,18 @@ struct NotificationSettingsView: View {
     private func sendTest() async {
         isWorking = true
         defer { isWorking = false }
-        // Always fire the basic notification — this is our reliability guarantee.
-        // Also try the rich path (GIF + snapshot) if we have a recent review.
-        var didSendRich = false
+        // Use the most recent review for the full rich preview (GIF + deep link), exactly as
+        // a real alert looks. `asTest` gives each tap a unique id + short trigger so repeated
+        // taps reliably present (a stable per-review id would be coalesced silently).
         if let review = appState.reviews.first,
            let client = appState.client,
            let session = appState.session {
-            await LocalAlertNotifier.notify(review: review, client: client, session: session)
-            didSendRich = true
-        }
-        if !didSendRich {
+            await LocalAlertNotifier.notify(review: review, client: client, session: session, asTest: true)
+            message = "Rich test alert sent (with preview) — lock your phone to see it on the Lock Screen."
+        } else {
+            // No event cached yet — send a basic sample so the user can still verify delivery.
             try? await NativeNotificationManager.sendTestNotification()
+            message = "Test alert sent — lock your phone to see it. Trigger a real event to preview the GIF."
         }
-        message = didSendRich
-            ? "Rich test alert sent (with preview) — check your lock screen."
-            : "Test alert sent — check your lock screen."
     }
 }
