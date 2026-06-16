@@ -113,6 +113,7 @@ final class AppState: ObservableObject {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshAlerts()
+                self?.syncRelayGateIfChanged()
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
@@ -121,6 +122,30 @@ final class AppState: ObservableObject {
     func stopForegroundPolling() {
         pollTask?.cancel()
         pollTask = nil
+    }
+
+    /// Last arm/snooze gate we pushed to the relay, so we only POST when it changes.
+    private var lastSyncedGate: String?
+
+    /// Mirrors the current Disarm / Snooze state to the relay so app-closed pushes are
+    /// suppressed while disarmed or snoozed — the relay counterpart of the in-app gate.
+    /// Cheap and idempotent: only fires when the state actually changes. (Changes made
+    /// from Siri/widgets while the app is fully closed sync on the next foreground.)
+    func syncRelayGateIfChanged() {
+        let disarmed = !ArmStateStore.notificationsActive
+        let snoozedUntil = GlobalSnooze.until?.timeIntervalSince1970 ?? 0
+        let signature = "\(disarmed)|\(Int(snoozedUntil))"
+        guard signature != lastSyncedGate else { return }
+        lastSyncedGate = signature
+
+        let relayURL = DeviceTokenStore.relayURL
+        guard !relayURL.isEmpty, let pairing = DeviceTokenStore.pairingCode, !pairing.isEmpty else { return }
+        Task {
+            try? await RelayClient.syncGate(
+                relayURL: relayURL, pairingCode: pairing,
+                disarmed: disarmed, snoozedUntil: snoozedUntil
+            )
+        }
     }
 
     /// Lightweight refresh of just the things that need to feel live: reviews + events.

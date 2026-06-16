@@ -104,6 +104,12 @@ class StyleIn(BaseModel):
     style: dict
 
 
+class GateIn(BaseModel):
+    pairing_code: str
+    disarmed: bool = False
+    snoozed_until: float = 0.0   # epoch seconds; 0 = not snoozed
+
+
 # ---- public API -------------------------------------------------------------
 
 @app.get("/healthz")
@@ -156,6 +162,21 @@ async def notify(body: NotifyIn, _: None = Depends(rate_limit)) -> dict:
     if not db.devices_for(code):
         # Nothing registered under this code yet — not an error the bridge should retry on.
         return {"ok": True, "devices": 0, "sent": 0, "note": "no devices for pairing code"}
+
+    # Household gate — keeps app-closed pushes consistent with the in-app delivery gate.
+    # When the user has Disarmed or Snoozed (from the app, a widget, Siri or CarPlay,
+    # synced via /v1/gate), suppress delivery instead of buzzing them anyway.
+    gate_raw = db.get_config(f"gate:{code}")
+    if gate_raw:
+        try:
+            gate = json.loads(gate_raw)
+        except json.JSONDecodeError:
+            gate = {}
+        if gate.get("disarmed"):
+            return {"ok": True, "sent": 0, "note": "disarmed"}
+        snoozed_until = gate.get("snoozed_until") or 0
+        if snoozed_until and time.time() < float(snoozed_until):
+            return {"ok": True, "sent": 0, "note": "snoozed"}
 
     title, text = body.title, body.body
     snapshot_url, thumbnail_url = body.snapshot_url, body.thumbnail_url
@@ -213,4 +234,16 @@ def set_style(body: StyleIn, _: None = Depends(rate_limit)) -> dict:
     relay can render app-closed pushes the way the user configured in the GUI."""
     code = body.pairing_code.upper().strip()
     db.set_config(f"style:{code}", json.dumps(body.style))
+    return {"ok": True}
+
+
+@app.post("/v1/gate")
+def set_gate(body: GateIn, _: None = Depends(rate_limit)) -> dict:
+    """The iOS app mirrors its Disarm / Snooze state here so app-closed pushes are
+    suppressed while disarmed or snoozed, matching the in-app delivery gate."""
+    code = body.pairing_code.upper().strip()
+    db.set_config(
+        f"gate:{code}",
+        json.dumps({"disarmed": bool(body.disarmed), "snoozed_until": float(body.snoozed_until or 0)}),
+    )
     return {"ok": True}

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- **Disarm / Snooze now silence app-closed pushes.** The relay honors a per-household
+  gate the iOS app syncs via the new `POST /v1/gate` endpoint: when you Disarm or
+  Snooze (from the app, a widget, Siri or CarPlay) the relay suppresses delivery
+  instead of pushing anyway — matching the in-app behavior. (Changes made while the
+  app is fully closed take effect on the next time you open it.)
+
 ## 1.1.0
 
 - **App-controlled notification style.** The relay now renders title / body / media

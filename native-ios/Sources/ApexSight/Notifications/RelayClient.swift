@@ -37,6 +37,12 @@ enum RelayClient {
         let style: NotificationStyle
     }
 
+    private struct GateBody: Encodable {
+        let pairing_code: String
+        let disarmed: Bool
+        let snoozed_until: Double   // epoch seconds; 0 = not snoozed
+    }
+
     /// Result of a `/healthz` probe used for the green/red status dot.
     struct Health: Decodable {
         let ok: Bool
@@ -83,6 +89,14 @@ enum RelayClient {
     /// are rendered the way the user configured in the app.
     static func syncStyle(relayURL: String, pairingCode: String, style: NotificationStyle) async throws {
         try await post(relayURL: relayURL, path: "/v1/style", body: StyleBody(pairing_code: pairingCode, style: style))
+    }
+
+    /// Tells the relay the household's current arm/snooze state so app-closed pushes
+    /// are suppressed while disarmed or snoozed — keeping the relay consistent with
+    /// the in-app delivery gate.
+    static func syncGate(relayURL: String, pairingCode: String, disarmed: Bool, snoozedUntil: Double) async throws {
+        try await post(relayURL: relayURL, path: "/v1/gate",
+                       body: GateBody(pairing_code: pairingCode, disarmed: disarmed, snoozed_until: snoozedUntil))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {
