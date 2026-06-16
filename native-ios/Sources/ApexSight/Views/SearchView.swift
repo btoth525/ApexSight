@@ -93,60 +93,48 @@ struct SearchView: View {
 
     private var searchBar: some View {
         GlassCard {
-            VStack(spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "sparkle.magnifyingglass")
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(GlassTheme.purple)
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundStyle(GlassTheme.purple)
 
-                    TextField("Search or ask…", text: $query)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(GlassTheme.primary)
-                        .submitLabel(.search)
-                        .onSubmit { Task { await performSearch() } }
+                TextField("Ask anything…", text: $query)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(GlassTheme.primary)
+                    .submitLabel(.search)
+                    .onSubmit { Task { await performSearch() } }
 
-                    if !query.isEmpty || hasSearched {
-                        Button {
-                            query = ""
-                            results = []
-                            answer = nil
-                            hasSearched = false
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(GlassTheme.secondary)
-                        }
+                if !query.isEmpty || hasSearched {
+                    Button {
+                        query = ""
+                        results = []
+                        answer = nil
+                        hasSearched = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(GlassTheme.tertiary)
                     }
+                    .buttonStyle(.plain)
                 }
 
-                HStack(spacing: 10) {
-                    Text("Try “kid on a bike” · “red car” · “packages today”")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(GlassTheme.tertiary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-
-                    Spacer(minLength: 4)
-
-                    Button {
-                        withAnimation { showFilters.toggle() }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
-                            .font(.system(size: 20, weight: .black))
-                            .foregroundStyle(GlassTheme.cyan)
-                    }
-
-                    Button {
-                        Task { await performSearch() }
-                    } label: {
-                        Text("Search")
-                            .font(.system(size: 14, weight: .black))
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(GlassTheme.cyan, in: Capsule())
-                    }
-                    .disabled(isSearching)
+                Button {
+                    withAnimation { showFilters.toggle() }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundStyle(GlassTheme.cyan)
                 }
+                .buttonStyle(.plain)
+
+                Button {
+                    Task { await performSearch() }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 27, weight: .black))
+                        .foregroundStyle(isSearching ? GlassTheme.tertiary : GlassTheme.cyan)
+                }
+                .buttonStyle(.plain)
+                .disabled(isSearching)
             }
         }
     }
@@ -472,44 +460,51 @@ struct SearchView: View {
         answer = nil
         defer { isSearching = false }
 
-        // Filters chosen in the panel.
+        // Only the filters the user explicitly set in the panel.
         let fCamera = selectedCamera == "all" ? nil : selectedCamera
         let fLabel = selectedLabel == "all" ? nil : selectedLabel
         let subLabel = selectedSubLabel == "all" ? nil : selectedSubLabel
         let zone = selectedZone == "all" ? nil : selectedZone
         let q = query.trimmingCharacters(in: .whitespaces)
 
-        // On-device understanding of what was typed (object/time/camera/unknown/known face).
-        let plan: AskPlan? = q.isEmpty
-            ? nil
-            : AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
-
-        let camera = fCamera ?? plan?.camera
-        let label = fLabel ?? plan?.label
-
         do {
             var found: [FrigateEvent]
-            if !q.isEmpty {
-                // Try Frigate semantic search first — handles "kid on a bike", "red car".
+
+            if q.isEmpty {
+                // Pure filter browse.
+                found = try await client.events(
+                    camera: fCamera, label: fLabel, subLabel: subLabel,
+                    zone: zone, after: afterDate, limit: 150
+                )
+            } else if isQuestion(q) {
+                // A question ("how many packages today", "when was the dog out") — parse it
+                // into structured filters so counts/times are precise, then answer.
+                let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
+                found = (try await client.events(
+                    camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
+                    subLabel: subLabel, zone: zone,
+                    after: afterDate ?? plan.after, before: plan.before, limit: 200
+                )).filter { plan.matches($0, style: .default) }
+                answer = AskParser.answer(for: plan, results: found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) })
+            } else {
+                // A description ("kid on a bike", "red car") — hand the RAW query to Frigate
+                // semantic search with only the user's explicit filters. No parsed label/time
+                // constraints (that's what was over-filtering it to nothing).
                 let semantic = (try? await client.semanticSearch(
-                    query: q, camera: camera, label: label,
-                    subLabel: subLabel, zone: zone, after: afterDate ?? plan?.after
+                    query: q, camera: fCamera, label: fLabel,
+                    subLabel: subLabel, zone: zone, after: afterDate
                 )) ?? []
                 if !semantic.isEmpty {
                     found = semantic
                 } else {
-                    // Fall back to structured filters parsed from the question.
+                    // Frigate semantic search unavailable/empty → keyword fallback by object,
+                    // but NOT time-boxed, so it still returns matches.
+                    let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
                     found = try await client.events(
-                        camera: camera, label: label, subLabel: subLabel,
-                        zone: zone, after: afterDate ?? plan?.after, before: plan?.before, limit: 150
+                        camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
+                        subLabel: subLabel, zone: zone, after: afterDate, limit: 150
                     )
-                    if let plan { found = found.filter { plan.matches($0, style: .default) } }
                 }
-            } else {
-                found = try await client.events(
-                    camera: camera, label: label, subLabel: subLabel,
-                    zone: zone, after: afterDate, limit: 150
-                )
             }
 
             // Optional license-plate filter from the panel.
@@ -519,10 +514,6 @@ struct SearchView: View {
             }
 
             results = found
-            // A spoken-style answer for question-shaped queries ("how many packages today").
-            if let plan, isQuestion(q) {
-                answer = AskParser.answer(for: plan, results: found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) })
-            }
         } catch {
             errorMessage = error.localizedDescription
             results = []
