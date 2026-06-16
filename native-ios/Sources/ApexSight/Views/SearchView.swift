@@ -11,6 +11,10 @@ struct SearchView: View {
     @State private var showDateFilter = false
     @State private var showFilters = false
     @State private var results: [FrigateEvent] = []
+    /// True when `results` came from a relevance-ranked semantic/keyword search, so we
+    /// preserve Frigate's best-match-first order (and show descriptions) instead of
+    /// re-sorting by time.
+    @State private var resultsRanked = false
     @State private var isSearching = false
     @State private var hasSearched = false
     @State private var errorMessage: String?
@@ -31,6 +35,12 @@ struct SearchView: View {
         sortNewest
             ? results.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
             : results.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+    }
+
+    /// Ranked searches keep Frigate's relevance order (best match first); everything
+    /// else uses the time sort the user picked.
+    private var displayResults: [FrigateEvent] {
+        resultsRanked ? results : sortedResults
     }
 
     private var allLabels: [String] {
@@ -269,6 +279,50 @@ struct SearchView: View {
         }
     }
 
+    /// A ranked semantic-search hit: thumbnail + label/sub-label, time, the GenAI
+    /// description (what matched), and a small badge for the match source.
+    private func searchResultRow(_ event: FrigateEvent) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let url = appState.client?.eventThumbnailURL(id: event.id) {
+                RemoteImage(url: url, contentMode: .fill)
+                    .frame(width: 92, height: 92)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.black).frame(width: 92, height: 92)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
+                        .font(.system(size: 15, weight: .black))
+                        .foregroundStyle(GlassTheme.primary)
+                        .lineLimit(1)
+                    if event.searchSource == "description" {
+                        Image(systemName: "text.magnifyingglass")
+                            .font(.system(size: 11, weight: .black))
+                            .foregroundStyle(GlassTheme.purple)
+                            .accessibilityLabel("Matched description")
+                    }
+                }
+                Text("\(titleize(event.camera))\(event.startTime.map { " · " + Date(timeIntervalSince1970: $0).formatted(date: .abbreviated, time: .shortened) } ?? "")")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(GlassTheme.secondary)
+                    .lineLimit(1)
+                if let desc = event.description {
+                    Text(desc)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
     // MARK: - Filters
 
     private var filterSection: some View {
@@ -380,12 +434,20 @@ struct SearchView: View {
                         Text("\(results.count)")
                             .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(GlassTheme.secondary)
-                        Button { sortNewest.toggle() } label: {
-                            Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                .font(.system(size: 18, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
+                        if resultsRanked {
+                            // Semantic results are best-match-first; surface that instead
+                            // of a time-sort toggle that would scramble the ranking.
+                            Label("Best match", systemImage: "sparkles")
+                                .font(.system(size: 12, weight: .black))
+                                .foregroundStyle(GlassTheme.purple)
+                        } else {
+                            Button { sortNewest.toggle() } label: {
+                                Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                    .font(.system(size: 18, weight: .black))
+                                    .foregroundStyle(GlassTheme.cyan)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
 
                     if let error = errorMessage {
@@ -412,9 +474,20 @@ struct SearchView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 20)
+                    } else if resultsRanked {
+                        // Ranked semantic results render as rich rows so the GenAI
+                        // description and match source ride alongside each hit.
+                        LazyVStack(spacing: 10) {
+                            ForEach(displayResults) { event in
+                                Button { path.append(event) } label: {
+                                    searchResultRow(event)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
-                            ForEach(sortedResults) { event in
+                            ForEach(displayResults) { event in
                                 Button { path.append(event) } label: {
                                     thumbnail(event)
                                 }
@@ -498,6 +571,7 @@ struct SearchView: View {
         hasSearched = true
         errorMessage = nil
         answer = nil
+        resultsRanked = false
         defer { isSearching = false }
 
         // Only the filters the user explicitly set in the panel.
@@ -545,6 +619,8 @@ struct SearchView: View {
                         camera: fCamera, label: fLabel, subLabel: subLabel, zone: zone
                     )
                 }
+                // Both paths return best-match-first — keep that order in the UI.
+                resultsRanked = true
             }
 
             // Optional license-plate filter from the panel.

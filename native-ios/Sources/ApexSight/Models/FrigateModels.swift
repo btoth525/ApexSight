@@ -67,6 +67,13 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     let hasSnapshot: Bool?
     let recognizedLicensePlate: String?
     let recognizedLicensePlateScore: Double?
+    /// GenAI description (from `data.description`) — present when GenAI descriptions
+    /// are enabled, and what Frigate's "description" semantic search matches against.
+    let description: String?
+    /// Relevance fields returned only by `/api/events/search` (lower distance = better
+    /// match). `searchSource` is "thumbnail" or "description".
+    let searchDistance: Double?
+    let searchSource: String?
 
     var displayLabel: String {
         if let sub = subLabel, !sub.isEmpty { return sub }
@@ -94,6 +101,17 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case hasSnapshot = "has_snapshot"
         case recognizedLicensePlate = "recognized_license_plate"
         case recognizedLicensePlateScore = "recognized_license_plate_score"
+        case description
+        case data
+        case searchDistance = "search_distance"
+        case searchSource = "search_source"
+    }
+
+    /// Fields Frigate nests under the event's `data` object.
+    private enum DataKeys: String, CodingKey {
+        case score
+        case topScore = "top_score"
+        case description
     }
 
     init(from decoder: Decoder) throws {
@@ -110,13 +128,27 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         subLabelScore = try? c.decodeIfPresent(Double.self, forKey: .subLabelScore)
         startTime = try? c.decodeIfPresent(Double.self, forKey: .startTime)
         endTime = try? c.decodeIfPresent(Double.self, forKey: .endTime)
-        score = try? c.decodeIfPresent(Double.self, forKey: .score)
-        topScore = try? c.decodeIfPresent(Double.self, forKey: .topScore)
         zones = try? c.decodeIfPresent([String].self, forKey: .zones)
         hasClip = try? c.decodeIfPresent(Bool.self, forKey: .hasClip)
         hasSnapshot = try? c.decodeIfPresent(Bool.self, forKey: .hasSnapshot)
         recognizedLicensePlate = try? c.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)
         recognizedLicensePlateScore = try? c.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)
+        searchDistance = try? c.decodeIfPresent(Double.self, forKey: .searchDistance)
+        searchSource = try? c.decodeIfPresent(String.self, forKey: .searchSource)
+
+        // score / top_score / description can be top-level OR nested under `data`
+        // (the /events/search response nests them) — read both, preferring top-level.
+        var dataScore: Double?, dataTopScore: Double?, dataDescription: String?
+        if let dataC = try? c.nestedContainer(keyedBy: DataKeys.self, forKey: .data) {
+            dataScore = try? dataC.decodeIfPresent(Double.self, forKey: .score)
+            dataTopScore = try? dataC.decodeIfPresent(Double.self, forKey: .topScore)
+            dataDescription = try? dataC.decodeIfPresent(String.self, forKey: .description)
+        }
+        score = ((try? c.decodeIfPresent(Double.self, forKey: .score)) ?? nil) ?? dataScore
+        topScore = ((try? c.decodeIfPresent(Double.self, forKey: .topScore)) ?? nil) ?? dataTopScore
+        let topDescription = ((try? c.decodeIfPresent(String.self, forKey: .description)) ?? nil)
+        let merged = topDescription ?? dataDescription
+        description = (merged?.isEmpty == false) ? merged : nil
     }
 }
 
