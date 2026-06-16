@@ -139,7 +139,8 @@ final class AppState: ObservableObject {
         lastSyncedGate = signature
 
         let relayURL = DeviceTokenStore.relayURL
-        guard !relayURL.isEmpty, let pairing = DeviceTokenStore.pairingCode, !pairing.isEmpty else { return }
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard !relayURL.isEmpty, !pairing.isEmpty else { return }
         Task {
             try? await RelayClient.syncGate(
                 relayURL: relayURL, pairingCode: pairing,
