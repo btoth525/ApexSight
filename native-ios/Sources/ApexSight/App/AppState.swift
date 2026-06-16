@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 import WidgetKit
+import CoreSpotlight
+import AppIntents
 
 enum AppDeepLink: Hashable {
     case review(String)
@@ -409,6 +411,11 @@ final class AppState: ObservableObject {
             cameras = loadedCameras
             // Mirror camera names to the app group so Siri/Watch/CarPlay can list them.
             SharedSnapshotStore.saveCameraNames(loadedCameras.map(\.name))
+            // Index cameras into Spotlight so typing "front door" opens that camera.
+            if #available(iOS 18.0, *) {
+                let entities = loadedCameras.map { CameraEntity(id: $0.name) }
+                Task { try? await CSSearchableIndex.default().indexAppEntities(entities) }
+            }
             events = (try? await nextEvents) ?? events
             if let r = try? await nextReviews {
                 reviews = visibleReviews(r)
