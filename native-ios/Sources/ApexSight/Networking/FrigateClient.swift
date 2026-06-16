@@ -103,10 +103,13 @@ struct FrigateClient {
         try await get("api/stats")
     }
 
-    func reviews(limit: Int = 30, severity: String? = nil) async throws -> [FrigateReviewItem] {
+    func reviews(limit: Int = 30, severity: String? = nil, reviewed: Bool? = nil, before: Double? = nil) async throws -> [FrigateReviewItem] {
         var components = URLComponents(url: baseURL.appending(path: "api/review"), resolvingAgainstBaseURL: false)
         var query = [URLQueryItem(name: "limit", value: "\(limit)")]
         if let severity { query.append(URLQueryItem(name: "severity", value: severity)) }
+        // reviewed=0 → only un-reviewed; reviewed=1 → include reviewed (Frigate default is unreviewed).
+        if let reviewed { query.append(URLQueryItem(name: "reviewed", value: reviewed ? "1" : "0")) }
+        if let before { query.append(URLQueryItem(name: "before", value: "\(Int(before))")) }
         components?.queryItems = query
         guard let url = components?.url else { throw FrigateError.invalidURL }
         var request = URLRequest(url: url)

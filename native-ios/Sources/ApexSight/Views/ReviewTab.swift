@@ -28,7 +28,8 @@ struct ReviewTab: View {
     private func loadDetections() async {
         guard let client = appState.client else { return }
         loadingDetections = true
-        detectionItems = (try? await client.reviews(limit: 100, severity: "detection")) ?? []
+        detectionItems = ((try? await client.reviews(limit: 100, severity: "detection", reviewed: false)) ?? [])
+            .filter { !($0.hasBeenReviewed ?? false) }
         loadingDetections = false
     }
 
@@ -134,6 +135,7 @@ struct ReviewTab: View {
                 Button("Mark All Reviewed") {
                     Task {
                         await appState.markAllReviewsViewed()
+                        detectionItems = []
                         UINotificationFeedbackGenerator().notificationOccurred(.success)
                     }
                 }

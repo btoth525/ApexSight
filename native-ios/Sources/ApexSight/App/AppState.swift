@@ -121,11 +121,11 @@ final class AppState: ObservableObject {
     func refreshAlerts(retryOnAuthFailure: Bool = true) async {
         guard let client else { return }
         do {
-            async let nextReviews = client.reviews(limit: 30)
+            async let nextReviews = client.reviews(limit: 30, reviewed: false)
             async let nextEvents = client.events(limit: 50)
             let r = try await nextReviews
             let e = try await nextEvents
-            reviews = r.filter { !locallyViewedIDs.contains($0.id) }
+            reviews = visibleReviews(r)
             events = e
             cacheLatestAlertForWidget()
             isReachable = true
@@ -141,18 +141,46 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Marks every currently-shown review as handled in one tap (Frigate `reviews/viewed`).
+    /// Marks EVERY un-reviewed item on the server as handled — not just the ~30
+    /// loaded — and persists it via Frigate's `reviews/viewed` API so they stay gone
+    /// after relaunch. Pages through the full backlog and marks in chunks.
     func markAllReviewsViewed() async {
         guard let client else { return }
-        let ids = reviews.map(\.id)
-        guard !ids.isEmpty else { return }
         do {
-            try await client.markReviewsViewed(ids: ids)
+            var idSet = Set<String>()
+            var before: Double? = nil
+            // Page through the whole un-reviewed backlog (safety-capped).
+            for _ in 0..<50 {
+                let batch = try await client.reviews(limit: 200, reviewed: false, before: before)
+                guard !batch.isEmpty else { break }
+                let newIDs = batch.map(\.id).filter { !idSet.contains($0) }
+                guard !newIDs.isEmpty else { break }   // no progress → stop
+                idSet.formUnion(newIDs)
+                guard batch.count >= 200, let oldest = batch.compactMap(\.startTime).min() else { break }
+                before = oldest
+            }
+
+            let ids = Array(idSet)
+            guard !ids.isEmpty else {
+                reviews.removeAll()
+                return
+            }
+            // Mark in chunks so a huge backlog doesn't blow the request body.
+            for start in stride(from: 0, to: ids.count, by: 500) {
+                let slice = Array(ids[start..<min(start + 500, ids.count)])
+                try await client.markReviewsViewed(ids: slice)
+            }
             locallyViewedIDs.formUnion(ids)
-            reviews.removeAll { ids.contains($0.id) }
+            reviews.removeAll()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Drops anything the server already considers reviewed (and anything we just
+    /// marked locally), so reviewed items never reappear after a relaunch.
+    private func visibleReviews(_ items: [FrigateReviewItem]) -> [FrigateReviewItem] {
+        items.filter { !locallyViewedIDs.contains($0.id) && !($0.hasBeenReviewed ?? false) }
     }
 
     /// Caches a short feed of recent reviews (label + camera + time, newest-first) plus a
@@ -217,6 +245,9 @@ final class AppState: ObservableObject {
     private func handleReview(_ item: FrigateReviewItem, change: ChangeType) {
         guard !locallyViewedIDs.contains(item.id) else { return }
         reviews.removeAll { $0.id == item.id }
+
+        // Already handled on the server (e.g. marked reviewed elsewhere) → keep it gone.
+        if item.hasBeenReviewed == true { return }
 
         if change == .end {
             // Only dismiss the Live Activity for alert reviews — detection reviews ending
@@ -362,7 +393,7 @@ final class AppState: ObservableObject {
         do {
             async let nextCameras = client.cameras()
             async let nextEvents = client.events(limit: 50)
-            async let nextReviews = client.reviews(limit: 30)
+            async let nextReviews = client.reviews(limit: 30, reviewed: false)
             async let nextLabels = client.labels()
             async let nextSubLabels = client.subLabels()
             async let nextStats = client.stats()
@@ -375,7 +406,7 @@ final class AppState: ObservableObject {
             SharedSnapshotStore.saveCameraNames(loadedCameras.map(\.name))
             events = (try? await nextEvents) ?? events
             if let r = try? await nextReviews {
-                reviews = r.filter { !locallyViewedIDs.contains($0.id) }
+                reviews = visibleReviews(r)
             }
             labels = (try? await nextLabels) ?? labels
             subLabels = (try? await nextSubLabels) ?? subLabels

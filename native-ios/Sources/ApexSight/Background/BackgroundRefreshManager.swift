@@ -45,7 +45,7 @@ enum BackgroundRefreshManager {
         // Pull a wider window than before: a busy stretch (or a long gap between
         // background wakeups) can produce more than 20 reviews, and the older ones
         // would otherwise be skipped entirely.
-        var reviews = try? await client.reviews(limit: 50)
+        var reviews = try? await client.reviews(limit: 50, reviewed: false)
 
         // The token may have expired since the app last ran. Re-login once with the
         // stored credentials, refresh the shared token (so the notification
@@ -53,7 +53,7 @@ enum BackgroundRefreshManager {
         if reviews == nil, let refreshed = await reauthenticate(from: session) {
             session = refreshed
             client = FrigateClient(session: session)
-            reviews = try? await client.reviews(limit: 50)
+            reviews = try? await client.reviews(limit: 50, reviewed: false)
         }
 
         guard let reviews else { return }
