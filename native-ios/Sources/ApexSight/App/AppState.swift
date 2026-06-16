@@ -127,9 +127,13 @@ final class AppState: ObservableObject {
             async let nextEvents = client.events(limit: 50)
             let r = try await nextReviews
             let e = try await nextEvents
-            reviews = visibleReviews(r)
-            events = e
-            cacheLatestAlertForWidget()
+            // Only reassign (and invalidate views / refresh the widget) when the
+            // lists actually changed — the 15s poller used to churn every tick.
+            let visible = visibleReviews(r)
+            let reviewsChanged = visible.map(\.id) != reviews.map(\.id)
+            if reviewsChanged { reviews = visible }
+            if e.map(\.id) != events.map(\.id) { events = e }
+            if reviewsChanged { cacheLatestAlertForWidget() }
             isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once, then retry so the

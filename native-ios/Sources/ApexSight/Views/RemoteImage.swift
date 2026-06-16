@@ -1,9 +1,13 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
 struct RemoteImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    /// Decode no larger than this many pixels on the long edge — keeps memory + CPU
+    /// down (a 4K snapshot in an 84pt cell was decoding ~8MB; this caps it).
+    var maxPixelSize: CGFloat = 1000
 
     @EnvironmentObject private var appState: AppState
     @State private var image: Image?
@@ -56,7 +60,7 @@ struct RemoteImage: View {
             guard let client = appState.client else { break }
             do {
                 let data = try await client.imageData(from: url)
-                if let uiImage = UIImage(data: data) {
+                if let uiImage = Self.downsample(data, maxPixel: maxPixelSize) {
                     ImageCache.shared.insert(uiImage, for: url)
                     image = Image(uiImage: uiImage)
                     isFailed = false
@@ -70,5 +74,23 @@ struct RemoteImage: View {
             }
         }
         isFailed = true
+    }
+
+    /// Decode-and-downsample with ImageIO so we never hold a full-resolution frame for
+    /// a small cell. Falls back to a plain decode if thumbnailing fails.
+    static func downsample(_ data: Data, maxPixel: CGFloat) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxPixel)
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        return UIImage(cgImage: cg)
     }
 }

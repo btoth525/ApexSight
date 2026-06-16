@@ -67,11 +67,12 @@ struct CamerasTab: View {
 
     // MARK: - Live wall (normal mode)
 
-    /// Non-lazy rows keep every live player mounted, so scrolling never blanks a feed —
-    /// the same approach that makes the Multi-View wall stay loaded once it's up.
+    /// Lazy rows so off-screen feeds tear down their AVPlayer and stop decoding video
+    /// (huge CPU/thermal/battery win with many cameras). Each card shows its snapshot
+    /// placeholder instantly on reappear, so scrolling back never leaves a black gap.
     private var liveScroll: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 if let error = appState.errorMessage {
                     GlassCard {
                         Label(error, systemImage: "exclamationmark.triangle")

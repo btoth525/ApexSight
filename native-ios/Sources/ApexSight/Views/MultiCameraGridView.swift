@@ -66,7 +66,8 @@ struct MultiCameraGridView: View {
 
     private var grid: some View {
         ScrollView {
-            VStack(spacing: 2) {
+            // Lazy so rows scrolled off the wall stop decoding video.
+            LazyVStack(spacing: 2) {
                 ForEach(cameraRows, id: \.self) { rowIndices in
                     HStack(spacing: 2) {
                         ForEach(rowIndices, id: \.self) { idx in
