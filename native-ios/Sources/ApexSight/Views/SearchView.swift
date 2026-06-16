@@ -18,6 +18,7 @@ struct SearchView: View {
     @State private var plateQuery = ""
     @State private var sortNewest = true
     @State private var path = NavigationPath()
+    @State private var showAsk = false
 
     // Browse view (default state): a larger recent set grouped by object.
     @State private var browseEvents: [FrigateEvent] = []
@@ -64,6 +65,19 @@ struct SearchView: View {
             .glassNavBar()
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showAsk = true } label: {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundStyle(GlassTheme.purple)
+                    }
+                    .accessibilityLabel("Ask your cameras")
+                }
+            }
+            .sheet(isPresented: $showAsk) {
+                AskView().environmentObject(appState)
             }
             .task { if browseEvents.isEmpty { await loadBrowse() } }
         }
