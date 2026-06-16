@@ -23,5 +23,36 @@ struct NotificationStyle: Codable, Equatable {
     var firstFrame: String = "cropped"   // "cropped" | "full" | "none"
     var finalGif: Bool = true            // send the full-GIF "final update"
 
+    /// App-managed known license plates (Frigate has no plate API). Maps a friendly
+    /// name to one or more plate strings; matched normalized (case/space/dash-insensitive).
+    var knownPlates: [KnownPlate] = []
+
     static let `default` = NotificationStyle()
+}
+
+struct KnownPlate: Codable, Equatable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var plates: [String]
+}
+
+extension NotificationStyle {
+    /// Plate text reduced to just letters/digits, uppercased — for tolerant matching.
+    static func normalizePlate(_ raw: String) -> String {
+        raw.uppercased().unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) }
+            .map(String.init)
+            .joined()
+    }
+
+    /// The friendly name for a recognized plate, or nil if it isn't one you've named.
+    func knownPlateName(for raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let norm = Self.normalizePlate(raw)
+        guard !norm.isEmpty else { return nil }
+        for plate in knownPlates where plate.plates.contains(where: { Self.normalizePlate($0) == norm }) {
+            return plate.name
+        }
+        return nil
+    }
 }

@@ -95,6 +95,7 @@ class NotifyIn(BaseModel):
     severity: str = ""
     detection_id: str = ""
     frigate_base_url: str = ""
+    recognized_license_plate: str = ""
     stage: str = ""
 
 
@@ -180,6 +181,7 @@ async def notify(body: NotifyIn, _: None = Depends(rate_limit)) -> dict:
                 "severity": body.severity,
                 "detection_id": body.detection_id,
                 "frigate_base_url": body.frigate_base_url,
+                "recognized_license_plate": body.recognized_license_plate,
             },
             style,
             body.stage or "alert",

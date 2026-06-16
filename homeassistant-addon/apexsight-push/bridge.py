@@ -106,6 +106,9 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
         "stage": "final" if final else "alert",
         "frigate_base_url": FRIGATE_BASE_URL,
     }
+    plate = data.get("recognized_license_plate") or ""
+    if plate:
+        payload["recognized_license_plate"] = plate
     if detections:
         payload["detection_id"] = detections[0]
     # Rich media, two-stage (matches the SgtBatten blueprint feel):

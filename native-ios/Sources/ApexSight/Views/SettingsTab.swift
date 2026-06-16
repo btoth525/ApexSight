@@ -99,6 +99,9 @@ struct SettingsTab: View {
                         settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
                             path.append("triggers")
                         }
+                        settingsRow(icon: "car.fill", title: "License Plates", subtitle: "Name your cars → \"Unknown plate\" for the rest", tint: GlassTheme.blue) {
+                            path.append("plates")
+                        }
 
                         // About card
                         GlassCard {
@@ -143,6 +146,7 @@ struct SettingsTab: View {
                 else if value == "servers" { ServerSwitcherView() }
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView().environmentObject(appState) }
+                else if value == "plates" { PlateManagerView().environmentObject(appState) }
             }
         }
     }
