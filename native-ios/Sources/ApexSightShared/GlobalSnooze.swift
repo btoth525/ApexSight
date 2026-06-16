@@ -21,9 +21,11 @@ enum GlobalSnooze {
 
     static func snooze(until date: Date) {
         defaults?.set(date.timeIntervalSince1970, forKey: key)
+        ApexSurfaceRefresh.reload()
     }
 
     static func clear() {
         defaults?.removeObject(forKey: key)
+        ApexSurfaceRefresh.reload()
     }
 }

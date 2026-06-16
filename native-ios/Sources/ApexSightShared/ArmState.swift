@@ -31,7 +31,11 @@ enum ArmStateStore {
 
     static var mode: ArmMode {
         get { ArmMode(rawValue: defaults?.string(forKey: key) ?? "") ?? .away }
-        set { defaults?.set(newValue.rawValue, forKey: key) }
+        set {
+            defaults?.set(newValue.rawValue, forKey: key)
+            // Keep widgets + the Control Center arm toggle in sync wherever the change came from.
+            ApexSurfaceRefresh.reload()
+        }
     }
 
     /// Whether alerts should be delivered at all in the current mode.
