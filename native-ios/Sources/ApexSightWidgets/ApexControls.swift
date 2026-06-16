@@ -37,9 +37,9 @@ struct ApexArmControl: ControlWidget {
             ControlWidgetToggle(
                 isOn: ArmStateStore.notificationsActive,
                 action: ApexArmToggleIntent()
-            ) { isArmed in
-                Label(isArmed ? "Armed" : "Disarmed",
-                      systemImage: isArmed ? "shield.fill" : "shield.slash.fill")
+            ) {
+                Label(ArmStateStore.notificationsActive ? "Armed" : "Disarmed",
+                      systemImage: ArmStateStore.notificationsActive ? "shield.fill" : "shield.slash.fill")
             }
         }
         .displayName("Arm ApexSight")
