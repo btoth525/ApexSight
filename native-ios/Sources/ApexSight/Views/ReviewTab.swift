@@ -20,17 +20,20 @@ struct ReviewTab: View {
         case "alert":     base = appState.reviews.filter { $0.severity == "alert" }
         default:          base = appState.reviews
         }
+        // Exclude anything just marked viewed (e.g. from the detail screen) so it can't
+        // linger — detectionItems is owned here and isn't pruned by AppState's refresh.
+        let visible = base.filter { !appState.locallyViewedIDs.contains($0.id) }
         return sortNewest
-            ? base.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
-            : base.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+            ? visible.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+            : visible.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
     }
 
-    private func loadDetections() async {
+    private func loadDetections(silent: Bool = false) async {
         guard let client = appState.client else { return }
-        loadingDetections = true
+        if !silent { loadingDetections = true }
         detectionItems = ((try? await client.reviews(limit: 100, severity: "detection", reviewed: false)) ?? [])
-            .filter { !($0.hasBeenReviewed ?? false) }
-        loadingDetections = false
+            .filter { !($0.hasBeenReviewed ?? false) && !appState.locallyViewedIDs.contains($0.id) }
+        if !silent { loadingDetections = false }
     }
 
     private var showEmptyState: Bool {
@@ -128,7 +131,9 @@ struct ReviewTab: View {
                 }
             }
             .confirmationDialog(
-                "Mark all \(appState.reviews.count) items as reviewed?",
+                // Marks the entire server backlog, not just the items loaded here, so
+                // the copy doesn't promise a misleading visible-count.
+                "Mark every review item as reviewed?",
                 isPresented: $showMarkAllConfirm,
                 titleVisibility: .visible
             ) {
@@ -149,8 +154,15 @@ struct ReviewTab: View {
             }
             .task { if appState.reviews.isEmpty { await appState.refresh() } }
             .task(id: selectedSeverity) {
-                if selectedSeverity == "detection" && detectionItems.isEmpty {
-                    await loadDetections()
+                guard selectedSeverity == "detection" else { return }
+                if detectionItems.isEmpty { await loadDetections() }
+                // Keep detections live while this filter is active (the 15s poller only
+                // refreshes alerts); the task is cancelled when the filter changes or the
+                // tab goes away.
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    if Task.isCancelled { break }
+                    await loadDetections(silent: true)
                 }
             }
         }

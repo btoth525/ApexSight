@@ -61,8 +61,9 @@ final class AppState: ObservableObject {
     private let eventStream = FrigateEventStream()
 
     /// Reviews the user just marked viewed — filtered out of fetched results so they
-    /// don't flash back in while the server catches up to the viewed state.
-    private var locallyViewedIDs: Set<String> = []
+    /// don't flash back in while the server catches up to the viewed state. Published +
+    /// readable so the Review tab's on-demand detection list can exclude them too.
+    @Published private(set) var locallyViewedIDs: Set<String> = []
     /// Foreground poller — guarantees new alerts/events appear without restarting the app,
     /// even when the WebSocket can't be established through the user's reverse proxy.
     private var pollTask: Task<Void, Never>?
