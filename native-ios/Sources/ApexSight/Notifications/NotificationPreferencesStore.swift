@@ -92,6 +92,8 @@ final class NotificationPreferencesStore: ObservableObject {
     }
 
     func shouldDeliver(camera: String, label: String, zones: [String]) -> Bool {
+        // Disarmed (from the app, a control, Siri, or a Focus) silences everything.
+        guard ArmStateStore.notificationsActive else { return false }
         // Global "snooze all" set from Siri / App Intents takes priority over everything.
         guard !GlobalSnooze.isActive else { return false }
         guard preferences.isCameraEnabled(camera) else { return false }

@@ -5,6 +5,8 @@ struct SettingsTab: View {
     @State private var path = NavigationPath()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
+    private var armModeRaw = ArmMode.away.rawValue
 
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -66,6 +68,31 @@ struct SettingsTab: View {
                                     }
                                     .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
                                 }
+                            }
+                        }
+
+                        // Security / Arm card
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: (ArmMode(rawValue: armModeRaw) ?? .away).systemImage)
+                                        .font(.system(size: 16, weight: .black))
+                                        .foregroundStyle(armModeRaw == ArmMode.disarmed.rawValue ? GlassTheme.red : GlassTheme.green)
+                                    Text("Security")
+                                        .font(.system(size: 18, weight: .black))
+                                        .foregroundStyle(GlassTheme.primary)
+                                }
+                                Picker("Mode", selection: $armModeRaw) {
+                                    ForEach(ArmMode.allCases, id: \.self) { mode in
+                                        Text(mode.title).tag(mode.rawValue)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                Text(armModeRaw == ArmMode.disarmed.rawValue
+                                     ? "Disarmed — all alerts are silenced."
+                                     : "Armed — alerts are on. Change from here, Control Center, or “Hey Siri, disarm ApexSight.”")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(armModeRaw == ArmMode.disarmed.rawValue ? GlassTheme.orange : GlassTheme.secondary)
                             }
                         }
 

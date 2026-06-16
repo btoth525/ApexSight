@@ -245,6 +245,41 @@ struct WhoIsHomeIntent: AppIntent {
     }
 }
 
+struct MarkAllReviewedIntent: AppIntent {
+    static var title: LocalizedStringResource = "Mark All Reviewed"
+    static var description = IntentDescription("Marks every current camera alert as reviewed.")
+    static var openAppWhenRun = false
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let session = KeychainStore().loadSession() else {
+            return .result(dialog: "I couldn't reach your cameras.")
+        }
+        let client = FrigateClient(session: session)
+        let unviewed = (try? await client.reviews(limit: 500, reviewed: false)) ?? []
+        let ids = unviewed.map(\.id)
+        guard !ids.isEmpty else { return .result(dialog: "You're all caught up — nothing to review.") }
+        try? await client.markReviewsViewed(ids: ids)
+        return .result(dialog: IntentDialog(stringLiteral: "Marked \(ids.count) \(ids.count == 1 ? "alert" : "alerts") reviewed."))
+    }
+}
+
+struct ShowRecapIntent: AppIntent {
+    static var title: LocalizedStringResource = "Daily Recap"
+    static var description = IntentDescription("Summarizes today's camera activity.")
+    static var openAppWhenRun = false
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let session = KeychainStore().loadSession() else {
+            return .result(dialog: "I couldn't reach your cameras.")
+        }
+        let client = FrigateClient(session: session)
+        let events = await RecapBuilder.fetchToday(client: client)
+        let recap = RecapBuilder.build(events: events, style: .default)
+        let body = recap.isEmpty ? "" : " \(recap.notificationBody)"
+        return .result(dialog: IntentDialog(stringLiteral: "\(recap.headline).\(body)"))
+    }
+}
+
 // MARK: - Snooze / resume alerts
 
 enum SnoozeDuration: String, AppEnum {
@@ -365,6 +400,34 @@ struct ApexShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Resume Alerts",
             systemImageName: "bell"
+        )
+        AppShortcut(
+            intent: ApexSetArmModeIntent(),
+            phrases: [
+                "Set \(.applicationName) to \(\.$mode)",
+                "Arm \(.applicationName)",
+                "Disarm \(.applicationName)"
+            ],
+            shortTitle: "Security Mode",
+            systemImageName: "shield.fill"
+        )
+        AppShortcut(
+            intent: ShowRecapIntent(),
+            phrases: [
+                "What happened today in \(.applicationName)",
+                "\(.applicationName) daily recap"
+            ],
+            shortTitle: "Daily Recap",
+            systemImageName: "doc.text.image"
+        )
+        AppShortcut(
+            intent: MarkAllReviewedIntent(),
+            phrases: [
+                "Mark all reviewed in \(.applicationName)",
+                "Clear my \(.applicationName) alerts"
+            ],
+            shortTitle: "Mark All Reviewed",
+            systemImageName: "checkmark.circle"
         )
     }
 }

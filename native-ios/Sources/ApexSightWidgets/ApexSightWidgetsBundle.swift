@@ -9,6 +9,7 @@ struct ApexSightWidgetsBundle: WidgetBundle {
         if #available(iOS 18.0, *) {
             ApexSnoozeControl()
             ApexOpenControl()
+            ApexArmControl()
         }
     }
 }

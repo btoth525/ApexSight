@@ -29,3 +29,20 @@ struct ApexOpenControl: ControlWidget {
         .description("Jump straight to your cameras.")
     }
 }
+
+@available(iOS 18.0, *)
+struct ApexArmControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.brandontoth.apexsight.control.arm") {
+            ControlWidgetToggle(
+                isOn: ArmStateStore.notificationsActive,
+                action: ApexArmToggleIntent()
+            ) { isArmed in
+                Label(isArmed ? "Armed" : "Disarmed",
+                      systemImage: isArmed ? "shield.fill" : "shield.slash.fill")
+            }
+        }
+        .displayName("Arm ApexSight")
+        .description("Arm or disarm your camera alerts.")
+    }
+}

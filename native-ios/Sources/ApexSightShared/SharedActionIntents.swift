@@ -36,6 +36,76 @@ struct ApexOpenAppIntent: AppIntent {
     func perform() async throws -> some IntentResult { .result() }
 }
 
+// MARK: - Arm / Disarm
+
+@available(iOS 17.0, *)
+enum ApexArmModeAppEnum: String, AppEnum {
+    case disarmed, home, away, night
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Security Mode"
+    static var caseDisplayRepresentations: [ApexArmModeAppEnum: DisplayRepresentation] = [
+        .disarmed: "Disarmed",
+        .home: "Home",
+        .away: "Away",
+        .night: "Night"
+    ]
+
+    var core: ArmMode { ArmMode(rawValue: rawValue) ?? .away }
+}
+
+@available(iOS 17.0, *)
+struct ApexSetArmModeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Set Security Mode"
+    static var description = IntentDescription("Arm or disarm ApexSight (Home, Away, Night, or Disarmed).")
+
+    @Parameter(title: "Mode")
+    var mode: ApexArmModeAppEnum
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        ArmStateStore.mode = mode.core
+        return .result(dialog: IntentDialog(stringLiteral: "ApexSight is now \(mode.core.title)."))
+    }
+}
+
+/// Control Center toggle backing intent: on = Away, off = Disarmed.
+@available(iOS 18.0, *)
+struct ApexArmToggleIntent: SetValueIntent {
+    static var title: LocalizedStringResource = "Arm ApexSight"
+
+    @Parameter(title: "Armed")
+    var value: Bool
+
+    func perform() async throws -> some IntentResult {
+        ArmStateStore.mode = value ? .away : .disarmed
+        return .result()
+    }
+}
+
+// MARK: - Focus filter (mute alerts while a Focus is active)
+
+@available(iOS 16.0, *)
+struct ApexFocusFilter: SetFocusFilterIntent {
+    static var title: LocalizedStringResource = "ApexSight Alerts"
+    static var description = IntentDescription("Mute ApexSight camera alerts while this Focus is on.")
+
+    @Parameter(title: "Mute camera alerts", default: true)
+    var muteAlerts: Bool
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: muteAlerts ? "Mute ApexSight alerts" : "ApexSight alerts on")
+    }
+
+    func perform() async throws -> some IntentResult {
+        if muteAlerts {
+            // Long snooze that the matching Focus keeps refreshing while active.
+            GlobalSnooze.snooze(until: Date().addingTimeInterval(8 * 60 * 60))
+        } else {
+            GlobalSnooze.clear()
+        }
+        return .result()
+    }
+}
+
 @available(iOS 17.0, *)
 struct ApexOpenCameraIntent: AppIntent {
     static var title: LocalizedStringResource = "Open Camera"
