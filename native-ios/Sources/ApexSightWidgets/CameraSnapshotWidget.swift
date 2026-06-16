@@ -47,9 +47,14 @@ struct CameraSnapshotProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<CameraSnapshotEntry>) -> Void) {
-        let current = entry()
-        let refresh = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-        completion(Timeline(entries: [current], policy: .after(refresh)))
+        Task {
+            // Pull fresh alerts + hero straight from Frigate so the widget updates in
+            // the background on WidgetKit's schedule — not only when the app is opened.
+            await WidgetDataFetcher.refresh()
+            let current = entry()
+            let refresh = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
+            completion(Timeline(entries: [current], policy: .after(refresh)))
+        }
     }
 
     private func entry() -> CameraSnapshotEntry {
@@ -244,7 +249,6 @@ private struct MediumWidgetView: View {
             .clipped()
 
             VStack(alignment: .leading, spacing: 6) {
-                WidgetHeader()
                 if entry.alerts.isEmpty {
                     AllClearCompact()
                 } else {
@@ -268,11 +272,6 @@ private struct LargeWidgetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            WidgetHeader()
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
             ZStack(alignment: .bottomLeading) {
                 HeroSnapshotImage(imageURL: entry.heroURL)
                     .frame(maxWidth: .infinity)
@@ -303,6 +302,7 @@ private struct LargeWidgetView: View {
             .frame(height: 150)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 14)
+            .padding(.top, 14)
 
             HStack {
                 Text("RECENT ACTIVITY")
@@ -359,21 +359,6 @@ private struct EventFeedRow: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-private struct WidgetHeader: View {
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "video.badge.waveform")
-                .font(.system(size: 12, weight: .black))
-                .foregroundStyle(WidgetTheme.accent)
-            Text("APEXSIGHT")
-                .font(.system(size: 11, weight: .black, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
-                .tracking(1.5)
             Spacer(minLength: 0)
         }
     }
@@ -480,7 +465,7 @@ private struct AccessoryInlineView: View {
         if let alert = entry.latest {
             Text("\(alertEmoji(alert.label)) \(titleizeWidget(alert.subLabel ?? alert.label)) · \(relativeShort(alert.when))")
         } else {
-            Text("ApexSight · All clear")
+            Text("All clear")
         }
     }
 }

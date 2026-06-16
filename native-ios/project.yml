@@ -6,7 +6,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 20
+    CURRENT_PROJECT_VERSION: 21
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -104,6 +104,9 @@ targets:
       path: Sources/ApexSightWidgets/Info.plist
       properties:
         CFBundleDisplayName: ApexSight Widgets
+        # Let the widget reach a local/HTTP Frigate for its background refresh.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
