@@ -127,12 +127,14 @@ final class AppState: ObservableObject {
             async let nextEvents = client.events(limit: 50)
             let r = try await nextReviews
             let e = try await nextEvents
-            // Only reassign (and invalidate views / refresh the widget) when the
-            // lists actually changed — the 15s poller used to churn every tick.
+            // Reassign only when something actually changed — but compare CONTENT
+            // (id + severity + objects + sub-labels), not just ids, so a review that
+            // gains a recognized sub-label (e.g. "Amazon") still updates the list,
+            // the widget, and the lock screen.
             let visible = visibleReviews(r)
-            let reviewsChanged = visible.map(\.id) != reviews.map(\.id)
+            let reviewsChanged = reviewSignature(visible) != reviewSignature(reviews)
             if reviewsChanged { reviews = visible }
-            if e.map(\.id) != events.map(\.id) { events = e }
+            if eventSignature(e) != eventSignature(events) { events = e }
             if reviewsChanged { cacheLatestAlertForWidget() }
             isReachable = true
         } catch {
@@ -187,6 +189,20 @@ final class AppState: ObservableObject {
     /// marked locally), so reviewed items never reappear after a relaunch.
     private func visibleReviews(_ items: [FrigateReviewItem]) -> [FrigateReviewItem] {
         items.filter { !locallyViewedIDs.contains($0.id) && !($0.hasBeenReviewed ?? false) }
+    }
+
+    /// Content fingerprint so list/widget refresh fires on real changes (new items,
+    /// severity escalations, newly-recognized sub-labels) but not on identical polls.
+    private func reviewSignature(_ items: [FrigateReviewItem]) -> [String] {
+        items.map { item in
+            let subs = (item.data?.subLabels ?? []).joined(separator: ",")
+            let objs = (item.data?.objects ?? []).joined(separator: ",")
+            return "\(item.id)|\(item.severity ?? "")|\(objs)|\(subs)"
+        }
+    }
+
+    private func eventSignature(_ items: [FrigateEvent]) -> [String] {
+        items.map { "\($0.id)|\($0.subLabel ?? "")|\($0.recognizedLicensePlate ?? "")" }
     }
 
     /// Caches a short feed of recent reviews (label + camera + time, newest-first) plus a
