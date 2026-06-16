@@ -100,6 +100,13 @@ struct FrigateClient {
         try await post("api/events/\(id)/description", body: ["description": description])
     }
 
+    /// Ask Frigate to regenerate the GenAI description for an event (admin + GenAI
+    /// required). Generation is async server-side, so the new text arrives on a later
+    /// fetch/event update, not in this response.
+    func regenerateEventDescription(id: String) async throws {
+        try await put("api/events/\(id)/description/regenerate", body: EmptyBody())
+    }
+
     func reviewDescription(id: String) async throws -> String? {
         let item: FrigateReviewItem = try await get("api/review/\(id)")
         let text = item.description?.trimmingCharacters(in: .whitespacesAndNewlines)

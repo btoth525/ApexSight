@@ -4,6 +4,7 @@ struct SimilarEventsSheet: View {
     @EnvironmentObject private var appState: AppState
     let sourceEvent: FrigateEvent
     let events: [FrigateEvent]
+    var errorMessage: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -12,13 +13,15 @@ struct SimilarEventsSheet: View {
                 GlassBackground()
                 if events.isEmpty {
                     VStack(spacing: 14) {
-                        Image(systemName: "magnifyingglass.circle")
+                        Image(systemName: errorMessage == nil ? "magnifyingglass.circle" : "exclamationmark.triangle.fill")
                             .font(.system(size: 44, weight: .black))
-                            .foregroundStyle(GlassTheme.secondary)
-                        Text("No Similar Events Found")
+                            .foregroundStyle(errorMessage == nil ? GlassTheme.secondary : GlassTheme.orange)
+                        Text(errorMessage == nil ? "No Similar Events Found" : "Couldn't Load Similar Events")
                             .font(.system(size: 20, weight: .black))
                             .foregroundStyle(GlassTheme.primary)
-                        Text("Semantic search found no matches. This requires Frigate+ with embeddings enabled.")
+                        // Distinguish a genuine empty result from a fetch/auth error so the
+                        // user isn't wrongly told their server lacks embeddings.
+                        Text(errorMessage ?? "Semantic search found no matches. This requires Frigate semantic search (embeddings) enabled.")
                             .font(.system(size: 14, weight: .heavy))
                             .foregroundStyle(GlassTheme.secondary)
                             .multilineTextAlignment(.center)

@@ -6,6 +6,7 @@ struct EventDetailView: View {
     @EnvironmentObject private var appState: AppState
     let event: FrigateEvent
     @State private var actionFeedback: String?
+    @State private var actionIsError = false
     @State private var isActing = false
     @StateObject private var clipModel = ClipPlayerModel()
     @State private var isDownloading = false
@@ -17,6 +18,7 @@ struct EventDetailView: View {
     @State private var editedAIDescription = ""
     @State private var showSimilarSheet = false
     @State private var similarEvents: [FrigateEvent] = []
+    @State private var similarError: String?
     @State private var isLoadingSimilar = false
     @State private var createTrigger: NotificationTrigger?
 
@@ -60,7 +62,7 @@ struct EventDetailView: View {
             genAIDescription = try? await appState.client?.eventDescription(id: event.id)
         }
         .sheet(isPresented: $showSimilarSheet) {
-            SimilarEventsSheet(sourceEvent: event, events: similarEvents)
+            SimilarEventsSheet(sourceEvent: event, events: similarEvents, errorMessage: similarError)
                 .environmentObject(appState)
         }
         .sheet(item: $createTrigger) { trigger in
@@ -284,14 +286,14 @@ struct EventDetailView: View {
                 if let feedback = actionFeedback {
                     Text(feedback)
                         .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(GlassTheme.green)
+                        .foregroundStyle(actionIsError ? GlassTheme.red : GlassTheme.green)
                 }
 
-                actionButton("Retain Event", icon: "pin.fill", tint: GlassTheme.blue) {
+                actionButton("Retain Event", icon: "pin.fill", tint: GlassTheme.blue, isLoading: isActing) {
                     Task { await retainEvent() }
                 }
 
-                actionButton(isLoadingSimilar ? "Loading…" : "Find Similar Events", icon: "sparkle.magnifyingglass", tint: GlassTheme.purple) {
+                actionButton("Find Similar Events", icon: "sparkle.magnifyingglass", tint: GlassTheme.purple, isLoading: isLoadingSimilar) {
                     Task { await loadSimilarEvents() }
                 }
 
@@ -324,7 +326,7 @@ struct EventDetailView: View {
         }
     }
 
-    private func actionButton(_ title: String, icon: String, tint: Color, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ title: String, icon: String, tint: Color, isLoading: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
                 Image(systemName: icon)
@@ -332,7 +334,7 @@ struct EventDetailView: View {
                 Text(title)
                     .font(.system(size: 15, weight: .black))
                 Spacer()
-                if isActing {
+                if isLoading {
                     ProgressView().tint(tint)
                 }
             }
@@ -342,7 +344,18 @@ struct EventDetailView: View {
             .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(isActing)
+        // Per-action: only this button disables while it's working, not the whole list.
+        .disabled(isLoading)
+    }
+
+    /// Shows a transient feedback line (auto-clears) in the Actions card.
+    private func showFeedback(_ message: String, isError: Bool) {
+        actionFeedback = message
+        actionIsError = isError
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if actionFeedback == message { actionFeedback = nil }
+        }
     }
 
     private func retainEvent() async {
@@ -351,9 +364,9 @@ struct EventDetailView: View {
         defer { isActing = false }
         do {
             try await client.retainEvent(id: event.id)
-            actionFeedback = "Event retained."
+            showFeedback("Event retained.", isError: false)
         } catch {
-            actionFeedback = error.localizedDescription
+            showFeedback(error.localizedDescription, isError: true)
         }
     }
 
@@ -364,7 +377,7 @@ struct EventDetailView: View {
             genAIDescription = editedAIDescription.isEmpty ? nil : editedAIDescription
             isEditingAIDescription = false
         } catch {
-            actionFeedback = error.localizedDescription
+            showFeedback(error.localizedDescription, isError: true)
         }
     }
 
@@ -372,14 +385,31 @@ struct EventDetailView: View {
         guard let client = appState.client else { return }
         isRegeneratingAI = true
         defer { isRegeneratingAI = false }
-        genAIDescription = try? await client.eventDescription(id: event.id)
+        do {
+            // Server-side generation is async — request it, then re-fetch shortly after
+            // (the final text may still arrive later via a normal refresh).
+            try await client.regenerateEventDescription(id: event.id)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if let fresh = try? await client.eventDescription(id: event.id) {
+                genAIDescription = fresh
+            }
+            showFeedback("Regeneration requested.", isError: false)
+        } catch {
+            showFeedback(error.localizedDescription, isError: true)
+        }
     }
 
     private func loadSimilarEvents() async {
         guard let client = appState.client else { return }
         isLoadingSimilar = true
         defer { isLoadingSimilar = false }
-        similarEvents = (try? await client.findSimilar(eventId: event.id)) ?? []
+        do {
+            similarEvents = try await client.findSimilar(eventId: event.id)
+            similarError = nil
+        } catch {
+            similarEvents = []
+            similarError = error.localizedDescription
+        }
         showSimilarSheet = true
     }
 
