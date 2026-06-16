@@ -19,6 +19,7 @@ struct SearchView: View {
     @State private var sortNewest = true
     @State private var path = NavigationPath()
     @State private var showAsk = false
+    @State private var showAlbums = false
 
     // Browse view (default state): a larger recent set grouped by object.
     @State private var browseEvents: [FrigateEvent] = []
@@ -68,16 +69,27 @@ struct SearchView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showAsk = true } label: {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 16, weight: .black))
-                            .foregroundStyle(GlassTheme.purple)
+                    HStack(spacing: 14) {
+                        Button { showAlbums = true } label: {
+                            Image(systemName: "square.grid.2x2.fill")
+                                .font(.system(size: 15, weight: .black))
+                                .foregroundStyle(GlassTheme.cyan)
+                        }
+                        .accessibilityLabel("Smart albums")
+                        Button { showAsk = true } label: {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 16, weight: .black))
+                                .foregroundStyle(GlassTheme.purple)
+                        }
+                        .accessibilityLabel("Ask your cameras")
                     }
-                    .accessibilityLabel("Ask your cameras")
                 }
             }
             .sheet(isPresented: $showAsk) {
                 AskView().environmentObject(appState)
+            }
+            .sheet(isPresented: $showAlbums) {
+                SmartAlbumsView().environmentObject(appState)
             }
             .task { if browseEvents.isEmpty { await loadBrowse() } }
         }
