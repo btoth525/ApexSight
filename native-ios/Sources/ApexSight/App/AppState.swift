@@ -199,7 +199,8 @@ final class AppState: ObservableObject {
                 camera: review.camera,
                 severity: review.severity ?? "alert",
                 when: Date(timeIntervalSince1970: review.startTime ?? Date().timeIntervalSince1970),
-                imageFileName: nil
+                imageFileName: nil,
+                zone: review.data?.zones?.first
             )
         }
         let thumbURL = recent.first.flatMap { client.reviewThumbnailURL(review: $0) }

@@ -131,6 +131,26 @@ struct FrigateClient {
         try await get("api/labels")
     }
 
+    /// Every license plate Frigate has recognized (for the "recently seen" list).
+    func recognizedLicensePlates() async throws -> [String] {
+        try await get("api/recognized_license_plates")
+    }
+
+    /// The `lpr.known_plates` already configured in the user's Frigate config
+    /// (name → plate strings), read from the live config.
+    func frigateKnownPlates() async throws -> [String: [String]] {
+        let config: KnownPlatesConfig = try await get("api/config")
+        return config.lpr?.knownPlates ?? [:]
+    }
+
+    private struct KnownPlatesConfig: Decodable {
+        let lpr: LPR?
+        struct LPR: Decodable {
+            let knownPlates: [String: [String]]?
+            enum CodingKeys: String, CodingKey { case knownPlates = "known_plates" }
+        }
+    }
+
     func subLabels() async throws -> [String] {
         try await get("api/sub_labels")
     }

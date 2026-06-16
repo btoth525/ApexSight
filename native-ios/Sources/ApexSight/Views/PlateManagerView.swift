@@ -11,6 +11,7 @@ struct PlateManagerView: View {
     @State private var showEditor = false
     @State private var recent: [RecentPlate] = []
     @State private var loadingRecent = true
+    @State private var frigatePlates: [String: [String]] = [:]
 
     struct RecentPlate: Identifiable {
         let id = UUID()
@@ -26,6 +27,7 @@ struct PlateManagerView: View {
                 VStack(spacing: 16) {
                     explainer
                     knownCard
+                    frigateCard
                     recentCard
                 }
                 .padding(16)
@@ -194,14 +196,20 @@ struct PlateManagerView: View {
         loadingRecent = true
         defer { loadingRecent = false }
         guard let client = appState.client else { return }
-        let events = (try? await client.events(limit: 100)) ?? []
+
+        // Pull the plates already configured in the user's Frigate (lpr.known_plates).
+        frigatePlates = (try? await client.frigateKnownPlates()) ?? [:]
+        let frigateNorms = Set(frigatePlates.values.flatMap { $0 }.map(NotificationStyle.normalizePlate))
+
+        let events = (try? await client.events(limit: 150)) ?? []
         var seen = Set<String>()
         var out: [RecentPlate] = []
         for event in events {
             guard let plate = event.recognizedLicensePlate, !plate.isEmpty else { continue }
-            guard store.style.knownPlateName(for: plate) == nil else { continue }
             let norm = NotificationStyle.normalizePlate(plate)
             guard !norm.isEmpty, !seen.contains(norm) else { continue }
+            // Skip anything already named in the app or configured in Frigate.
+            guard store.style.knownPlateName(for: plate) == nil, !frigateNorms.contains(norm) else { continue }
             seen.insert(norm)
             out.append(RecentPlate(
                 plate: plate,
@@ -210,6 +218,59 @@ struct PlateManagerView: View {
             ))
         }
         recent = Array(out.prefix(12))
+    }
+
+    private func appHasPlate(_ name: String) -> Bool {
+        store.style.knownPlates.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    private var frigateCard: some View {
+        Group {
+            if !frigatePlates.isEmpty {
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Configured in Frigate")
+                                .font(.system(size: 18, weight: .black))
+                                .foregroundStyle(GlassTheme.primary)
+                            Spacer()
+                            Image(systemName: "server.rack").foregroundStyle(GlassTheme.cyan)
+                        }
+                        Text("Known plates from your Frigate config. Import to also use them in the app.")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(GlassTheme.tertiary)
+                        ForEach(frigatePlates.sorted(by: { $0.key < $1.key }), id: \.key) { name, plates in
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.badge.gearshape")
+                                    .font(.system(size: 16, weight: .black))
+                                    .foregroundStyle(GlassTheme.cyan)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(name)
+                                        .font(.system(size: 15, weight: .black))
+                                        .foregroundStyle(GlassTheme.primary)
+                                        .lineLimit(1)
+                                    FlowChips(plates)
+                                }
+                                Spacer(minLength: 0)
+                                if appHasPlate(name) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(GlassTheme.green)
+                                } else {
+                                    Button {
+                                        upsert(KnownPlate(name: name, plates: plates))
+                                        Task { await loadRecent() }
+                                    } label: {
+                                        Text("Import").font(.system(size: 12, weight: .heavy))
+                                    }
+                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.blue))
+                                }
+                            }
+                            .padding(12)
+                            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

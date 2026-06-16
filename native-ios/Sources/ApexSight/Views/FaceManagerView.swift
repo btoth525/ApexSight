@@ -282,75 +282,86 @@ private struct AssignFaceSheet: View {
     @EnvironmentObject private var appState: AppState
     @State private var newName = ""
 
+    private var cardBG: Color { Color(white: 0.12) }
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                GlassBackground()
-                ScrollView {
-                    VStack(spacing: 16) {
-                        RemoteImage(url: appState.client?.eventSnapshotURL(id: event.id))
-                            .frame(height: 200)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    RemoteImage(url: appState.client?.eventSnapshotURL(id: event.id))
+                        .frame(height: 190)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("New person")
-                                    .font(.system(size: 13, weight: .black))
-                                    .foregroundStyle(GlassTheme.tertiary)
-                                HStack(spacing: 8) {
-                                    TextField("Name", text: $newName)
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundStyle(GlassTheme.primary)
-                                        .padding(12)
-                                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    Button {
-                                        let name = newName
-                                        Task { await onAssign(name); dismiss() }
-                                    } label: {
-                                        Text("Assign").font(.system(size: 13, weight: .heavy))
-                                    }
-                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
-                                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                                }
-                            }
+                    // New person
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("ADD AS NEW PERSON")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundStyle(.secondary)
+                        TextField("Name (e.g. Brandon)", text: $newName)
+                            .textInputAutocapitalization(.words)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(14)
+                            .background(Color(white: 0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        Button {
+                            let name = newName
+                            Task { await onAssign(name); dismiss() }
+                        } label: {
+                            Text("Add Person")
+                                .font(.system(size: 16, weight: .heavy))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(newName.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.4) : GlassTheme.cyan,
+                                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .foregroundStyle(.white)
                         }
+                        .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .padding(16)
+                    .background(cardBG, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-                        if !people.isEmpty {
-                            GlassCard {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("Existing people")
-                                        .font(.system(size: 13, weight: .black))
-                                        .foregroundStyle(GlassTheme.tertiary)
-                                    ForEach(people, id: \.self) { name in
-                                        Button {
-                                            Task { await onAssign(name); dismiss() }
-                                        } label: {
-                                            HStack {
-                                                Image(systemName: "person.fill").foregroundStyle(GlassTheme.green)
-                                                Text(titleize(name))
-                                                    .font(.system(size: 15, weight: .bold))
-                                                    .foregroundStyle(GlassTheme.primary)
-                                                Spacer()
-                                                Image(systemName: "chevron.right")
-                                                    .font(.system(size: 12, weight: .black))
-                                                    .foregroundStyle(GlassTheme.tertiary)
-                                            }
-                                            .padding(10)
-                                            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                        }
-                                        .buttonStyle(.plain)
+                    // Existing people
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("OR PICK SOMEONE")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundStyle(.secondary)
+                        if people.isEmpty {
+                            Text("No saved people yet — add one above.")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(people, id: \.self) { name in
+                                Button {
+                                    Task { await onAssign(name); dismiss() }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.crop.circle.fill")
+                                            .font(.system(size: 22))
+                                            .foregroundStyle(GlassTheme.green)
+                                        Text(titleize(name))
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundStyle(.white)
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 13, weight: .black))
+                                            .foregroundStyle(.secondary)
                                     }
+                                    .padding(14)
+                                    .background(Color(white: 0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
                     .padding(16)
+                    .background(cardBG, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
+                .padding(16)
             }
+            .background(Color.black.ignoresSafeArea())
             .navigationTitle("Who is this?")
             .navigationBarTitleDisplayMode(.inline)
-            .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

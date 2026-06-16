@@ -19,6 +19,7 @@ struct SharedAlert: Codable, Hashable, Identifiable {
     let severity: String     // "alert" or "detection"
     let when: Date
     let imageFileName: String?  // nil when no thumbnail was cached
+    var zone: String? = nil  // first zone the object was in, if any
 }
 
 enum SharedSnapshotStore {

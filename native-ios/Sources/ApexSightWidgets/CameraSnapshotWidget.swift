@@ -437,24 +437,40 @@ private struct AccessoryRectangularView: View {
 
     var body: some View {
         if let alert = entry.latest {
-            HStack(spacing: 6) {
-                Text(alertEmoji(alert.label))
-                    .font(.system(size: 16))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(titleizeWidget(alert.subLabel ?? alert.label))
-                        .font(.system(size: 13, weight: .black))
-                        .lineLimit(1)
-                    Text("\(titleizeWidget(alert.camera)) · \(relativeShort(alert.when))")
-                        .font(.system(size: 11, weight: .heavy))
-                        .opacity(0.8)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(alertEmoji(alert.label)) \(titleizeWidget(alert.subLabel ?? alert.label))")
+                    .font(.system(size: 14, weight: .black))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text(titleizeWidget(alert.camera))
+                    .font(.system(size: 12, weight: .heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text(secondaryLine(alert))
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(0.85)
+                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            Label("All clear", systemImage: "checkmark.shield.fill")
-                .font(.system(size: 13, weight: .black))
+            VStack(alignment: .leading, spacing: 1) {
+                Label("All clear", systemImage: "checkmark.shield.fill")
+                    .font(.system(size: 14, weight: .black))
+                Text("No recent alerts")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(0.8)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// "3m ago · Driveway" — time, plus the zone when we have one.
+    private func secondaryLine(_ alert: SharedAlert) -> String {
+        var parts = [relativeShort(alert.when)]
+        if let zone = alert.zone, !zone.isEmpty {
+            parts.append(titleizeWidget(zone))
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

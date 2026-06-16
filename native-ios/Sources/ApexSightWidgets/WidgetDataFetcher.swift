@@ -22,6 +22,7 @@ enum WidgetDataFetcher {
         let objects: [String]?
         let subLabels: [String]?
         let detections: [String]?
+        let zones: [String]?
     }
 
     static func refresh() async {
@@ -57,7 +58,8 @@ enum WidgetDataFetcher {
                     camera: r.camera,
                     severity: r.severity ?? "alert",
                     when: Date(timeIntervalSince1970: r.startTime ?? Date().timeIntervalSince1970),
-                    imageFileName: nil
+                    imageFileName: nil,
+                    zone: r.data?.zones?.first
                 )
             }
 
