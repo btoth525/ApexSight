@@ -59,11 +59,17 @@ enum BackgroundRefreshManager {
         guard let reviews else { return }
 
         let prefs = await NotificationPreferencesStore()
+        // If instant push is set up, the relay already delivered these — don't post a
+        // duplicate local notification. We still mark them seen so that, if push is
+        // ever turned off later, we don't suddenly dump the whole backlog.
+        let remotePush = DeviceTokenStore.hasRemotePush
 
         for review in reviews where review.severity == "alert" {
             guard LastSeenStore.isNew(review.id) else { continue }
             // Mark seen immediately so a mid-task cancellation can't re-deliver on the next run.
             LastSeenStore.markSeen([review.id])
+
+            if remotePush { continue }
 
             let label = review.data?.objects?.first ?? "object"
             let zones = review.data?.zones ?? []

@@ -288,7 +288,11 @@ final class AppState: ObservableObject {
             reviewID: item.id
         )
 
-        if let client, let session {
+        // When instant push is set up, the relay already delivers this alert — posting
+        // a local notification too would be a duplicate. The in-app banner above still
+        // shows. Local notifications remain the zero-setup fallback only when there's
+        // no relay/APNs token.
+        if !DeviceTokenStore.hasRemotePush, let client, let session {
             Task {
                 // Frigate creates reviews before events finish processing, so the
                 // WebSocket payload often has empty data.detections — which means

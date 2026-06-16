@@ -20,6 +20,13 @@ enum DeviceTokenStore {
         set { defaults?.set(newValue, forKey: tokenKey) }
     }
 
+    /// True once we have an APNs token — i.e. instant push via the relay is set up.
+    /// When this is true the app skips its own local notifications so the relay is
+    /// the single source and you never get a duplicate for the same event.
+    static var hasRemotePush: Bool {
+        (deviceTokenHex?.isEmpty == false)
+    }
+
     static var lastError: String? {
         get { defaults?.string(forKey: errorKey) }
         set { defaults?.set(newValue, forKey: errorKey) }
