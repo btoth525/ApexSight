@@ -68,6 +68,9 @@ struct RemoteImage: View {
                 }
             } catch {
                 if error.isCancellation { return }
+                // On an expired token, actually trigger a re-auth so the next pass picks
+                // up a fresh session instead of only hoping another path refreshed it.
+                if error.isUnauthorized { _ = await appState.reauthenticate() }
             }
             if attempt < 2 {
                 try? await Task.sleep(nanoseconds: 600_000_000)

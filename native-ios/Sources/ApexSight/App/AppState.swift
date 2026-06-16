@@ -110,7 +110,8 @@ final class AppState: ObservableObject {
     /// stay live without a restart. The WebSocket (when it connects) updates instantly;
     /// this is the reliable fallback for proxies that don't pass `/ws`.
     func startForegroundPolling() {
-        pollTask?.cancel()
+        // Idempotent — a fast background/foreground flap shouldn't stack pollers.
+        guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshAlerts()
@@ -598,6 +599,8 @@ final class AppState: ObservableObject {
         stopForegroundPolling()
         locallyViewedIDs.removeAll()
         keychain.clear()
+        // Clear the Watch so it doesn't keep showing the last household's alerts after sign-out.
+        WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
         session = nil
         cameras = []
         events = []
