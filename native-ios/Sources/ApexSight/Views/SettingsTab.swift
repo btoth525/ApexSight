@@ -105,6 +105,9 @@ struct SettingsTab: View {
                         settingsRow(icon: "car.fill", title: "License Plates", subtitle: "Name your cars → \"Unknown plate\" for the rest", tint: GlassTheme.blue) {
                             path.append("plates")
                         }
+                        settingsRow(icon: "doc.text.image.fill", title: "Daily Recap", subtitle: "Today's activity + an optional daily summary", tint: GlassTheme.orange) {
+                            path.append("recap")
+                        }
 
                         // About card
                         GlassCard {
@@ -151,6 +154,7 @@ struct SettingsTab: View {
                 else if value == "triggers" { TriggersSettingsView().environmentObject(appState) }
                 else if value == "plates" { PlateManagerView().environmentObject(appState) }
                 else if value == "faces" { FaceManagerView().environmentObject(appState) }
+                else if value == "recap" { DailyRecapView().environmentObject(appState) }
             }
         }
     }
