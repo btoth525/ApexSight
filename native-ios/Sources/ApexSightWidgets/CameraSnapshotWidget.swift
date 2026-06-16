@@ -329,6 +329,25 @@ private struct LargeWidgetView: View {
             }
 
             Spacer(minLength: 0)
+
+            if let latest = entry.latest {
+                HStack(spacing: 8) {
+                    Button(intent: ApexOpenCameraIntent(camera: latest.camera)) {
+                        Label("View Live", systemImage: "video.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                            .frame(maxWidth: .infinity)
+                    }
+                    Button(intent: ApexSnoozeIntent()) {
+                        Label("Snooze", systemImage: "moon.zzz.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(WidgetTheme.accent.opacity(0.85))
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+            }
         }
         .padding(.bottom, 12)
     }
