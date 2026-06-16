@@ -46,6 +46,13 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
     private func handle(response: UNNotificationResponse, userInfo: [AnyHashable: Any]) async {
         guard let appState else { return }
 
+        // "View Live" — jump straight to the camera's live view.
+        if response.actionIdentifier == NativeNotificationManager.viewLiveAction,
+           let camera = userInfo["camera"] as? String {
+            appState.deepLink = .camera(camera)
+            return
+        }
+
         if response.actionIdentifier == NativeNotificationManager.markReviewedAction,
            let reviewID = userInfo["review_id"] as? String {
             await appState.markReviewViewed(id: reviewID)

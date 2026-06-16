@@ -96,15 +96,22 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
         # The final update swaps in the complete GIF silently (no second buzz).
         "silent": final,
     }
-    # Rich media: the first detection's animated GIF (+ static thumbnail fallback).
-    # On the instant alert the review is still in progress, so Frigate renders the
-    # GIF only from frames captured *so far* — i.e. the opening of the event. The
-    # follow-up `final` push (sent at review end) re-fetches the same URL, which by
-    # then covers the whole event, so the notification ends up showing the full GIF.
+    # Rich media, two-stage (matches the SgtBatten blueprint feel):
+    #   • instant alert  → a tight CROPPED snapshot (bbox) that reads great on the
+    #     lock screen the moment the event starts;
+    #   • final update   → the now-complete animated GIF, swapped in place via the
+    #     shared collapse id (no duplicate notification).
     if FRIGATE_BASE_URL and detections:
         det = detections[0]
-        payload["snapshot_url"] = f"{FRIGATE_BASE_URL}/api/events/{det}/preview.gif"
-        payload["thumbnail_url"] = f"{FRIGATE_BASE_URL}/api/events/{det}/snapshot.jpg"
+        cropped = f"{FRIGATE_BASE_URL}/api/events/{det}/snapshot.jpg?bbox=1&crop=1"
+        gif = f"{FRIGATE_BASE_URL}/api/events/{det}/preview.gif"
+        full_snapshot = f"{FRIGATE_BASE_URL}/api/events/{det}/snapshot.jpg"
+        if final:
+            payload["snapshot_url"] = gif
+            payload["thumbnail_url"] = cropped
+        else:
+            payload["snapshot_url"] = cropped
+            payload["thumbnail_url"] = full_snapshot
     return payload
 
 

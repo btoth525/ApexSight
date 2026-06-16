@@ -8,30 +8,36 @@ struct NotificationStatus: Hashable {
 
 enum NativeNotificationManager {
     static let frigateAlertCategory = "APEX_FRIGATE_ALERT"
+    static let viewLiveAction = "APEX_VIEW_LIVE"
     static let openReviewAction = "APEX_OPEN_REVIEW"
     static let markReviewedAction = "APEX_MARK_REVIEWED"
     static let snoozeCameraAction = "APEX_SNOOZE_CAMERA"
 
     static func registerCategories() {
-        let openReview = UNNotificationAction(
-            identifier: openReviewAction,
-            title: "Open",
+        let viewLive = UNNotificationAction(
+            identifier: viewLiveAction,
+            title: "View Live",
             options: [.foreground]
+        )
+        let review = UNNotificationAction(
+            identifier: openReviewAction,
+            title: "Review",
+            options: [.foreground]
+        )
+        let silence = UNNotificationAction(
+            identifier: snoozeCameraAction,
+            title: "Silence 1 hr",
+            options: []
         )
         let markReviewed = UNNotificationAction(
             identifier: markReviewedAction,
-            title: "Reviewed",
-            options: []
-        )
-        let snooze = UNNotificationAction(
-            identifier: snoozeCameraAction,
-            title: "Snooze",
+            title: "Mark Reviewed",
             options: []
         )
 
         let category = UNNotificationCategory(
             identifier: frigateAlertCategory,
-            actions: [openReview, markReviewed, snooze],
+            actions: [viewLive, review, silence, markReviewed],
             intentIdentifiers: [],
             options: [.customDismissAction]
         )
@@ -69,7 +75,9 @@ enum NativeNotificationManager {
         content.categoryIdentifier = frigateAlertCategory
         content.userInfo = [
             "source": "apex-test",
-            "kind": "frigate-review"
+            "kind": "frigate-review",
+            "camera": "front_porch",
+            "apex_url": "apex://review"
         ]
 
         let request = UNNotificationRequest(
