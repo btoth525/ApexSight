@@ -85,6 +85,8 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
 
     payload = {
         "pairing_code": PAIRING_CODE,
+        # title/body are a fallback — the relay re-renders from the raw fields below
+        # using the household's saved style, so the in-app GUI controls the content.
         "title": title,
         "body": body,
         "camera": camera,
@@ -95,7 +97,17 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
         "collapse_id": review_id,
         # The final update swaps in the complete GIF silently (no second buzz).
         "silent": final,
+        # Raw event fields for relay-side, style-driven rendering.
+        "camera_name": _titleize(camera),
+        "labels": objects,
+        "sub_labels": sublabels,
+        "zones": zones,
+        "severity": severity,
+        "stage": "final" if final else "alert",
+        "frigate_base_url": FRIGATE_BASE_URL,
     }
+    if detections:
+        payload["detection_id"] = detections[0]
     # Rich media, two-stage (matches the SgtBatten blueprint feel):
     #   • instant alert  → a tight CROPPED snapshot (bbox) that reads great on the
     #     lock screen the moment the event starts;

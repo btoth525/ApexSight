@@ -32,6 +32,11 @@ enum RelayClient {
         let environment: String
     }
 
+    private struct StyleBody: Encodable {
+        let pairing_code: String
+        let style: NotificationStyle
+    }
+
     /// Result of a `/healthz` probe used for the green/red status dot.
     struct Health: Decodable {
         let ok: Bool
@@ -72,6 +77,12 @@ enum RelayClient {
     /// Asks the relay to send a test push to this device.
     static func sendTest(relayURL: String, deviceToken: String, environment: String) async throws {
         try await post(relayURL: relayURL, path: "/v1/test", body: TestBody(device_token: deviceToken, environment: environment))
+    }
+
+    /// Saves this household's notification style on the relay, so app-closed pushes
+    /// are rendered the way the user configured in the app.
+    static func syncStyle(relayURL: String, pairingCode: String, style: NotificationStyle) async throws {
+        try await post(relayURL: relayURL, path: "/v1/style", body: StyleBody(pairing_code: pairingCode, style: style))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {
