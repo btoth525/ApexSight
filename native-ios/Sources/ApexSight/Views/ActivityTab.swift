@@ -7,19 +7,33 @@ struct ActivityTab: View {
     @AppStorage("activity.selectedLabel") private var selectedLabel = "all"
     @AppStorage("activity.sortNewest") private var sortNewest = true
     @State private var path = NavigationPath()
+    // When a filter is active we query the server (the live `appState.events` cache is
+    // only the latest ~50, so an older camera/label combo would falsely look empty).
+    @State private var serverResults: [FrigateEvent] = []
+    @State private var loadingFiltered = false
 
     private var labels: [String] {
         Array(Set(appState.labels + appState.events.map(\.label))).sorted()
     }
 
+    private var isFilterActive: Bool { selectedCamera != "all" || selectedLabel != "all" }
+
     private var filtered: [FrigateEvent] {
-        let base = appState.events.filter { event in
-            (selectedCamera == "all" || event.camera == selectedCamera) &&
-            (selectedLabel == "all" || event.label == selectedLabel)
-        }
+        let base = isFilterActive ? serverResults : appState.events
         return sortNewest
             ? base.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
             : base.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+    }
+
+    private func loadFiltered() async {
+        guard isFilterActive, let client = appState.client else { return }
+        loadingFiltered = true
+        defer { loadingFiltered = false }
+        serverResults = (try? await client.events(
+            camera: selectedCamera == "all" ? nil : selectedCamera,
+            label: selectedLabel == "all" ? nil : selectedLabel,
+            limit: 300
+        )) ?? []
     }
 
     var body: some View {
@@ -31,6 +45,11 @@ struct ActivityTab: View {
                         // Camera filter
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
+                                if isFilterActive {
+                                    chip("✕ Clear", selected: false) {
+                                        selectedCamera = "all"; selectedLabel = "all"
+                                    }
+                                }
                                 chip("All Cameras", selected: selectedCamera == "all") { selectedCamera = "all" }
                                 ForEach(appState.cameras) { cam in
                                     chip(titleize(cam.name), selected: selectedCamera == cam.name) {
@@ -61,12 +80,11 @@ struct ActivityTab: View {
                             .padding(.horizontal, 16)
 
                         if filtered.isEmpty {
-                            if appState.isLoading && appState.events.isEmpty {
+                            if (appState.isLoading && appState.events.isEmpty) || loadingFiltered {
                                 SkeletonList(rows: 6)
                                     .padding(.top, 4)
                             } else {
-                                let filtering = selectedCamera != "all" || selectedLabel != "all"
-                                Text(filtering ? "No events match these filters. Tap a chip to clear them." : "No events yet.")
+                                Text(isFilterActive ? "No events match these filters." : "No events yet.")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundStyle(GlassTheme.secondary)
                                     .padding(.horizontal, 16)
@@ -85,8 +103,13 @@ struct ActivityTab: View {
                         }
                     }
                 }
-                .refreshable { await appState.refresh() }
+                .refreshable {
+                    await appState.refresh()
+                    await loadFiltered()
+                }
                 .task { if appState.events.isEmpty { await appState.refresh() } }
+                // Re-query the server whenever the camera/label filter changes.
+                .task(id: "\(selectedCamera)|\(selectedLabel)") { await loadFiltered() }
             }
             .navigationTitle("Activity")
             .navigationBarTitleDisplayMode(.inline)

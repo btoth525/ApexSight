@@ -395,9 +395,23 @@ struct SearchView: View {
                     }
 
                     if results.isEmpty && errorMessage == nil {
-                        Text("No events match your search.")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(GlassTheme.secondary)
+                        VStack(spacing: 12) {
+                            Text("No events match your search.")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(GlassTheme.secondary)
+                            if hasActiveFilters {
+                                Button {
+                                    clearFilters()
+                                    Task { await performSearch() }
+                                } label: {
+                                    Label("Clear Filters", systemImage: "xmark.circle.fill")
+                                        .font(.system(size: 13, weight: .black))
+                                }
+                                .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 20)
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
                             ForEach(sortedResults) { event in
@@ -461,6 +475,21 @@ struct SearchView: View {
             browseEvents = appState.events
         }
         rebuildGroups()
+    }
+
+    private var hasActiveFilters: Bool {
+        selectedCamera != "all" || selectedLabel != "all" || selectedSubLabel != "all"
+            || selectedZone != "all" || afterDate != nil
+            || !plateQuery.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func clearFilters() {
+        selectedCamera = "all"
+        selectedLabel = "all"
+        selectedSubLabel = "all"
+        selectedZone = "all"
+        afterDate = nil
+        plateQuery = ""
     }
 
     private func performSearch() async {
