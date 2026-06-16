@@ -63,6 +63,56 @@ audit environment).
 - 🟡 `RecapSettings.todayKey` now locale-stable (en_US_POSIX / Gregorian).
 - 🟡 Removed a redundant reload in plate Import.
 
+## 2026-06-16 — Round 2 (6 parallel surface audits, triaged)
+
+### Cameras / Live
+- 🔴 Live AVPlayers kept decoding HLS in the background (onDisappear doesn't fire
+  on backgrounding). **Fixed:** HLSLiveModel pauses on `didEnterBackground`,
+  reconnects fresh on `willEnterForeground`.
+
+### Review
+- 🟠 Marking a detection viewed from the detail screen left it in the Detections
+  list (that list is owned by the tab, not pruned by AppState). **Fixed:** filter
+  the tab's lists by `AppState.locallyViewedIDs` (now published).
+- 🟠 Detections never re-polled (one-shot). **Fixed:** 15s re-poll while the
+  Detections filter is active; cancels on filter change/exit, skips viewed ids.
+- 🟡 Mark-all dialog showed a misleading loaded-count. **Fixed:** copy now states
+  it marks the whole backlog. Rows show "Person — Alex" + are one VoiceOver element.
+
+### Explore / Activity / EventDetail
+- 🔴 Activity filters only searched the latest ~50 cached events → common combos
+  looked empty. **Fixed:** active filters query the server (limit 300) + Clear chip.
+- 🔴 "Find Similar" showed the same "needs embeddings" copy for a real fetch error.
+  **Fixed:** distinct error vs empty state.
+- 🟠 "Regenerate description" only re-GET the same text. **Fixed:** real
+  `PUT /events/{id}/description/regenerate` (verified) + re-fetch.
+- 🟠 Shared `isActing` disabled/spun all action buttons + Find-Similar double-fire.
+  **Fixed:** per-action loading flags.
+- 🟠 Action feedback shown in green for errors and never cleared. **Fixed:** error
+  color + 3s auto-dismiss.
+- 🟡 EventRow printed the recognized name twice. **Fixed:** object in title,
+  sub-label/plate as chip. Explore empty state gains "Clear Filters".
+
+### Widgets / extensions
+- 🔴 Control Center arm toggle + widgets never reloaded on arm/snooze change.
+  **Fixed:** ApexSurfaceRefresh.reload() from the ArmStateStore/GlobalSnooze
+  chokepoints (covers app, intents, widget, Siri, Watch).
+- 🟠 NSE accepted non-2xx/non-HTTP responses (could attach a proxy login page).
+  **Fixed:** `?? false`. 🟠 Live Activity camera deep link now percent-encoded.
+- 🟡 Watch kept showing the last household after sign-out. **Fixed:** push empty.
+
+### Core
+- 🟡 No per-request timeout (URLSession.shared 60s). **Fixed:** dedicated session
+  15s/60s, no waitsForConnectivity. 🟡 Image loads reauth on 401. 🟡 Heartbeat ping
+  captures self weakly. 🟡 startForegroundPolling() idempotent.
+
+### Triaged as NOT worth changing (false-positive / debatable)
+- Widget background fetch ignoring arm/snooze: a widget is a passive glance, not a
+  notification — freezing it on disarm would just look stale. Left as-is.
+- PTZ over HTTP: Frigate is MQTT-only; already logged (gated to PTZ cameras).
+- RecordingContextPlayer marker drift, latest.jpg TTL, MJPEG O(n²), idle-cell
+  snapshot promotion, token-in-app-group: noted; deferred (larger/again debatable).
+
 ## Open / deferred
 - 🟠 PTZ over HTTP (needs MQTT path or hide).
 - 🟡 WebRTC live (would need a WebRTC SDK; HLS is the working path today).
