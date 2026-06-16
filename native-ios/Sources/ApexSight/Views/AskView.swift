@@ -13,6 +13,7 @@ struct AskView: View {
     @State private var results: [FrigateEvent] = []
     @State private var loading = false
     @State private var path = NavigationPath()
+    @State private var faceNames: [String] = []
     @Environment(\.dismiss) private var dismiss
 
     private let suggestions = [
@@ -49,6 +50,12 @@ struct AskView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .task {
+                // Load known people so questions like "when was Brandon seen" resolve.
+                if faceNames.isEmpty, let client = appState.client, let faces = try? await client.faces() {
+                    faceNames = Array(faces.keys)
                 }
             }
         }
@@ -148,7 +155,7 @@ struct AskView: View {
         let plan = AskParser.interpret(
             q,
             cameras: appState.cameras.map(\.name),
-            faceNames: [],
+            faceNames: faceNames,
             style: styleStore.style
         )
 
