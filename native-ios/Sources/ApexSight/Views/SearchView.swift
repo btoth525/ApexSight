@@ -14,12 +14,12 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var hasSearched = false
     @State private var errorMessage: String?
-    @State private var useSemanticSearch = false
     @State private var plateQuery = ""
     @State private var sortNewest = true
     @State private var path = NavigationPath()
-    @State private var showAsk = false
     @State private var showAlbums = false
+    @State private var answer: String?
+    @State private var faceNames: [String] = []
 
     // Browse view (default state): a larger recent set grouped by object.
     @State private var browseEvents: [FrigateEvent] = []
@@ -69,29 +69,23 @@ struct SearchView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 14) {
-                        Button { showAlbums = true } label: {
-                            Image(systemName: "square.grid.2x2.fill")
-                                .font(.system(size: 15, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
-                        }
-                        .accessibilityLabel("Smart albums")
-                        Button { showAsk = true } label: {
-                            Image(systemName: "wand.and.stars")
-                                .font(.system(size: 16, weight: .black))
-                                .foregroundStyle(GlassTheme.purple)
-                        }
-                        .accessibilityLabel("Ask your cameras")
+                    Button { showAlbums = true } label: {
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundStyle(GlassTheme.cyan)
                     }
+                    .accessibilityLabel("Smart albums")
                 }
-            }
-            .sheet(isPresented: $showAsk) {
-                AskView().environmentObject(appState)
             }
             .sheet(isPresented: $showAlbums) {
                 SmartAlbumsView().environmentObject(appState)
             }
-            .task { if browseEvents.isEmpty { await loadBrowse() } }
+            .task {
+                if browseEvents.isEmpty { await loadBrowse() }
+                if faceNames.isEmpty, let client = appState.client, let faces = try? await client.faces() {
+                    faceNames = Array(faces.keys)
+                }
+            }
         }
     }
 
@@ -101,11 +95,11 @@ struct SearchView: View {
         GlassCard {
             VStack(spacing: 12) {
                 HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
+                    Image(systemName: "sparkle.magnifyingglass")
                         .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .foregroundStyle(GlassTheme.purple)
 
-                    TextField("Search footage…", text: $query)
+                    TextField("Search or ask…", text: $query)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(GlassTheme.primary)
                         .submitLabel(.search)
@@ -115,6 +109,7 @@ struct SearchView: View {
                         Button {
                             query = ""
                             results = []
+                            answer = nil
                             hasSearched = false
                         } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -123,20 +118,14 @@ struct SearchView: View {
                     }
                 }
 
-                HStack {
-                    Toggle(isOn: $useSemanticSearch) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 13, weight: .heavy))
-                            Text("AI Search")
-                                .font(.system(size: 13, weight: .heavy))
-                        }
-                        .foregroundStyle(useSemanticSearch ? GlassTheme.cyan : GlassTheme.secondary)
-                    }
-                    .tint(GlassTheme.cyan)
-                    .fixedSize()
+                HStack(spacing: 10) {
+                    Text("Try “kid on a bike” · “red car” · “packages today”")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(GlassTheme.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
-                    Spacer()
+                    Spacer(minLength: 4)
 
                     Button {
                         withAnimation { showFilters.toggle() }
@@ -157,13 +146,6 @@ struct SearchView: View {
                             .background(GlassTheme.cyan, in: Capsule())
                     }
                     .disabled(isSearching)
-                }
-
-                if useSemanticSearch {
-                    Text("Describe what you saw — “person in a red shirt”, “delivery truck at night”.")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(GlassTheme.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -382,41 +364,57 @@ struct SearchView: View {
     // MARK: - Results
 
     private var resultsSection: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Results")
-                        .font(.system(size: 21, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Spacer()
-                    Text("\(results.count)")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(GlassTheme.secondary)
-                    Button { sortNewest.toggle() } label: {
-                        Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                            .font(.system(size: 18, weight: .black))
-                            .foregroundStyle(GlassTheme.cyan)
+        VStack(spacing: 14) {
+            if let answer {
+                GlassCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20, weight: .black))
+                            .foregroundStyle(GlassTheme.purple)
+                        Text(answer)
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(GlassTheme.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.plain)
                 }
+            }
+            GlassCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text("Results")
+                            .font(.system(size: 21, weight: .black))
+                            .foregroundStyle(GlassTheme.primary)
+                        Spacer()
+                        Text("\(results.count)")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(GlassTheme.secondary)
+                        Button { sortNewest.toggle() } label: {
+                            Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                .font(.system(size: 18, weight: .black))
+                                .foregroundStyle(GlassTheme.cyan)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
-                if let error = errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(GlassTheme.orange)
-                }
+                    if let error = errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(GlassTheme.orange)
+                    }
 
-                if results.isEmpty && errorMessage == nil {
-                    Text("No events match your search.")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(GlassTheme.secondary)
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
-                        ForEach(sortedResults) { event in
-                            Button { path.append(event) } label: {
-                                thumbnail(event)
+                    if results.isEmpty && errorMessage == nil {
+                        Text("No events match your search.")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(GlassTheme.secondary)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                            ForEach(sortedResults) { event in
+                                Button { path.append(event) } label: {
+                                    thumbnail(event)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -471,33 +469,71 @@ struct SearchView: View {
         isSearching = true
         hasSearched = true
         errorMessage = nil
+        answer = nil
         defer { isSearching = false }
 
-        let camera = selectedCamera == "all" ? nil : selectedCamera
-        let label = selectedLabel == "all" ? nil : selectedLabel
+        // Filters chosen in the panel.
+        let fCamera = selectedCamera == "all" ? nil : selectedCamera
+        let fLabel = selectedLabel == "all" ? nil : selectedLabel
         let subLabel = selectedSubLabel == "all" ? nil : selectedSubLabel
         let zone = selectedZone == "all" ? nil : selectedZone
+        let q = query.trimmingCharacters(in: .whitespaces)
+
+        // On-device understanding of what was typed (object/time/camera/unknown/known face).
+        let plan: AskPlan? = q.isEmpty
+            ? nil
+            : AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
+
+        let camera = fCamera ?? plan?.camera
+        let label = fLabel ?? plan?.label
 
         do {
-            if useSemanticSearch && !query.isEmpty {
-                results = try await client.semanticSearch(
-                    query: query, camera: camera, label: label,
-                    subLabel: subLabel, zone: zone, after: afterDate
-                )
+            var found: [FrigateEvent]
+            if !q.isEmpty {
+                // Try Frigate semantic search first — handles "kid on a bike", "red car".
+                let semantic = (try? await client.semanticSearch(
+                    query: q, camera: camera, label: label,
+                    subLabel: subLabel, zone: zone, after: afterDate ?? plan?.after
+                )) ?? []
+                if !semantic.isEmpty {
+                    found = semantic
+                } else {
+                    // Fall back to structured filters parsed from the question.
+                    found = try await client.events(
+                        camera: camera, label: label, subLabel: subLabel,
+                        zone: zone, after: afterDate ?? plan?.after, before: plan?.before, limit: 150
+                    )
+                    if let plan { found = found.filter { plan.matches($0, style: .default) } }
+                }
             } else {
-                results = try await client.events(
+                found = try await client.events(
                     camera: camera, label: label, subLabel: subLabel,
-                    zone: zone, after: afterDate, limit: 100
+                    zone: zone, after: afterDate, limit: 150
                 )
             }
 
+            // Optional license-plate filter from the panel.
             let plate = plateQuery.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             if !plate.isEmpty {
-                results = results.filter { ($0.recognizedLicensePlate ?? "").uppercased().contains(plate) }
+                found = found.filter { ($0.recognizedLicensePlate ?? "").uppercased().contains(plate) }
+            }
+
+            results = found
+            // A spoken-style answer for question-shaped queries ("how many packages today").
+            if let plan, isQuestion(q) {
+                answer = AskParser.answer(for: plan, results: found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) })
             }
         } catch {
             errorMessage = error.localizedDescription
             results = []
         }
+    }
+
+    private func isQuestion(_ q: String) -> Bool {
+        let l = q.lowercased()
+        if l.hasSuffix("?") { return true }
+        let starters = ["how ", "when ", "did ", "was ", "is ", "are ", "any ", "who "]
+        if starters.contains(where: l.hasPrefix) { return true }
+        return l.contains("how many") || l.contains("last seen") || l.contains("when did")
     }
 }
