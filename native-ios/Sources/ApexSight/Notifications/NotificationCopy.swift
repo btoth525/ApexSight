@@ -34,6 +34,22 @@ enum NotificationCopy {
         return "\(e) \(objects.map { titleize($0) }.joined(separator: ", "))"
     }
 
+    /// Review-row/detail title that keeps BOTH the object and its sub-label for
+    /// context — "Person — Alex", "Car — 7XYZ123", "Package — Amazon" — instead of
+    /// dropping the object the way the notification `title` does. Falls back to the
+    /// object list when there's no sub-label.
+    static func combinedTitle(for review: FrigateReviewItem) -> String {
+        let objects = review.data?.objects ?? []
+        guard !objects.isEmpty else { return "📹 Camera activity" }
+        let firstObj = objects.first ?? ""
+        let firstSub = (review.data?.subLabels ?? []).first { !$0.isEmpty }
+        let e = emoji(for: firstObj, subLabel: firstSub)
+        if let sub = firstSub {
+            return "\(e) \(titleize(firstObj)) — \(titleize(sub))"
+        }
+        return "\(e) \(objects.map { titleize($0) }.joined(separator: ", "))"
+    }
+
     static func body(for review: FrigateReviewItem) -> String {
         var parts = [titleize(review.camera)]
         let subs = (review.data?.subLabels ?? []).filter { !$0.isEmpty }

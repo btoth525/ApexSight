@@ -33,11 +33,13 @@ struct ReviewRow: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(NotificationCopy.title(for: review))
+                // Object + sub-label together ("Person — Alex"); the subtitle below
+                // carries camera + zone, so the sub-label isn't repeated.
+                Text(NotificationCopy.combinedTitle(for: review))
                     .font(.system(size: 15, weight: .black))
                     .foregroundStyle(GlassTheme.primary)
                     .lineLimit(1)
-                Text(NotificationCopy.body(for: review))
+                Text(subtitle)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassTheme.secondary)
                     .lineLimit(2)
@@ -58,9 +60,20 @@ struct ReviewRow: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .background(GlassTheme.cyan, in: Capsule())
+                    .accessibilityLabel("\(count) detections")
             }
         }
         .padding(10)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Camera + zone (the sub-label already lives in the title).
+    private var subtitle: String {
+        var parts = [titleize(review.camera)]
+        if let zones = review.data?.zones, !zones.isEmpty {
+            parts.append("Zone: " + zones.map(titleize).joined(separator: ", "))
+        }
+        return parts.joined(separator: " • ")
     }
 }

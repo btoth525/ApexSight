@@ -70,7 +70,14 @@ struct IncidentLiveActivity: Widget {
                 .frame(maxWidth: 56)
         }
         .padding(16)
-        .widgetURL(URL(string: "apex://camera?name=\(context.attributes.camera)"))
+        .widgetURL(cameraDeepLink(context.attributes.camera))
+    }
+
+    /// Percent-encode the camera name so names with spaces/specials still build a
+    /// valid URL (matches the snapshot widget's deep-link builder).
+    private func cameraDeepLink(_ camera: String) -> URL? {
+        let encoded = camera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? camera
+        return URL(string: "apex://camera?name=\(encoded)")
     }
 
     private func severityColor(_ severity: String) -> Color {

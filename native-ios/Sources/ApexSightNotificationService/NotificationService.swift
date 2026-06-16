@@ -98,8 +98,11 @@ final class NotificationService: UNNotificationServiceExtension {
 
         downloadTask = URLSession.shared.downloadTask(with: urlRequest) { [weak self] temporaryURL, response, _ in
             guard let self else { return }
+            // Require a genuine 2xx. `?? false` so a non-HTTP response — or a reverse
+            // proxy that answers auth failures with a 200 + HTML login page — is
+            // rejected and we try the next candidate instead of attaching garbage.
             if let temporaryURL,
-               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
                let attachment = self.copyAttachment(from: temporaryURL, originalURL: url) {
                 completion(attachment)
             } else {

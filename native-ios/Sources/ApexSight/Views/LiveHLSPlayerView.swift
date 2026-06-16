@@ -43,6 +43,7 @@ final class HLSLiveModel: ObservableObject {
     private var retryCount = 0
     private var didTryReauth = false
     private var isStopped = false
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     func configure(
         makeURL: @escaping () -> URL?,
@@ -61,11 +62,47 @@ final class HLSLiveModel: ObservableObject {
         retryCount = 0
         didTryReauth = false
         usingFallback = false
+        observeLifecycle()
         connect()
+    }
+
+    /// Pause decoding when the app backgrounds (SwiftUI `onDisappear` does NOT fire on
+    /// backgrounding, so without this the AVPlayer keeps pulling + decoding HLS — wasted
+    /// battery/data, and a stale frame on return). Rebuild a fresh stream on foreground.
+    private func observeLifecycle() {
+        guard lifecycleObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                self.reconnectTask?.cancel(); self.reconnectTask = nil
+                self.player?.pause()
+            }
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                // The live edge moved on while suspended — reconnect fresh rather than
+                // resuming a stale buffer.
+                self.retryCount = 0
+                self.didTryReauth = false
+                self.connect()
+            }
+        })
+    }
+
+    private func teardownLifecycle() {
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        lifecycleObservers.removeAll()
     }
 
     func stop() {
         isStopped = true
+        teardownLifecycle()
         reconnectTask?.cancel()
         reconnectTask = nil
         teardownObservers()

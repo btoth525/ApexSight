@@ -6,7 +6,19 @@ struct FrigateClient {
     private let token: String?
     private let session: URLSession
 
-    init(baseURL: URL, token: String? = nil, session: URLSession = .shared) {
+    /// Shared session with real timeouts so a slow/unreachable Frigate (or proxy)
+    /// fails fast instead of hanging on URLSession.shared's 60s default and stacking
+    /// behind the 15s poller. `waitsForConnectivity = false` keeps offline calls from
+    /// parking indefinitely.
+    static let apiSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
+    init(baseURL: URL, token: String? = nil, session: URLSession = FrigateClient.apiSession) {
         self.baseURL = baseURL
         self.token = token
         self.session = session
