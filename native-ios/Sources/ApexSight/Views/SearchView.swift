@@ -508,12 +508,12 @@ struct SearchView: View {
                 if !semantic.isEmpty {
                     found = semantic
                 } else {
-                    // Frigate semantic search unavailable/empty → keyword fallback by object,
-                    // but NOT time-boxed, so it still returns matches.
-                    let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
-                    found = try await client.events(
-                        camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
-                        subLabel: subLabel, zone: zone, after: afterDate, limit: 300
+                    // Frigate semantic search is off / returned nothing → score a broad
+                    // recent set on-device against the query so descriptions like
+                    // "kid on a bike" still surface people AND bicycles (no time cap).
+                    found = await keywordFallback(
+                        q, client: client,
+                        camera: fCamera, label: fLabel, subLabel: subLabel, zone: zone
                     )
                 }
             }
@@ -529,6 +529,50 @@ struct SearchView: View {
             errorMessage = error.localizedDescription
             results = []
         }
+    }
+
+    /// On-device relevance fallback for descriptive queries when Frigate semantic
+    /// search isn't enabled (or returns nothing). Pulls a broad recent set honoring
+    /// only the explicit panel filters, then ranks each event by how well its label,
+    /// sub-label, recognized face/plate, camera and zones match the query words —
+    /// expanding object synonyms ("kid" → person, "bike" → bicycle) so natural
+    /// descriptions surface every relevant detection instead of dead-ending.
+    private func keywordFallback(
+        _ q: String, client: FrigateClient,
+        camera: String?, label: String?, subLabel: String?, zone: String?
+    ) async -> [FrigateEvent] {
+        let pool = (try? await client.events(
+            camera: camera, label: label, subLabel: subLabel, zone: zone,
+            after: afterDate, limit: 600
+        )) ?? []
+
+        let implied = Set(AskParser.impliedLabels(in: q))
+        let stop: Set<String> = ["on", "the", "and", "with", "near", "around", "was", "were",
+                                 "any", "all", "for", "from", "out", "off", "did", "has", "have"]
+        let tokens = q.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 2 && !stop.contains($0) }
+
+        // Nothing usable to match on → just show the recent pool rather than a dead end.
+        if implied.isEmpty && tokens.isEmpty { return pool }
+
+        func score(_ e: FrigateEvent) -> Int {
+            var s = 0
+            if implied.contains(e.label.lowercased()) { s += 4 }
+            let hay = ([e.label, e.displayLabel, e.subLabel, e.recognizedFace,
+                        e.camera.replacingOccurrences(of: "_", with: " "),
+                        e.recognizedLicensePlate].compactMap { $0 } + (e.zones ?? []))
+                .joined(separator: " ").lowercased()
+            for t in tokens where hay.contains(t) { s += 1 }
+            return s
+        }
+
+        return pool
+            .compactMap { e -> (FrigateEvent, Int)? in
+                let s = score(e); return s > 0 ? (e, s) : nil
+            }
+            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : ($0.0.startTime ?? 0) > ($1.0.startTime ?? 0) }
+            .map(\.0)
     }
 
     private func isQuestion(_ q: String) -> Bool {

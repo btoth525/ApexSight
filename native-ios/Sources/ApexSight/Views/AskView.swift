@@ -202,15 +202,29 @@ struct AskPlan {
 enum AskParser {
     private static let labelMap: [(keys: [String], label: String, singular: String, plural: String)] = [
         (["package", "delivery", "deliveries", "amazon", "ups", "fedex", "usps", "mail"], "package", "package", "packages"),
-        (["person", "people", "someone", "somebody", "anyone", "intruder", "stranger"], "person", "person", "people"),
-        (["car", "vehicle", "vehicles", "automobile"], "car", "car", "cars"),
-        (["truck"], "truck", "truck", "trucks"),
-        (["dog", "pet"], "dog", "dog", "dogs"),
-        (["cat"], "cat", "cat", "cats"),
-        (["bike", "bicycle"], "bicycle", "bike", "bikes"),
+        (["person", "people", "someone", "somebody", "anyone", "intruder", "stranger",
+          "kid", "kids", "child", "children", "toddler", "baby", "boy", "girl",
+          "man", "woman", "guy", "lady"], "person", "person", "people"),
+        (["car", "vehicle", "vehicles", "automobile", "sedan", "suv"], "car", "car", "cars"),
+        (["truck", "van", "pickup"], "truck", "truck", "trucks"),
+        (["dog", "pet", "puppy"], "dog", "dog", "dogs"),
+        (["cat", "kitten"], "cat", "cat", "cats"),
+        (["bike", "bicycle", "cyclist"], "bicycle", "bike", "bikes"),
         (["bird"], "bird", "bird", "birds"),
-        (["motorcycle", "motorbike"], "motorcycle", "motorcycle", "motorcycles"),
+        (["motorcycle", "motorbike", "scooter"], "motorcycle", "motorcycle", "motorcycles"),
     ]
+
+    /// Every Frigate object label implied by a free-text query — e.g. "kid on a bike"
+    /// → ["person", "bicycle"]. Unlike `interpret`, this does NOT stop at the first
+    /// match, so multi-object descriptions surface all relevant detections.
+    static func impliedLabels(in q: String) -> [String] {
+        let text = q.lowercased()
+        var labels: [String] = []
+        for entry in labelMap where entry.keys.contains(where: { text.contains($0) }) {
+            if !labels.contains(entry.label) { labels.append(entry.label) }
+        }
+        return labels
+    }
 
     static func interpret(_ q: String, cameras: [String], faceNames: [String], style: NotificationStyle) -> AskPlan {
         let text = q.lowercased()
