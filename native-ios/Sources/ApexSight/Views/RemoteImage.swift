@@ -82,6 +82,10 @@ struct RemoteImage: View {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
             return UIImage(data: data)
         }
+        // Animated (GIF) — keep all frames so previews actually animate.
+        if CGImageSourceGetCount(source) > 1 {
+            return animatedImage(from: source) ?? UIImage(data: data)
+        }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,
@@ -92,5 +96,25 @@ struct RemoteImage: View {
             return UIImage(data: data)
         }
         return UIImage(cgImage: cg)
+    }
+
+    private static func animatedImage(from source: CGImageSource) -> UIImage? {
+        let count = CGImageSourceGetCount(source)
+        var frames: [UIImage] = []
+        var duration = 0.0
+        for index in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, index, nil) else { continue }
+            frames.append(UIImage(cgImage: cg))
+            if let props = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any],
+               let gif = props[kCGImagePropertyGIFDictionary] as? [CFString: Any] {
+                let delay = (gif[kCGImagePropertyGIFUnclampedDelayTime] as? Double)
+                    ?? (gif[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
+                duration += max(delay, 0.02)
+            } else {
+                duration += 0.1
+            }
+        }
+        guard !frames.isEmpty else { return nil }
+        return UIImage.animatedImage(with: frames, duration: duration)
     }
 }

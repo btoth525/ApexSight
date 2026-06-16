@@ -3,6 +3,7 @@ import UIKit
 
 struct ServerSwitcherView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var allSessions: [FrigateSession] = []
     @State private var showAddServer = false
 
@@ -76,7 +77,12 @@ struct ServerSwitcherView: View {
             Button {
                 appState.keychain.remove(session: session)
                 allSessions = appState.keychain.loadAllSessions()
-                if isActive { appState.signOut() }
+                if isActive {
+                    // Pop this pushed screen first — otherwise signing out leaves a
+                    // blank detail view stranded on top of the re-rendered root.
+                    dismiss()
+                    appState.signOut()
+                }
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 14, weight: .bold))

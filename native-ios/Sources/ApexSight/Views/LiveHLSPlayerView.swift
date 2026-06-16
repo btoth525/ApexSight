@@ -105,11 +105,14 @@ final class HLSLiveModel: ObservableObject {
         state = .connecting
 
         statusObs = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            Task { @MainActor in self?.handleStatus(item) }
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                self.handleStatus(item)
+            }
         }
         timeControlObs = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, !self.isStopped else { return }
                 if player.timeControlStatus == .playing {
                     self.state = .playing
                     self.retryCount = 0

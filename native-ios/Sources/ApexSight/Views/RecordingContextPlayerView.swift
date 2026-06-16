@@ -108,7 +108,7 @@ struct RecordingContextPlayerView: View {
                 }
             }
         }
-        .onDisappear { model.pause() }
+        .onDisappear { model.stop() }
     }
 
     private func jumpToEvent(_ eventStartTime: Double) {

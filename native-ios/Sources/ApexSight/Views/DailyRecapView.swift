@@ -148,6 +148,12 @@ struct DailyRecapView: View {
                     }
                 }
                 .tint(GlassTheme.cyan)
+                .onChange(of: recapEnabled) { _, isOn in
+                    // A recap is useless without notification permission — ask the
+                    // moment the user opts in (no-op if already granted/denied).
+                    guard isOn else { return }
+                    Task { _ = try? await NativeNotificationManager.requestPermission() }
+                }
 
                 if recapEnabled {
                     DatePicker("Time", selection: $recapTime, displayedComponents: .hourAndMinute)

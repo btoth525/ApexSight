@@ -451,10 +451,16 @@ struct SearchView: View {
     private func loadBrowse() async {
         guard let client = appState.client else { return }
         loadingBrowse = true
+        defer { loadingBrowse = false }
         // Pull a deep window so every sub-label (Amazon, FedEx, your truck, faces) surfaces.
-        browseEvents = (try? await client.events(limit: 600)) ?? appState.events
+        if let fetched = try? await client.events(limit: 600) {
+            browseEvents = fetched
+        } else if browseEvents.isEmpty {
+            // Only fall back to live events when we have nothing — a transient refresh
+            // failure shouldn't wipe a list the user is already looking at.
+            browseEvents = appState.events
+        }
         rebuildGroups()
-        loadingBrowse = false
     }
 
     private func performSearch() async {

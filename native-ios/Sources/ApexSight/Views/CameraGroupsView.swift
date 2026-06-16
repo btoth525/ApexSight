@@ -4,6 +4,7 @@ struct CameraGroupsView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject var store: CameraGroupStore
     @State private var showEditor = false
+    @State private var editingGroup: CameraGroup?
 
     var body: some View {
         ZStack {
@@ -34,6 +35,11 @@ struct CameraGroupsView: View {
         .glassNavBar()
         .sheet(isPresented: $showEditor) {
             CameraGroupEditor(store: store)
+                .environmentObject(appState)
+                .preferredColorScheme(.dark)
+        }
+        .sheet(item: $editingGroup) { group in
+            CameraGroupEditor(store: store, editing: group)
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
         }
@@ -68,6 +74,9 @@ struct CameraGroupsView: View {
                 .buttonStyle(.plain)
             }
         }
+        // Tap anywhere on the card (except the trash button) to edit the group.
+        .contentShape(Rectangle())
+        .onTapGesture { editingGroup = group }
     }
 
     private var emptyState: some View {
@@ -89,9 +98,18 @@ struct CameraGroupEditor: View {
     @ObservedObject var store: CameraGroupStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name = ""
-    @State private var selected: Set<String> = []
-    @State private var columns = 2
+    private let editing: CameraGroup?
+    @State private var name: String
+    @State private var selected: Set<String>
+    @State private var columns: Int
+
+    init(store: CameraGroupStore, editing: CameraGroup? = nil) {
+        self.store = store
+        self.editing = editing
+        _name = State(initialValue: editing?.name ?? "")
+        _selected = State(initialValue: Set(editing?.cameraNames ?? []))
+        _columns = State(initialValue: editing?.columns ?? 2)
+    }
 
     var body: some View {
         NavigationStack {
@@ -140,7 +158,7 @@ struct CameraGroupEditor: View {
                     .padding(18)
                 }
             }
-            .navigationTitle("New Group")
+            .navigationTitle(editing == nil ? "New Group" : "Edit Group")
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
@@ -176,7 +194,15 @@ struct CameraGroupEditor: View {
 
     private func save() {
         let ordered = appState.cameras.map(\.name).filter { selected.contains($0) }
-        store.add(name: name.trimmingCharacters(in: .whitespaces), cameraNames: ordered, columns: columns)
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if var updated = editing {
+            updated.name = trimmed
+            updated.cameraNames = ordered
+            updated.columns = columns
+            store.update(updated)
+        } else {
+            store.add(name: trimmed, cameraNames: ordered, columns: columns)
+        }
         dismiss()
     }
 }

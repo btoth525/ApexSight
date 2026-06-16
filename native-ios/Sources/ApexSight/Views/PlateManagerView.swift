@@ -257,7 +257,6 @@ struct PlateManagerView: View {
                                 } else {
                                     Button {
                                         upsert(KnownPlate(name: name, plates: plates))
-                                        Task { await loadRecent() }
                                     } label: {
                                         Text("Import").font(.system(size: 12, weight: .heavy))
                                     }

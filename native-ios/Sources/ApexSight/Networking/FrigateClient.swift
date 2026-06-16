@@ -35,7 +35,16 @@ struct FrigateClient {
            let token = cookie
             .split(separator: ";")
             .first(where: { $0.contains("frigate_token=") })?
-            .replacingOccurrences(of: "frigate_token=", with: "") {
+            .replacingOccurrences(of: "frigate_token=", with: "")
+            .trimmingCharacters(in: .whitespaces) {
+            return token
+        }
+
+        // Modern Frigate returns an empty 200 and only sets the JWT via Set-Cookie,
+        // which URLSession often moves straight into the cookie jar (so the header
+        // read above misses it). Read it from the jar as the reliable fallback.
+        if let token = HTTPCookieStorage.shared.cookies(for: baseURL)?
+            .first(where: { $0.name == "frigate_token" })?.value, !token.isEmpty {
             return token
         }
 
@@ -86,9 +95,10 @@ struct FrigateClient {
     }
 
     func findSimilar(eventId: String, limit: Int = 20) async throws -> [FrigateEvent] {
-        var components = URLComponents(url: baseURL.appending(path: "api/events"), resolvingAgainstBaseURL: false)
+        var components = URLComponents(url: baseURL.appending(path: "api/events/search"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
-            URLQueryItem(name: "similarity_event_id", value: eventId),
+            URLQueryItem(name: "event_id", value: eventId),
+            URLQueryItem(name: "search_type", value: "similarity"),
             URLQueryItem(name: "limit", value: "\(limit)")
         ]
         guard let url = components?.url else { throw FrigateError.invalidURL }
@@ -124,7 +134,12 @@ struct FrigateClient {
     }
 
     func markReviewsViewed(ids: [String]) async throws {
-        try await post("api/reviews/viewed", body: ["ids": ids])
+        try await post("api/reviews/viewed", body: ReviewsViewedBody(ids: ids, reviewed: true))
+    }
+
+    private struct ReviewsViewedBody: Encodable {
+        let ids: [String]
+        let reviewed: Bool
     }
 
     func labels() async throws -> [String] {
