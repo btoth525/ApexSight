@@ -343,7 +343,14 @@ struct FrigateClient {
         before: Date? = nil,
         limit: Int = 50
     ) async throws -> [FrigateEvent] {
-        var params: [String: String] = ["query": query, "limit": "\(limit)"]
+        var params: [String: String] = [
+            "query": query,
+            "limit": "\(limit)",
+            // Match BOTH the CLIP thumbnail embeddings AND any GenAI text descriptions
+            // (Frigate's server default is "thumbnail" only). Harmless when GenAI is off
+            // — it just falls back to image matching — and far better when it's on.
+            "search_type": "thumbnail,description"
+        ]
         if let camera { params["cameras"] = camera }
         if let label { params["labels"] = label }
         if let subLabel { params["sub_labels"] = subLabel }

@@ -64,7 +64,7 @@ struct EventDetailView: View {
                 .environmentObject(appState)
         }
         .sheet(item: $createTrigger) { trigger in
-            TriggerEditorView(store: NotificationTriggerStore(), existing: trigger)
+            TriggerEditorView(store: appState.triggerStore, existing: trigger)
                 .environmentObject(appState)
         }
     }

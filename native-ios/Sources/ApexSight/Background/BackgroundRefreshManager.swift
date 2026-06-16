@@ -60,6 +60,7 @@ enum BackgroundRefreshManager {
         guard let reviews else { return }
 
         let prefs = await NotificationPreferencesStore()
+        let triggers = await NotificationTriggerStore().triggers
         // If instant push is set up, the relay already delivered these — don't post a
         // duplicate local notification. We still mark them seen so that, if push is
         // ever turned off later, we don't suddenly dump the whole backlog.
@@ -74,7 +75,10 @@ enum BackgroundRefreshManager {
 
             let label = review.data?.objects?.first ?? "object"
             let zones = review.data?.zones ?? []
-            guard await prefs.shouldDeliver(camera: review.camera, label: label, zones: zones) else { continue }
+            guard await prefs.shouldDeliver(
+                camera: review.camera, label: label, zones: zones,
+                score: 0, triggers: triggers
+            ) else { continue }
 
             await LocalAlertNotifier.notify(review: review, client: client, session: session)
         }

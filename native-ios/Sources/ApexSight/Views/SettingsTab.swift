@@ -178,7 +178,7 @@ struct SettingsTab: View {
                 else if value == "style" { AlertStyleView() }
                 else if value == "servers" { ServerSwitcherView() }
                 else if value == "push" { PushCompanionSettingsView() }
-                else if value == "triggers" { TriggersSettingsView().environmentObject(appState) }
+                else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
                 else if value == "plates" { PlateManagerView().environmentObject(appState) }
                 else if value == "faces" { FaceManagerView().environmentObject(appState) }
                 else if value == "recap" { DailyRecapView().environmentObject(appState) }

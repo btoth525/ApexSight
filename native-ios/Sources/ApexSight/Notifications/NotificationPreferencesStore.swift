@@ -121,4 +121,34 @@ final class NotificationPreferencesStore: ObservableObject {
         }
         return false
     }
+
+    /// The delivery decision used by every local alert path, now trigger-aware.
+    ///
+    /// Triggers are ADDITIVE allow-rules: a matching enabled trigger can re-open a
+    /// combo you've otherwise muted with the per-camera/object/zone toggles or quiet
+    /// hours (per the trigger's own `respectQuietHours`). They can never override the
+    /// hard mutes — Disarm, global Snooze, and a per-camera snooze always win — and a
+    /// single shared cooldown still applies so a trigger can't spam. With no enabled
+    /// triggers this collapses to exactly the old `shouldDeliver` behavior.
+    func shouldDeliver(camera: String, label: String, zones: [String], score: Double, triggers: [NotificationTrigger]) -> Bool {
+        // Hard mutes — never bypassable.
+        guard ArmStateStore.notificationsActive else { return false }
+        guard !GlobalSnooze.isActive else { return false }
+        guard !preferences.isSnoozed(camera) else { return false }
+
+        let passesSoftFilters = preferences.isCameraEnabled(camera)
+            && preferences.isObjectEnabled(label)
+            && (zones.isEmpty || zones.contains { preferences.isZoneEnabled($0) })
+            && !preferences.isQuietNow()
+        let triggerAllows = shouldDeliverViaTrigger(camera: camera, label: label, zones: zones, score: score, triggers: triggers)
+        guard passesSoftFilters || triggerAllows else { return false }
+
+        // One cooldown gate shared by both paths.
+        let cooldown = TimeInterval(preferences.cooldown(for: camera))
+        if let last = lastNotificationTime[camera], Date().timeIntervalSince(last) < cooldown {
+            return false
+        }
+        lastNotificationTime[camera] = Date()
+        return true
+    }
 }

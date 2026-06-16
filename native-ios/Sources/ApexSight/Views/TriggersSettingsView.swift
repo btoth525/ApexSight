@@ -2,7 +2,9 @@ import SwiftUI
 
 struct TriggersSettingsView: View {
     @EnvironmentObject private var appState: AppState
-    @StateObject private var store = NotificationTriggerStore()
+    // The single shared store owned by AppState, so edits here actually drive the
+    // delivery gate (and stay in sync with the per-event "Create Trigger" flow).
+    @ObservedObject var store: NotificationTriggerStore
     @State private var isAdding = false
     @State private var editingTrigger: NotificationTrigger?
 

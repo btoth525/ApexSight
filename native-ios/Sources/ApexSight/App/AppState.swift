@@ -54,6 +54,10 @@ final class AppState: ObservableObject {
 
     let keychain = KeychainStore()
     let notificationPrefs = NotificationPreferencesStore()
+    /// One shared store of notification triggers, read by the delivery gate and edited
+    /// by every surface (Settings → Triggers and the per-event "Create Trigger") so
+    /// edits are consistent and actually affect what's delivered.
+    let triggerStore = NotificationTriggerStore()
     private let eventStream = FrigateEventStream()
 
     /// Reviews the user just marked viewed — filtered out of fetched results so they
@@ -300,7 +304,10 @@ final class AppState: ObservableObject {
 
         let label = item.data?.objects?.first ?? "object"
         let zones = item.data?.zones ?? []
-        guard notificationPrefs.shouldDeliver(camera: item.camera, label: label, zones: zones) else { return }
+        guard notificationPrefs.shouldDeliver(
+            camera: item.camera, label: label, zones: zones,
+            score: 0, triggers: triggerStore.triggers
+        ) else { return }
         guard LastSeenStore.isNew(item.id) else { return }
         LastSeenStore.markSeen([item.id])
 
