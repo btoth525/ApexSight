@@ -24,6 +24,8 @@ struct SearchView: View {
     // Browse view (default state): a larger recent set grouped by object.
     @State private var browseEvents: [FrigateEvent] = []
     @State private var loadingBrowse = false
+    // Grouped once when data changes (not recomputed every render) for speed.
+    @State private var groups: [ObjectGroup] = []
 
     private var sortedResults: [FrigateEvent] {
         sortNewest
@@ -81,7 +83,7 @@ struct SearchView: View {
                 SmartAlbumsView().environmentObject(appState)
             }
             .task {
-                if browseEvents.isEmpty { await loadBrowse() }
+                if browseEvents.isEmpty { await loadBrowse() } else if groups.isEmpty { rebuildGroups() }
                 if faceNames.isEmpty, let client = appState.client, let faces = try? await client.faces() {
                     faceNames = Array(faces.keys)
                 }
@@ -150,7 +152,7 @@ struct SearchView: View {
         let events: [FrigateEvent]
     }
 
-    private var objectGroups: [ObjectGroup] {
+    private func rebuildGroups() {
         let source = browseEvents.isEmpty ? appState.events : browseEvents
 
         var byLabel: [String: [FrigateEvent]] = [:]
@@ -166,6 +168,7 @@ struct SearchView: View {
         }
         .sorted { $0.events.count > $1.events.count }
 
+        // Sub-label groups (recognized faces, plates, carriers like Amazon/FedEx, your truck).
         var bySub: [String: [FrigateEvent]] = [:]
         for e in source { if let s = e.subLabel, !s.isEmpty { bySub[s, default: []].append(e) } }
         let subGroups = bySub.map { sub, evs in
@@ -179,7 +182,7 @@ struct SearchView: View {
         }
         .sorted { $0.events.count > $1.events.count }
 
-        return labelGroups + subGroups
+        groups = subGroups + labelGroups
     }
 
     private var browseSection: some View {
@@ -187,10 +190,10 @@ struct SearchView: View {
             if loadingBrowse && browseEvents.isEmpty {
                 HStack { Spacer(); ProgressView().tint(GlassTheme.cyan); Spacer() }
                     .padding(.top, 40)
-            } else if objectGroups.isEmpty {
+            } else if groups.isEmpty {
                 emptyState
             } else {
-                ForEach(objectGroups) { group in
+                ForEach(groups) { group in
                     groupRow(group)
                 }
             }
@@ -448,7 +451,9 @@ struct SearchView: View {
     private func loadBrowse() async {
         guard let client = appState.client else { return }
         loadingBrowse = true
-        browseEvents = (try? await client.events(limit: 240)) ?? appState.events
+        // Pull a deep window so every sub-label (Amazon, FedEx, your truck, faces) surfaces.
+        browseEvents = (try? await client.events(limit: 600)) ?? appState.events
+        rebuildGroups()
         loadingBrowse = false
     }
 
@@ -474,7 +479,7 @@ struct SearchView: View {
                 // Pure filter browse.
                 found = try await client.events(
                     camera: fCamera, label: fLabel, subLabel: subLabel,
-                    zone: zone, after: afterDate, limit: 150
+                    zone: zone, after: afterDate, limit: 300
                 )
             } else if isQuestion(q) {
                 // A question ("how many packages today", "when was the dog out") — parse it
@@ -492,7 +497,7 @@ struct SearchView: View {
                 // constraints (that's what was over-filtering it to nothing).
                 let semantic = (try? await client.semanticSearch(
                     query: q, camera: fCamera, label: fLabel,
-                    subLabel: subLabel, zone: zone, after: afterDate
+                    subLabel: subLabel, zone: zone, after: afterDate, limit: 300
                 )) ?? []
                 if !semantic.isEmpty {
                     found = semantic
@@ -502,7 +507,7 @@ struct SearchView: View {
                     let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
                     found = try await client.events(
                         camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
-                        subLabel: subLabel, zone: zone, after: afterDate, limit: 150
+                        subLabel: subLabel, zone: zone, after: afterDate, limit: 300
                     )
                 }
             }
