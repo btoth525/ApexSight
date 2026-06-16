@@ -90,6 +90,9 @@ struct SettingsTab: View {
                         settingsRow(icon: "bell.badge.fill", title: "Notifications", subtitle: "Per-camera preferences, quiet hours", tint: GlassTheme.orange) {
                             path.append("notifications")
                         }
+                        settingsRow(icon: "paintbrush.pointed.fill", title: "Alert Style", subtitle: "Emojis, fields, snapshot → GIF, buttons", tint: GlassTheme.teal) {
+                            path.append("style")
+                        }
                         settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Status & test for alerts when closed", tint: GlassTheme.cyan) {
                             path.append("push")
                         }
@@ -136,6 +139,7 @@ struct SettingsTab: View {
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }
                 else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }
+                else if value == "style" { AlertStyleView() }
                 else if value == "servers" { ServerSwitcherView() }
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView().environmentObject(appState) }
