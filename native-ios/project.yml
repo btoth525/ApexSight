@@ -38,22 +38,10 @@ targets:
           UIColorName: LaunchBackground
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
-        # --- CarPlay (disabled until the entitlement is granted by Apple) ---
-        # CarPlay needs a CarPlay entitlement on your App ID before the scene will
-        # ever connect, and that requires Apple's approval (developer.apple.com/
-        # contact/carplay). Until then this is left OUT so it can't affect normal
-        # TestFlight builds. To ENABLE CarPlay later:
-        #   1) Request + receive the "Driving Task" CarPlay entitlement from Apple.
-        #   2) Add the granted entitlement key to ApexSightNative.entitlements.
-        #   3) Restore the scene config by replacing the line above with:
-        #        UIApplicationSceneManifest:
-        #          UIApplicationSupportsMultipleScenes: true
-        #          UISceneConfigurations:
-        #            CPTemplateApplicationSceneSessionRoleApplication:
-        #              - UISceneConfigurationName: CarPlay
-        #                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
-        #   4) xcodegen generate && rebuild.
-        # The CarPlaySceneDelegate.swift code is already in the repo, ready to wire.
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: CarPlay
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown

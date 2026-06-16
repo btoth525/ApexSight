@@ -1,76 +1,126 @@
 import CarPlay
 import UIKit
 
-/// CarPlay surface for ApexSight. CarPlay forbids live video for driver safety, so
-/// this shows the recent-alerts feed and a camera list using still snapshots from
-/// the app group (the same feed the widget and Watch use). Runs in the iOS app
-/// process, so it reads shared storage directly.
-///
-/// NOTE: CarPlay also requires a CarPlay entitlement granted by Apple for your App
-/// ID before the scene will connect on a real head unit / the CarPlay Simulator.
-/// Request it at developer.apple.com, then add the granted key to the app's
-/// entitlements. Until then this code is inert — it does not affect the iOS app.
+/// CarPlay surface for ApexSight (Driving Task). CarPlay forbids live video while
+/// driving, so this shows a glanceable, auto-refreshing feed: recent alerts with
+/// thumbnails and a camera list with the latest still. Runs in the app process and
+/// pulls fresh data directly from Frigate using the saved session.
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private var interfaceController: CPInterfaceController?
+    private var refreshTimer: Timer?
+
+    private let alertsTemplate = CPListTemplate(title: "Alerts", sections: [])
+    private let camerasTemplate = CPListTemplate(title: "Cameras", sections: [])
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didConnect interfaceController: CPInterfaceController
     ) {
         self.interfaceController = interfaceController
-        let tabBar = CPTabBarTemplate(templates: [recentAlertsTemplate(), camerasTemplate()])
+        alertsTemplate.tabImage = UIImage(systemName: "bell.fill")
+        camerasTemplate.tabImage = UIImage(systemName: "video.fill")
+        alertsTemplate.updateSections([loadingSection()])
+        camerasTemplate.updateSections([loadingSection()])
+
+        let tabBar = CPTabBarTemplate(templates: [alertsTemplate, camerasTemplate])
         interfaceController.setRootTemplate(tabBar, animated: false, completion: nil)
+
+        Task { await refresh() }
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { await self?.refresh() }
+        }
     }
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didDisconnectInterfaceController interfaceController: CPInterfaceController
     ) {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
         self.interfaceController = nil
     }
 
-    // MARK: - Templates
+    // MARK: - Refresh
 
-    private func recentAlertsTemplate() -> CPListTemplate {
-        let (alerts, heroURL) = SharedSnapshotStore.loadRecentAlerts()
-        let items: [CPListItem] = alerts.map { alert in
-            let title = displayName(alert.subLabel ?? alert.label)
-            let detail = "\(displayName(alert.camera)) · \(relative(alert.when))"
-            let item = CPListItem(text: title, detailText: detail)
-            // Only a still image is allowed in CarPlay — attach the latest snapshot.
-            if alert.id == alerts.first?.id, let heroURL, let image = UIImage(contentsOfFile: heroURL.path) {
-                item.setImage(image)
+    @MainActor
+    private func refresh() async {
+        guard let session = KeychainStore().loadSession() else {
+            alertsTemplate.updateSections([messageSection("Sign in on your iPhone")])
+            return
+        }
+        let client = FrigateClient(session: session)
+
+        // Alerts — recent un-reviewed reviews with a thumbnail.
+        if let reviews = try? await client.reviews(limit: 12, reviewed: false) {
+            var items: [CPListItem] = []
+            for review in reviews {
+                let subject = review.data?.subLabels?.first ?? review.data?.objects?.first ?? "Activity"
+                let item = CPListItem(
+                    text: "\(emoji(for: review)) \(titleize(subject))",
+                    detailText: "\(titleize(review.camera)) · \(relative(review.startTime))"
+                )
+                item.handler = { _, completion in completion() }
+                items.append(item)
             }
+            alertsTemplate.updateSections([
+                CPListSection(items: items.isEmpty ? [CPListItem(text: "All clear", detailText: "No recent alerts")] : items)
+            ])
+            // Fill in thumbnails as they download (CPListItem updates live).
+            for (item, review) in zip(items, reviews) {
+                if let url = client.reviewThumbnailURL(review: review),
+                   let data = try? await client.imageData(from: url),
+                   let image = UIImage(data: data) {
+                    item.setImage(image)
+                }
+            }
+        }
+
+        // Cameras — latest still for each.
+        let names = SharedSnapshotStore.loadCameraNames()
+        let camItems = names.map { name -> CPListItem in
+            let item = CPListItem(text: titleize(name), detailText: nil)
+            item.handler = { _, completion in completion() }
             return item
         }
-        let section = CPListSection(items: items.isEmpty
-            ? [CPListItem(text: "No recent alerts", detailText: nil)]
-            : items)
-        let template = CPListTemplate(title: "Alerts", sections: [section])
-        template.tabImage = UIImage(systemName: "bell.fill")
-        return template
-    }
-
-    private func camerasTemplate() -> CPListTemplate {
-        let names = SharedSnapshotStore.loadCameraNames()
-        let items = names.map { CPListItem(text: displayName($0), detailText: nil) }
-        let section = CPListSection(items: items.isEmpty
-            ? [CPListItem(text: "No cameras", detailText: nil)]
-            : items)
-        let template = CPListTemplate(title: "Cameras", sections: [section])
-        template.tabImage = UIImage(systemName: "video.fill")
-        return template
+        camerasTemplate.updateSections([
+            CPListSection(items: camItems.isEmpty ? [CPListItem(text: "No cameras", detailText: nil)] : camItems)
+        ])
+        for (item, name) in zip(camItems, names) {
+            if let data = try? await client.imageData(from: client.latestFrameURL(camera: name)),
+               let image = UIImage(data: data) {
+                item.setImage(image)
+            }
+        }
     }
 
     // MARK: - Helpers
 
-    private func displayName(_ raw: String) -> String {
-        raw.replacingOccurrences(of: "_", with: " ").capitalized
+    private func loadingSection() -> CPListSection {
+        CPListSection(items: [CPListItem(text: "Loading…", detailText: nil)])
     }
 
-    private func relative(_ date: Date) -> String {
+    private func messageSection(_ text: String) -> CPListSection {
+        CPListSection(items: [CPListItem(text: text, detailText: nil)])
+    }
+
+    private func relative(_ epoch: Double?) -> String {
+        let date = Date(timeIntervalSince1970: epoch ?? Date().timeIntervalSince1970)
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func emoji(for review: FrigateReviewItem) -> String {
+        let key = (review.data?.subLabels?.first ?? review.data?.objects?.first ?? "").lowercased()
+        switch key {
+        case "person": return "🚶"
+        case "car", "vehicle": return "🚗"
+        case "truck": return "🚚"
+        case "dog": return "🐕"
+        case "cat": return "🐈"
+        case "package", "amazon", "ups", "fedex", "usps": return "📦"
+        case "bicycle": return "🚲"
+        default: return review.severity == "alert" ? "🚨" : "📹"
+        }
     }
 }
