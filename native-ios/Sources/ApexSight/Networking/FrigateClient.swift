@@ -343,6 +343,33 @@ struct FrigateClient {
         try await post("api/events/\(id)/false_positive", body: EmptyBody())
     }
 
+    // MARK: - Face recognition (Frigate 0.16+)
+
+    /// Map of known face names → their training image filenames.
+    func faces() async throws -> [String: [String]] {
+        try await get("api/faces")
+    }
+
+    /// Create an empty collection for a new person.
+    func createFace(name: String) async throws {
+        try await post("api/faces/\(name)/create", body: EmptyBody())
+    }
+
+    /// Train a named face from an existing detection/event — turns "person" into "Brandon".
+    func trainFace(name: String, eventId: String) async throws {
+        try await post("api/faces/train/\(name)/classify", body: ["event_id": eventId])
+    }
+
+    /// Remove specific training images for a face (pass all of them to clear a person).
+    func deleteFaceImages(name: String, ids: [String]) async throws {
+        try await post("api/faces/\(name)/delete", body: ["ids": ids])
+    }
+
+    /// Rename a known face.
+    func renameFace(from oldName: String, to newName: String) async throws {
+        try await put("api/faces/\(oldName)/rename", body: ["new_name": newName])
+    }
+
     func ptzMove(camera: String, action: String, extra: [String: String] = [:]) async throws {
         var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/ptz"), resolvingAgainstBaseURL: false)
         var queryItems = [URLQueryItem(name: "action", value: action)]
@@ -424,6 +451,18 @@ struct FrigateClient {
         let url = baseURL.appending(path: path)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &request)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
+    private func put<T: Encodable>(_ path: String, body: T) async throws {
+        let url = baseURL.appending(path: path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuth(to: &request)
         request.httpBody = try JSONEncoder().encode(body)
