@@ -28,13 +28,6 @@ from .admin import router as admin_router
 
 # Read from the add-on env (run.sh) — used by the daily-recap scheduler.
 PAIRING_CODE = os.environ.get("PAIRING_CODE", "").upper().strip()
-FRIGATE_BASE_URL = os.environ.get("FRIGATE_BASE_URL", "").rstrip("/")
-FRIGATE_INTERNAL_URL = os.environ.get("FRIGATE_INTERNAL_URL", "").rstrip("/")
-
-
-def _recap_frigate_url() -> str:
-    # Prefer the LAN/internal (usually unauthenticated) URL for server-side queries.
-    return FRIGATE_INTERNAL_URL or FRIGATE_BASE_URL
 
 app = FastAPI(title="ApexSight Push Relay", docs_url=None, redoc_url=None)
 app.add_middleware(SessionMiddleware, secret_key=config.session_secret(), https_only=False)
@@ -89,17 +82,15 @@ async def _maybe_send_recap() -> None:
     if (now.hour * 60 + now.minute) < target:
         return
 
-    url = _recap_frigate_url()
-    if not url:
-        return
-    built = await recap.build_recap(url, tz)
-    if built is None:
-        return  # Frigate momentarily unreachable — retry next tick (don't mark sent).
-    title, body = built
+    # Build from the events the bridge accumulated off MQTT today (no Frigate query).
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = db.recap_events_between(PAIRING_CODE, midnight.timestamp(), now.timestamp())
+    title, body = recap.format_recap(rows)
     payload = apns.build_payload(title=title, body=body, apex_url="apex://recap")
     await apns.deliver_to_pairing(PAIRING_CODE, payload, collapse_id=f"recap-{today}")
     db.set_config(f"recap_sent:{PAIRING_CODE}", today)
-    print(f"[recap] sent daily recap to {PAIRING_CODE} for {today}", flush=True)
+    db.prune_recap_events(midnight.timestamp() - 2 * 86_400)   # keep ~2 days of history
+    print(f"[recap] sent daily recap to {PAIRING_CODE} for {today} ({len(rows)} events)", flush=True)
 
 
 # ---- naive per-IP rate limiting --------------------------------------------

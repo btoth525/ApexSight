@@ -24,7 +24,6 @@ options:
   admin_password: ""
   pairing_code: "APEX-PLEX-5250"
   frigate_base_url: ""
-  frigate_internal_url: ""
   alerts_only: true
   topic: "frigate/reviews"
   mqtt_host: ""
@@ -36,7 +35,6 @@ schema:
   admin_password: password
   pairing_code: "match(^APEX-[A-Z0-9]{4}-[A-Z0-9]{4}$)"
   frigate_base_url: url?
-  frigate_internal_url: url?
   alerts_only: bool
   topic: str
   mqtt_host: str?

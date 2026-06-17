@@ -14,9 +14,6 @@ export APEX_BUNDLE_ID="com.brandontoth.apexsight.native"
 export RELAY_URL="http://127.0.0.1:3421"
 export PAIRING_CODE="$(bashio::config 'pairing_code')"
 export FRIGATE_BASE_URL="$(bashio::config 'frigate_base_url')"
-# Optional internal (LAN, usually unauthenticated :5000) Frigate URL the relay uses
-# to build the daily recap. Falls back to FRIGATE_BASE_URL when blank.
-export FRIGATE_INTERNAL_URL="$(bashio::config 'frigate_internal_url')"
 export TOPIC="$(bashio::config 'topic')"
 export ALERTS_ONLY="$(bashio::config 'alerts_only')"
 
