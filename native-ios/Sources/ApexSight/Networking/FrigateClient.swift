@@ -429,10 +429,11 @@ struct FrigateClient {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {
-            let reason = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
             if http.statusCode == 401 || http.statusCode == 403 {
                 throw FrigateError.message("That needs an admin Frigate login.")
             }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let reason = json?["message"] as? String
             throw FrigateError.message(reason ?? "Couldn't assign — Frigate found no face to learn in this event.")
         }
     }

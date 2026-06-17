@@ -434,6 +434,8 @@ final class AppState: ObservableObject {
             case .badResponse(let code):
                 if code == 401 || code == 403 { return "Wrong username or password." }
                 return "Frigate returned an error (\(code)). Check that it's running and reachable."
+            case .message(let text):
+                return text
             }
         }
         let nsError = error as NSError
