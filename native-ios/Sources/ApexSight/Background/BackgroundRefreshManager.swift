@@ -90,6 +90,9 @@ enum BackgroundRefreshManager {
     /// time and today's hasn't gone out yet. Independent of the alert path.
     private static func maybeSendRecap(client: FrigateClient) async {
         guard RecapSettings.shouldSendNow() else { return }
+        // When instant push is set up, the relay sends the daily recap (reliable even
+        // with the app fully closed) — skip the local one so it isn't duplicated.
+        guard !DeviceTokenStore.hasRemotePush else { return }
         let style = UserDefaults.standard.data(forKey: "apex.notificationStyle")
             .flatMap { try? JSONDecoder().decode(NotificationStyle.self, from: $0) } ?? .default
         let events = await RecapBuilder.fetchToday(client: client)

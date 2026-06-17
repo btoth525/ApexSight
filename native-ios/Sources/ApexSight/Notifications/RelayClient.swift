@@ -43,6 +43,14 @@ enum RelayClient {
         let snoozed_until: Double   // epoch seconds; 0 = not snoozed
     }
 
+    private struct RecapBody: Encodable {
+        let pairing_code: String
+        let enabled: Bool
+        let hour: Int
+        let minute: Int
+        let tz_offset: Int
+    }
+
     /// Result of a `/healthz` probe used for the green/red status dot.
     struct Health: Decodable {
         let ok: Bool
@@ -97,6 +105,13 @@ enum RelayClient {
     static func syncGate(relayURL: String, pairingCode: String, disarmed: Bool, snoozedUntil: Double) async throws {
         try await post(relayURL: relayURL, path: "/v1/gate",
                        body: GateBody(pairing_code: pairingCode, disarmed: disarmed, snoozed_until: snoozedUntil))
+    }
+
+    /// Saves the Daily Recap schedule on the relay so the summary is delivered at the
+    /// chosen local time even when the app is fully closed. `tzOffset` is seconds from GMT.
+    static func syncRecap(relayURL: String, pairingCode: String, enabled: Bool, hour: Int, minute: Int, tzOffset: Int) async throws {
+        try await post(relayURL: relayURL, path: "/v1/recap",
+                       body: RecapBody(pairing_code: pairingCode, enabled: enabled, hour: hour, minute: minute, tz_offset: tzOffset))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {

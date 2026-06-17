@@ -194,8 +194,9 @@ struct DailyRecapView: View {
                 .onChange(of: recapEnabled) { _, isOn in
                     // A recap is useless without notification permission — ask the
                     // moment the user opts in (no-op if already granted/denied).
-                    guard isOn else { return }
-                    Task { _ = try? await NativeNotificationManager.requestPermission() }
+                    if isOn { Task { _ = try? await NativeNotificationManager.requestPermission() } }
+                    // Push the schedule to the relay so it fires even with the app closed.
+                    appState.syncRecapIfChanged()
                 }
 
                 if recapEnabled {
@@ -205,6 +206,7 @@ struct DailyRecapView: View {
                             let c = Calendar.current.dateComponents([.hour, .minute], from: newValue)
                             RecapSettings.hour = c.hour ?? 21
                             RecapSettings.minute = c.minute ?? 0
+                            appState.syncRecapIfChanged()
                         }
                 }
                 Text("Delivered around your chosen time when the app refreshes in the background.")

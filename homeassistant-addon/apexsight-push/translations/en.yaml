@@ -17,6 +17,12 @@ configuration:
     description: >-
       A URL your phone can reach Frigate at, used to load the notification
       image/GIF — e.g. https://frigate.yourdomain.com. Leave blank for text-only.
+  frigate_internal_url:
+    name: Frigate internal URL (optional, for Daily Recap)
+    description: >-
+      LAN/internal Frigate URL the relay uses to build the daily recap — usually the
+      unauthenticated :5000 (e.g. http://ccab4aaf-frigate:5000). Leave blank to reuse
+      the Frigate URL above; set it only if that one requires login.
   alerts_only:
     name: Alerts only
     description: On = only Frigate "alert" reviews. Off = also send detections.

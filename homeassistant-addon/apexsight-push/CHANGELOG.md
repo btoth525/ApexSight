@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0
+
+- **Daily Recap with the app closed.** The relay now sends the once-a-day summary
+  itself at your chosen local time, so it arrives even when the app has been closed
+  for hours (background refresh can't be relied on for a fixed time). The app syncs
+  the schedule via `POST /v1/recap`; the relay builds the recap from Frigate's
+  `/api/events` and pushes it.
+- **New option `frigate_internal_url`** (optional): the LAN/internal Frigate URL
+  (usually the unauthenticated `:5000`) the relay uses to build the recap. Leave it
+  blank to reuse `frigate_base_url`. Set it if your `frigate_base_url` requires auth.
+- The in-app local recap now stands down whenever instant push is configured, so the
+  daily summary is never delivered twice.
+
 ## 1.2.0
 
 - **Disarm / Snooze now silence app-closed pushes.** The relay honors a per-household

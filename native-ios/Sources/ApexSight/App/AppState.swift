@@ -121,6 +121,7 @@ final class AppState: ObservableObject {
             while !Task.isCancelled {
                 await self?.refreshAlerts()
                 self?.syncRelayGateIfChanged()
+                self?.syncRecapIfChanged()
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
@@ -133,6 +134,28 @@ final class AppState: ObservableObject {
 
     /// Last arm/snooze gate we pushed to the relay, so we only POST when it changes.
     private var lastSyncedGate: String?
+    /// Last recap schedule we pushed to the relay, so we only POST when it changes.
+    private var lastSyncedRecap: String?
+
+    /// Mirrors the Daily Recap schedule to the relay so the summary fires at the chosen
+    /// local time with the app closed. Idempotent — only POSTs when the schedule changes.
+    func syncRecapIfChanged() {
+        let offset = TimeZone.current.secondsFromGMT()
+        let signature = "\(RecapSettings.enabled)|\(RecapSettings.hour)|\(RecapSettings.minute)|\(offset)"
+        guard signature != lastSyncedRecap else { return }
+        lastSyncedRecap = signature
+
+        let relayURL = DeviceTokenStore.relayURL
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard !relayURL.isEmpty, !pairing.isEmpty else { return }
+        Task {
+            try? await RelayClient.syncRecap(
+                relayURL: relayURL, pairingCode: pairing,
+                enabled: RecapSettings.enabled, hour: RecapSettings.hour,
+                minute: RecapSettings.minute, tzOffset: offset
+            )
+        }
+    }
 
     /// Mirrors the current Disarm / Snooze state to the relay so app-closed pushes are
     /// suppressed while disarmed or snoozed — the relay counterpart of the in-app gate.
