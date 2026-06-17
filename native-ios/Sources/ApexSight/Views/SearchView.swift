@@ -603,34 +603,45 @@ struct SearchView: View {
                 )).filter { plan.matches($0, style: .default) }
                 answer = AskParser.answer(for: plan, results: found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) })
             } else {
-                // A description ("kid on a bike", "red car") — hand the RAW query to Frigate
-                // semantic search with only the user's explicit filters. No parsed label/time
-                // constraints (that's what was over-filtering it to nothing).
-                // "Best of both worlds": Frigate semantic search (visual + GenAI
-                // description) MERGED with exact sub-label/object matches — so typing
-                // "Amazon" returns the Amazon-carrier sub-label events too, not just
-                // visual look-alikes. Everything honors the camera/zone/date filters.
-                let semantic = (try? await client.semanticSearch(
+                // A description ("kid on a bike", "blue car", "Amazon"). Run ALL three
+                // matchers and merge — so we never come back empty when matching events
+                // exist, regardless of whether the server has semantic search enabled:
+                //   1. Frigate semantic search (visual + GenAI description) — best match.
+                //   2. Exact sub-label/object hits (Amazon/FedEx/a person's name/"car").
+                //   3. On-device keyword ranker over a broad recent set (kid→person,
+                //      bike→bicycle, blue/car token match) — the reliable safety net.
+                async let semanticTask = client.safeSemanticSearch(
                     query: q, camera: fCamera, label: fLabel,
                     subLabel: subLabel, zone: zone, after: afterDate, limit: 300
-                )) ?? []
+                )
                 let exact = await exactMatches(q, client: client, camera: fCamera, zone: zone)
+                let keyword = await keywordFallback(
+                    q, client: client,
+                    camera: fCamera, label: fLabel, subLabel: subLabel, zone: zone
+                )
+                let semantic = await semanticTask
 
-                if semantic.isEmpty && exact.isEmpty {
-                    // Semantic off / nothing matched → on-device keyword ranker so
-                    // descriptions like "kid on a bike" still surface (no time cap).
-                    found = await keywordFallback(
-                        q, client: client,
-                        camera: fCamera, label: fLabel, subLabel: subLabel, zone: zone
-                    )
-                } else {
-                    // Exact sub-label/object hits first (most precise), then the semantic
-                    // best-matches that aren't already included.
-                    var merged = exact
-                    let have = Set(merged.map(\.id))
-                    merged.append(contentsOf: semantic.filter { !have.contains($0.id) })
-                    found = merged
+                var merged: [FrigateEvent] = []
+                var seen = Set<String>()
+                func add(_ list: [FrigateEvent]) {
+                    for event in list where !seen.contains(event.id) { seen.insert(event.id); merged.append(event) }
                 }
+                add(semantic)   // best-match first when the server supports it
+                add(exact)      // precise carrier/face/object hits
+                add(keyword)    // on-device relevance — guarantees results when matches exist
+
+                // Last resort: nothing matched the recent pool — query the implied object
+                // labels directly (e.g. "kid on a bike" → all person + bicycle events),
+                // which can reach further back than the mixed recent set.
+                if merged.isEmpty {
+                    for label in AskParser.impliedLabels(in: q) {
+                        let evs = (try? await client.events(
+                            camera: fCamera, label: label, zone: zone, after: afterDate, limit: 100
+                        )) ?? []
+                        add(evs)
+                    }
+                }
+                found = merged
                 resultsRanked = true
             }
 

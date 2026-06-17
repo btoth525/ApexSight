@@ -394,6 +394,19 @@ struct FrigateClient {
         return try JSONDecoder.frigate.decode([FrigateEvent].self, from: data)
     }
 
+    /// Semantic search that yields `[]` instead of throwing — for fire-and-forget merges
+    /// where a server without Semantic Search enabled simply contributes nothing.
+    func safeSemanticSearch(
+        query: String, camera: String? = nil, label: String? = nil,
+        subLabel: String? = nil, zone: String? = nil,
+        after: Date? = nil, before: Date? = nil, limit: Int = 50
+    ) async -> [FrigateEvent] {
+        (try? await semanticSearch(
+            query: query, camera: camera, label: label, subLabel: subLabel,
+            zone: zone, after: after, before: before, limit: limit
+        )) ?? []
+    }
+
     func retainEvent(id: String) async throws {
         try await post("api/events/\(id)/retain", body: EmptyBody())
     }
