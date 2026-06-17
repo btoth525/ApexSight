@@ -604,22 +604,31 @@ struct SearchView: View {
                 // A description ("kid on a bike", "red car") — hand the RAW query to Frigate
                 // semantic search with only the user's explicit filters. No parsed label/time
                 // constraints (that's what was over-filtering it to nothing).
+                // "Best of both worlds": Frigate semantic search (visual + GenAI
+                // description) MERGED with exact sub-label/object matches — so typing
+                // "Amazon" returns the Amazon-carrier sub-label events too, not just
+                // visual look-alikes. Everything honors the camera/zone/date filters.
                 let semantic = (try? await client.semanticSearch(
                     query: q, camera: fCamera, label: fLabel,
                     subLabel: subLabel, zone: zone, after: afterDate, limit: 300
                 )) ?? []
-                if !semantic.isEmpty {
-                    found = semantic
-                } else {
-                    // Frigate semantic search is off / returned nothing → score a broad
-                    // recent set on-device against the query so descriptions like
-                    // "kid on a bike" still surface people AND bicycles (no time cap).
+                let exact = await exactMatches(q, client: client, camera: fCamera, zone: zone)
+
+                if semantic.isEmpty && exact.isEmpty {
+                    // Semantic off / nothing matched → on-device keyword ranker so
+                    // descriptions like "kid on a bike" still surface (no time cap).
                     found = await keywordFallback(
                         q, client: client,
                         camera: fCamera, label: fLabel, subLabel: subLabel, zone: zone
                     )
+                } else {
+                    // Exact sub-label/object hits first (most precise), then the semantic
+                    // best-matches that aren't already included.
+                    var merged = exact
+                    let have = Set(merged.map(\.id))
+                    merged.append(contentsOf: semantic.filter { !have.contains($0.id) })
+                    found = merged
                 }
-                // Both paths return best-match-first — keep that order in the UI.
                 resultsRanked = true
             }
 
@@ -634,6 +643,29 @@ struct SearchView: View {
             errorMessage = error.localizedDescription
             results = []
         }
+    }
+
+    /// Exact sub-label / object-label matches for a query, honoring the panel's
+    /// camera/zone/date filters. Lets "Amazon", "FedEx", a person's name, "car",
+    /// "package", etc. pull their precise events alongside the semantic best-matches.
+    private func exactMatches(_ q: String, client: FrigateClient, camera: String?, zone: String?) async -> [FrigateEvent] {
+        let lower = q.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !lower.isEmpty else { return [] }
+        var out: [FrigateEvent] = []
+        var seen = Set<String>()
+        func add(_ events: [FrigateEvent]) {
+            for e in events where !seen.contains(e.id) { seen.insert(e.id); out.append(e) }
+        }
+        // Sub-label (carriers like Amazon/FedEx/UPS, recognized faces, named plates).
+        if let sub = appState.subLabels.first(where: { $0.caseInsensitiveCompare(lower) == .orderedSame }) {
+            add((try? await client.events(camera: camera, subLabel: sub, zone: zone, after: afterDate, limit: 200)) ?? [])
+        }
+        // Object label (person, car, package…) when the query names one exactly.
+        let knownLabels = Set((appState.labels + appState.events.map(\.label)).map { $0.lowercased() })
+        if knownLabels.contains(lower) {
+            add((try? await client.events(camera: camera, label: lower, zone: zone, after: afterDate, limit: 150)) ?? [])
+        }
+        return out.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
     }
 
     /// On-device relevance fallback for descriptive queries when Frigate semantic
