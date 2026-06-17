@@ -102,9 +102,14 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case recognizedLicensePlate = "recognized_license_plate"
         case recognizedLicensePlateScore = "recognized_license_plate_score"
         case description
-        case data
         case searchDistance = "search_distance"
         case searchSource = "search_source"
+    }
+
+    /// Accessor for the nested `data` object — kept out of `CodingKeys` so the
+    /// synthesized `Encodable` only sees real stored properties.
+    private enum DataOuterKeys: String, CodingKey {
+        case data
     }
 
     /// Fields Frigate nests under the event's `data` object.
@@ -139,7 +144,8 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         // score / top_score / description can be top-level OR nested under `data`
         // (the /events/search response nests them) — read both, preferring top-level.
         var dataScore: Double?, dataTopScore: Double?, dataDescription: String?
-        if let dataC = try? c.nestedContainer(keyedBy: DataKeys.self, forKey: .data) {
+        if let dataOuter = try? decoder.container(keyedBy: DataOuterKeys.self),
+           let dataC = try? dataOuter.nestedContainer(keyedBy: DataKeys.self, forKey: .data) {
             dataScore = try? dataC.decodeIfPresent(Double.self, forKey: .score)
             dataTopScore = try? dataC.decodeIfPresent(Double.self, forKey: .topScore)
             dataDescription = try? dataC.decodeIfPresent(String.self, forKey: .description)
