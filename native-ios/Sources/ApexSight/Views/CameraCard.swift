@@ -41,11 +41,13 @@ struct CameraCard: View {
                 .padding(.top, 12)
             }
             .padding(10)
-            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            // Frosted-glass card for a more modern, premium look over the dark background.
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.10), lineWidth: 1)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
             }
+            .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -55,9 +57,8 @@ struct CameraCard: View {
         if let cap = capability {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
-                    if cap.hasGo2RtcStream { badge("HD", tint: GlassTheme.blue) }
-                    if cap.hasRecordings    { badge("Rec", tint: GlassTheme.green) }
-                    if cap.hasPtz          { badge("PTZ", tint: GlassTheme.orange) }
+                    if cap.hasRecordings { badge("Rec", tint: GlassTheme.green) }
+                    if cap.hasPtz        { badge("PTZ", tint: GlassTheme.orange) }
                 }
             }
         } else {
