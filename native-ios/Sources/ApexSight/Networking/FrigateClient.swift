@@ -242,8 +242,15 @@ struct FrigateClient {
         return components?.url ?? endpoint
     }
 
-    func latestFrameURL(camera: String) -> URL {
-        baseURL.appending(path: "api/\(camera)/latest.jpg")
+    /// Latest still frame. Pass `height` to have Frigate downscale server-side — a
+    /// ~540px JPEG loads far faster and uses a fraction of the memory of a 4K frame,
+    /// which makes camera cells paint instantly and tapping into a camera feel instant
+    /// (the cell and the fullscreen placeholder request the same size, so it's a cache hit).
+    func latestFrameURL(camera: String, height: Int? = nil) -> URL {
+        guard let height else { return baseURL.appending(path: "api/\(camera)/latest.jpg") }
+        var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/latest.jpg"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "h", value: "\(height)")]
+        return components?.url ?? baseURL.appending(path: "api/\(camera)/latest.jpg")
     }
 
     /// A request with Frigate auth headers applied — for custom streamers (MJPEG).

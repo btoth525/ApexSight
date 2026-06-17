@@ -44,6 +44,16 @@ final class HLSLiveModel: ObservableObject {
     private var didTryReauth = false
     private var isStopped = false
     private var lifecycleObservers: [NSObjectProtocol] = []
+    /// When true, start on the lighter `_sub` stream and stay there (grid/cards) for a
+    /// fast first frame and low CPU; the fullscreen player leaves this false for HD.
+    private var preferSub = false
+    /// Frigate-style quality ramp: start on SD (sub) for an instant picture, then
+    /// silently preload HD (main) and hot-swap to it once it's ready — and stay on HD.
+    private var autoUpgrade = false
+    private var upgraded = false
+    private var didAttemptUpgrade = false
+    private var upgradePlayer: AVPlayer?          // hidden player that buffers HD before the swap
+    private var upgradeItemObs: NSKeyValueObservation?
 
     func configure(
         makeURL: @escaping () -> URL?,
@@ -57,11 +67,15 @@ final class HLSLiveModel: ObservableObject {
         self.reauth = reauth
     }
 
-    func start() {
+    func start(preferSub: Bool = false, autoUpgrade: Bool = false) {
+        self.preferSub = preferSub
+        self.autoUpgrade = autoUpgrade
+        upgraded = false
+        didAttemptUpgrade = false
         isStopped = false
         retryCount = 0
         didTryReauth = false
-        usingFallback = false
+        usingFallback = preferSub   // grid/cards begin on the sub-stream for a fast start
         observeLifecycle()
         connect()
     }
@@ -105,6 +119,7 @@ final class HLSLiveModel: ObservableObject {
         teardownLifecycle()
         reconnectTask?.cancel()
         reconnectTask = nil
+        cancelUpgrade()
         teardownObservers()
         player?.pause()
         player = nil
@@ -122,7 +137,7 @@ final class HLSLiveModel: ObservableObject {
     func reload() {
         retryCount = 0
         didTryReauth = false
-        usingFallback = false
+        usingFallback = preferSub
         connect()
     }
 
@@ -141,19 +156,26 @@ final class HLSLiveModel: ObservableObject {
         player = newPlayer
         state = .connecting
 
+        attachObservers(to: item, player: newPlayer)
+        newPlayer.play()
+    }
+
+    /// Wires status/playback observers — shared by the initial connect and the HD swap.
+    private func attachObservers(to item: AVPlayerItem, player: AVPlayer) {
         statusObs = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor in
                 guard let self, !self.isStopped else { return }
                 self.handleStatus(item)
             }
         }
-        timeControlObs = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+        timeControlObs = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
             Task { @MainActor in
                 guard let self, !self.isStopped else { return }
                 if player.timeControlStatus == .playing {
                     self.state = .playing
                     self.retryCount = 0
                     self.didTryReauth = false
+                    self.beginUpgradeIfNeeded()
                 }
             }
         }
@@ -169,8 +191,56 @@ final class HLSLiveModel: ObservableObject {
                 .localizedDescription ?? "Playback failed"
             Task { @MainActor in self?.handleFailure(msg) }
         }
+    }
 
-        newPlayer.play()
+    // MARK: - SD → HD upgrade (Frigate-style quality ramp)
+
+    /// Once the SD stream is playing, silently buffer HD in a hidden player.
+    private func beginUpgradeIfNeeded() {
+        guard autoUpgrade, !upgraded, !didAttemptUpgrade, usingFallback else { return }
+        guard let makeItem, let mainURL = makeURL?(), let mainItem = makeItem(mainURL) else { return }
+        didAttemptUpgrade = true
+        mainItem.preferredForwardBufferDuration = 2
+        let preloader = AVPlayer(playerItem: mainItem)
+        preloader.automaticallyWaitsToMinimizeStalling = false
+        preloader.isMuted = true
+        upgradePlayer = preloader
+        upgradeItemObs = mainItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self, !self.isStopped, !self.upgraded else { return }
+                switch item.status {
+                case .readyToPlay: self.finishUpgrade(to: item)
+                case .failed:      self.cancelUpgrade()   // HD unavailable → stay on crisp SD
+                default:           break
+                }
+            }
+        }
+        preloader.play()   // drives the HD item to readyToPlay
+    }
+
+    /// HD is buffered and ready — promote the hidden HD player to the visible one and
+    /// retire the SD player. (Promoting the player keeps each item with a single player,
+    /// which is far more reliable than moving an item between players.)
+    private func finishUpgrade(to mainItem: AVPlayerItem) {
+        guard let preloader = upgradePlayer else { cancelUpgrade(); return }
+        upgradeItemObs?.invalidate(); upgradeItemObs = nil
+        let oldPlayer = player
+        teardownObservers()                 // drop the SD item's observers
+        preloader.isMuted = isMuted
+        preloader.actionAtItemEnd = .none
+        player = preloader                  // the view rebinds to the HD player; state stays .playing
+        upgradePlayer = nil
+        usingFallback = false
+        upgraded = true
+        attachObservers(to: mainItem, player: preloader)
+        preloader.play()
+        oldPlayer?.pause()                  // stop the SD decoder
+    }
+
+    private func cancelUpgrade() {
+        upgradeItemObs?.invalidate(); upgradeItemObs = nil
+        upgradePlayer?.replaceCurrentItem(with: nil)
+        upgradePlayer = nil
     }
 
     private func handleStatus(_ item: AVPlayerItem) {
@@ -213,6 +283,22 @@ final class HLSLiveModel: ObservableObject {
             return
         }
 
+        // We deliberately started on the sub-stream but it won't come up (e.g. the camera
+        // has no `_sub` stream) — fall FORWARD to the main stream so it still plays.
+        if usingFallback, preferSub, retryCount >= 3 {
+            usingFallback = false
+            preferSub = false          // main is the base now; don't bounce back to sub
+            didAttemptUpgrade = true   // already on main; no separate HD upgrade needed
+            retryCount = 0
+            didTryReauth = false
+            state = .connecting
+            reconnectTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await MainActor.run { self?.reconnectTask = nil; self?.connect() }
+            }
+            return
+        }
+
         guard retryCount <= 6 else { state = .failed(reason); return }
         state = .connecting
         let delay = min(pow(2.0, Double(retryCount - 1)), 16)
@@ -236,9 +322,18 @@ struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
     var showControls: Bool = false
+    /// Grid/card cells pass `true` to start on the lighter sub-stream (fast + low CPU).
+    var preferSubStream: Bool = false
+    /// Fullscreen passes `true`: start on SD for an instant picture, then auto-upgrade to
+    /// HD and stay there (Frigate-style). Pair with `preferSubStream: true`.
+    var autoUpgradeToHD: Bool = false
+    /// Delay before the live player spins up. Cards use a short delay so fast scrolling
+    /// shows only the cached snapshot and never thrashes AVPlayers for cells you pass.
+    var startDelay: Double = 0
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
+    @State private var startTask: Task<Void, Never>?
 
     private var isPlaying: Bool { model.state == .playing }
 
@@ -269,8 +364,10 @@ struct HLSLivePlayerView: View {
             // Snapshot placeholder — shows instantly so there's never a black gap.
             // Sits behind the video layer and fades out the moment the stream is live.
             // Never hit-testable so it can't swallow the player's zoom gestures.
-            if let url = appState.client?.latestFrameURL(camera: camera.name) {
-                RemoteImage(url: url, contentMode: .fit)
+            // Downscaled to a shared size so the card and the fullscreen placeholder are
+            // a cache hit — tapping a camera shows its frame instantly (Reolink-style).
+            if let url = appState.client?.latestFrameURL(camera: camera.name, height: 540) {
+                RemoteImage(url: url, contentMode: showControls ? .fit : .fill)
                     .opacity(isPlaying ? 0 : 1)
                     .animation(.easeOut(duration: 0.4), value: isPlaying)
                     .allowsHitTesting(false)
@@ -288,7 +385,7 @@ struct HLSLivePlayerView: View {
                     Spacer()
                     HStack(spacing: 6) {
                         ProgressView().tint(.white).scaleEffect(0.65)
-                        Text(model.usingFallback ? "Reconnecting…" : "Connecting…")
+                        Text("Connecting…")
                             .font(.system(size: 11, weight: .heavy))
                             .foregroundStyle(.white)
                     }
@@ -315,9 +412,21 @@ struct HLSLivePlayerView: View {
                 makeItem: { url in appState.client?.playerItem(for: url) },
                 reauth: { await appState.reauthenticate() }
             )
-            model.start()
+            // Debounced start: while scrolling, a cell that appears and disappears within
+            // the delay never starts a player — so the wall scrolls smoothly on snapshots
+            // and only goes live once it settles.
+            startTask?.cancel()
+            startTask = Task { @MainActor in
+                if startDelay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(startDelay * 1_000_000_000))
+                }
+                if !Task.isCancelled { model.start(preferSub: preferSubStream, autoUpgrade: autoUpgradeToHD) }
+            }
         }
-        .onDisappear { model.stop() }
+        .onDisappear {
+            startTask?.cancel()
+            model.stop()
+        }
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
         }

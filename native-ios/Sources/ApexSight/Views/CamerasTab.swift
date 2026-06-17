@@ -102,7 +102,28 @@ struct CamerasTab: View {
             .padding(16)
         }
         .refreshable { await appState.refresh() }
-        .task { if appState.cameras.isEmpty { await appState.refresh() } }
+        .task {
+            if appState.cameras.isEmpty { await appState.refresh() }
+            await prefetchSnapshots()
+        }
+    }
+
+    /// Warm each camera's downscaled snapshot into the shared cache so cards paint
+    /// instantly and tapping a camera shows its frame with zero delay.
+    private func prefetchSnapshots() async {
+        guard let client = appState.client else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for camera in visibleCameras {
+                let url = client.latestFrameURL(camera: camera.name, height: 540)
+                if ImageCache.shared.image(for: url) != nil { continue }
+                group.addTask {
+                    if let data = try? await client.imageData(from: url),
+                       let image = RemoteImage.downsample(data, maxPixel: 1000) {
+                        ImageCache.shared.insert(image, for: url)
+                    }
+                }
+            }
+        }
     }
 
     private var cameraRows: [[FrigateCamera]] {

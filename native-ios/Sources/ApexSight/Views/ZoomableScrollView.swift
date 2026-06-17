@@ -37,7 +37,12 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // Propagate content changes (e.g. the live player swapping SD→HD, or a reconnect
+        // producing a new AVPlayer) into the hosted controller — without this the zoom
+        // view stays frozen on whatever player it was first given.
+        context.coordinator.hostVC.rootView = content
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(content: content)

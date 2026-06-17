@@ -96,7 +96,8 @@ struct MultiCameraGridView: View {
         ZStack(alignment: .bottomLeading) {
             Color.black
             // HLSLivePlayerView shows its own snapshot placeholder internally.
-            HLSLivePlayerView(camera: camera)
+            // Sub-stream + debounced start keeps a dense wall light and smooth.
+            HLSLivePlayerView(camera: camera, preferSubStream: true, startDelay: 0.3)
                 .allowsHitTesting(false)
 
             // camera name pill
