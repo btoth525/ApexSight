@@ -346,6 +346,9 @@ final class AppState: ObservableObject {
 
         reviews.insert(item, at: 0)
         if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
+        // Keep the Review tab + app-icon badge instant on WebSocket-delivered alerts
+        // (same definition the poller uses), instead of lagging up to 15s.
+        unreviewedCount = reviews.filter { $0.severity == "alert" }.count
 
         // Keep the Live Activity up-to-date on both new and update events (e.g., more
         // objects detected in the same incident). The guard below still limits banner +
