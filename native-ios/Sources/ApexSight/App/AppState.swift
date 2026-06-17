@@ -372,6 +372,16 @@ final class AppState: ObservableObject {
         guard LastSeenStore.isNew(item.id) else { return }
         LastSeenStore.markSeen([item.id])
 
+        // Single push path: when the relay is active it delivers this alert as a push —
+        // shown in-app by the system banner (willPresent) and on the Lock Screen when
+        // closed — so we DON'T also raise the custom in-app banner or a local
+        // notification, which would double it. The in-app banner + local notification
+        // are the fallback only when there's no relay/APNs token.
+        guard !DeviceTokenStore.hasRemotePush else {
+            cacheLatestAlertForWidget()
+            return
+        }
+
         liveBanner = LiveBannerModel(
             id: item.id,
             title: NotificationCopy.title(for: item),
@@ -379,11 +389,7 @@ final class AppState: ObservableObject {
             reviewID: item.id
         )
 
-        // When instant push is set up, the relay already delivers this alert — posting
-        // a local notification too would be a duplicate. The in-app banner above still
-        // shows. Local notifications remain the zero-setup fallback only when there's
-        // no relay/APNs token.
-        if !DeviceTokenStore.hasRemotePush, let client, let session {
+        if let client, let session {
             Task {
                 // Frigate creates reviews before events finish processing, so the
                 // WebSocket payload often has empty data.detections — which means

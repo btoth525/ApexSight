@@ -51,6 +51,8 @@ struct ApexSightApp: App {
                     appState.startRealtime()
                     appState.startForegroundPolling()
                     appState.consumePendingIntentLink()
+                    // Register for push + (re)send the token to the relay on launch.
+                    PushRegistrar.ensureRegistered()
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
@@ -61,6 +63,8 @@ struct ApexSightApp: App {
                         appState.startRealtime()
                         appState.startForegroundPolling()
                         appState.consumePendingIntentLink()
+                        // Re-assert push registration each time the app comes forward.
+                        PushRegistrar.ensureRegistered()
                     case .background:
                         appState.stopRealtime()
                         appState.stopForegroundPolling()

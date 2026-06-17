@@ -17,8 +17,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        DeviceTokenStore.deviceTokenHex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        DeviceTokenStore.deviceTokenHex = hex
+        DeviceTokenStore.pushEnabled = true
         DeviceTokenStore.lastError = nil
+        // Re-send the token to the relay on EVERY registration (every launch/foreground),
+        // so the relay always holds the current token — like other apps. This self-heals
+        // a rotated token after an app update, reinstall, or restore.
+        Task {
+            let relayURL = DeviceTokenStore.relayURL
+            let pairing = DeviceTokenStore.ensurePairingCode()
+            guard !relayURL.isEmpty, !pairing.isEmpty else { return }
+            try? await RelayClient.register(
+                relayURL: relayURL,
+                deviceToken: hex,
+                pairingCode: pairing,
+                environment: APNSEnvironment.current
+            )
+        }
     }
 
     func application(
