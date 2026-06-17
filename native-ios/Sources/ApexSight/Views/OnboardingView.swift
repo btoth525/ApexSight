@@ -121,6 +121,10 @@ struct OnboardingView: View {
                     .foregroundStyle(GlassTheme.secondary)
             }
             .opacity(page < pages.count - 1 ? 1 : 0)
+            // On the last page it's invisible — also stop it intercepting taps below
+            // "Get Started" (a mistap there would finish onboarding and skip the
+            // notification-permission prompt).
+            .allowsHitTesting(page < pages.count - 1)
         }
     }
 }

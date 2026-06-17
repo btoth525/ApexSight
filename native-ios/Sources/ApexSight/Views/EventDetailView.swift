@@ -15,6 +15,7 @@ struct EventDetailView: View {
     @State private var genAIDescription: String?
     @State private var isEditingAIDescription = false
     @State private var isRegeneratingAI = false
+    @State private var isSavingAI = false
     @State private var editedAIDescription = ""
     @State private var showSimilarSheet = false
     @State private var similarEvents: [FrigateEvent] = []
@@ -123,6 +124,7 @@ struct EventDetailView: View {
                         }
                         .font(.system(size: 13, weight: .black))
                         .foregroundStyle(GlassTheme.purple)
+                        .disabled(isSavingAI)
                     }
                 } else {
                     Text(text)
@@ -374,6 +376,9 @@ struct EventDetailView: View {
 
     private func saveAIDescription() async {
         guard let client = appState.client else { return }
+        guard !isSavingAI else { return }
+        isSavingAI = true
+        defer { isSavingAI = false }
         do {
             try await client.setEventDescription(id: event.id, description: editedAIDescription)
             genAIDescription = editedAIDescription.isEmpty ? nil : editedAIDescription

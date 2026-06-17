@@ -38,11 +38,10 @@ struct ReviewTab: View {
 
     private var showEmptyState: Bool {
         guard !appState.isLoading && !loadingDetections else { return false }
-        switch selectedSeverity {
-        case "detection": return detectionItems.isEmpty
-        case "alert": return appState.reviews.filter { $0.severity == "alert" }.isEmpty
-        default: return appState.reviews.isEmpty
-        }
+        // Use the same filtered/visible set the list renders (which excludes
+        // just-viewed ids), so marking the last items reviewed shows "All Clear"
+        // instead of a "0 items" header with no rows.
+        return filtered.isEmpty
     }
 
     var body: some View {

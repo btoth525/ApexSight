@@ -39,7 +39,6 @@ struct TriggersSettingsView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                            .onTapGesture { editingTrigger = trigger }
                     }
                     .onDelete { store.delete(at: $0) }
                 }
@@ -105,6 +104,9 @@ struct TriggersSettingsView: View {
                             .foregroundStyle(GlassTheme.tertiary)
                     }
                 }
+                // Only the info area opens the editor, so it can't fight the Toggle's tap.
+                .contentShape(Rectangle())
+                .onTapGesture { editingTrigger = trigger }
 
                 Spacer()
 

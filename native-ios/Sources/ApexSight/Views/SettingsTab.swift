@@ -88,6 +88,14 @@ struct SettingsTab: View {
                                     }
                                 }
                                 .pickerStyle(.segmented)
+                                .onChange(of: armModeRaw) { _, newValue in
+                                    // Route through ArmStateStore so the home/Lock-Screen
+                                    // widgets + Control Center toggle refresh immediately,
+                                    // and push the arm/snooze gate to the relay now (not on
+                                    // the next 15s poll).
+                                    ArmStateStore.mode = ArmMode(rawValue: newValue) ?? .away
+                                    appState.syncRelayGateIfChanged()
+                                }
                                 Text(armModeRaw == ArmMode.disarmed.rawValue
                                      ? "Disarmed — all alerts are silenced."
                                      : "Armed — alerts are on. Change from here, Control Center, or “Hey Siri, disarm ApexSight.”")
