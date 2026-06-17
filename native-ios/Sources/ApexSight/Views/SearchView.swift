@@ -196,7 +196,9 @@ struct SearchView: View {
     }
 
     private var browseSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        // Lazy so only the groups you've scrolled to instantiate their thumbnails —
+        // rendering every group at once fired dozens of image fetches and dropped some.
+        LazyVStack(alignment: .leading, spacing: 18) {
             if loadingBrowse && browseEvents.isEmpty {
                 HStack { Spacer(); ProgressView().tint(GlassTheme.cyan); Spacer() }
                     .padding(.top, 40)
@@ -240,7 +242,7 @@ struct SearchView: View {
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                LazyHStack(spacing: 8) {
                     ForEach(group.events.prefix(8)) { event in
                         Button { path.append(event) } label: {
                             thumbnail(event)

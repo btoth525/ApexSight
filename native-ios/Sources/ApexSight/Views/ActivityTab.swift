@@ -85,20 +85,20 @@ struct ActivityTab: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12, pinnedViews: [.sectionHeaders]) {
+                    // Plain LazyVStack (no pinned headers): pinned section headers in a
+                    // LazyVStack recompute offsets as async thumbnails load, which made the
+                    // tiles drift/glitch while scrolling or sitting still.
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         header
 
                         if displayedEvents.isEmpty {
                             emptyOrLoading
                         } else {
                             ForEach(sections) { section in
-                                Section {
-                                    ForEach(section.events) { event in
-                                        Button { path.append(event) } label: { EventRow(event: event) }
-                                            .buttonStyle(.plain)
-                                    }
-                                } header: {
-                                    sectionHeader(section.title, count: section.events.count)
+                                sectionHeader(section.title, count: section.events.count)
+                                ForEach(section.events) { event in
+                                    Button { path.append(event) } label: { EventRow(event: event) }
+                                        .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -217,10 +217,9 @@ struct ActivityTab: View {
                 .font(.system(size: 12, weight: .heavy))
                 .foregroundStyle(GlassTheme.secondary)
         }
-        .padding(.vertical, 6)
+        .padding(.top, 8)
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
     }
 
     @ViewBuilder

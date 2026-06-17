@@ -152,25 +152,6 @@ struct FrigateClient {
         try await get("api/review/\(id)")
     }
 
-    /// Total un-reviewed ALERT count across the retained window, from
-    /// `/api/review/summary` (total_alert − reviewed_alert, summed over day buckets).
-    /// Powers the Review tab + app-icon badge without paging the whole backlog.
-    func unreviewedAlertCount() async throws -> Int {
-        let summary: [String: ReviewSummaryDay] = try await get("api/review/summary")
-        return summary
-            .filter { $0.key != "last24Hours" }   // rolling window duplicates the day buckets
-            .reduce(0) { $0 + max(0, ($1.value.totalAlert ?? 0) - ($1.value.reviewedAlert ?? 0)) }
-    }
-
-    private struct ReviewSummaryDay: Decodable {
-        let totalAlert: Int?
-        let reviewedAlert: Int?
-        enum CodingKeys: String, CodingKey {
-            case totalAlert = "total_alert"
-            case reviewedAlert = "reviewed_alert"
-        }
-    }
-
     func markReviewsViewed(ids: [String]) async throws {
         try await post("api/reviews/viewed", body: ReviewsViewedBody(ids: ids, reviewed: true))
     }
@@ -436,8 +417,24 @@ struct FrigateClient {
     }
 
     /// Train a named face from an existing detection/event — turns "person" into "Brandon".
+    /// Surfaces Frigate's own reason on failure (e.g. "No face was detected in this
+    /// event" / admin required) so the UI can show why instead of a generic error.
     func trainFace(name: String, eventId: String) async throws {
-        try await post("api/faces/train/\(name)/classify", body: ["event_id": eventId])
+        let url = baseURL.appending(path: "api/faces/train/\(name)/classify")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &request)
+        request.httpBody = try JSONEncoder().encode(["event_id": eventId])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { return }
+        guard (200..<300).contains(http.statusCode) else {
+            let reason = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw FrigateError.message("That needs an admin Frigate login.")
+            }
+            throw FrigateError.message(reason ?? "Couldn't assign — Frigate found no face to learn in this event.")
+        }
     }
 
     /// Remove specific training images for a face (pass all of them to clear a person).

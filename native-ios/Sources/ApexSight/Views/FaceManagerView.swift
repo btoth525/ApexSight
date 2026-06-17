@@ -17,6 +17,7 @@ struct FaceManagerView: View {
     @State private var showAddPerson = false
     @State private var newPersonName = ""
     @State private var toast: String?
+    @State private var toastIsError = false
 
     var body: some View {
         ZStack {
@@ -34,7 +35,7 @@ struct FaceManagerView: View {
                 .padding(16)
             }
             if let toast {
-                ToastBanner(text: toast)
+                ToastBanner(text: toast, isError: toastIsError)
             }
         }
         .navigationTitle("People & Faces")
@@ -239,7 +240,8 @@ struct FaceManagerView: View {
             try await client.trainFace(name: clean, eventId: event.id)
             showToast("Assigned to \(titleize(clean))")
         } catch {
-            showToast("Couldn't assign — check Frigate")
+            // Surface Frigate's real reason (no face in this event / admin needed).
+            showToast(error.localizedDescription, isError: true)
         }
         await load()
     }
@@ -262,10 +264,11 @@ struct FaceManagerView: View {
         await load()
     }
 
-    private func showToast(_ text: String) {
+    private func showToast(_ text: String, isError: Bool = false) {
         toast = text
+        toastIsError = isError
         Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: isError ? 4_000_000_000 : 2_000_000_000)
             if toast == text { toast = nil }
         }
     }
@@ -375,15 +378,18 @@ private struct AssignFaceSheet: View {
 
 private struct ToastBanner: View {
     let text: String
+    var isError: Bool = false
     var body: some View {
         VStack {
             Spacer()
             Text(text)
                 .font(.system(size: 13, weight: .heavy))
                 .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(GlassTheme.green.opacity(0.95), in: Capsule())
+                .background((isError ? GlassTheme.red : GlassTheme.green).opacity(0.95), in: Capsule())
+                .padding(.horizontal, 24)
                 .padding(.bottom, 24)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }

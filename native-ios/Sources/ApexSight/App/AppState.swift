@@ -196,13 +196,10 @@ final class AppState: ObservableObject {
             if reviewsChanged { reviews = visible }
             if eventSignature(e) != eventSignature(events) { events = e }
             if reviewsChanged { cacheLatestAlertForWidget() }
-            // Accurate unreviewed-alert count for the badges (falls back to the loaded
-            // alerts if the summary endpoint isn't available).
-            if let count = try? await client.unreviewedAlertCount() {
-                unreviewedCount = count
-            } else {
-                unreviewedCount = visible.filter { $0.severity == "alert" }.count
-            }
+            // Badge = the un-reviewed ALERTS currently in the list, so it always matches
+            // what you see and clearing them drops it to zero — not the entire retained
+            // server history (which could be thousands of never-reviewed old alerts).
+            unreviewedCount = visible.filter { $0.severity == "alert" }.count
             isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once, then retry so the

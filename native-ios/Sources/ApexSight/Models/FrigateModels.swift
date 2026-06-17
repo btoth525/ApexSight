@@ -283,6 +283,8 @@ enum FrigateError: LocalizedError {
     case invalidURL
     case loginFailed
     case badResponse(Int)
+    /// A human-readable reason surfaced from the server's response body.
+    case message(String)
 
     var errorDescription: String? {
         switch self {
@@ -292,6 +294,8 @@ enum FrigateError: LocalizedError {
             return "Frigate did not return a session token."
         case .badResponse(let statusCode):
             return "Frigate returned status \(statusCode)."
+        case .message(let text):
+            return text
         }
     }
 }
