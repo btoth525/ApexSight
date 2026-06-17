@@ -209,13 +209,15 @@ struct EventDetailView: View {
                         .foregroundStyle(GlassTheme.green)
                 }
             }
-            .task {
-                guard hasClip, let client = appState.client else { return }
+            .task(id: event.id) {
+                // Keyed to THIS event + a forced load so a reused detail view can never
+                // play the previous event's clip.
+                guard hasClip, let client = appState.client else { clipModel.stop(); return }
                 // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`) —
                 // the documented, iOS-recommended way to play an event back.
-                clipModel.loadIfNeeded(client: client, url: client.eventVodURL(id: event.id))
+                clipModel.load(client: client, url: client.eventVodURL(id: event.id))
             }
-            .onDisappear { clipModel.pause() }
+            .onDisappear { clipModel.stop() }
         }
     }
 

@@ -38,12 +38,13 @@ struct ReviewDetailView: View {
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
-        .task {
-            guard let client = appState.client, let start = review.startTime else { return }
+        .task(id: review.id) {
+            guard let client = appState.client, let start = review.startTime else { clipModel.stop(); return }
             let end = review.endTime ?? (start + 20)
-            // VOD HLS for the review's time range — Frigate's documented, iOS-recommended
-            // recording source (`/vod/<camera>/start/<start>/end/<end>/master.m3u8`).
-            clipModel.loadIfNeeded(
+            // Force a (re)load keyed to THIS review so a reused detail view can never
+            // show the previous review's clip. VOD HLS for the review's time range —
+            // Frigate's documented, iOS-recommended recording source.
+            clipModel.load(
                 client: client,
                 url: client.recordingHLSURL(camera: review.camera, start: start, end: end)
             )
