@@ -20,8 +20,6 @@ struct CameraCard: View {
                     // so there's never a black gap regardless of stream state.
                     HLSLivePlayerView(
                         camera: camera,
-                        preferSubStream: true,
-                        startDelay: 0.35,
                         onPlaying: { playing in
                             withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
                         }

@@ -52,12 +52,9 @@ struct LiveStreamView: View {
     }
 
     private var liveHLS: some View {
-        // Frigate-style: SD shows instantly, then upgrades to HD and stays there.
         HLSLivePlayerView(
             camera: camera,
             showControls: true,
-            preferSubStream: true,
-            autoUpgradeToHD: true,
             onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
         )
         .id(reloadToken)
