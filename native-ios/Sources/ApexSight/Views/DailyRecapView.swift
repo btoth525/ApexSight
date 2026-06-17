@@ -22,6 +22,7 @@ struct DailyRecapView: View {
                     heroCard
                     if let recap, !recap.isEmpty {
                         statsCard(recap)
+                        objectsCard(recap)
                         camerasCard(recap)
                     }
                     scheduleCard
@@ -98,7 +99,49 @@ struct DailyRecapView: View {
         out.append(Stat(label: "People seen", value: "\(recap.people.count)", tint: GlassTheme.green))
         if recap.packages > 0 { out.append(Stat(label: "Packages", value: "\(recap.packages)", tint: GlassTheme.orange)) }
         if recap.unknownPlates > 0 { out.append(Stat(label: "Unknown plates", value: "\(recap.unknownPlates)", tint: GlassTheme.red)) }
+        if let busiest = recap.busiestHourLabel { out.append(Stat(label: "Busiest", value: busiest, tint: GlassTheme.purple)) }
         return out
+    }
+
+    private func objectsCard(_ recap: DailyRecap) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("By Object")
+                    .font(.system(size: 18, weight: .black))
+                    .foregroundStyle(GlassTheme.primary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                    ForEach(recap.labelCounts.prefix(12), id: \.label) { item in
+                        objectChip(NotificationCopy.emoji(for: item.label), titleize(item.label), item.count, tint: GlassTheme.cyan)
+                    }
+                }
+                if !recap.carriers.isEmpty {
+                    Text("DELIVERIES")
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(GlassTheme.tertiary)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                        ForEach(recap.carriers, id: \.name) { item in
+                            objectChip(NotificationCopy.emoji(for: "package", subLabel: item.name), titleize(item.name), item.count, tint: GlassTheme.orange)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func objectChip(_ emoji: String, _ title: String, _ count: Int, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Text("\(emoji) \(title)")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(GlassTheme.primary)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            Text("\(count)")
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.white.opacity(0.05), in: Capsule())
     }
 
     private func camerasCard(_ recap: DailyRecap) -> some View {

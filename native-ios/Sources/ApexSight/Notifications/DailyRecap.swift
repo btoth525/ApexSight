@@ -10,8 +10,22 @@ struct DailyRecap {
     var unknownPlates = 0
     var firstAt: Date?
     var lastAt: Date?
+    /// Hour (0–23) with the most activity, for the "busiest time" highlight.
+    var busiestHour: Int?
+    /// Delivery carriers seen today (sub-label → count): Amazon, UPS, FedEx…
+    var carriers: [(name: String, count: Int)] = []
 
     var isEmpty: Bool { total == 0 }
+
+    /// e.g. "2–3 PM" for the busiest hour.
+    var busiestHourLabel: String? {
+        guard let h = busiestHour else { return nil }
+        func fmt(_ hour: Int) -> String {
+            let h12 = hour % 12 == 0 ? 12 : hour % 12
+            return "\(h12)\(hour < 12 ? "AM" : "PM")"
+        }
+        return "\(fmt(h))–\(fmt((h + 1) % 24))"
+    }
 
     var headline: String {
         guard !isEmpty else { return "All quiet today" }
@@ -43,14 +57,28 @@ enum RecapBuilder {
         recap.total = events.count
         guard !events.isEmpty else { return recap }
 
+        let carrierKeys: Set<String> = [
+            "amazon", "ups", "usps", "fedex", "dhl", "an_post", "purolator",
+            "dpd", "gls", "postnl", "postnord", "canada_post", "royal_mail"
+        ]
         var cameras: [String: Int] = [:]
         var labels: [String: Int] = [:]
+        var carriers: [String: Int] = [:]
+        var hours: [Int: Int] = [:]
         var people = Set<String>()
+        let cal = Calendar.current
         for event in events {
             cameras[event.camera, default: 0] += 1
             labels[event.label, default: 0] += 1
             if let face = event.recognizedFace { people.insert(face) }
             if event.label.lowercased() == "package" { recap.packages += 1 }
+            if let sub = event.subLabel?.lowercased(), carrierKeys.contains(sub) {
+                carriers[sub, default: 0] += 1
+            }
+            if let start = event.startTime {
+                let hour = cal.component(.hour, from: Date(timeIntervalSince1970: start))
+                hours[hour, default: 0] += 1
+            }
             if let plate = event.recognizedLicensePlate, !plate.isEmpty,
                style.knownPlateName(for: plate) == nil {
                 recap.unknownPlates += 1
@@ -58,6 +86,8 @@ enum RecapBuilder {
         }
         recap.cameraCounts = cameras.sorted { $0.value > $1.value }.map { (camera: $0.key, count: $0.value) }
         recap.labelCounts = labels.sorted { $0.value > $1.value }.map { (label: $0.key, count: $0.value) }
+        recap.carriers = carriers.sorted { $0.value > $1.value }.map { (name: $0.key, count: $0.value) }
+        recap.busiestHour = hours.max { $0.value < $1.value }?.key
         recap.people = people.sorted()
         let times = events.compactMap(\.startTime)
         recap.firstAt = times.min().map { Date(timeIntervalSince1970: $0) }
