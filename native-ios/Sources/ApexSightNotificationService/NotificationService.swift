@@ -1,6 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 import UserNotifications
+import WidgetKit
 
 final class NotificationService: UNNotificationServiceExtension {
     private var contentHandler: ((UNNotificationContent) -> Void)?
@@ -19,6 +20,11 @@ final class NotificationService: UNNotificationServiceExtension {
         }
 
         bestAttemptContent = mutableContent
+
+        // Keep the app-icon badge + Home/Lock-Screen widgets fresh while the app is
+        // closed — the NSE runs on every push, so this is what makes them update
+        // without opening the app.
+        Self.bumpBadgeAndRefreshWidgets(for: request.content, into: mutableContent)
 
         // Prefer a token sent in the payload; otherwise fall back to the one the
         // app mirrors into the shared app group (remote pushes from the HA bridge
@@ -64,6 +70,19 @@ final class NotificationService: UNNotificationServiceExtension {
             urls.append(url)
         }
         return urls
+    }
+
+    /// Increment the shared badge counter (so the app icon updates on a closed-app push,
+    /// like Mail) and nudge the widgets to refetch. The silent "final GIF" follow-up is
+    /// passive, so it refreshes widgets without double-counting the badge.
+    private static func bumpBadgeAndRefreshWidgets(for content: UNNotificationContent, into mutable: UNMutableNotificationContent) {
+        let defaults = UserDefaults(suiteName: appGroupSuite)
+        if content.interruptionLevel != .passive {
+            let next = (defaults?.integer(forKey: "apex.badgeCount") ?? 0) + 1
+            defaults?.set(next, forKey: "apex.badgeCount")
+            mutable.badge = NSNumber(value: next)
+        }
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: - App-group fallbacks (written by the main app on login/refresh)

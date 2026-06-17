@@ -67,12 +67,12 @@ struct CamerasTab: View {
 
     // MARK: - Live wall (normal mode)
 
-    /// Lazy rows so off-screen feeds tear down their AVPlayer and stop decoding video
-    /// (huge CPU/thermal/battery win with many cameras). Each card shows its snapshot
-    /// placeholder instantly on reappear, so scrolling back never leaves a black gap.
+    /// A plain (non-lazy) stack so every camera's feed loads and STAYS live as you
+    /// scroll, instead of flickering on/off as cells recycle. Players still pause on
+    /// app background and tear down when you leave the tab.
     private var liveScroll: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14) {
                 if let error = appState.errorMessage {
                     GlassCard {
                         Label(error, systemImage: "exclamationmark.triangle")

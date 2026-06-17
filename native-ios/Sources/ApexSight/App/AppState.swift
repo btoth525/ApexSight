@@ -649,8 +649,11 @@ final class AppState: ObservableObject {
     }
 
     /// Mirrors the unreviewed-alert count onto the app icon (like Mail's unread badge).
+    /// Also persists it to the app group so the notification extension increments from
+    /// the correct base when a push lands while the app is closed.
     private func updateAppBadge() {
         let count = unreviewedCount
+        UserDefaults(suiteName: ApexAppGroup.identifier)?.set(count, forKey: "apex.badgeCount")
         Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
     }
 
