@@ -152,6 +152,25 @@ struct FrigateClient {
         try await get("api/review/\(id)")
     }
 
+    /// Total un-reviewed ALERT count across the retained window, from
+    /// `/api/review/summary` (total_alert − reviewed_alert, summed over day buckets).
+    /// Powers the Review tab + app-icon badge without paging the whole backlog.
+    func unreviewedAlertCount() async throws -> Int {
+        let summary: [String: ReviewSummaryDay] = try await get("api/review/summary")
+        return summary
+            .filter { $0.key != "last24Hours" }   // rolling window duplicates the day buckets
+            .reduce(0) { $0 + max(0, ($1.value.totalAlert ?? 0) - ($1.value.reviewedAlert ?? 0)) }
+    }
+
+    private struct ReviewSummaryDay: Decodable {
+        let totalAlert: Int?
+        let reviewedAlert: Int?
+        enum CodingKeys: String, CodingKey {
+            case totalAlert = "total_alert"
+            case reviewedAlert = "reviewed_alert"
+        }
+    }
+
     func markReviewsViewed(ids: [String]) async throws {
         try await post("api/reviews/viewed", body: ReviewsViewedBody(ids: ids, reviewed: true))
     }

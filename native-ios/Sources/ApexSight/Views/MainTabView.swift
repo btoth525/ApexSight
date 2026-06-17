@@ -82,6 +82,7 @@ struct MainTabView: View {
             ForEach(Tab.allCases) { tab in
                 view(for: tab)
                     .tabItem { Label(tab.title, systemImage: tab.icon) }
+                    .badge(tab == .review ? appState.unreviewedCount : 0)
                     .tag(tab)
             }
         }
@@ -95,6 +96,7 @@ struct MainTabView: View {
                 ForEach(Tab.allCases) { tab in
                     Label(tab.title, systemImage: tab.icon)
                         .font(.system(size: 16, weight: .heavy))
+                        .badge(tab == .review ? appState.unreviewedCount : 0)
                         .tag(tab)
                 }
             }

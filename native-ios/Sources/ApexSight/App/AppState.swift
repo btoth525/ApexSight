@@ -3,6 +3,7 @@ import SwiftUI
 import WidgetKit
 import CoreSpotlight
 import AppIntents
+import UserNotifications
 
 enum AppDeepLink: Hashable {
     case review(String)
@@ -51,6 +52,10 @@ final class AppState: ObservableObject {
     /// can show an offline indicator instead of silently serving stale data.
     @Published var isReachable = true
     @Published var liveBanner: LiveBannerModel?
+    /// Un-reviewed alert count — drives the Review tab badge and the app-icon badge.
+    @Published var unreviewedCount: Int = 0 {
+        didSet { guard unreviewedCount != oldValue else { return }; updateAppBadge() }
+    }
 
     let keychain = KeychainStore()
     let notificationPrefs = NotificationPreferencesStore()
@@ -168,6 +173,13 @@ final class AppState: ObservableObject {
             if reviewsChanged { reviews = visible }
             if eventSignature(e) != eventSignature(events) { events = e }
             if reviewsChanged { cacheLatestAlertForWidget() }
+            // Accurate unreviewed-alert count for the badges (falls back to the loaded
+            // alerts if the summary endpoint isn't available).
+            if let count = try? await client.unreviewedAlertCount() {
+                unreviewedCount = count
+            } else {
+                unreviewedCount = visible.filter { $0.severity == "alert" }.count
+            }
             isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once, then retry so the
@@ -212,6 +224,7 @@ final class AppState: ObservableObject {
             }
             locallyViewedIDs.formUnion(ids)
             reviews.removeAll()
+            unreviewedCount = 0
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -598,6 +611,7 @@ final class AppState: ObservableObject {
         stopRealtime()
         stopForegroundPolling()
         locallyViewedIDs.removeAll()
+        unreviewedCount = 0
         keychain.clear()
         // Clear the Watch so it doesn't keep showing the last household's alerts after sign-out.
         WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
@@ -612,7 +626,14 @@ final class AppState: ObservableObject {
         recentLogs = []
     }
 
+    /// Mirrors the unreviewed-alert count onto the app icon (like Mail's unread badge).
+    private func updateAppBadge() {
+        let count = unreviewedCount
+        Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+    }
+
     func markReviewViewed(_ review: FrigateReviewItem) async {
+        if review.severity == "alert" { unreviewedCount = max(0, unreviewedCount - 1) }
         await markReviewViewed(id: review.id)
     }
 
