@@ -1,4 +1,5 @@
 import AppIntents
+import ActivityKit
 import Foundation
 
 // Action intents that live in the shared layer so they can be invoked from the main
@@ -24,6 +25,21 @@ struct ApexResumeIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.clear()
+        return .result()
+    }
+}
+
+/// Dismisses the current incident Live Activity from its own "Dismiss" button — runs
+/// in the widget process and ends the activity immediately so it gets out of the way.
+@available(iOS 17.0, *)
+struct ApexDismissIncidentIntent: AppIntent {
+    static var title: LocalizedStringResource = "Dismiss Alert"
+    static var description = IntentDescription("Clear the current camera alert from the Lock Screen / Dynamic Island.")
+
+    func perform() async throws -> some IntentResult {
+        for activity in Activity<IncidentActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
         return .result()
     }
 }

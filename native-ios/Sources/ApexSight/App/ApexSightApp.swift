@@ -65,6 +65,9 @@ struct ApexSightApp: App {
                         appState.consumePendingIntentLink()
                         // Re-assert push registration each time the app comes forward.
                         PushRegistrar.ensureRegistered()
+                        // You're in the app now — clear the Dynamic Island/Lock-Screen
+                        // incident so it gets out of your way.
+                        IncidentActivityController.end()
                     case .background:
                         appState.stopRealtime()
                         appState.stopForegroundPolling()

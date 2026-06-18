@@ -21,6 +21,10 @@ enum IncidentActivityController {
         if current == nil {
             current = Activity<IncidentActivityAttributes>.activities.first
         }
+        // Drop a stale handle (e.g. the user tapped "Dismiss") so a new alert starts fresh.
+        if let existing = current, existing.activityState != .active {
+            current = nil
+        }
 
         if let current {
             Task { await current.update(ActivityContent(state: state, staleDate: nil)) }
@@ -42,21 +46,20 @@ enum IncidentActivityController {
     static func end() {
         endTask?.cancel()
         endTask = nil
-        let activity = current
         current = nil
-        // Pass a valid final state so the dismissal is reliable on iOS 16.2+.
-        let finalState = IncidentActivityAttributes.ContentState(
-            title: "Incident ended",
-            detail: "Tap to review",
-            severity: "alert"
-        )
-        Task { await activity?.end(ActivityContent(state: finalState, staleDate: nil), dismissalPolicy: .immediate) }
+        // End every incident activity (current + any restored from a prior session) so
+        // opening the app / tapping Dismiss reliably clears it.
+        Task {
+            for activity in Activity<IncidentActivityAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
     }
 
     private static func scheduleAutoEnd() {
         endTask?.cancel()
         endTask = Task {
-            try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes
+            try? await Task.sleep(nanoseconds: 45_000_000_000) // 45s — don't linger
             guard !Task.isCancelled else { return }
             end()
         }

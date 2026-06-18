@@ -27,17 +27,32 @@ struct IncidentLiveActivity: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("Live since \(context.attributes.startedAt, style: .time) · \(titleizeName(context.attributes.camera))")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Link(destination: cameraDeepLink(context.attributes.camera)) {
+                            Label("View Live", systemImage: "video.fill")
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundStyle(.cyan)
+                        }
+                        Spacer()
+                        Text(context.attributes.startedAt, style: .time)
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(.secondary)
+                        Button(intent: ApexDismissIncidentIntent()) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             } compactLeading: {
                 Image(systemName: severityIcon(context.state.severity))
                     .foregroundStyle(severityColor(context.state.severity))
             } compactTrailing: {
-                Text(context.attributes.startedAt, style: .timer)
-                    .font(.system(size: 12, weight: .heavy))
-                    .frame(maxWidth: 44)
+                // The object glyph (the title already starts with it, e.g. "🧍"/"📦"),
+                // not a ticking timer — tells you what at a glance.
+                Text(glyph(context.state.title))
+                    .font(.system(size: 14))
             } minimal: {
                 Image(systemName: severityIcon(context.state.severity))
                     .foregroundStyle(severityColor(context.state.severity))
@@ -62,23 +77,42 @@ struct IncidentLiveActivity: Widget {
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
+                Text("\(context.attributes.startedAt, style: .time) · \(titleizeName(context.attributes.camera))")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
             }
-            Spacer()
-            Text(context.attributes.startedAt, style: .timer)
-                .font(.system(size: 13, weight: .black, design: .rounded))
-                .foregroundStyle(.cyan)
-                .frame(maxWidth: 56)
+            Spacer(minLength: 8)
+            // View Live (opens the camera) + Dismiss (clears the alert).
+            Link(destination: cameraDeepLink(context.attributes.camera)) {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(.cyan)
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.12), in: Circle())
+            }
+            Button(intent: ApexDismissIncidentIntent()) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(16)
         .widgetURL(cameraDeepLink(context.attributes.camera))
     }
 
-    /// Percent-encode the camera name so names with spaces/specials still build a
-    /// valid URL (matches the snapshot widget's deep-link builder).
-    private func cameraDeepLink(_ camera: String) -> URL? {
+    /// Percent-encode the camera name so names with spaces/specials still build a valid URL.
+    private func cameraDeepLink(_ camera: String) -> URL {
         let encoded = camera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? camera
-        return URL(string: "apex://camera?name=\(encoded)")
+        return URL(string: "apex://camera?name=\(encoded)") ?? URL(string: "apex://camera")!
     }
+
+    /// The object emoji for the compact Dynamic Island glance — the title already starts
+    /// with it (e.g. "🧍 Person", "📦 Amazon").
+    private func glyph(_ title: String) -> String { String(title.first ?? "🔔") }
 
     private func severityColor(_ severity: String) -> Color {
         severity == "alert" ? .orange : .cyan
