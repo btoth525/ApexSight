@@ -53,6 +53,19 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
             return
         }
 
+        // "Review" — open the review, else the deep link, else the camera. Explicit so
+        // this action can never dead-end regardless of which fields the payload carries.
+        if response.actionIdentifier == NativeNotificationManager.openReviewAction {
+            if let reviewID = userInfo["review_id"] as? String {
+                appState.deepLink = .review(reviewID)
+            } else if let urlString = userInfo["apex_url"] as? String, let url = URL(string: urlString) {
+                appState.handleDeepLink(url)
+            } else if let camera = userInfo["camera"] as? String {
+                appState.deepLink = .camera(camera)
+            }
+            return
+        }
+
         if response.actionIdentifier == NativeNotificationManager.markReviewedAction,
            let reviewID = userInfo["review_id"] as? String {
             await appState.markReviewViewed(id: reviewID)

@@ -45,8 +45,14 @@ def init() -> None:
 
 @contextmanager
 def _conn():
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
+    # The MQTT bridge runs in a second process and writes recap_events to the same DB.
+    # WAL lets a reader and a writer coexist, and busy_timeout makes a writer wait for
+    # a lock instead of raising "database is locked" — together these stop lost recap
+    # rows and 500s under concurrent access.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
         conn.commit()

@@ -35,8 +35,12 @@ def init() -> None:
 
 @contextmanager
 def _conn():
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
+    # WAL + busy_timeout so concurrent access (e.g. a co-located writer) doesn't raise
+    # "database is locked"; harmless for a single-process relay.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
         conn.commit()

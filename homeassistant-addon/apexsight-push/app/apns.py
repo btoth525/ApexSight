@@ -8,6 +8,7 @@ registration.
 No secrets live here — the .p8 PEM, Key ID, Team ID and Bundle ID are read
 from the DB config table (populated via the admin GUI).
 """
+import asyncio
 import json
 import time
 from typing import Optional
@@ -78,9 +79,17 @@ def is_configured() -> bool:
 
 
 async def send_to_token(
-    device_token: str, environment: str, payload: dict, collapse_id: str = ""
+    device_token: str,
+    environment: str,
+    payload: dict,
+    collapse_id: str = "",
+    client: Optional[httpx.AsyncClient] = None,
 ) -> tuple[bool, str]:
-    """Send one push. Returns (ok, detail). detail is APNs' reason on failure."""
+    """Send one push. Returns (ok, detail). detail is APNs' reason on failure.
+
+    Pass a shared `client` to reuse one HTTP/2 connection across a fan-out (every
+    phone in a household) instead of re-doing the TLS handshake per device.
+    """
     p8, key_id, team_id, bundle_id, env_mode = _credentials()
     headers = {
         "authorization": f"bearer {_provider_token(p8, key_id, team_id)}",
@@ -95,8 +104,11 @@ async def send_to_token(
         headers["apns-collapse-id"] = collapse_id[:64]
     url = f"{_host_for(environment, env_mode)}/3/device/{device_token}"
     try:
-        async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+        if client is not None:
             resp = await client.post(url, headers=headers, content=json.dumps(payload))
+        else:
+            async with httpx.AsyncClient(http2=True, timeout=10.0) as own:
+                resp = await own.post(url, headers=headers, content=json.dumps(payload))
     except httpx.HTTPError as exc:
         return False, f"network error: {exc}"
 
@@ -174,10 +186,22 @@ async def deliver_to_pairing(pairing_code: str, payload: dict, collapse_id: str 
     Unregistered) so the table stays clean.
     """
     rows = db.devices_for(pairing_code)
+    if not rows:
+        return {"devices": 0, "sent": 0, "failed": 0, "pruned": 0, "errors": []}
+
+    # One shared HTTP/2 client + parallel sends so every phone in the household is
+    # alerted at once, and one slow/hung token can't delay the others.
+    async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+        results = await asyncio.gather(
+            *(
+                send_to_token(row["device_token"], row["environment"], payload, collapse_id, client)
+                for row in rows
+            )
+        )
+
     sent, failed, pruned = 0, 0, 0
     errors: list[str] = []
-    for row in rows:
-        ok, detail = await send_to_token(row["device_token"], row["environment"], payload, collapse_id)
+    for row, (ok, detail) in zip(rows, results):
         if ok:
             sent += 1
             continue

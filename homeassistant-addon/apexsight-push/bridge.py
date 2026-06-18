@@ -57,6 +57,7 @@ def _ensure_recap_table() -> None:
     """The relay's db.init() also creates this — but the bridge may write first."""
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")  # coexist with the relay process
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS recap_events ("
                 " pairing_code TEXT NOT NULL, event_id TEXT NOT NULL, camera TEXT,"
@@ -80,6 +81,7 @@ def _record_event(after: dict) -> None:
     ts = after.get("start_time") or time.time()
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")  # coexist with the relay process
             conn.execute(
                 "INSERT INTO recap_events(pairing_code, event_id, camera, label, sub_label, ts) "
                 "VALUES(?,?,?,?,?,?) "
@@ -205,20 +207,24 @@ def _stages_to_send(after: dict, msg_type: str) -> list[str]:
     if msg_type == "end" and detections and "alert" in sent and "final" not in sent:
         stages.append("final")
 
-    if stages:
-        record = _notified.setdefault(review_id, {})
-        for s in stages:
-            record[s] = now
+    # NOTE: stages are NOT recorded as sent here. on_message records each stage in
+    # `_notified` only after the relay actually accepts it, so a relay/network blip
+    # leaves the stage un-sent and the next MQTT update retries it (a missed alert is
+    # the worst failure for a security app — better a rare duplicate than a silent drop).
     return stages
 
 
-def _post_to_relay(payload: dict, stage: str, attempts: int = 3) -> None:
+def _post_to_relay(payload: dict, stage: str, attempts: int = 3) -> bool:
     """POST one alert to the relay, retrying transient failures with backoff.
 
     A missed alert is the worst failure mode for a security app, so retry a few
     times before giving up rather than dropping the event on the first blip.
     Relay 2xx/4xx are final answers (don't hammer); only 5xx and network errors
     are retried.
+
+    Returns True when the relay gave a final answer (delivered, gated, or a 4xx
+    that retrying won't fix) and False when all retries were exhausted — the caller
+    uses this to decide whether to mark the stage delivered.
     """
     delay = 1.0
     for attempt in range(1, attempts + 1):
@@ -226,13 +232,14 @@ def _post_to_relay(payload: dict, stage: str, attempts: int = 3) -> None:
             r = requests.post(f"{RELAY_URL}/v1/notify", json=payload, timeout=10)
             log(f"forwarded review {payload['review_id']} [{stage}] → {r.status_code} {r.text[:120]}")
             if r.status_code < 500:
-                return
+                return True
             log(f"relay {r.status_code}, retrying ({attempt}/{attempts})")
         except Exception as exc:
             log(f"relay POST failed ({attempt}/{attempts}):", exc)
         if attempt < attempts:
             time.sleep(delay)
             delay *= 2
+    return False
 
 
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -259,10 +266,15 @@ def on_message(client, userdata, msg):
     stages = _stages_to_send(after, msg_type)
     if not stages:
         return
+    review_id = after.get("id")
     for stage in stages:
         payload = _build_alert(after, final=(stage == "final"))
-        if payload:
-            _post_to_relay(payload, stage)
+        if not payload:
+            continue
+        # Only mark the stage delivered once the relay actually accepts it; a failed
+        # POST stays un-recorded so the next MQTT update for this review retries it.
+        if _post_to_relay(payload, stage) and review_id:
+            _notified.setdefault(review_id, {})[stage] = time.time()
 
 
 def main():

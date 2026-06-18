@@ -77,7 +77,10 @@ enum NativeNotificationManager {
             "source": "apex-test",
             "kind": "frigate-review",
             "camera": "front_porch",
-            "apex_url": "apex://review"
+            // Point the test at the camera deep link (a real target) so tapping the
+            // banner and the "View Live"/"Review" actions all open something instead of
+            // no-opping on a fake review id that would 404.
+            "apex_url": "apex://camera?name=front_porch"
         ]
 
         let request = UNNotificationRequest(
