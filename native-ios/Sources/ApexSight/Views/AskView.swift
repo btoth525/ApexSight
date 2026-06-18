@@ -53,7 +53,7 @@ struct AskView: View {
                 }
             }
             .task {
-                // Load known people so questions like "when was Brandon seen" resolve.
+                // Load known people so questions like "when was Alex seen" resolve.
                 if faceNames.isEmpty, let client = appState.client, let faces = try? await client.faces() {
                     faceNames = Array(faces.keys)
                 }

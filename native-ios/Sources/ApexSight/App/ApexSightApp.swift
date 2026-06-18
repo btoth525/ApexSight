@@ -37,6 +37,10 @@ struct ApexSightApp: App {
                     LiveAlertBanner()
                         .environmentObject(appState)
                 }
+                // Feel a new in-app alert the instant its banner appears (not on dismiss).
+                .sensoryFeedback(trigger: appState.liveBanner?.id) { _, new in
+                    new != nil ? .warning : nil
+                }
                 .overlay(alignment: .top) {
                     OfflineBanner()
                         .environmentObject(appState)

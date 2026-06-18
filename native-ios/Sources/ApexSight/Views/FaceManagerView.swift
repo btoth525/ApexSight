@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Manage Frigate's face library from the app: see your known people, and assign
-/// recently-detected faces to a person so future alerts say "Brandon arrived"
+/// recently-detected faces to a person so future alerts say "Alex arrived"
 /// instead of "person". Drives Frigate's /api/faces endpoints (0.16+).
 struct FaceManagerView: View {
     @EnvironmentObject private var appState: AppState
@@ -83,7 +83,7 @@ struct FaceManagerView: View {
                     .foregroundStyle(GlassTheme.cyan)
                     .frame(width: 44, height: 44)
                     .background(GlassTheme.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                Text("Assign detected faces to people. Frigate learns them, so alerts become \"Brandon arrived\" instead of \"person.\"")
+                Text("Assign detected faces to people. Frigate learns them, so alerts become \"Alex arrived\" instead of \"person.\"")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(GlassTheme.secondary)
                 Spacer(minLength: 0)
@@ -301,7 +301,7 @@ private struct AssignFaceSheet: View {
                         Text("ADD AS NEW PERSON")
                             .font(.system(size: 12, weight: .black))
                             .foregroundStyle(.secondary)
-                        TextField("Name (e.g. Brandon)", text: $newName)
+                        TextField("Name (e.g. Alex)", text: $newName)
                             .textInputAutocapitalization(.words)
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(.white)

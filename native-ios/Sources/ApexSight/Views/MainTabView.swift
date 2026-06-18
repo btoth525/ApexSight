@@ -52,6 +52,7 @@ struct MainTabView: View {
             }
         }
         .tint(GlassTheme.cyan)
+        .sensoryFeedback(.selection, trigger: selectedTab)
         .sheet(item: $detailSheet) { sheet in
             NavigationStack {
                 switch sheet {

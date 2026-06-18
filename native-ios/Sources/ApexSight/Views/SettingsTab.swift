@@ -94,8 +94,11 @@ struct SettingsTab: View {
                                     // widgets + Control Center toggle refresh immediately,
                                     // and push the arm/snooze gate to the relay now (not on
                                     // the next 15s poll).
-                                    ArmStateStore.mode = ArmMode(rawValue: newValue) ?? .away
+                                    let mode = ArmMode(rawValue: newValue) ?? .away
+                                    ArmStateStore.mode = mode
                                     appState.syncRelayGateIfChanged()
+                                    // Feel the change: a firm "armed" success vs a softer "disarmed" warning.
+                                    if mode == .disarmed { Haptics.warning() } else { Haptics.success() }
                                 }
                                 Text(armModeRaw == ArmMode.disarmed.rawValue
                                      ? "Disarmed — all alerts are silenced."
@@ -140,6 +143,7 @@ struct SettingsTab: View {
                                         }
                                     }
                                     .tint(GlassTheme.cyan)
+                                    .sensoryFeedback(.selection, trigger: biometricLockEnabled)
                                 }
                             }
                         }
@@ -160,7 +164,7 @@ struct SettingsTab: View {
                         settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
                             path.append("triggers")
                         }
-                        settingsRow(icon: "person.crop.square.filled.and.at.rectangle", title: "People & Faces", subtitle: "Name faces → \"Brandon arrived\" instead of \"person\"", tint: GlassTheme.green) {
+                        settingsRow(icon: "person.crop.square.filled.and.at.rectangle", title: "People & Faces", subtitle: "Name faces → \"Alex arrived\" instead of \"person\"", tint: GlassTheme.green) {
                             path.append("faces")
                         }
                         settingsRow(icon: "car.fill", title: "License Plates", subtitle: "Name your cars → \"Unknown plate\" for the rest", tint: GlassTheme.blue) {
@@ -223,6 +227,7 @@ struct SettingsTab: View {
     private func appearanceOption(label: String, icon: String, value: String) -> some View {
         let selected = colorSchemePreference == value
         return Button {
+            Haptics.select()
             colorSchemePreference = value
         } label: {
             VStack(spacing: 6) {
@@ -241,7 +246,7 @@ struct SettingsTab: View {
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { Haptics.tap(); action() }) {
             GlassCard {
                 HStack(spacing: 14) {
                     Image(systemName: icon)

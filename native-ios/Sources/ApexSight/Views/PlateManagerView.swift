@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Name your license plates so alerts read "Brandon's Car" instead of a raw plate,
+/// Name your license plates so alerts read "Alex's Car" instead of a raw plate,
 /// and anything unknown reads "Unknown plate." App-managed (Frigate has no plate
 /// API) and synced to the relay so it shapes app-closed pushes too.
 struct PlateManagerView: View {
@@ -301,7 +301,7 @@ private struct PlateEditorSheet: View {
                                 Text("Name")
                                     .font(.system(size: 13, weight: .black))
                                     .foregroundStyle(GlassTheme.tertiary)
-                                TextField("e.g. Brandon's Car", text: $name)
+                                TextField("e.g. Alex's Car", text: $name)
                                     .font(.system(size: 16, weight: .bold))
                                     .foregroundStyle(GlassTheme.primary)
                                     .padding(12)

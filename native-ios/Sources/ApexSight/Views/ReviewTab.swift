@@ -118,6 +118,7 @@ struct ReviewTab: View {
                             .accessibilityLabel("Mark all reviewed")
                         }
                         Button {
+                            Haptics.select()
                             sortNewest.toggle()
                         } label: {
                             Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
@@ -183,7 +184,7 @@ struct ReviewTab: View {
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { Haptics.select(); action() }) {
             Text(title)
                 .font(.system(size: 13, weight: .black))
                 .foregroundStyle(selected ? Color.black : GlassTheme.primary)

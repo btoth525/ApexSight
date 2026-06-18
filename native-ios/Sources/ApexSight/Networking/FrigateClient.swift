@@ -429,7 +429,7 @@ struct FrigateClient {
         try await post("api/faces/\(name)/create", body: EmptyBody())
     }
 
-    /// Train a named face from an existing detection/event — turns "person" into "Brandon".
+    /// Train a named face from an existing detection/event — turns "person" into "Alex".
     /// Surfaces Frigate's own reason on failure (e.g. "No face was detected in this
     /// event" / admin required) so the UI can show why instead of a generic error.
     func trainFace(name: String, eventId: String) async throws {
