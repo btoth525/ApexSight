@@ -50,7 +50,10 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     @MainActor
     private func refresh() async {
         guard let session = KeychainStore().loadSession() else {
+            // Not signed in — make BOTH tabs say so, otherwise Cameras stays stuck on
+            // the "Loading…" placeholder forever.
             alertsTemplate.updateSections([messageSection("Sign in on your iPhone")])
+            camerasTemplate.updateSections([messageSection("Sign in on your iPhone")])
             return
         }
         let client = FrigateClient(session: session)
