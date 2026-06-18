@@ -52,11 +52,13 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSFaceIDUsageDescription: Use Face ID to unlock your saved Frigate sign-in.
+        NSFaceIDUsageDescription: Unlock ApexSight with Face ID to keep your cameras private.
         NSLocalNetworkUsageDescription: ApexSight connects to Frigate on your local network.
-        NSCameraUsageDescription: Camera access is reserved for future visual search and setup features.
         NSPhotoLibraryAddUsageDescription: ApexSight saves camera clips you download to your photo library.
         NSSupportsLiveActivities: true
+        # Export compliance: only standard HTTPS/TLS — exempt encryption. Setting this
+        # clears the manual encryption question on every TestFlight/App Store upload.
+        ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes:
           - audio
           - fetch

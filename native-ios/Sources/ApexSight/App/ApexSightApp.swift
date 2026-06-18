@@ -6,6 +6,7 @@ struct ApexSightApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState = AppState()
     @StateObject private var notificationDelegate = NotificationResponseDelegate()
+    @StateObject private var appLock = AppLockController()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @Environment(\.scenePhase) private var scenePhase
 
@@ -40,6 +41,14 @@ struct ApexSightApp: App {
                     OfflineBanner()
                         .environmentObject(appState)
                 }
+                // Face ID / passcode privacy cover — only visible when the user enabled
+                // the lock and the app is locked (launch / return from background).
+                .overlay {
+                    if appLock.isLocked {
+                        LockOverlayView { appLock.unlock() }
+                            .transition(.opacity)
+                    }
+                }
                 .preferredColorScheme(preferredColorScheme)
                 .onAppear {
                     notificationDelegate.configure(appState: appState)
@@ -53,6 +62,8 @@ struct ApexSightApp: App {
                     appState.consumePendingIntentLink()
                     // Register for push + (re)send the token to the relay on launch.
                     PushRegistrar.ensureRegistered()
+                    // Cold-launch Face ID prompt when the lock is enabled.
+                    appLock.unlock()
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
@@ -68,10 +79,14 @@ struct ApexSightApp: App {
                         // You're in the app now — clear the Dynamic Island/Lock-Screen
                         // incident so it gets out of your way.
                         IncidentActivityController.end()
+                        // Prompt for Face ID if we locked on the way out.
+                        appLock.unlock()
                     case .background:
                         appState.stopRealtime()
                         appState.stopForegroundPolling()
                         BackgroundRefreshManager.schedule()
+                        // Re-lock so the app-switcher snapshot and next open are private.
+                        appLock.lockIfEnabled()
                     default:
                         break
                     }

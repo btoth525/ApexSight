@@ -5,6 +5,7 @@ struct SettingsTab: View {
     @State private var path = NavigationPath()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
 
@@ -114,6 +115,31 @@ struct SettingsTab: View {
                                     appearanceOption(label: "System", icon: "circle.lefthalf.filled", value: "system")
                                     appearanceOption(label: "Dark", icon: "moon.fill", value: "dark")
                                     appearanceOption(label: "Light", icon: "sun.max.fill", value: "light")
+                                }
+                            }
+                        }
+
+                        // Privacy / app lock card — only when the device can authenticate.
+                        if BiometricLock.isAvailable {
+                            GlassCard {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Toggle(isOn: $biometricLockEnabled) {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: BiometricLock.symbolName)
+                                                .font(.system(size: 18, weight: .black))
+                                                .foregroundStyle(GlassTheme.cyan)
+                                                .frame(width: 30)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("Require \(BiometricLock.label)")
+                                                    .font(.system(size: 16, weight: .black))
+                                                    .foregroundStyle(GlassTheme.primary)
+                                                Text("Lock the app when you leave it.")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .foregroundStyle(GlassTheme.secondary)
+                                            }
+                                        }
+                                    }
+                                    .tint(GlassTheme.cyan)
                                 }
                             }
                         }
