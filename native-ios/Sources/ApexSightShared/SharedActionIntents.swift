@@ -40,6 +40,7 @@ struct ApexDismissIncidentIntent: AppIntent {
         for activity in Activity<IncidentActivityAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
+        SharedSnapshotStore.clearIncidentSnapshots()
         return .result()
     }
 }

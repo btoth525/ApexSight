@@ -53,8 +53,12 @@ final class AppState: ObservableObject {
     @Published var isReachable = true
     @Published var liveBanner: LiveBannerModel?
     /// Un-reviewed alert count — drives the Review tab badge and the app-icon badge.
+    /// No `oldValue` guard on purpose: the notification-service extension bumps the
+    /// icon badge per push, so the in-app count and the icon can diverge. Re-syncing
+    /// on every assignment (15s poll, "Review All", launch) means the icon always
+    /// converges to the truth — including clearing to 0 when there's nothing to review.
     @Published var unreviewedCount: Int = 0 {
-        didSet { guard unreviewedCount != oldValue else { return }; updateAppBadge() }
+        didSet { updateAppBadge() }
     }
 
     let keychain = KeychainStore()
@@ -354,7 +358,7 @@ final class AppState: ObservableObject {
         // objects detected in the same incident). The guard below still limits banner +
         // notification to brand-new alert-severity items only.
         if item.severity == "alert" {
-            IncidentActivityController.startOrUpdate(review: item)
+            IncidentActivityController.startOrUpdate(review: item, client: client)
         }
 
         // Notify the first time a review reaches alert severity. This includes a
