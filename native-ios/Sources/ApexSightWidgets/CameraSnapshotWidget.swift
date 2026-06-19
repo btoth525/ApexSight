@@ -85,6 +85,9 @@ struct CameraSnapshotWidgetView: View {
             case .accessoryRectangular:
                 AccessoryRectangularView(entry: entry)
                     .containerBackground(.clear, for: .widget)
+            case .accessoryCircular:
+                AccessoryCircularView(entry: entry)
+                    .containerBackground(.clear, for: .widget)
             case .systemSmall:
                 SmallWidgetView(entry: entry)
                     .containerBackground(WidgetTheme.panelGradient, for: .widget)
@@ -505,6 +508,31 @@ private struct AccessoryInlineView: View {
     }
 }
 
+/// Circular Lock Screen / StandBy widget: the latest detection's glyph + how long ago,
+/// or a clear shield when there's nothing. Tiny, so it stays to one glyph + one line.
+private struct AccessoryCircularView: View {
+    let entry: CameraSnapshotEntry
+
+    var body: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            if let alert = entry.latest {
+                VStack(spacing: 0) {
+                    Text(alertEmoji(alert.label))
+                        .font(.system(size: 19))
+                    Text(relativeShort(alert.when))
+                        .font(.system(size: 9, weight: .black, design: .rounded))
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                }
+            } else {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 20, weight: .black))
+            }
+        }
+    }
+}
+
 // MARK: - Widget configuration
 
 struct CameraSnapshotWidget: Widget {
@@ -521,7 +549,8 @@ struct CameraSnapshotWidget: Widget {
             .systemMedium,
             .systemLarge,
             .accessoryRectangular,
-            .accessoryInline
+            .accessoryInline,
+            .accessoryCircular
         ])
     }
 }

@@ -354,10 +354,10 @@ final class AppState: ObservableObject {
         // (same definition the poller uses), instead of lagging up to 15s.
         unreviewedCount = reviews.filter { $0.severity == "alert" }.count
 
-        // Keep the Live Activity up-to-date on both new and update events (e.g., more
-        // objects detected in the same incident). The guard below still limits banner +
-        // notification to brand-new alert-severity items only.
-        if item.severity == "alert" {
+        // Live Activity: when instant push is active the RELAY starts/updates the incident
+        // Live Activity (so it appears even with the app closed, and we don't double it).
+        // Without a relay token, the app drives it itself as the in-app fallback.
+        if item.severity == "alert", !DeviceTokenStore.hasRemotePush {
             IncidentActivityController.startOrUpdate(review: item)
         }
 

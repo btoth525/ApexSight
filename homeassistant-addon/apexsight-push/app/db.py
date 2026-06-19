@@ -39,6 +39,14 @@ def init() -> None:
                 PRIMARY KEY (pairing_code, event_id)
             );
             CREATE INDEX IF NOT EXISTS idx_recap_ts ON recap_events(pairing_code, ts);
+            CREATE TABLE IF NOT EXISTS activity_tokens (
+                token        TEXT PRIMARY KEY,
+                pairing_code TEXT NOT NULL,
+                kind         TEXT NOT NULL DEFAULT 'start',
+                environment  TEXT NOT NULL DEFAULT 'production',
+                updated_at   INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_activity_pairing ON activity_tokens(pairing_code, kind);
             """
         )
 
@@ -139,3 +147,37 @@ def recap_events_between(pairing_code: str, start_ts: float, end_ts: float) -> l
 def prune_recap_events(before_ts: float) -> None:
     with _conn() as c:
         c.execute("DELETE FROM recap_events WHERE ts < ?", (before_ts,))
+
+
+# ---- Live Activity push tokens ----------------------------------------------
+
+def upsert_activity_token(token: str, pairing_code: str, kind: str, environment: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO activity_tokens(token, pairing_code, kind, environment, updated_at) "
+            "VALUES(?, ?, ?, ?, ?) "
+            "ON CONFLICT(token) DO UPDATE SET "
+            "  pairing_code = excluded.pairing_code, "
+            "  kind         = excluded.kind, "
+            "  environment  = excluded.environment, "
+            "  updated_at   = excluded.updated_at",
+            (token, pairing_code, kind, environment, int(time.time())),
+        )
+
+
+def activity_tokens_for(pairing_code: str, kind: str) -> list[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute(
+            "SELECT token, environment FROM activity_tokens WHERE pairing_code = ? AND kind = ?",
+            (pairing_code, kind),
+        ).fetchall()
+
+
+def delete_activity_token(token: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM activity_tokens WHERE token = ?", (token,))
+
+
+def prune_activity_tokens(before_ts: float) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM activity_tokens WHERE updated_at < ?", (int(before_ts),))

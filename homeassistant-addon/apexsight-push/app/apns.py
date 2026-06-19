@@ -179,6 +179,77 @@ def build_payload(
     return payload
 
 
+async def send_live_activity(
+    token: str, environment: str, payload: dict, client: Optional[httpx.AsyncClient] = None
+) -> tuple[bool, str]:
+    """Send one Live Activity push (start/update/end). Same provider JWT as alerts, but the
+    topic carries the `.push-type.liveactivity` suffix and the push-type header is
+    `liveactivity`."""
+    p8, key_id, team_id, bundle_id, env_mode = _credentials()
+    headers = {
+        "authorization": f"bearer {_provider_token(p8, key_id, team_id)}",
+        "apns-topic": f"{bundle_id}.push-type.liveactivity",
+        "apns-push-type": "liveactivity",
+        "apns-priority": "10",
+    }
+    url = f"{_host_for(environment, env_mode)}/3/device/{token}"
+    try:
+        if client is not None:
+            resp = await client.post(url, headers=headers, content=json.dumps(payload))
+        else:
+            async with httpx.AsyncClient(http2=True, timeout=10.0) as own:
+                resp = await own.post(url, headers=headers, content=json.dumps(payload))
+    except httpx.HTTPError as exc:
+        return False, f"network error: {exc}"
+
+    if resp.status_code == 200:
+        return True, "ok"
+    reason = ""
+    try:
+        reason = resp.json().get("reason", "")
+    except Exception:
+        reason = resp.text.strip()
+    return False, f"{resp.status_code} {reason}".strip()
+
+
+async def start_live_activity_for_pairing(
+    pairing_code: str, content_state: dict, attributes: dict, stale_after: int = 600
+) -> dict:
+    """Push-start an incident Live Activity on every device in the household that has a
+    push-to-start token registered. ActivityKit shows it on the Lock Screen / Dynamic
+    Island even when the app is closed. A stale-date lets iOS auto-dismiss it if no
+    further update/end arrives. Prunes tokens APNs reports as permanently gone."""
+    rows = db.activity_tokens_for(pairing_code, "start")
+    if not rows:
+        return {"tokens": 0, "sent": 0}
+
+    now = int(time.time())
+    payload = {
+        "aps": {
+            "timestamp": now,
+            "event": "start",
+            "content-state": content_state,
+            "attributes-type": "IncidentActivityAttributes",
+            "attributes": attributes,
+            "stale-date": now + stale_after,
+            # No "alert" key on purpose: the separate alert push does the buzzing, so the
+            # Live Activity appears silently instead of double-notifying.
+        }
+    }
+
+    sent = 0
+    async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+        results = await asyncio.gather(
+            *(send_live_activity(row["token"], row["environment"], payload, client) for row in rows)
+        )
+    for row, (ok, detail) in zip(rows, results):
+        if ok:
+            sent += 1
+        elif any(k in detail for k in ("410", "BadDeviceToken", "Unregistered", "ExpiredToken")):
+            db.delete_activity_token(row["token"])
+    return {"tokens": len(rows), "sent": sent}
+
+
 async def deliver_to_pairing(pairing_code: str, payload: dict, collapse_id: str = "") -> dict:
     """Fan a payload out to every device registered under a pairing code.
 

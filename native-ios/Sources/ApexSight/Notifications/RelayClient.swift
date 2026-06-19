@@ -51,6 +51,13 @@ enum RelayClient {
         let tz_offset: Int
     }
 
+    private struct ActivityBody: Encodable {
+        let pairing_code: String
+        let token: String
+        let environment: String
+        let kind: String   // "start" = push-to-start token
+    }
+
     /// Result of a `/healthz` probe used for the green/red status dot.
     struct Health: Decodable {
         let ok: Bool
@@ -112,6 +119,13 @@ enum RelayClient {
     static func syncRecap(relayURL: String, pairingCode: String, enabled: Bool, hour: Int, minute: Int, tzOffset: Int) async throws {
         try await post(relayURL: relayURL, path: "/v1/recap",
                        body: RecapBody(pairing_code: pairingCode, enabled: enabled, hour: hour, minute: minute, tz_offset: tzOffset))
+    }
+
+    /// Registers this device's Live Activity push-to-start token so the relay can start an
+    /// incident Live Activity on the Lock Screen even when the app is fully closed.
+    static func registerActivity(relayURL: String, pairingCode: String, token: String, environment: String) async throws {
+        try await post(relayURL: relayURL, path: "/v1/activity/register",
+                       body: ActivityBody(pairing_code: pairingCode, token: token, environment: environment, kind: "start"))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {

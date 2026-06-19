@@ -66,6 +66,9 @@ struct ApexSightApp: App {
                     appState.consumePendingIntentLink()
                     // Register for push + (re)send the token to the relay on launch.
                     PushRegistrar.ensureRegistered()
+                    // Stream the Live Activity push-to-start token to the relay so incident
+                    // banners can appear on the Lock Screen even when the app is closed.
+                    LiveActivityPushManager.start()
                     // Cold-launch Face ID prompt when the lock is enabled.
                     appLock.unlock()
                 }

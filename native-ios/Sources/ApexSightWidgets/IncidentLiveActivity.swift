@@ -18,7 +18,7 @@ struct IncidentLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 3) {
-                        Text(context.attributes.startedAt, style: .time)
+                        Text(Date(timeIntervalSince1970: context.attributes.startedAt), style: .time)
                             .font(.system(size: 13, weight: .black))
                             .foregroundStyle(.white)
                         liveTag(context.state.severity)

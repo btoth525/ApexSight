@@ -31,7 +31,7 @@ enum IncidentActivityController {
         } else {
             let attributes = IncidentActivityAttributes(
                 camera: review.camera,
-                startedAt: Date(timeIntervalSince1970: review.startTime ?? Date().timeIntervalSince1970)
+                startedAt: review.startTime ?? Date().timeIntervalSince1970
             )
             current = try? Activity.request(
                 attributes: attributes,

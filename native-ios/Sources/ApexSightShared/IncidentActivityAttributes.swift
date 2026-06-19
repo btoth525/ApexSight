@@ -11,5 +11,7 @@ struct IncidentActivityAttributes: ActivityAttributes {
     }
 
     var camera: String
-    var startedAt: Date
+    /// Epoch seconds (not Date) so the relay can start/update this activity via an APNs
+    /// push: ActivityKit decodes push JSON numbers cleanly, avoiding Date-encoding ambiguity.
+    var startedAt: Double
 }

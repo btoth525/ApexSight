@@ -153,6 +153,7 @@ class NotifyIn(BaseModel):
     frigate_base_url: str = ""
     recognized_license_plate: str = ""
     stage: str = ""
+    start_time: Optional[float] = None    # epoch seconds — drives the Live Activity timer
 
 
 class StyleIn(BaseModel):
@@ -172,6 +173,13 @@ class RecapIn(BaseModel):
     hour: int = 21
     minute: int = 0
     tz_offset: int = 0           # seconds from GMT, so the relay sends at the user's local time
+
+
+class ActivityRegisterIn(BaseModel):
+    pairing_code: str = Field(min_length=4, max_length=64)
+    token: str = Field(min_length=32)
+    environment: str = "production"
+    kind: str = "start"          # "start" = Live Activity push-to-start token
 
 
 # ---- public API -------------------------------------------------------------
@@ -289,6 +297,20 @@ async def notify(body: NotifyIn, _: None = Depends(rate_limit)) -> dict:
         silent=body.silent,
     )
     result = await apns.deliver_to_pairing(code, payload, collapse_id=body.collapse_id)
+
+    # Push-start the incident Live Activity for a fresh alert (not the silent final
+    # update). Wrapped so a Live Activity hiccup never affects the alert push result.
+    if not body.silent and body.stage in ("", "alert") and body.severity in ("alert", ""):
+        try:
+            started_at = body.start_time or time.time()
+            await apns.start_live_activity_for_pairing(
+                code,
+                content_state={"title": title, "detail": text, "severity": body.severity or "alert"},
+                attributes={"camera": body.camera, "startedAt": float(started_at)},
+            )
+        except Exception as exc:
+            print("[liveactivity] start failed:", exc, flush=True)
+
     return {"ok": result["sent"] > 0 or result["devices"] == 0, **result}
 
 
@@ -310,6 +332,17 @@ def set_gate(body: GateIn, _: None = Depends(rate_limit)) -> dict:
         f"gate:{code}",
         json.dumps({"disarmed": bool(body.disarmed), "snoozed_until": float(body.snoozed_until or 0)}),
     )
+    return {"ok": True}
+
+
+@app.post("/v1/activity/register")
+def register_activity(body: ActivityRegisterIn, _: None = Depends(rate_limit)) -> dict:
+    """An iPhone registers its Live Activity push-to-start token so the relay can start an
+    incident banner on the Lock Screen even when the app is fully closed."""
+    env = body.environment if body.environment in ("production", "sandbox") else "production"
+    kind = body.kind if body.kind in ("start", "update") else "start"
+    db.upsert_activity_token(body.token, body.pairing_code.upper().strip(), kind, env)
+    db.prune_activity_tokens(time.time() - 30 * 86_400)   # drop tokens not refreshed in ~30d
     return {"ok": True}
 
 

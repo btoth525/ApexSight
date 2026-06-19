@@ -153,6 +153,7 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
         "zones": zones,
         "severity": severity,
         "stage": "final" if final else "alert",
+        "start_time": after.get("start_time"),
         "frigate_base_url": FRIGATE_BASE_URL,
     }
     plate = data.get("recognized_license_plate") or ""
