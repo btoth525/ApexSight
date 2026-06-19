@@ -7,6 +7,7 @@ import UIKit
 /// so alerts route only to this account.
 struct AccountSignInView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     var onSignedIn: () -> Void = {}
 
     @State private var isSignUp = true
@@ -68,6 +69,22 @@ struct AccountSignInView: View {
                             .signInWithAppleButtonStyle(.white)
                             .frame(height: 48)
                             .clipShape(Capsule())
+
+                            if GoogleConfig.isConfigured {
+                                Button {
+                                    handleGoogle()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "globe")
+                                        Text("Continue with Google").fontWeight(.black)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 13)
+                                    .background(.white, in: Capsule())
+                                    .foregroundStyle(.black)
+                                }
+                                .disabled(isWorking)
+                            }
 
                             Button(isSignUp ? "I already have an account" : "Create a new account") {
                                 withAnimation { isSignUp.toggle(); errorMessage = nil }
@@ -151,10 +168,28 @@ struct AccountSignInView: View {
         }
     }
 
+    private func handleGoogle() {
+        Task { @MainActor in
+            isWorking = true
+            errorMessage = nil
+            defer { isWorking = false }
+            do {
+                let signIn = GoogleSignIn()
+                let idToken = try await signIn.idToken()
+                let session = try await AccountClient.google(relayURL: relayURL, idToken: idToken, email: nil)
+                finish(session)
+            } catch let error as GoogleSignIn.SignInError {
+                if case .canceled = error { return }   // don't nag on cancel
+                errorMessage = error.errorDescription
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     private func finish(_ session: AccountClient.Session) {
-        DeviceTokenStore.applyAccount(token: session.token, ingestToken: session.ingest_token, email: session.email)
-        // Re-register this device's push token under the account's private ingest token.
-        PushRegistrar.ensureRegistered()
+        // AppState stores the session, routes push to the account, and auto-connects Frigate.
+        appState.applyAccountSession(session)
         Haptics.success()
         onSignedIn()
         dismiss()

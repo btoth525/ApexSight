@@ -6,9 +6,6 @@ struct SettingsTab: View {
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
-    @State private var showAccountSheet = false
-    @State private var accountSignedIn = DeviceTokenStore.isSignedInToAccount
-    @State private var accountEmail = DeviceTokenStore.accountEmail
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
 
@@ -75,43 +72,28 @@ struct SettingsTab: View {
                             }
                         }
 
-                        // ApexSight account — drives private, per-account push routing.
+                        // ApexSight account
                         GlassCard {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: accountSignedIn ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                                    Image(systemName: "person.crop.circle.badge.checkmark")
                                         .font(.system(size: 16, weight: .black))
-                                        .foregroundStyle(accountSignedIn ? GlassTheme.green : GlassTheme.cyan)
+                                        .foregroundStyle(GlassTheme.green)
                                     Text("Account")
                                         .font(.system(size: 18, weight: .black))
                                         .foregroundStyle(GlassTheme.primary)
                                 }
-                                if accountSignedIn {
-                                    Text(accountEmail ?? "Signed in")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(GlassTheme.secondary)
-                                        .lineLimit(1)
-                                    Button(role: .destructive) {
-                                        DeviceTokenStore.signOutAccount()
-                                        accountSignedIn = false
-                                        accountEmail = nil
-                                    } label: {
-                                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                                            .font(.system(size: 13, weight: .heavy))
-                                    }
-                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
-                                } else {
-                                    Text("Sign in to receive alerts on this device, routed privately to your account.")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(GlassTheme.secondary)
-                                    Button {
-                                        showAccountSheet = true
-                                    } label: {
-                                        Label("Sign In / Sign Up", systemImage: "person.badge.key.fill")
-                                            .font(.system(size: 13, weight: .heavy))
-                                    }
-                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                                Text(DeviceTokenStore.accountEmail ?? "Signed in")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(GlassTheme.secondary)
+                                    .lineLimit(1)
+                                Button(role: .destructive) {
+                                    appState.signOutAccount()
+                                } label: {
+                                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                                        .font(.system(size: 13, weight: .heavy))
                                 }
+                                .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
                             }
                         }
 
@@ -201,9 +183,6 @@ struct SettingsTab: View {
                         settingsRow(icon: "paintbrush.pointed.fill", title: "Alert Style", subtitle: "Emojis, fields, snapshot → GIF, buttons", tint: GlassTheme.teal) {
                             path.append("style")
                         }
-                        settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Status & test for alerts when closed", tint: GlassTheme.cyan) {
-                            path.append("push")
-                        }
                         settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
                             path.append("triggers")
                         }
@@ -253,21 +232,11 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
-            .sheet(isPresented: $showAccountSheet, onDismiss: {
-                accountSignedIn = DeviceTokenStore.isSignedInToAccount
-                accountEmail = DeviceTokenStore.accountEmail
-            }) {
-                AccountSignInView(onSignedIn: {
-                    accountSignedIn = true
-                    accountEmail = DeviceTokenStore.accountEmail
-                })
-            }
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }
                 else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }
                 else if value == "style" { AlertStyleView() }
                 else if value == "servers" { ServerSwitcherView() }
-                else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
                 else if value == "plates" { PlateManagerView().environmentObject(appState) }
                 else if value == "faces" { FaceManagerView().environmentObject(appState) }

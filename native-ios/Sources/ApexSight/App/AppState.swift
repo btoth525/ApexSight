@@ -60,6 +60,9 @@ final class AppState: ObservableObject {
     @Published var unreviewedCount: Int = 0 {
         didSet { updateAppBadge() }
     }
+    /// Whether the user is signed into their ApexSight account — drives the root gate
+    /// (account → auto-connect Frigate → app).
+    @Published var accountSignedIn: Bool = DeviceTokenStore.isSignedInToAccount
 
     let keychain = KeychainStore()
     let notificationPrefs = NotificationPreferencesStore()
@@ -425,6 +428,12 @@ final class AppState: ObservableObject {
             let next = FrigateSession(baseURL: normalized, username: username, token: token, password: password)
             keychain.save(session: next)
             session = next
+            // Mirror the connection to the account so the user's other devices auto-connect.
+            if DeviceTokenStore.isSignedInToAccount, let accountToken = DeviceTokenStore.accountToken {
+                let relay = DeviceTokenStore.relayURL
+                let canonical = normalized.absoluteString
+                Task { try? await AccountClient.saveFrigate(relayURL: relay, token: accountToken, url: canonical, username: username, password: password) }
+            }
             await refresh()
             startRealtime()
             startForegroundPolling()
@@ -433,6 +442,35 @@ final class AppState: ObservableObject {
             errorMessage = Self.signInErrorMessage(for: error)
         }
         isLoading = false
+    }
+
+    // MARK: - ApexSight account
+
+    /// Store a successful account sign-in, route push to the account's private token,
+    /// and connect to the user's Frigate automatically if it's saved on the account.
+    func applyAccountSession(_ session: AccountClient.Session) {
+        DeviceTokenStore.applyAccount(token: session.token, ingestToken: session.ingest_token, email: session.email)
+        accountSignedIn = true
+        PushRegistrar.ensureRegistered()
+        Task { await bootstrapFromAccount() }
+    }
+
+    /// Sign out of the account and drop the Frigate session, returning to the sign-in gate.
+    func signOutAccount() {
+        DeviceTokenStore.signOutAccount()
+        accountSignedIn = false
+        signOut()
+    }
+
+    /// After account sign-in, pull the saved Frigate server and connect with no prompts.
+    func bootstrapFromAccount() async {
+        guard session == nil, DeviceTokenStore.isSignedInToAccount,
+              let token = DeviceTokenStore.accountToken else { return }
+        guard
+            let profile = try? await AccountClient.fetchFrigate(relayURL: DeviceTokenStore.relayURL, token: token),
+            profile.isConfigured, let url = profile.url
+        else { return }
+        await signIn(baseURL: url, username: profile.username ?? "", password: profile.password ?? "")
     }
 
     /// Turns the raw sign-in error into something actionable, so the user can tell a
