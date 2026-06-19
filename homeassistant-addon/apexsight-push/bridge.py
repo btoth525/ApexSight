@@ -106,7 +106,8 @@ def _titleize(s: str) -> str:
     return s.replace("_", " ").title() if s else s
 
 
-def _build_alert(after: dict, final: bool = False) -> dict | None:
+def _build_alert(after: dict, stage: str = "alert") -> dict | None:
+    final = (stage == "final")
     review_id = after.get("id")
     camera = after.get("camera", "")
     severity = after.get("severity", "")
@@ -144,15 +145,15 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
         # Reuse the review id as the APNs collapse id so the follow-up full-GIF
         # push replaces the instant alert in place rather than stacking a dup.
         "collapse_id": review_id,
-        # The final update swaps in the complete GIF silently (no second buzz).
-        "silent": final,
+        # Only the first "alert" buzzes; update/final are silent.
+        "silent": stage != "alert",
         # Raw event fields for relay-side, style-driven rendering.
         "camera_name": _titleize(camera),
         "labels": objects,
         "sub_labels": sublabels,
         "zones": zones,
         "severity": severity,
-        "stage": "final" if final else "alert",
+        "stage": stage,
         "start_time": after.get("start_time"),
         "frigate_base_url": FRIGATE_BASE_URL,
     }
@@ -180,11 +181,20 @@ def _build_alert(after: dict, final: bool = False) -> dict | None:
     return payload
 
 
+# Last content signature per review, so a mid-incident change live-updates the banner
+# but identical repeats don't spam it. Pruned alongside `_notified`.
+_last_content: dict[str, str] = {}
+
+
 def _stages_to_send(after: dict, msg_type: str) -> list[str]:
     """Decide which notification stages to send for this MQTT update.
 
-    Returns any of "alert" (the instant push) and "final" (the follow-up push
-    carrying the complete GIF, sent once the review has ended).
+    Returns any of:
+      "alert"  — the instant push (buzzes; also push-starts the Live Activity),
+      "update" — a mid-incident change (a 2nd person, a new zone): live-updates the
+                 Live Activity with no new buzz,
+      "final"  — the follow-up carrying the complete GIF + ends the Live Activity,
+                 once the review has ended.
     """
     review_id = after.get("id")
     if not review_id:
@@ -193,14 +203,22 @@ def _stages_to_send(after: dict, msg_type: str) -> list[str]:
     # prune anything past the TTL
     for k in [k for k, v in list(_notified.items()) if now - max(v.values(), default=0) > _NOTIFIED_TTL]:
         _notified.pop(k, None)
+        _last_content.pop(k, None)
     sent = _notified.get(review_id, {})
-    detections = (after.get("data", {}) or {}).get("detections", []) or []
+    data = (after.get("data", {}) or {})
+    detections = data.get("detections", []) or []
+    objects = data.get("objects", []) or []
+    zones = data.get("zones", []) or []
+    sig = repr((sorted(objects), sorted(zones)))
 
     stages: list[str] = []
     # Instant alert as soon as there's a detection (so we have a GIF), or at the
     # very latest when the review ends.
     if "alert" not in sent and (detections or msg_type == "end"):
         stages.append("alert")
+    # Already alerted and still in progress, and the objects/zones changed → live-update.
+    elif "alert" in sent and "final" not in sent and msg_type == "update" and _last_content.get(review_id) != sig:
+        stages.append("update")
     # A separate "final" update only makes sense if the instant alert already went
     # out *earlier*, while the event was still in progress — only then is its GIF
     # partial. If the review ends in the same update that first fires the alert,
@@ -208,10 +226,12 @@ def _stages_to_send(after: dict, msg_type: str) -> list[str]:
     if msg_type == "end" and detections and "alert" in sent and "final" not in sent:
         stages.append("final")
 
-    # NOTE: stages are NOT recorded as sent here. on_message records each stage in
-    # `_notified` only after the relay actually accepts it, so a relay/network blip
-    # leaves the stage un-sent and the next MQTT update retries it (a missed alert is
-    # the worst failure for a security app — better a rare duplicate than a silent drop).
+    if stages:
+        _last_content[review_id] = sig
+
+    # NOTE: stages are NOT recorded in `_notified` here. on_message records each stage
+    # only after the relay accepts it, so a relay/network blip leaves the stage un-sent
+    # and the next MQTT update retries it (better a rare duplicate than a silent drop).
     return stages
 
 
@@ -269,7 +289,7 @@ def on_message(client, userdata, msg):
         return
     review_id = after.get("id")
     for stage in stages:
-        payload = _build_alert(after, final=(stage == "final"))
+        payload = _build_alert(after, stage)
         if not payload:
             continue
         # Only mark the stage delivered once the relay actually accepts it; a failed

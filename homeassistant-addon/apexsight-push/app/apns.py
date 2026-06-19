@@ -250,6 +250,39 @@ async def start_live_activity_for_pairing(
     return {"tokens": len(rows), "sent": sent}
 
 
+async def update_live_activity_for_pairing(pairing_code: str, content_state: dict, end: bool = False) -> dict:
+    """Push an update (or end) to every already-live incident activity in the household.
+    Update tokens are registered by the app while it's running; if none exist (e.g. the
+    incident happened entirely while the app was closed) this is a no-op and the activity
+    auto-dismisses on its stale-date instead. Prunes tokens APNs reports as gone."""
+    rows = db.activity_tokens_for(pairing_code, "update")
+    if not rows:
+        return {"tokens": 0, "sent": 0}
+
+    now = int(time.time())
+    aps: dict = {
+        "timestamp": now,
+        "event": "end" if end else "update",
+        "content-state": content_state,
+    }
+    if end:
+        aps["dismissal-date"] = now   # clear it from the Lock Screen now
+    payload = {"aps": aps}
+
+    sent = 0
+    async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+        results = await asyncio.gather(
+            *(send_live_activity(row["token"], row["environment"], payload, client) for row in rows)
+        )
+    for row, (ok, detail) in zip(rows, results):
+        if ok:
+            sent += 1
+        elif end or any(k in detail for k in ("410", "BadDeviceToken", "Unregistered", "ExpiredToken")):
+            # Drop dead tokens, and always drop after an end (that activity is finished).
+            db.delete_activity_token(row["token"])
+    return {"tokens": len(rows), "sent": sent}
+
+
 async def deliver_to_pairing(pairing_code: str, payload: dict, collapse_id: str = "") -> dict:
     """Fan a payload out to every device registered under a pairing code.
 

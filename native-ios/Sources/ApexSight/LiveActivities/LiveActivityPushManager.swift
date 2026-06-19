@@ -9,7 +9,7 @@ import Foundation
 enum LiveActivityPushManager {
     private static var observing = false
 
-    /// Begin streaming push-to-start tokens to the relay. Idempotent — safe to call on
+    /// Begin streaming Live Activity tokens to the relay. Idempotent — safe to call on
     /// every launch / foreground.
     static func start() {
         guard !observing else { return }
@@ -17,19 +17,46 @@ enum LiveActivityPushManager {
         if #available(iOS 17.2, *) {
             observeStartTokens()
         }
+        // Update tokens (so the relay can refresh/end a live banner) — iOS 16.1+.
+        observeActivityTokens()
     }
 
     @available(iOS 17.2, *)
     private static func observeStartTokens() {
         Task {
             for await tokenData in Activity<IncidentActivityAttributes>.pushToStartTokenUpdates {
-                let token = tokenData.map { String(format: "%02x", $0) }.joined()
-                await register(token: token)
+                await register(token: hex(tokenData), kind: "start")
             }
         }
     }
 
-    private static func register(token: String) async {
+    /// Watch every incident activity (current + newly started, including ones the relay
+    /// push-started) and stream its per-activity push token to the relay as an "update"
+    /// token, so the relay can live-update or end that specific banner.
+    private static func observeActivityTokens() {
+        Task {
+            for activity in Activity<IncidentActivityAttributes>.activities {
+                trackUpdateToken(activity)
+            }
+            for await activity in Activity<IncidentActivityAttributes>.activityUpdates {
+                trackUpdateToken(activity)
+            }
+        }
+    }
+
+    private static func trackUpdateToken(_ activity: Activity<IncidentActivityAttributes>) {
+        Task {
+            for await tokenData in activity.pushTokenUpdates {
+                await register(token: hex(tokenData), kind: "update")
+            }
+        }
+    }
+
+    private static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func register(token: String, kind: String) async {
         guard !token.isEmpty else { return }
         let relay = DeviceTokenStore.relayURL
         let pairing = DeviceTokenStore.ensurePairingCode()
@@ -38,7 +65,8 @@ enum LiveActivityPushManager {
             relayURL: relay,
             pairingCode: pairing,
             token: token,
-            environment: APNSEnvironment.current
+            environment: APNSEnvironment.current,
+            kind: kind
         )
     }
 }

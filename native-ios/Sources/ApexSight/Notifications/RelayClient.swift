@@ -123,9 +123,9 @@ enum RelayClient {
 
     /// Registers this device's Live Activity push-to-start token so the relay can start an
     /// incident Live Activity on the Lock Screen even when the app is fully closed.
-    static func registerActivity(relayURL: String, pairingCode: String, token: String, environment: String) async throws {
+    static func registerActivity(relayURL: String, pairingCode: String, token: String, environment: String, kind: String = "start") async throws {
         try await post(relayURL: relayURL, path: "/v1/activity/register",
-                       body: ActivityBody(pairing_code: pairingCode, token: token, environment: environment, kind: "start"))
+                       body: ActivityBody(pairing_code: pairingCode, token: token, environment: environment, kind: kind))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {

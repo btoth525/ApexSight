@@ -284,6 +284,16 @@ async def notify(body: NotifyIn, _: None = Depends(rate_limit)) -> dict:
         snapshot_url = rendered["snapshot_url"] or snapshot_url
         thumbnail_url = rendered["thumbnail_url"] or thumbnail_url
 
+    content_state = {"title": title, "detail": text, "severity": body.severity or "alert"}
+
+    # A pure mid-incident change: just live-update the banner, no notification at all.
+    if body.stage == "update":
+        try:
+            await apns.update_live_activity_for_pairing(code, content_state)
+        except Exception as exc:
+            print("[liveactivity] update failed:", exc, flush=True)
+        return {"ok": True, "stage": "update"}
+
     payload = apns.build_payload(
         title=title,
         body=text,
@@ -298,18 +308,21 @@ async def notify(body: NotifyIn, _: None = Depends(rate_limit)) -> dict:
     )
     result = await apns.deliver_to_pairing(code, payload, collapse_id=body.collapse_id)
 
-    # Push-start the incident Live Activity for a fresh alert (not the silent final
-    # update). Wrapped so a Live Activity hiccup never affects the alert push result.
-    if not body.silent and body.stage in ("", "alert") and body.severity in ("alert", ""):
-        try:
+    # Drive the incident Live Activity. Wrapped so a hiccup never affects alert delivery:
+    #   • fresh alert → push-start it (appears even with the app closed),
+    #   • review ended → end it (clears the Lock Screen banner).
+    try:
+        if body.stage == "final":
+            await apns.update_live_activity_for_pairing(code, content_state, end=True)
+        elif body.stage in ("", "alert") and body.severity in ("alert", ""):
             started_at = body.start_time or time.time()
             await apns.start_live_activity_for_pairing(
                 code,
-                content_state={"title": title, "detail": text, "severity": body.severity or "alert"},
+                content_state=content_state,
                 attributes={"camera": body.camera, "startedAt": float(started_at)},
             )
-        except Exception as exc:
-            print("[liveactivity] start failed:", exc, flush=True)
+    except Exception as exc:
+        print("[liveactivity] error:", exc, flush=True)
 
     return {"ok": result["sent"] > 0 or result["devices"] == 0, **result}
 
