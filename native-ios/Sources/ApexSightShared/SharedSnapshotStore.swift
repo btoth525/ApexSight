@@ -155,56 +155,6 @@ enum SharedSnapshotStore {
         return (alerts, heroURL)
     }
 
-    // MARK: - Incident Live Activity snapshot
-
-    /// All incident snapshot files share this prefix so we can sweep stale ones when a new
-    /// incident starts — each incident gets a unique filename (so the Live Activity never
-    /// caches a previous incident's image against an identical URL).
-    private static let incidentImagePrefix = "incident-"
-
-    /// Caches the detection image for the current incident's Live Activity and returns the
-    /// app-group-relative filename to embed in the ContentState. Clears any prior incident
-    /// images first so the shared container holds only the live one.
-    @discardableResult
-    static func saveIncidentSnapshot(_ imageData: Data, token: String) -> String? {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) else {
-            return nil
-        }
-        clearIncidentSnapshots()
-        let safeToken = token.isEmpty ? UUID().uuidString : token
-        let name = "\(incidentImagePrefix)\(safeToken).jpg"
-        let imageURL = containerURL.appendingPathComponent(name)
-        do {
-            try imageData.write(to: imageURL, options: [.atomic])
-            return name
-        } catch {
-            return nil
-        }
-    }
-
-    /// Resolves an incident snapshot filename (from the ContentState) to its file URL in
-    /// the shared container, or nil if the file is missing.
-    static func incidentSnapshotURL(named name: String) -> URL? {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) else {
-            return nil
-        }
-        let url = containerURL.appendingPathComponent(name)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
-    }
-
-    /// Removes all cached incident snapshots — called when an incident ends/dismisses and
-    /// before a new one is saved.
-    static func clearIncidentSnapshots() {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) else {
-            return
-        }
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(atPath: containerURL.path) else { return }
-        for file in files where file.hasPrefix(incidentImagePrefix) {
-            try? fm.removeItem(at: containerURL.appendingPathComponent(file))
-        }
-    }
-
     // MARK: - Camera catalog (names, for Siri / Watch / CarPlay pickers)
 
     private static let cameraNamesKey = "apex.cameraNames"

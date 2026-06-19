@@ -358,7 +358,7 @@ final class AppState: ObservableObject {
         // objects detected in the same incident). The guard below still limits banner +
         // notification to brand-new alert-severity items only.
         if item.severity == "alert" {
-            IncidentActivityController.startOrUpdate(review: item, client: client)
+            IncidentActivityController.startOrUpdate(review: item)
         }
 
         // Notify the first time a review reaches alert severity. This includes a
