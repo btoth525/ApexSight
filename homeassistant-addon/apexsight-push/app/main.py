@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import apns, config, db, recap, render
-from .accounts import router as auth_router
+from .accounts import frigate_router, router as auth_router
 from .admin import router as admin_router
 from .web import router as web_router
 
@@ -42,6 +42,7 @@ app.add_middleware(
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 app.include_router(auth_router)
+app.include_router(frigate_router)
 app.include_router(admin_router)
 app.include_router(web_router)
 

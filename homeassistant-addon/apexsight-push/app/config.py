@@ -9,6 +9,8 @@ import os
 import secrets
 from pathlib import Path
 
+from cryptography.fernet import Fernet
+
 # Where the SQLite DB + generated session secret live. Mounted as a Docker
 # volume so uploaded keys and registrations survive container restarts.
 DATA_DIR = Path(os.environ.get("APEX_DATA_DIR", "/data"))
@@ -29,6 +31,27 @@ DEFAULT_TEAM_ID = os.environ.get("APEX_TEAM_ID", "3Q9ZUDN4QZ").strip()
 
 # Max /v1/notify + /v1/register calls accepted per client IP per minute.
 RATE_LIMIT_PER_MINUTE = int(os.environ.get("APEX_RATE_LIMIT", "120"))
+
+# Google OAuth client id used to verify "Sign in with Google" tokens from the app.
+# Leave unset to disable Google sign-in. (Create an iOS OAuth client in Google Cloud.)
+GOOGLE_CLIENT_ID = os.environ.get("APEX_GOOGLE_CLIENT_ID", "").strip()
+
+
+def fernet_key() -> bytes:
+    """Symmetric key for encrypting Frigate passwords at rest. Read from
+    APEX_FERNET_KEY if provided; otherwise generated once and persisted to the data
+    volume. Rotating it makes previously stored Frigate passwords unreadable (users
+    just re-enter them)."""
+    env = os.environ.get("APEX_FERNET_KEY", "").strip()
+    if env:
+        return env.encode()
+    path = DATA_DIR / "fernet.key"
+    if path.exists():
+        return path.read_bytes().strip()
+    key = Fernet.generate_key()
+    path.write_bytes(key)
+    path.chmod(0o600)
+    return key
 
 
 def session_secret() -> str:

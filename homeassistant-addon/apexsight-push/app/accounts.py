@@ -18,6 +18,7 @@ from collections import defaultdict, deque
 
 import httpx
 import jwt
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from jwt.algorithms import RSAAlgorithm
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field
 from . import config, db
 
 router = APIRouter(prefix="/v1/auth")
+frigate_router = APIRouter(prefix="/v1/frigate")
 
 _ALG = "HS256"
 _SESSION_DAYS = 365
@@ -50,6 +52,31 @@ def verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(dk.hex(), hash_hex)
     except Exception:
         return False
+
+
+# ---- Frigate password encryption at rest (Fernet) ---------------------------
+
+_fernet: Fernet | None = None
+
+
+def _crypto() -> Fernet:
+    global _fernet
+    if _fernet is None:
+        _fernet = Fernet(config.fernet_key())
+    return _fernet
+
+
+def encrypt_secret(plaintext: str) -> str:
+    return _crypto().encrypt(plaintext.encode()).decode()
+
+
+def decrypt_secret(token: str | None) -> str | None:
+    if not token:
+        return None
+    try:
+        return _crypto().decrypt(token.encode()).decode()
+    except Exception:
+        return None
 
 
 # ---- session tokens (PyJWT, HS256 with the relay's secret) -------------------
@@ -101,6 +128,39 @@ async def verify_apple_identity_token(identity_token: str) -> tuple[str, str | N
         audience=config.DEFAULT_BUNDLE_ID,
         issuer=_APPLE_ISSUER,
     )
+    return payload["sub"], payload.get("email")
+
+
+# ---- Sign in with Google -----------------------------------------------------
+
+_GOOGLE_KEYS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+_GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
+_google_keys: dict = {}
+_google_keys_at: float = 0.0
+
+
+async def _google_signing_keys() -> dict:
+    global _google_keys, _google_keys_at
+    if _google_keys and (time.time() - _google_keys_at) < 3600:
+        return _google_keys
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        data = (await client.get(_GOOGLE_KEYS_URL)).json()
+    keys = {jwk["kid"]: RSAAlgorithm.from_jwk(json.dumps(jwk)) for jwk in data.get("keys", [])}
+    _google_keys, _google_keys_at = keys, time.time()
+    return keys
+
+
+async def verify_google_identity_token(id_token: str) -> tuple[str, str | None]:
+    """Returns (google_sub, email). Raises on any verification failure."""
+    if not config.GOOGLE_CLIENT_ID:
+        raise ValueError("Google sign-in is not configured")
+    kid = jwt.get_unverified_header(id_token).get("kid", "")
+    key = (await _google_signing_keys()).get(kid)
+    if key is None:
+        raise ValueError("unknown Google signing key")
+    payload = jwt.decode(id_token, key=key, algorithms=["RS256"], audience=config.GOOGLE_CLIENT_ID)
+    if payload.get("iss") not in _GOOGLE_ISSUERS:
+        raise ValueError("bad issuer")
     return payload["sub"], payload.get("email")
 
 
@@ -172,6 +232,17 @@ class AppleIn(BaseModel):
     email: str | None = None
 
 
+class GoogleIn(BaseModel):
+    id_token: str = Field(min_length=16)
+    email: str | None = None
+
+
+class FrigateIn(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
+    username: str = Field(default="", max_length=200)
+    password: str = Field(default="", max_length=400)
+
+
 # ---- endpoints --------------------------------------------------------------
 
 @router.post("/signup")
@@ -210,6 +281,30 @@ async def apple(body: AppleIn, _: None = Depends(auth_rate_limit)) -> dict:
     return _session(row)
 
 
+@router.post("/google")
+async def google(body: GoogleIn, _: None = Depends(auth_rate_limit)) -> dict:
+    if not config.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in isn't configured.")
+    try:
+        google_sub, google_email = await verify_google_identity_token(body.id_token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Google sign-in could not be verified.")
+    row = db.account_by_google_sub(google_sub)
+    if row is None:
+        email = (body.email or google_email or "").strip().lower() or None
+        # Link to an existing email account if it's the same address; else create one.
+        existing = db.account_by_email(email) if email else None
+        if existing is not None:
+            db.set_google_sub(existing["id"], google_sub)
+            row = db.account_by_id(existing["id"])
+        else:
+            account_id = _new_account_id()
+            db.create_account(account_id, _new_ingest_token(), email=email, apple_sub=None)
+            db.set_google_sub(account_id, google_sub)
+            row = db.account_by_id(account_id)
+    return _session(row)
+
+
 @router.get("/me")
 def me(account=Depends(require_account)) -> dict:
     return {"email": account["email"], "ingest_token": account["ingest_token"]}
@@ -226,4 +321,24 @@ def rotate(account=Depends(require_account)) -> dict:
 @router.delete("/me")
 def delete_me(account=Depends(require_account)) -> dict:
     db.delete_account(account["id"])
+    return {"ok": True}
+
+
+# ---- Frigate connection profile (synced to the app after sign-in) ------------
+
+@frigate_router.get("")
+def get_frigate(account=Depends(require_account)) -> dict:
+    """The app fetches this after sign-in and connects to Frigate automatically —
+    the user never types the server details into the app."""
+    return {
+        "url": account["frigate_url"],
+        "username": account["frigate_username"],
+        "password": decrypt_secret(account["frigate_secret"]),
+    }
+
+
+@frigate_router.put("")
+def put_frigate(body: FrigateIn, account=Depends(require_account)) -> dict:
+    secret = encrypt_secret(body.password) if body.password else None
+    db.set_frigate_profile(account["id"], body.url.strip(), body.username.strip(), secret)
     return {"ok": True}

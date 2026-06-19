@@ -48,16 +48,26 @@ def init() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_activity_pairing ON activity_tokens(pairing_code, kind);
             CREATE TABLE IF NOT EXISTS accounts (
-                id            TEXT PRIMARY KEY,
-                email         TEXT UNIQUE,
-                password_hash TEXT,
-                apple_sub     TEXT UNIQUE,
-                ingest_token  TEXT NOT NULL UNIQUE,
-                created_at    INTEGER NOT NULL
+                id               TEXT PRIMARY KEY,
+                email            TEXT UNIQUE,
+                password_hash    TEXT,
+                apple_sub        TEXT UNIQUE,
+                google_sub       TEXT,
+                ingest_token     TEXT NOT NULL UNIQUE,
+                frigate_url      TEXT,
+                frigate_username TEXT,
+                frigate_secret   TEXT,
+                created_at       INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_accounts_ingest ON accounts(ingest_token);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_google ON accounts(google_sub) WHERE google_sub IS NOT NULL;
             """
         )
+        # Migrate older accounts tables that predate these columns.
+        existing = {r[1] for r in c.execute("PRAGMA table_info(accounts)")}
+        for col in ("google_sub", "frigate_url", "frigate_username", "frigate_secret"):
+            if col not in existing:
+                c.execute(f"ALTER TABLE accounts ADD COLUMN {col} TEXT")
 
 
 @contextmanager
@@ -217,6 +227,28 @@ def account_by_email(email: str) -> Optional[sqlite3.Row]:
 def account_by_apple_sub(apple_sub: str) -> Optional[sqlite3.Row]:
     with _conn() as c:
         return c.execute("SELECT * FROM accounts WHERE apple_sub = ?", (apple_sub,)).fetchone()
+
+
+def account_by_google_sub(google_sub: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE google_sub = ?", (google_sub,)).fetchone()
+
+
+def set_google_sub(account_id: str, google_sub: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET google_sub = ? WHERE id = ?", (google_sub, account_id))
+
+
+def set_frigate_profile(account_id: str, url: str, username: str, secret: Optional[str]) -> None:
+    """Store the account's Frigate connection. A None `secret` keeps the existing
+    encrypted password (so the user can edit the URL without re-typing it)."""
+    with _conn() as c:
+        if secret is None:
+            c.execute("UPDATE accounts SET frigate_url = ?, frigate_username = ? WHERE id = ?",
+                      (url, username, account_id))
+        else:
+            c.execute("UPDATE accounts SET frigate_url = ?, frigate_username = ?, frigate_secret = ? WHERE id = ?",
+                      (url, username, secret, account_id))
 
 
 def account_by_id(account_id: str) -> Optional[sqlite3.Row]:

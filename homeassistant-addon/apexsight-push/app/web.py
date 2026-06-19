@@ -91,8 +91,21 @@ def dashboard(request: Request):
             "ingest_token": token,
             "relay_base": _relay_base(request),
             "device_count": len(db.devices_for(token)),
+            "frigate_url": account["frigate_url"] or "",
+            "frigate_username": account["frigate_username"] or "",
+            "frigate_connected": bool(account["frigate_url"]),
         },
     )
+
+
+@router.post("/frigate")
+def save_frigate(request: Request, url: str = Form(...), username: str = Form(""), password: str = Form("")):
+    account = _current_account(request)
+    if not account:
+        return RedirectResponse("/login", status_code=303)
+    secret = accounts.encrypt_secret(password) if password else None
+    db.set_frigate_profile(account["id"], url.strip(), username.strip(), secret)
+    return RedirectResponse("/dashboard", status_code=303)
 
 
 @router.post("/rotate")
