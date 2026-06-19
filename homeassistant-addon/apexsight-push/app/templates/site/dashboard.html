@@ -1,0 +1,39 @@
+{% extends "site/base.html" %}
+{% block title %}ApexSight — Dashboard{% endblock %}
+{% block nav %}
+  <span class="muted" style="font-size:14px">{{ email or "Apple ID account" }}</span>
+  <form method="post" action="/logout" style="margin:0"><button class="btn ghost" type="submit">Log out</button></form>
+{% endblock %}
+{% block body %}
+  <div class="card">
+    <h2>Link your Frigate</h2>
+    <p class="muted">Two steps and you're done. Your alerts are routed by your private
+    ingest token — nobody else can receive them.</p>
+
+    <h3 style="margin-top:22px;font-size:15px">1 · Sign in on the ApexSight app</h3>
+    <p class="muted">Open the ApexSight app on your iPhone and sign in with this same
+    account. Your devices register automatically — <b>{{ device_count }}</b> device(s) linked so far.</p>
+
+    <h3 style="margin-top:22px;font-size:15px">2 · Point your Home Assistant bridge at the relay</h3>
+    <p class="muted">Install the ApexSight Push add-on next to Frigate and use these settings:</p>
+    <pre>relay_url:    {{ relay_base }}
+pairing_code: {{ ingest_token }}</pre>
+
+    <h3 style="margin-top:22px;font-size:15px">Your ingest token</h3>
+    <p class="muted">Treat it like a password — it's how Frigate events reach your devices.</p>
+    <div class="token">{{ ingest_token }}</div>
+    <form method="post" action="/rotate" style="margin-top:12px"
+          onsubmit="return confirm('Rotate your token? You must update your bridge config to the new value.');">
+      <button class="btn ghost" type="submit">Rotate token</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Danger zone</h2>
+    <p class="muted">Deleting your account removes your token, devices, and settings from the relay.</p>
+    <form method="post" action="/delete"
+          onsubmit="return confirm('Delete your account permanently? This cannot be undone.');">
+      <button class="btn danger" type="submit">Delete account</button>
+    </form>
+  </div>
+{% endblock %}

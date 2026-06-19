@@ -1,0 +1,23 @@
+{% extends "site/base.html" %}
+{% block title %}ApexSight — your Frigate cameras, everywhere{% endblock %}
+{% block nav %}
+  <a class="btn ghost" href="/login">Log in</a>
+  <a class="btn" href="/signup">Sign up</a>
+{% endblock %}
+{% block body %}
+  <div class="card">
+    <h1>Your Frigate cameras,<br>beautifully native.</h1>
+    <p class="muted">Create an account, link your own Frigate NVR, and get instant rich
+    alerts on your iPhone, Apple&nbsp;Watch, Lock&nbsp;Screen, and CarPlay — private by design.</p>
+    <div class="row" style="margin-top:18px">
+      <a class="btn" href="/signup">Create your account</a>
+      <a class="btn ghost" href="/login">I already have one</a>
+    </div>
+    <div class="feat">
+      <div><b>Instant alerts</b><span class="muted">Rich push with snapshots, even when the app is closed.</span></div>
+      <div><b>Live Activities</b><span class="muted">A live incident banner on your Lock Screen + Dynamic Island.</span></div>
+      <div><b>Private</b><span class="muted">Connects to your own Frigate. No analytics, no telemetry.</span></div>
+      <div><b>Everywhere</b><span class="muted">Widgets, Apple Watch, CarPlay, Siri, StandBy.</span></div>
+    </div>
+  </div>
+{% endblock %}

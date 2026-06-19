@@ -47,6 +47,15 @@ def init() -> None:
                 updated_at   INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_activity_pairing ON activity_tokens(pairing_code, kind);
+            CREATE TABLE IF NOT EXISTS accounts (
+                id            TEXT PRIMARY KEY,
+                email         TEXT UNIQUE,
+                password_hash TEXT,
+                apple_sub     TEXT UNIQUE,
+                ingest_token  TEXT NOT NULL UNIQUE,
+                created_at    INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_accounts_ingest ON accounts(ingest_token);
             """
         )
 
@@ -181,3 +190,59 @@ def delete_activity_token(token: str) -> None:
 def prune_activity_tokens(before_ts: float) -> None:
     with _conn() as c:
         c.execute("DELETE FROM activity_tokens WHERE updated_at < ?", (int(before_ts),))
+
+
+# ---- accounts ---------------------------------------------------------------
+
+def create_account(
+    account_id: str,
+    ingest_token: str,
+    email: Optional[str] = None,
+    password_hash: Optional[str] = None,
+    apple_sub: Optional[str] = None,
+) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO accounts(id, email, password_hash, apple_sub, ingest_token, created_at) "
+            "VALUES(?, ?, ?, ?, ?, ?)",
+            (account_id, email, password_hash, apple_sub, ingest_token, int(time.time())),
+        )
+
+
+def account_by_email(email: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE email = ?", (email,)).fetchone()
+
+
+def account_by_apple_sub(apple_sub: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE apple_sub = ?", (apple_sub,)).fetchone()
+
+
+def account_by_id(account_id: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+
+
+def set_account_email(account_id: str, email: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET email = ? WHERE id = ?", (email, account_id))
+
+
+def set_ingest_token(account_id: str, ingest_token: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET ingest_token = ? WHERE id = ?", (ingest_token, account_id))
+
+
+def delete_account(account_id: str) -> None:
+    """Remove the account and everything routed by its ingest token."""
+    with _conn() as c:
+        row = c.execute("SELECT ingest_token FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not row:
+            return
+        token = row["ingest_token"]
+        c.execute("DELETE FROM devices WHERE pairing_code = ?", (token,))
+        c.execute("DELETE FROM activity_tokens WHERE pairing_code = ?", (token,))
+        c.execute("DELETE FROM config WHERE key IN (?, ?, ?)",
+                  (f"gate:{token}", f"style:{token}", f"recap:{token}"))
+        c.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
