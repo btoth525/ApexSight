@@ -10,6 +10,8 @@ enum DeviceTokenStore {
     private static let relayKey = "apex.relayURL"
     private static let pairingKey = "apex.pairingCode"
     private static let pairingOverriddenKey = "apex.pairingOverridden"
+    private static let accountTokenKey = "apex.accountToken"
+    private static let accountEmailKey = "apex.accountEmail"
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: ApexAppGroup.identifier)
@@ -59,6 +61,38 @@ enum DeviceTokenStore {
     static var pairingOverridden: Bool {
         get { defaults?.bool(forKey: pairingOverriddenKey) ?? false }
         set { defaults?.set(newValue, forKey: pairingOverriddenKey) }
+    }
+
+    // MARK: - ApexSight account (session token + the account's private ingest token)
+
+    /// Bearer session token for the signed-in ApexSight account, or nil.
+    static var accountToken: String? {
+        get { defaults?.string(forKey: accountTokenKey) }
+        set { defaults?.set(newValue, forKey: accountTokenKey) }
+    }
+
+    static var accountEmail: String? {
+        get { defaults?.string(forKey: accountEmailKey) }
+        set { defaults?.set(newValue, forKey: accountEmailKey) }
+    }
+
+    static var isSignedInToAccount: Bool { accountToken?.isEmpty == false }
+
+    /// Store a successful sign-in and route push through the account's private ingest
+    /// token (used everywhere the pairing code was).
+    static func applyAccount(token: String, ingestToken: String, email: String?) {
+        accountToken = token
+        accountEmail = email
+        pairingCode = ingestToken
+        pairingOverridden = true
+    }
+
+    /// Sign out: clear the account + stop routing push to its token.
+    static func signOutAccount() {
+        accountToken = nil
+        accountEmail = nil
+        pairingCode = nil
+        pairingOverridden = false
     }
 
     /// Resolves the pairing code to use:

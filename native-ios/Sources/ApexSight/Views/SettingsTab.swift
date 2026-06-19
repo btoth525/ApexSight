@@ -6,6 +6,9 @@ struct SettingsTab: View {
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
+    @State private var showAccountSheet = false
+    @State private var accountSignedIn = DeviceTokenStore.isSignedInToAccount
+    @State private var accountEmail = DeviceTokenStore.accountEmail
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
 
@@ -68,6 +71,46 @@ struct SettingsTab: View {
                                             .font(.system(size: 13, weight: .heavy))
                                     }
                                     .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
+                                }
+                            }
+                        }
+
+                        // ApexSight account — drives private, per-account push routing.
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: accountSignedIn ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                                        .font(.system(size: 16, weight: .black))
+                                        .foregroundStyle(accountSignedIn ? GlassTheme.green : GlassTheme.cyan)
+                                    Text("Account")
+                                        .font(.system(size: 18, weight: .black))
+                                        .foregroundStyle(GlassTheme.primary)
+                                }
+                                if accountSignedIn {
+                                    Text(accountEmail ?? "Signed in")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(GlassTheme.secondary)
+                                        .lineLimit(1)
+                                    Button(role: .destructive) {
+                                        DeviceTokenStore.signOutAccount()
+                                        accountSignedIn = false
+                                        accountEmail = nil
+                                    } label: {
+                                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                                            .font(.system(size: 13, weight: .heavy))
+                                    }
+                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
+                                } else {
+                                    Text("Sign in to receive alerts on this device, routed privately to your account.")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(GlassTheme.secondary)
+                                    Button {
+                                        showAccountSheet = true
+                                    } label: {
+                                        Label("Sign In / Sign Up", systemImage: "person.badge.key.fill")
+                                            .font(.system(size: 13, weight: .heavy))
+                                    }
+                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
                                 }
                             }
                         }
@@ -210,6 +253,15 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
+            .sheet(isPresented: $showAccountSheet, onDismiss: {
+                accountSignedIn = DeviceTokenStore.isSignedInToAccount
+                accountEmail = DeviceTokenStore.accountEmail
+            }) {
+                AccountSignInView(onSignedIn: {
+                    accountSignedIn = true
+                    accountEmail = DeviceTokenStore.accountEmail
+                })
+            }
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }
                 else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }
