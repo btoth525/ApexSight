@@ -98,6 +98,27 @@ def verify_session_token(token: str) -> str | None:
         return None
 
 
+def make_action_token(account_id: str, purpose: str, ttl_seconds: int) -> str:
+    """A short-lived, single-purpose token for email links (purpose "verify"/"reset").
+    The `purpose` claim stops a verify link being reused as a password reset, etc."""
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": account_id, "purpose": purpose, "iat": now, "exp": now + ttl_seconds},
+        config.session_secret(),
+        algorithm=_ALG,
+    )
+
+
+def verify_action_token(token: str, purpose: str) -> str | None:
+    try:
+        payload = jwt.decode(token, config.session_secret(), algorithms=[_ALG])
+        if payload.get("purpose") != purpose:
+            return None
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 # ---- Sign in with Apple ------------------------------------------------------
 
 _apple_keys: dict = {}
@@ -128,39 +149,6 @@ async def verify_apple_identity_token(identity_token: str) -> tuple[str, str | N
         audience=config.DEFAULT_BUNDLE_ID,
         issuer=_APPLE_ISSUER,
     )
-    return payload["sub"], payload.get("email")
-
-
-# ---- Sign in with Google -----------------------------------------------------
-
-_GOOGLE_KEYS_URL = "https://www.googleapis.com/oauth2/v3/certs"
-_GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
-_google_keys: dict = {}
-_google_keys_at: float = 0.0
-
-
-async def _google_signing_keys() -> dict:
-    global _google_keys, _google_keys_at
-    if _google_keys and (time.time() - _google_keys_at) < 3600:
-        return _google_keys
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        data = (await client.get(_GOOGLE_KEYS_URL)).json()
-    keys = {jwk["kid"]: RSAAlgorithm.from_jwk(json.dumps(jwk)) for jwk in data.get("keys", [])}
-    _google_keys, _google_keys_at = keys, time.time()
-    return keys
-
-
-async def verify_google_identity_token(id_token: str) -> tuple[str, str | None]:
-    """Returns (google_sub, email). Raises on any verification failure."""
-    if not config.GOOGLE_CLIENT_ID:
-        raise ValueError("Google sign-in is not configured")
-    kid = jwt.get_unverified_header(id_token).get("kid", "")
-    key = (await _google_signing_keys()).get(kid)
-    if key is None:
-        raise ValueError("unknown Google signing key")
-    payload = jwt.decode(id_token, key=key, algorithms=["RS256"], audience=config.GOOGLE_CLIENT_ID)
-    if payload.get("iss") not in _GOOGLE_ISSUERS:
-        raise ValueError("bad issuer")
     return payload["sub"], payload.get("email")
 
 
@@ -232,11 +220,6 @@ class AppleIn(BaseModel):
     email: str | None = None
 
 
-class GoogleIn(BaseModel):
-    id_token: str = Field(min_length=16)
-    email: str | None = None
-
-
 class FrigateIn(BaseModel):
     url: str = Field(min_length=1, max_length=500)
     username: str = Field(default="", max_length=200)
@@ -278,30 +261,6 @@ async def apple(body: AppleIn, _: None = Depends(auth_rate_limit)) -> dict:
         email = (body.email or apple_email or "").strip().lower() or None
         db.create_account(account_id, _new_ingest_token(), email=email, apple_sub=apple_sub)
         row = db.account_by_id(account_id)
-    return _session(row)
-
-
-@router.post("/google")
-async def google(body: GoogleIn, _: None = Depends(auth_rate_limit)) -> dict:
-    if not config.GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=503, detail="Google sign-in isn't configured.")
-    try:
-        google_sub, google_email = await verify_google_identity_token(body.id_token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Google sign-in could not be verified.")
-    row = db.account_by_google_sub(google_sub)
-    if row is None:
-        email = (body.email or google_email or "").strip().lower() or None
-        # Link to an existing email account if it's the same address; else create one.
-        existing = db.account_by_email(email) if email else None
-        if existing is not None:
-            db.set_google_sub(existing["id"], google_sub)
-            row = db.account_by_id(existing["id"])
-        else:
-            account_id = _new_account_id()
-            db.create_account(account_id, _new_ingest_token(), email=email, apple_sub=None)
-            db.set_google_sub(account_id, google_sub)
-            row = db.account_by_id(account_id)
     return _session(row)
 
 

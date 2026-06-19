@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import accounts, db
+from . import accounts, config, db, mailer
 
 router = APIRouter()
 _templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
@@ -56,7 +56,16 @@ def signup_submit(request: Request, email: str = Form(...), password: str = Form
     db.create_account(account_id, accounts._new_ingest_token(), email=email,
                       password_hash=accounts.hash_password(password))
     request.session["account_id"] = account_id
+    _send_verification(request, account_id, email)
     return RedirectResponse("/dashboard", status_code=303)
+
+
+def _send_verification(request: Request, account_id: str, email: str) -> None:
+    if not (config.smtp_configured() and email):
+        return
+    base = config.PUBLIC_URL or _relay_base(request)
+    token = accounts.make_action_token(account_id, "verify", 24 * 3600)
+    mailer.send_verification(email, f"{base}/verify?token={token}")
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -94,8 +103,77 @@ def dashboard(request: Request):
             "frigate_url": account["frigate_url"] or "",
             "frigate_username": account["frigate_username"] or "",
             "frigate_connected": bool(account["frigate_url"]),
+            "email_verified": bool(account["email_verified"]),
+            "needs_verify": bool(account["email"]) and not account["email_verified"] and config.smtp_configured(),
         },
     )
+
+
+# ---- email verification + password reset ------------------------------------
+
+@router.post("/resend-verification")
+def resend_verification(request: Request):
+    account = _current_account(request)
+    if account and not account["email_verified"]:
+        _send_verification(request, account["id"], account["email"])
+    return RedirectResponse("/dashboard", status_code=303)
+
+
+@router.get("/verify", response_class=HTMLResponse)
+def verify_email(request: Request, token: str = ""):
+    account_id = accounts.verify_action_token(token, "verify")
+    if account_id:
+        db.set_email_verified(account_id)
+    return _templates.TemplateResponse("site/message.html", {
+        "request": request,
+        "title": "Email verified" if account_id else "Link expired",
+        "message": "You're all set — your email is verified." if account_id
+                   else "This verification link is invalid or has expired. Sign in and resend it from your dashboard.",
+        "ok": bool(account_id),
+    })
+
+
+@router.get("/forgot", response_class=HTMLResponse)
+def forgot_page(request: Request):
+    return _templates.TemplateResponse("site/forgot.html",
+                                       {"request": request, "sent": False, "smtp": config.smtp_configured()})
+
+
+@router.post("/forgot")
+def forgot_submit(request: Request, email: str = Form(...)):
+    addr = email.strip().lower()
+    row = db.account_by_email(addr)
+    if row and config.smtp_configured():
+        base = config.PUBLIC_URL or _relay_base(request)
+        token = accounts.make_action_token(row["id"], "reset", 3600)
+        mailer.send_password_reset(addr, f"{base}/reset?token={token}")
+    # Always report success — never reveal whether an email is registered.
+    return _templates.TemplateResponse("site/forgot.html",
+                                       {"request": request, "sent": True, "smtp": config.smtp_configured()})
+
+
+@router.get("/reset", response_class=HTMLResponse)
+def reset_page(request: Request, token: str = ""):
+    valid = accounts.verify_action_token(token, "reset") is not None
+    return _templates.TemplateResponse("site/reset.html",
+                                       {"request": request, "token": token, "valid": valid, "error": None})
+
+
+@router.post("/reset")
+def reset_submit(request: Request, token: str = Form(...), password: str = Form(...)):
+    account_id = accounts.verify_action_token(token, "reset")
+    if not account_id:
+        return _templates.TemplateResponse("site/reset.html",
+            {"request": request, "token": token, "valid": False,
+             "error": "This reset link is invalid or has expired."}, status_code=400)
+    if len(password) < 8:
+        return _templates.TemplateResponse("site/reset.html",
+            {"request": request, "token": token, "valid": True,
+             "error": "Password must be at least 8 characters."}, status_code=400)
+    db.set_password_hash(account_id, accounts.hash_password(password))
+    db.set_email_verified(account_id)   # resetting via the emailed link also proves ownership
+    request.session["account_id"] = account_id
+    return RedirectResponse("/dashboard", status_code=303)
 
 
 @router.post("/frigate")

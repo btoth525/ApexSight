@@ -7,6 +7,7 @@ import UIKit
 /// so alerts route only to this account.
 struct AccountSignInView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var appState: AppState
     var onSignedIn: () -> Void = {}
 
@@ -43,6 +44,17 @@ struct AccountSignInView: View {
                             field("Password", text: $password, isSecure: true, keyboard: .default,
                                   content: isSignUp ? .newPassword : .password)
 
+                            if !isSignUp {
+                                Button("Forgot password?") {
+                                    if let url = URL(string: relayURL.trimmingCharacters(in: .whitespaces) + "/forgot") {
+                                        openURL(url)
+                                    }
+                                }
+                                .font(.system(size: 12, weight: .heavy))
+                                .foregroundStyle(GlassTheme.secondary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
+
                             if let errorMessage {
                                 Text(errorMessage)
                                     .font(.system(size: 13, weight: .bold))
@@ -69,22 +81,6 @@ struct AccountSignInView: View {
                             .signInWithAppleButtonStyle(.white)
                             .frame(height: 48)
                             .clipShape(Capsule())
-
-                            if GoogleConfig.isConfigured {
-                                Button {
-                                    handleGoogle()
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "globe")
-                                        Text("Continue with Google").fontWeight(.black)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 13)
-                                    .background(.white, in: Capsule())
-                                    .foregroundStyle(.black)
-                                }
-                                .disabled(isWorking)
-                            }
 
                             Button(isSignUp ? "I already have an account" : "Create a new account") {
                                 withAnimation { isSignUp.toggle(); errorMessage = nil }
@@ -165,25 +161,6 @@ struct AccountSignInView: View {
         case .failure:
             // User canceled or it failed — don't nag with an error for a cancel.
             break
-        }
-    }
-
-    private func handleGoogle() {
-        Task { @MainActor in
-            isWorking = true
-            errorMessage = nil
-            defer { isWorking = false }
-            do {
-                let signIn = GoogleSignIn()
-                let idToken = try await signIn.idToken()
-                let session = try await AccountClient.google(relayURL: relayURL, idToken: idToken, email: nil)
-                finish(session)
-            } catch let error as GoogleSignIn.SignInError {
-                if case .canceled = error { return }   // don't nag on cancel
-                errorMessage = error.errorDescription
-            } catch {
-                errorMessage = error.localizedDescription
-            }
         }
     }
 

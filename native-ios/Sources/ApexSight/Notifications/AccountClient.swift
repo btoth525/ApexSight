@@ -38,12 +38,6 @@ enum AccountClient {
         return try await post(relayURL, "/v1/auth/apple", body)
     }
 
-    static func google(relayURL: String, idToken: String, email: String?) async throws -> Session {
-        var body: [String: String] = ["id_token": idToken]
-        if let email, !email.isEmpty { body["email"] = email }
-        return try await post(relayURL, "/v1/auth/google", body)
-    }
-
     /// Pulls the Frigate connection saved on the account so the app can sign in by itself.
     static func fetchFrigate(relayURL: String, token: String) async throws -> FrigateProfile {
         let (data, code) = try await request("GET", relayURL, "/v1/frigate", token: token, body: nil)

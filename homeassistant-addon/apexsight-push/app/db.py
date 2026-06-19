@@ -52,22 +52,23 @@ def init() -> None:
                 email            TEXT UNIQUE,
                 password_hash    TEXT,
                 apple_sub        TEXT UNIQUE,
-                google_sub       TEXT,
                 ingest_token     TEXT NOT NULL UNIQUE,
                 frigate_url      TEXT,
                 frigate_username TEXT,
                 frigate_secret   TEXT,
+                email_verified   INTEGER NOT NULL DEFAULT 0,
                 created_at       INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_accounts_ingest ON accounts(ingest_token);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_google ON accounts(google_sub) WHERE google_sub IS NOT NULL;
             """
         )
         # Migrate older accounts tables that predate these columns.
         existing = {r[1] for r in c.execute("PRAGMA table_info(accounts)")}
-        for col in ("google_sub", "frigate_url", "frigate_username", "frigate_secret"):
+        for col in ("frigate_url", "frigate_username", "frigate_secret"):
             if col not in existing:
                 c.execute(f"ALTER TABLE accounts ADD COLUMN {col} TEXT")
+        if "email_verified" not in existing:
+            c.execute("ALTER TABLE accounts ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager
@@ -229,14 +230,14 @@ def account_by_apple_sub(apple_sub: str) -> Optional[sqlite3.Row]:
         return c.execute("SELECT * FROM accounts WHERE apple_sub = ?", (apple_sub,)).fetchone()
 
 
-def account_by_google_sub(google_sub: str) -> Optional[sqlite3.Row]:
+def set_password_hash(account_id: str, password_hash: str) -> None:
     with _conn() as c:
-        return c.execute("SELECT * FROM accounts WHERE google_sub = ?", (google_sub,)).fetchone()
+        c.execute("UPDATE accounts SET password_hash = ? WHERE id = ?", (password_hash, account_id))
 
 
-def set_google_sub(account_id: str, google_sub: str) -> None:
+def set_email_verified(account_id: str) -> None:
     with _conn() as c:
-        c.execute("UPDATE accounts SET google_sub = ? WHERE id = ?", (google_sub, account_id))
+        c.execute("UPDATE accounts SET email_verified = 1 WHERE id = ?", (account_id,))
 
 
 def set_frigate_profile(account_id: str, url: str, username: str, secret: Optional[str]) -> None:

@@ -5,6 +5,15 @@
   <form method="post" action="/logout" style="margin:0"><button class="btn ghost" type="submit">Log out</button></form>
 {% endblock %}
 {% block body %}
+  {% if needs_verify %}
+  <div class="banner">
+    <span>📧 Verify your email to secure your account.</span>
+    <form method="post" action="/resend-verification" style="margin:0">
+      <button class="btn ghost" type="submit" style="padding:8px 14px">Resend email</button>
+    </form>
+  </div>
+  {% endif %}
+
   <div class="card">
     <h2>Your Frigate server {% if frigate_connected %}<span style="color:#3ad17e;font-size:14px">· connected</span>{% endif %}</h2>
     <p class="muted">Enter your Frigate NVR details. When you sign in on the ApexSight app

@@ -32,9 +32,21 @@ DEFAULT_TEAM_ID = os.environ.get("APEX_TEAM_ID", "3Q9ZUDN4QZ").strip()
 # Max /v1/notify + /v1/register calls accepted per client IP per minute.
 RATE_LIMIT_PER_MINUTE = int(os.environ.get("APEX_RATE_LIMIT", "120"))
 
-# Google OAuth client id used to verify "Sign in with Google" tokens from the app.
-# Leave unset to disable Google sign-in. (Create an iOS OAuth client in Google Cloud.)
-GOOGLE_CLIENT_ID = os.environ.get("APEX_GOOGLE_CLIENT_ID", "").strip()
+# Public origin used to build links in emails (verify / password reset). Falls back
+# to the request's host when unset; set it if you're behind a proxy that rewrites host.
+PUBLIC_URL = os.environ.get("APEX_PUBLIC_URL", "").strip().rstrip("/")
+
+# SMTP for transactional email (verification + password reset). If unset, those
+# features degrade gracefully (the rest of the relay works fine without email).
+SMTP_HOST = os.environ.get("APEX_SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("APEX_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("APEX_SMTP_USER", "").strip()
+SMTP_PASSWORD = os.environ.get("APEX_SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.environ.get("APEX_SMTP_FROM", SMTP_USER or "").strip()
+
+
+def smtp_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_FROM)
 
 
 def fernet_key() -> bytes:

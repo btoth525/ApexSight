@@ -2,17 +2,18 @@
 {% block title %}Create your ApexSight account{% endblock %}
 {% block nav %}<a class="btn ghost" href="/login">Log in</a>{% endblock %}
 {% block body %}
-  <div class="card" style="max-width:460px;margin-left:auto;margin-right:auto">
+  <div class="card auth">
     <h2>Create your account</h2>
-    <p class="muted">One account links your Frigate to all your Apple devices.</p>
+    <p class="muted" style="margin-top:-6px">One account links your Frigate to all your Apple devices.</p>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
     <form method="post" action="/signup">
       <label for="email">Email</label>
       <input id="email" name="email" type="email" autocomplete="email" required>
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
-      <div style="margin-top:20px"><button class="btn block" type="submit">Create account</button></div>
+      <div style="margin-top:22px"><button class="btn block" type="submit">Create account</button></div>
     </form>
-    <p class="muted" style="margin-top:16px;font-size:14px">Already have one? <a href="/login">Log in</a></p>
+    <div class="hairline"></div>
+    <p class="muted center" style="font-size:14px;margin:0">Already have one? <a href="/login">Log in</a></p>
   </div>
 {% endblock %}
