@@ -123,9 +123,14 @@ struct WatchRootView: View {
             List {
                 if let hero = store.heroImage, let latest = store.alerts.first {
                     Section {
-                        heroCard(hero, latest)
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
+                        NavigationLink {
+                            WatchAlertDetailView(alert: latest, image: hero)
+                        } label: {
+                            heroCard(hero, latest)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
                 }
 
@@ -134,7 +139,14 @@ struct WatchRootView: View {
                         emptyRow
                     } else {
                         ForEach(store.alerts) { alert in
-                            alertRow(alert)
+                            NavigationLink {
+                                WatchAlertDetailView(
+                                    alert: alert,
+                                    image: alert.id == store.alerts.first?.id ? store.heroImage : nil
+                                )
+                            } label: {
+                                alertRow(alert)
+                            }
                         }
                     }
                 } header: {
@@ -227,5 +239,54 @@ struct WatchRootView: View {
             }
             .tint(.cyan)
         }
+    }
+}
+
+// MARK: - Alert detail
+
+struct WatchAlertDetailView: View {
+    let alert: WatchAlert
+    let image: UIImage?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(alert.tint.opacity(0.18))
+                            .frame(height: 96)
+                        Text(alert.glyph).font(.system(size: 44))
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Text(alert.glyph)
+                    Text(alert.title).font(.headline).lineLimit(2)
+                }
+
+                Text(alert.isAlert ? "ALERT" : "Detection")
+                    .font(.system(size: 10, weight: .black))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(alert.tint, in: Capsule())
+                    .foregroundStyle(.black)
+
+                Label(alert.cameraName, systemImage: "video.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Label(alert.when.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(10)
+        }
+        .navigationTitle(alert.cameraName)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
