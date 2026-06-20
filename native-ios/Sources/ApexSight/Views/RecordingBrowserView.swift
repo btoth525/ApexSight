@@ -141,30 +141,15 @@ struct RecordingBrowserView: View {
                 .font(.system(size: 9, weight: .heavy))
                 .foregroundStyle(GlassTheme.tertiary)
 
-                // Time range pickers
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("FROM").font(.system(size: 9, weight: .black)).foregroundStyle(GlassTheme.secondary)
-                        Picker("", selection: $rangeStartHour) {
-                            ForEach(0..<24, id: \.self) { h in
-                                Text(hourLabel(h)).tag(h)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .tint(GlassTheme.cyan)
-                        .labelsHidden()
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("TO").font(.system(size: 9, weight: .black)).foregroundStyle(GlassTheme.secondary)
-                        Picker("", selection: $rangeEndHour) {
-                            ForEach(0..<24, id: \.self) { h in
-                                Text(hourLabel(h)).tag(h)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .tint(GlassTheme.cyan)
-                        .labelsHidden()
+                // Quick range chips — friendlier than hour menus, snap the timeline to a
+                // part of the day in one tap.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        rangeChip("All day", 0, 23)
+                        rangeChip("Morning", 5, 11)
+                        rangeChip("Afternoon", 11, 17)
+                        rangeChip("Evening", 17, 23)
+                        rangeChip("Night", 0, 5)
                     }
                 }
 
@@ -252,6 +237,23 @@ struct RecordingBrowserView: View {
         }
     }
 
+    private func rangeChip(_ title: String, _ start: Int, _ end: Int) -> some View {
+        let selected = rangeStartHour == start && rangeEndHour == end
+        return Button {
+            Haptics.select()
+            rangeStartHour = start
+            rangeEndHour = end
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(selected ? Color.black : GlassTheme.primary)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .background(selected ? AnyShapeStyle(GlassTheme.cyan) : AnyShapeStyle(.white.opacity(0.08)), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private func legendDot(_ title: String, _ color: Color) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 7, height: 7)
@@ -296,7 +298,8 @@ struct RecordingBrowserView: View {
                     Spacer()
                 }
                 PiPPlayerView(player: player)
-                    .frame(height: 280)
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .expandableMedia(.player(player))
 
