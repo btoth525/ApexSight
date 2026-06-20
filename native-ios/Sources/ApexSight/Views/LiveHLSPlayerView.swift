@@ -236,10 +236,14 @@ struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
     var showControls: Bool = false
+    /// Pass a controller to enable PiP for this player from outside (e.g. a camera-wall
+    /// cell's long-press menu). When nil, the single-camera view uses its own.
+    var pipController: LivePiPController? = nil
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
-    @StateObject private var pip = LivePiPController()
+    @StateObject private var ownPiP = LivePiPController()
+    private var pip: LivePiPController { pipController ?? ownPiP }
 
     private var isPlaying: Bool { model.state == .playing }
 
@@ -256,7 +260,8 @@ struct HLSLivePlayerView: View {
             .animation(.easeIn(duration: 0.3), value: isPlaying)
             .allowsHitTesting(true)
         } else {
-            ZoomablePlayerView(player: player)
+            // Wall cells: wire PiP only when a controller was provided (long-press menu).
+            ZoomablePlayerView(player: player, pip: pipController, autoPiP: false)
                 .opacity(isPlaying ? 1 : 0)
                 .animation(.easeIn(duration: 0.3), value: isPlaying)
                 .allowsHitTesting(false)
@@ -431,9 +436,8 @@ struct ZoomablePlayerView: UIViewRepresentable {
         view.playerLayer.videoGravity = videoGravity
     }
 
-    @MainActor
     final class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
-        private weak var pip: LivePiPController?
+        private let pip: LivePiPController?
         private let autoPiP: Bool
         private var controller: AVPictureInPictureController?
         private var possibleObs: NSKeyValueObservation?
@@ -443,6 +447,8 @@ struct ZoomablePlayerView: UIViewRepresentable {
             self.autoPiP = autoPiP
         }
 
+        // Called from makeUIView (main thread). State is pushed to the @MainActor
+        // controller via Task to keep concurrency clean across Swift versions.
         func attach(to layer: AVPlayerLayer) {
             guard pip != nil, controller == nil,
                   AVPictureInPictureController.isPictureInPictureSupported() else { return }
@@ -450,17 +456,26 @@ struct ZoomablePlayerView: UIViewRepresentable {
             controller.canStartPictureInPictureAutomaticallyFromInline = autoPiP
             controller.delegate = self
             self.controller = controller
-            pip?.controller = controller
-            possibleObs = controller.observe(\.isPictureInPicturePossible, options: [.new, .initial]) { [weak self] c, _ in
-                Task { @MainActor in self?.pip?.isPossible = c.isPictureInPicturePossible }
+            let pip = self.pip
+            let possible = controller.isPictureInPicturePossible
+            Task { @MainActor in
+                pip?.controller = controller
+                pip?.isPossible = possible
+            }
+            possibleObs = controller.observe(\.isPictureInPicturePossible, options: [.new]) { c, _ in
+                let value = c.isPictureInPicturePossible
+                Task { @MainActor in pip?.isPossible = value }
             }
         }
 
         func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
-            pip?.isActive = true
+            let pip = self.pip
+            Task { @MainActor in pip?.isActive = true }
         }
+
         func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
-            pip?.isActive = false
+            let pip = self.pip
+            Task { @MainActor in pip?.isActive = false }
         }
     }
 }
