@@ -80,12 +80,16 @@ struct ReviewTab: View {
                                         .padding(.horizontal, 16)
                                         .padding(.top, 4)
 
-                                    LazyVStack(spacing: 10) {
+                                    LazyVStack(spacing: 14) {
                                         ForEach(filtered) { review in
-                                            Button { path.append(review) } label: {
-                                                ReviewRow(review: review)
-                                            }
-                                            .buttonStyle(.plain)
+                                            ReviewRow(
+                                                review: review,
+                                                onOpen: { path.append(review) },
+                                                onDismiss: {
+                                                    Haptics.success()
+                                                    Task { await appState.markReviewViewed(review) }
+                                                }
+                                            )
                                         }
                                     }
                                     .padding(.horizontal, 16)
