@@ -36,6 +36,11 @@ struct ReviewTab: View {
         if !silent { loadingDetections = false }
     }
 
+    private func dismissReview(_ review: FrigateReviewItem) {
+        Haptics.success()
+        Task { await appState.markReviewViewed(review) }
+    }
+
     private var showEmptyState: Bool {
         guard !appState.isLoading && !loadingDetections else { return false }
         // Use the same filtered/visible set the list renders (which excludes
@@ -72,30 +77,33 @@ struct ReviewTab: View {
                             }
                             .disabled(true)
                         } else {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 14) {
+                            List {
+                                Section {
+                                    ForEach(filtered) { review in
+                                        ReviewRow(
+                                            review: review,
+                                            onOpen: { path.append(review) },
+                                            onDismiss: { dismissReview(review) }
+                                        )
+                                        .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                                        .listRowBackground(Color.clear)
+                                        .listRowSeparator(.hidden)
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                            Button { dismissReview(review) } label: {
+                                                Label("Reviewed", systemImage: "checkmark")
+                                            }
+                                            .tint(GlassTheme.green)
+                                        }
+                                    }
+                                } header: {
                                     Text("\(filtered.count) items")
                                         .font(.system(size: 12, weight: .heavy))
                                         .foregroundStyle(GlassTheme.secondary)
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 4)
-
-                                    LazyVStack(spacing: 14) {
-                                        ForEach(filtered) { review in
-                                            ReviewRow(
-                                                review: review,
-                                                onOpen: { path.append(review) },
-                                                onDismiss: {
-                                                    Haptics.success()
-                                                    Task { await appState.markReviewViewed(review) }
-                                                }
-                                            )
-                                        }
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.bottom, 20)
+                                        .textCase(nil)
                                 }
                             }
+                            .listStyle(.plain)
+                            .scrollContentBackground(.hidden)
                             .refreshable {
                                 await appState.refresh()
                                 if selectedSeverity == "detection" { await loadDetections() }

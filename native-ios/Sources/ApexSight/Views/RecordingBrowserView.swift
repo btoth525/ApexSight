@@ -46,6 +46,9 @@ struct RecordingBrowserView: View {
                     }
                 }
                 .padding(18)
+                // Keep it a comfortable, centered column on iPad instead of stretching.
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
             }
         }
         .navigationTitle("Recordings")

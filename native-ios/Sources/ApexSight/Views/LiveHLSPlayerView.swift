@@ -246,6 +246,7 @@ struct HLSLivePlayerView: View {
     @StateObject private var model = HLSLiveModel()
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
+    @State private var fillMode = false
 
     private var isPlaying: Bool { model.state == .playing }
 
@@ -256,7 +257,12 @@ struct HLSLivePlayerView: View {
     private func playerLayer(_ player: AVPlayer) -> some View {
         if showControls {
             ZoomableScrollView(onSingleTap: onSingleTap) {
-                ZoomablePlayerView(player: player, pip: pip, autoPiP: true)
+                ZoomablePlayerView(
+                    player: player,
+                    videoGravity: fillMode ? .resizeAspectFill : .resizeAspect,
+                    pip: pip,
+                    autoPiP: true
+                )
             }
             .opacity(isPlaying ? 1 : 0)
             .animation(.easeIn(duration: 0.3), value: isPlaying)
@@ -336,6 +342,17 @@ struct HLSLivePlayerView: View {
             Spacer()
             HStack(spacing: 10) {
                 Spacer()
+                Button {
+                    Haptics.tap()
+                    fillMode.toggle()
+                } label: {
+                    Image(systemName: fillMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 14, weight: .black))
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .foregroundStyle(.white)
+                }
+                .accessibilityLabel(fillMode ? "Fit to screen" : "Fill screen")
                 if pip.isSupported {
                     Button {
                         Haptics.tap()
