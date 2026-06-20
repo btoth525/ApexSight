@@ -12,6 +12,11 @@ struct ReviewTab: View {
     @State private var detectionItems: [FrigateReviewItem] = []
     @State private var loadingDetections = false
     @State private var showMarkAllConfirm = false
+    // Optimistic dismiss + Undo: hide instantly, commit to the server after a grace
+    // window so a mis-tap is one tap to undo.
+    @State private var hiddenIDs: Set<String> = []
+    @State private var pendingReview: FrigateReviewItem?
+    @State private var pendingWork: DispatchWorkItem?
 
     private var filtered: [FrigateReviewItem] {
         let base: [FrigateReviewItem]
@@ -22,7 +27,7 @@ struct ReviewTab: View {
         }
         // Exclude anything just marked viewed (e.g. from the detail screen) so it can't
         // linger — detectionItems is owned here and isn't pruned by AppState's refresh.
-        let visible = base.filter { !appState.locallyViewedIDs.contains($0.id) }
+        let visible = base.filter { !appState.locallyViewedIDs.contains($0.id) && !hiddenIDs.contains($0.id) }
         return sortNewest
             ? visible.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
             : visible.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
@@ -36,9 +41,66 @@ struct ReviewTab: View {
         if !silent { loadingDetections = false }
     }
 
+    /// Hide the item right away and show an Undo bar; only mark it reviewed on the
+    /// server once the grace window passes — so a stray tap is recoverable.
     private func dismissReview(_ review: FrigateReviewItem) {
         Haptics.success()
+        commitPending()   // a previous undo, if any, becomes final
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            hiddenIDs.insert(review.id)
+            pendingReview = review
+        }
+        let work = DispatchWorkItem { commitPending() }
+        pendingWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5, execute: work)
+    }
+
+    private func commitPending() {
+        pendingWork?.cancel()
+        pendingWork = nil
+        guard let review = pendingReview else { return }
+        withAnimation(.easeOut(duration: 0.2)) { pendingReview = nil }
         Task { await appState.markReviewViewed(review) }
+    }
+
+    private func undoDismiss() {
+        Haptics.tap()
+        pendingWork?.cancel()
+        pendingWork = nil
+        let review = pendingReview
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            if let review { hiddenIDs.remove(review.id) }
+            pendingReview = nil
+        }
+    }
+
+    @ViewBuilder
+    private var undoToast: some View {
+        if pendingReview != nil {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16, weight: .black))
+                    .foregroundStyle(GlassTheme.green)
+                Text("Marked reviewed")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 12)
+                Button { undoDismiss() } label: {
+                    Text("Undo")
+                        .font(.system(size: 14, weight: .black))
+                        .foregroundStyle(GlassTheme.cyan)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay { Capsule().stroke(.white.opacity(0.14), lineWidth: 1) }
+            .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     private var showEmptyState: Bool {
@@ -115,6 +177,7 @@ struct ReviewTab: View {
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
+            .overlay(alignment: .bottom) { undoToast }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 12) {
