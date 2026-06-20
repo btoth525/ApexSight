@@ -239,6 +239,7 @@ struct HLSLivePlayerView: View {
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
+    @StateObject private var pip = LivePiPController()
 
     private var isPlaying: Bool { model.state == .playing }
 
@@ -249,7 +250,7 @@ struct HLSLivePlayerView: View {
     private func playerLayer(_ player: AVPlayer) -> some View {
         if showControls {
             ZoomableScrollView {
-                ZoomablePlayerView(player: player)
+                ZoomablePlayerView(player: player, pip: pip, autoPiP: true)
             }
             .opacity(isPlaying ? 1 : 0)
             .animation(.easeIn(duration: 0.3), value: isPlaying)
@@ -305,7 +306,7 @@ struct HLSLivePlayerView: View {
             }
 
             if showControls {
-                muteButton
+                liveControls
             }
         }
         .onAppear {
@@ -323,23 +324,40 @@ struct HLSLivePlayerView: View {
         }
     }
 
-    private var muteButton: some View {
+    private var liveControls: some View {
         VStack {
             Spacer()
-            HStack {
+            HStack(spacing: 10) {
                 Spacer()
-                Button { model.toggleMute() } label: {
+                if pip.isSupported {
+                    Button {
+                        Haptics.tap()
+                        pip.toggle()
+                    } label: {
+                        Image(systemName: pip.isActive ? "pip.exit" : "pip.enter")
+                            .font(.system(size: 14, weight: .black))
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel(pip.isActive ? "Exit Picture in Picture" : "Picture in Picture")
+                }
+                Button {
+                    Haptics.tap()
+                    model.toggleMute()
+                } label: {
                     Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 14, weight: .black))
                         .frame(width: 40, height: 40)
                         .background(.ultraThinMaterial, in: Circle())
                         .foregroundStyle(.white)
                 }
-                .padding(.trailing, 14)
-                .padding(.bottom, 8)
+                .accessibilityLabel(model.isMuted ? "Unmute" : "Mute")
             }
+            .padding(.trailing, 14)
+            .padding(.bottom, 8)
         }
-        // Only the button itself is tappable — the rest passes zoom gestures through.
+        // Only the buttons are tappable — the rest passes zoom gestures through.
         .allowsHitTesting(true)
     }
 
@@ -365,16 +383,44 @@ struct HLSLivePlayerView: View {
     }
 }
 
-// MARK: - AVPlayerLayer view with pinch / pan / double-tap zoom
+// MARK: - Picture in Picture
+
+/// Drives Picture in Picture for a live `AVPlayerLayer`. SwiftUI holds one of these,
+/// passes it to `ZoomablePlayerView`, and toggles PiP from a button.
+@MainActor
+final class LivePiPController: ObservableObject {
+    @Published var isSupported = AVPictureInPictureController.isPictureInPictureSupported()
+    @Published var isPossible = false
+    @Published var isActive = false
+    fileprivate weak var controller: AVPictureInPictureController?
+
+    func toggle() {
+        guard let controller else { return }
+        if controller.isPictureInPictureActive {
+            controller.stopPictureInPicture()
+        } else if controller.isPictureInPicturePossible {
+            controller.startPictureInPicture()
+        }
+    }
+}
+
+// MARK: - AVPlayerLayer view with pinch / pan / double-tap zoom (+ optional PiP)
 
 struct ZoomablePlayerView: UIViewRepresentable {
     let player: AVPlayer
     var videoGravity: AVLayerVideoGravity = .resizeAspect
+    /// When set, Picture in Picture is wired to this layer and surfaced through the controller.
+    var pip: LivePiPController? = nil
+    /// Float into PiP automatically when the app backgrounds while this is playing inline.
+    var autoPiP: Bool = false
+
+    func makeCoordinator() -> Coordinator { Coordinator(pip: pip, autoPiP: autoPiP) }
 
     func makeUIView(context: Context) -> PlayerLayerUIView {
         let view = PlayerLayerUIView()
         view.playerLayer.player = player
         view.playerLayer.videoGravity = videoGravity
+        context.coordinator.attach(to: view.playerLayer)
         return view
     }
 
@@ -383,6 +429,39 @@ struct ZoomablePlayerView: UIViewRepresentable {
             view.playerLayer.player = player
         }
         view.playerLayer.videoGravity = videoGravity
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
+        private weak var pip: LivePiPController?
+        private let autoPiP: Bool
+        private var controller: AVPictureInPictureController?
+        private var possibleObs: NSKeyValueObservation?
+
+        init(pip: LivePiPController?, autoPiP: Bool) {
+            self.pip = pip
+            self.autoPiP = autoPiP
+        }
+
+        func attach(to layer: AVPlayerLayer) {
+            guard pip != nil, controller == nil,
+                  AVPictureInPictureController.isPictureInPictureSupported() else { return }
+            let controller = AVPictureInPictureController(playerLayer: layer)
+            controller.canStartPictureInPictureAutomaticallyFromInline = autoPiP
+            controller.delegate = self
+            self.controller = controller
+            pip?.controller = controller
+            possibleObs = controller.observe(\.isPictureInPicturePossible, options: [.new, .initial]) { [weak self] c, _ in
+                Task { @MainActor in self?.pip?.isPossible = c.isPictureInPicturePossible }
+            }
+        }
+
+        func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+            pip?.isActive = true
+        }
+        func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+            pip?.isActive = false
+        }
     }
 }
 
