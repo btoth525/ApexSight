@@ -10,6 +10,11 @@ struct MultiCameraGridView: View {
     /// Number of columns: 1, 2 (default), or 3
     @State private var columns: Int
     @State private var selectedCamera: FrigateCamera?
+    // Smart Focus: spotlight + scroll to the camera where Frigate just detected something.
+    @AppStorage("multiview.smartFocus") private var smartFocus = true
+    @State private var activeCameraName: String?
+    @State private var lastEventID: String?
+    @State private var clearWork: DispatchWorkItem?
 
     init(group: CameraGroup? = nil) {
         self.group = group
@@ -47,7 +52,19 @@ struct MultiCameraGridView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    columnPicker
+                    HStack(spacing: 16) {
+                        Button {
+                            Haptics.select()
+                            smartFocus.toggle()
+                            if !smartFocus { activeCameraName = nil }
+                        } label: {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 16, weight: .black))
+                                .foregroundStyle(smartFocus ? GlassTheme.cyan : GlassTheme.tertiary)
+                        }
+                        .accessibilityLabel(smartFocus ? "Smart Focus on" : "Smart Focus off")
+                        columnPicker
+                    }
                 }
             }
             .toolbarBackground(.black.opacity(0.8), for: .navigationBar)
@@ -65,24 +82,60 @@ struct MultiCameraGridView: View {
     // MARK: - Grid
 
     private var grid: some View {
-        ScrollView {
-            // Lazy so rows scrolled off the wall stop decoding video.
-            LazyVStack(spacing: 2) {
-                ForEach(cameraRows, id: \.self) { rowIndices in
-                    HStack(spacing: 2) {
-                        ForEach(rowIndices, id: \.self) { idx in
-                            cameraCell(displayedCameras[idx])
-                        }
-                        // Fill partial last row
-                        if rowIndices.count < columns {
-                            ForEach(0..<(columns - rowIndices.count), id: \.self) { _ in
-                                Color.black.aspectRatio(16.0/9.0, contentMode: .fit)
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Lazy so rows scrolled off the wall stop decoding video.
+                LazyVStack(spacing: 2) {
+                    ForEach(cameraRows, id: \.self) { rowIndices in
+                        HStack(spacing: 2) {
+                            ForEach(rowIndices, id: \.self) { idx in
+                                cameraCell(displayedCameras[idx])
+                                    .id(displayedCameras[idx].name)
+                            }
+                            // Fill partial last row
+                            if rowIndices.count < columns {
+                                ForEach(0..<(columns - rowIndices.count), id: \.self) { _ in
+                                    Color.black.aspectRatio(16.0/9.0, contentMode: .fit)
+                                }
                             }
                         }
                     }
                 }
             }
+            // Smart Focus: glide to whichever camera just lit up.
+            .onChange(of: activeCameraName) { _, name in
+                guard let name else { return }
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                    proxy.scrollTo(name, anchor: .center)
+                }
+            }
         }
+        // Detect the newest event and spotlight its camera if it's on this wall.
+        .onChange(of: appState.events.first?.id) { _, newID in
+            guard smartFocus, let newID, newID != lastEventID else { return }
+            lastEventID = newID
+            if let cam = appState.events.first?.camera,
+               displayedCameras.contains(where: { $0.name == cam }) {
+                spotlight(cam)
+            }
+        }
+        .task {
+            // Don't fire on the existing backlog — only genuinely new events after open.
+            lastEventID = appState.events.first?.id
+        }
+    }
+
+    private func spotlight(_ name: String) {
+        clearWork?.cancel()
+        Haptics.tap()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { activeCameraName = name }
+        let work = DispatchWorkItem {
+            withAnimation(.easeOut(duration: 0.3)) {
+                if activeCameraName == name { activeCameraName = nil }
+            }
+        }
+        clearWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
     }
 
     private var cameraRows: [[Int]] {
@@ -93,7 +146,8 @@ struct MultiCameraGridView: View {
     }
 
     private func cameraCell(_ camera: FrigateCamera) -> some View {
-        ZStack(alignment: .bottomLeading) {
+        let active = camera.name == activeCameraName
+        return ZStack(alignment: .bottomLeading) {
             Color.black
             // HLSLivePlayerView shows its own snapshot placeholder internally.
             HLSLivePlayerView(camera: camera)
@@ -110,6 +164,29 @@ struct MultiCameraGridView: View {
         }
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipped()
+        // Smart Focus spotlight — a glowing border + MOTION tag on the active camera.
+        .overlay {
+            if active {
+                Rectangle()
+                    .strokeBorder(GlassTheme.cyan, lineWidth: 3)
+                    .shadow(color: GlassTheme.cyan.opacity(0.9), radius: 8)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if active {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                    Text("MOTION")
+                }
+                .font(.system(size: 9, weight: .black))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(GlassTheme.cyan, in: Capsule())
+                .padding(6)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { selectedCamera = camera }
     }
