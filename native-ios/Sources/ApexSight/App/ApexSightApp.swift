@@ -71,6 +71,8 @@ struct ApexSightApp: App {
                     LiveActivityPushManager.start()
                     // Cold-launch Face ID prompt when the lock is enabled.
                     appLock.unlock()
+                    // Pull preferences from iCloud (no-op until iCloud KVS is enabled).
+                    SettingsSync.start()
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
@@ -94,6 +96,8 @@ struct ApexSightApp: App {
                         BackgroundRefreshManager.schedule()
                         // Re-lock so the app-switcher snapshot and next open are private.
                         appLock.lockIfEnabled()
+                        // Push preferences up to iCloud (no-op until iCloud KVS is enabled).
+                        SettingsSync.pushToCloud()
                     default:
                         break
                     }
