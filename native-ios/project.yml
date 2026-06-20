@@ -120,6 +120,30 @@ targets:
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.brandontoth.apexsight.native
 
+  ApexSightTV:
+    type: application
+    platform: tvOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/ApexSightTV
+      # Shared, platform-agnostic core (Foundation / AVFoundation / Security / UIKit subset).
+      - path: Sources/ApexSight/Networking/FrigateClient.swift
+      - path: Sources/ApexSight/Networking/ImageCache.swift
+      - path: Sources/ApexSight/Models/FrigateModels.swift
+      - path: Sources/ApexSight/Security/KeychainStore.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.tv
+        INFOPLIST_FILE: Sources/ApexSightTV/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
+    info:
+      path: Sources/ApexSightTV/Info.plist
+      properties:
+        CFBundleDisplayName: ApexSight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+
   ApexSightNotificationService:
     type: app-extension
     platform: iOS
