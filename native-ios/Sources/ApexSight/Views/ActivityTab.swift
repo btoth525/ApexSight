@@ -17,6 +17,7 @@ struct ActivityTab: View {
     @State private var loadingFiltered = false
     // A 24h window powering the summary chips, independent of the active filter.
     @State private var last24h: [FrigateEvent] = []
+    @State private var toast: String?
 
     private static let carriers: Set<String> = [
         "amazon", "ups", "usps", "fedex", "dhl", "an_post", "purolator",
@@ -99,6 +100,16 @@ struct ActivityTab: View {
                                 ForEach(section.events) { event in
                                     Button { path.append(event) } label: { EventRow(event: event) }
                                         .buttonStyle(.plain)
+                                        .contextMenu {
+                                            Button { path.append(event) } label: {
+                                                Label("Open", systemImage: "arrow.up.forward.app")
+                                            }
+                                            if event.hasClip == true {
+                                                Button { saveClip(event) } label: {
+                                                    Label("Save Clip to Photos", systemImage: "square.and.arrow.down")
+                                                }
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -120,6 +131,7 @@ struct ActivityTab: View {
             .navigationTitle("Activity")
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
+            .overlay(alignment: .bottom) { activityToast }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 12) {
@@ -272,5 +284,49 @@ struct ActivityTab: View {
             subLabel: selectedSubLabel == "all" ? nil : selectedSubLabel,
             limit: 300
         )) ?? []
+    }
+
+    // MARK: - Quick save (long-press → Save Clip)
+
+    private func saveClip(_ event: FrigateEvent) {
+        guard let client = appState.client else { return }
+        Haptics.tap()
+        showToast("Saving clip…")
+        Task { @MainActor in
+            do {
+                try await ClipDownloader.downloadToPhotos(
+                    url: client.eventClipURL(id: event.id),
+                    client: client,
+                    fileName: "Apex-\(event.camera)-\(event.id)"
+                )
+                Haptics.success()
+                showToast("Saved to Photos ✓")
+            } catch {
+                showToast(error.localizedDescription)
+            }
+        }
+    }
+
+    private func showToast(_ message: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { toast = message }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+            withAnimation(.easeOut(duration: 0.2)) { if toast == message { toast = nil } }
+        }
+    }
+
+    @ViewBuilder
+    private var activityToast: some View {
+        if let toast {
+            Text(toast)
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay { Capsule().stroke(.white.opacity(0.14), lineWidth: 1) }
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+                .padding(.bottom, 14)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 }
