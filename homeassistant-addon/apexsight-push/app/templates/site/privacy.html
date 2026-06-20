@@ -1,0 +1,56 @@
+{% extends "site/base.html" %}
+{% block title %}ApexSight — Privacy Policy{% endblock %}
+{% block nav %}<a class="btn ghost" href="/">Home</a>{% endblock %}
+{% block body %}
+  <div class="card" style="max-width:760px;margin-inline:auto">
+    <h1 style="font-size:34px">Privacy Policy</h1>
+    <p class="muted">Last updated: June 20, 2026</p>
+
+    <p>ApexSight is a companion app for your own <a href="https://frigate.video">Frigate</a> NVR.
+    We keep data collection to the minimum needed to run the service, and we never sell it or
+    use it for advertising or tracking.</p>
+
+    <h2 style="margin-top:24px">What we collect</h2>
+    <ul class="muted">
+      <li><b>Account:</b> your email address (or, with Sign in with Apple, the identifier Apple
+      provides — which may be a private relay email).</li>
+      <li><b>Your Frigate connection:</b> the server URL, username, and password you enter so the
+      app can connect. The <b>password is encrypted at rest</b>; the URL and username are stored
+      so your devices can auto-connect.</li>
+      <li><b>Device push tokens:</b> the Apple Push Notification token for each of your devices,
+      so alerts can be delivered.</li>
+      <li><b>Alert metadata:</b> camera name, object/label, and timestamp are processed to deliver
+      notifications and an optional daily recap. Camera images for a notification are fetched by
+      your device from your Frigate server.</li>
+    </ul>
+
+    <h2 style="margin-top:24px">How we use it</h2>
+    <p class="muted">Only to operate ApexSight: to sign you in, sync your Frigate connection across
+    your devices, and deliver the camera notifications you ask for. No analytics, no tracking, no ads.</p>
+
+    <h2 style="margin-top:24px">Storage &amp; security</h2>
+    <p class="muted">Data is stored on the ApexSight relay server. Your Frigate password is
+    encrypted at rest, and all traffic is over HTTPS. Notifications are delivered through Apple's
+    Push Notification service. Your account's data is isolated by a private token, so no other user
+    can receive your alerts.</p>
+
+    <h2 style="margin-top:24px">Sharing</h2>
+    <p class="muted">We do not sell or share your personal data. The only third party involved is
+    Apple (APNs), used solely to deliver notifications to your devices.</p>
+
+    <h2 style="margin-top:24px">Your control &amp; deletion</h2>
+    <p class="muted">You can delete your account at any time — in the app under
+    <b>Settings → Account → Delete Account</b>, or on this site from your dashboard. Deletion
+    permanently removes your email, encrypted Frigate connection, device tokens, and settings.</p>
+
+    <h2 style="margin-top:24px">Children</h2>
+    <p class="muted">ApexSight is not directed at children and does not knowingly collect personal
+    information from anyone under 13.</p>
+
+    <h2 style="margin-top:24px">Changes</h2>
+    <p class="muted">If this policy changes, we'll post the updated version here with a new date.</p>
+
+    <h2 style="margin-top:24px">Contact</h2>
+    <p class="muted">Questions about privacy: <a href="mailto:brandontoth525@gmail.com">brandontoth525@gmail.com</a></p>
+  </div>
+{% endblock %}

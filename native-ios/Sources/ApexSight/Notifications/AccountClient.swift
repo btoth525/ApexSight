@@ -57,6 +57,15 @@ enum AccountClient {
         }
     }
 
+    /// Permanently deletes the account and everything routed to it (devices, settings,
+    /// stored Frigate connection). Required for in-app account deletion.
+    static func deleteAccount(relayURL: String, token: String) async throws {
+        let (data, code) = try await request("DELETE", relayURL, "/v1/auth/me", token: token, body: nil)
+        guard (200..<300).contains(code) else {
+            throw AuthError(message: detail(from: data) ?? "Couldn't delete your account (\(code)).")
+        }
+    }
+
     private static func post(_ relayURL: String, _ path: String, _ body: [String: String]) async throws -> Session {
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }

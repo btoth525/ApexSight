@@ -6,6 +6,7 @@ struct SettingsTab: View {
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
+    @State private var showDeleteAccount = false
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
 
@@ -94,6 +95,15 @@ struct SettingsTab: View {
                                         .font(.system(size: 13, weight: .heavy))
                                 }
                                 .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
+
+                                Button {
+                                    showDeleteAccount = true
+                                } label: {
+                                    Text("Delete Account")
+                                        .font(.system(size: 12, weight: .heavy))
+                                        .foregroundStyle(GlassTheme.tertiary)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
 
@@ -232,6 +242,14 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
+            .confirmationDialog("Delete your account?", isPresented: $showDeleteAccount, titleVisibility: .visible) {
+                Button("Delete Account", role: .destructive) {
+                    Task { await appState.deleteAccount() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This permanently deletes your account, devices, and saved Frigate server. This can't be undone.")
+            }
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }
                 else if value == "notifications" { NotificationSettingsView(prefsStore: appState.notificationPrefs) }

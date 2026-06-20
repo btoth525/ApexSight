@@ -32,6 +32,11 @@ def landing(request: Request):
     return _templates.TemplateResponse("site/landing.html", {"request": request})
 
 
+@router.get("/privacy", response_class=HTMLResponse)
+def privacy(request: Request):
+    return _templates.TemplateResponse("site/privacy.html", {"request": request})
+
+
 @router.get("/signup", response_class=HTMLResponse)
 def signup_page(request: Request):
     return _templates.TemplateResponse("site/signup.html", {"request": request, "error": None})

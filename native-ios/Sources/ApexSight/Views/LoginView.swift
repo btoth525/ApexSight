@@ -53,7 +53,7 @@ struct LoginView: View {
                         .offset(y: appeared ? 0 : 12)
                         .animation(.easeOut(duration: 0.4).delay(0.25), value: appeared)
 
-                    Text("Native Frigate control")
+                    Text("Add your Frigate server")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(GlassTheme.secondary)
                         .opacity(appeared ? 1 : 0)
@@ -109,7 +109,7 @@ struct LoginView: View {
 
                 Spacer()
 
-                Text("Connects directly to your Frigate instance.\nNo data leaves your network.")
+                Text("Connects directly to your Frigate. Your details are encrypted\nand synced to your account so every device just works.")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(GlassTheme.tertiary)
                     .multilineTextAlignment(.center)

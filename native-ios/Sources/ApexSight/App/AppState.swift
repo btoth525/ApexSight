@@ -462,6 +462,19 @@ final class AppState: ObservableObject {
         signOut()
     }
 
+    /// Permanently delete the account on the relay, then sign out locally. Required for
+    /// App Store in-app account deletion.
+    @discardableResult
+    func deleteAccount() async -> Bool {
+        var ok = true
+        if let token = DeviceTokenStore.accountToken {
+            do { try await AccountClient.deleteAccount(relayURL: DeviceTokenStore.relayURL, token: token) }
+            catch { ok = false; errorMessage = error.localizedDescription }
+        }
+        signOutAccount()
+        return ok
+    }
+
     /// After account sign-in, pull the saved Frigate server and connect with no prompts.
     func bootstrapFromAccount() async {
         guard session == nil, DeviceTokenStore.isSignedInToAccount,
