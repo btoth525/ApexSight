@@ -9,6 +9,8 @@ struct LiveStreamView: View {
     @State private var showPTZ = false
     @State private var capability: CameraCapability?
     @State private var reloadToken = UUID()
+    @State private var showChrome = true
+    @State private var hideWork: DispatchWorkItem?
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
@@ -28,14 +30,46 @@ struct LiveStreamView: View {
                 Spacer()
                 bottomBar
             }
+            .opacity(showChrome ? 1 : 0)
+            .allowsHitTesting(showChrome)
+            .animation(.easeInOut(duration: 0.25), value: showChrome)
         }
         .navigationBarHidden(true)
+        .statusBarHidden(!showChrome)
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
+            scheduleHideChrome()
         }
         .onChange(of: streamMode) { _, _ in
             isLive = false
             reloadToken = UUID()
+            revealChrome()
+        }
+        .onDisappear { hideWork?.cancel() }
+    }
+
+    // MARK: - Immersive chrome (auto-hide, tap to toggle)
+
+    private func scheduleHideChrome() {
+        hideWork?.cancel()
+        let work = DispatchWorkItem {
+            withAnimation(.easeInOut(duration: 0.25)) { showChrome = false }
+        }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
+    }
+
+    private func revealChrome() {
+        withAnimation(.easeInOut(duration: 0.25)) { showChrome = true }
+        scheduleHideChrome()
+    }
+
+    private func toggleChrome() {
+        if showChrome {
+            hideWork?.cancel()
+            withAnimation(.easeInOut(duration: 0.25)) { showChrome = false }
+        } else {
+            revealChrome()
         }
     }
 
@@ -55,13 +89,14 @@ struct LiveStreamView: View {
         HLSLivePlayerView(
             camera: camera,
             showControls: true,
+            onSingleTap: { toggleChrome() },
             onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
         )
         .id(reloadToken)
     }
 
     private var liveMJPEG: some View {
-        ZoomableScrollView {
+        ZoomableScrollView(onSingleTap: { toggleChrome() }) {
             ZStack {
                 if let client = appState.client {
                     RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
@@ -83,7 +118,7 @@ struct LiveStreamView: View {
     }
 
     private var snapshotView: some View {
-        ZoomableScrollView {
+        ZoomableScrollView(onSingleTap: { toggleChrome() }) {
             if let client = appState.client {
                 RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
                     .id(reloadToken)

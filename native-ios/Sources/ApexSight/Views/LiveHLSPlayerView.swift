@@ -239,6 +239,8 @@ struct HLSLivePlayerView: View {
     /// Pass a controller to enable PiP for this player from outside (e.g. a camera-wall
     /// cell's long-press menu). When nil, the single-camera view uses its own.
     var pipController: LivePiPController? = nil
+    /// Single tap on the video (full-screen view) — used to toggle immersive chrome.
+    var onSingleTap: (() -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
@@ -253,7 +255,7 @@ struct HLSLivePlayerView: View {
     @ViewBuilder
     private func playerLayer(_ player: AVPlayer) -> some View {
         if showControls {
-            ZoomableScrollView {
+            ZoomableScrollView(onSingleTap: onSingleTap) {
                 ZoomablePlayerView(player: player, pip: pip, autoPiP: true)
             }
             .opacity(isPlaying ? 1 : 0)

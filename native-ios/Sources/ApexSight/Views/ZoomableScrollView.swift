@@ -4,8 +4,12 @@ import UIKit
 /// A scroll view wrapper that enables pinch-to-zoom and double-tap-to-zoom on any SwiftUI content.
 struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     let content: Content
+    /// Called on a genuine single tap (waits for double-tap-to-zoom to fail first), so a
+    /// view can toggle immersive chrome without fighting the zoom gestures.
+    var onSingleTap: (() -> Void)? = nil
 
-    init(@ViewBuilder content: () -> Content) {
+    init(onSingleTap: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.onSingleTap = onSingleTap
         self.content = content()
     }
 
@@ -34,21 +38,32 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
 
+        if onSingleTap != nil {
+            let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap))
+            singleTap.numberOfTapsRequired = 1
+            singleTap.require(toFail: doubleTap)   // never steals a double-tap-to-zoom
+            scrollView.addGestureRecognizer(singleTap)
+        }
+
         return scrollView
     }
 
     func updateUIView(_ scrollView: UIScrollView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(content: content)
+        Coordinator(content: content, onSingleTap: onSingleTap)
     }
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
         let hostVC: UIHostingController<Content>
+        let onSingleTap: (() -> Void)?
 
-        init(content: Content) {
+        init(content: Content, onSingleTap: (() -> Void)?) {
             hostVC = UIHostingController(rootView: content)
+            self.onSingleTap = onSingleTap
         }
+
+        @objc func handleSingleTap() { onSingleTap?() }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { hostVC.view }
 
