@@ -137,6 +137,7 @@ targets:
         # same ApexSight record in App Store Connect as its tvOS version.
         PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native
         INFOPLIST_FILE: Sources/ApexSightTV/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     info:
