@@ -469,9 +469,10 @@ struct ZoomablePlayerView: UIViewRepresentable {
         // Called from makeUIView (main thread). State is pushed to the @MainActor
         // controller via Task to keep concurrency clean across Swift versions.
         func attach(to layer: AVPlayerLayer) {
+            // AVPictureInPictureController(playerLayer:) is failable on some SDKs.
             guard pip != nil, controller == nil,
-                  AVPictureInPictureController.isPictureInPictureSupported() else { return }
-            let controller = AVPictureInPictureController(playerLayer: layer)
+                  AVPictureInPictureController.isPictureInPictureSupported(),
+                  let controller = AVPictureInPictureController(playerLayer: layer) else { return }
             controller.canStartPictureInPictureAutomaticallyFromInline = autoPiP
             controller.delegate = self
             self.controller = controller
