@@ -133,7 +133,9 @@ targets:
       - path: Sources/ApexSight/Security/KeychainStore.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.tv
+        # Shared bundle ID with the iOS app so the Apple TV build lands under the
+        # same ApexSight record in App Store Connect as its tvOS version.
+        PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native
         INFOPLIST_FILE: Sources/ApexSightTV/Info.plist
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
