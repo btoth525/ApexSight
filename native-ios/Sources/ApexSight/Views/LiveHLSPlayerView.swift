@@ -37,6 +37,7 @@ final class HLSLiveModel: ObservableObject {
 
     private var statusObs: NSKeyValueObservation?
     private var timeControlObs: NSKeyValueObservation?
+    private var sizeObs: NSKeyValueObservation?
     private var stallObs: NSObjectProtocol?
     private var failObs: NSObjectProtocol?
     private var reconnectTask: Task<Void, Never>?
@@ -172,20 +173,21 @@ final class HLSLiveModel: ObservableObject {
                 self.handleStatus(item)
             }
         }
-        timeControlObs = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+        timeControlObs = newPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in
                 guard let self, !self.isStopped else { return }
-                if player.timeControlStatus == .playing {
-                    self.state = .playing
-                    self.retryCount = 0
-                    self.totalAttempts = 0
-                    self.didTryReauth = false
-                    // It only started once we were patient → remember it as slow-starting
-                    // so the next open begins patient instead of stalling first.
-                    if self.connectedPatient, !self.cameraName.isEmpty {
-                        Self.slowStartCameras.insert(self.cameraName)
-                    }
-                }
+                self.evaluatePlaying()
+            }
+        }
+        // Treat the stream as "playing" only once it actually has video. Some broken
+        // sources (e.g. a doorbell whose go2rtc HLS yields no decodable video) report
+        // timeControlStatus == .playing while rendering black; gating on a non-zero
+        // presentationSize means those never count as playing, so the fallback timer
+        // fires and we switch to MJPEG instead of sitting on a black frame.
+        sizeObs = item.observe(\.presentationSize, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                self.evaluatePlaying()
             }
         }
         stallObs = NotificationCenter.default.addObserver(
@@ -202,6 +204,22 @@ final class HLSLiveModel: ObservableObject {
         }
 
         newPlayer.play()
+    }
+
+    /// Mark the stream live only when it's both playing AND actually has video — so a
+    /// no-video / black "playing" stream doesn't masquerade as success and block fallback.
+    private func evaluatePlaying() {
+        guard let player, player.timeControlStatus == .playing,
+              let item = player.currentItem, item.presentationSize != .zero else { return }
+        state = .playing
+        retryCount = 0
+        totalAttempts = 0
+        didTryReauth = false
+        // It only started once we were patient → remember it as slow-starting
+        // so the next open begins patient instead of stalling first.
+        if connectedPatient, !cameraName.isEmpty {
+            Self.slowStartCameras.insert(cameraName)
+        }
     }
 
     private func handleStatus(_ item: AVPlayerItem) {
@@ -263,6 +281,7 @@ final class HLSLiveModel: ObservableObject {
     private func teardownObservers() {
         statusObs?.invalidate(); statusObs = nil
         timeControlObs?.invalidate(); timeControlObs = nil
+        sizeObs?.invalidate(); sizeObs = nil
         if let stallObs { NotificationCenter.default.removeObserver(stallObs) }; stallObs = nil
         if let failObs { NotificationCenter.default.removeObserver(failObs) }; failObs = nil
     }
