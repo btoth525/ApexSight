@@ -41,16 +41,31 @@ final class HLSLiveModel: ObservableObject {
     private var failObs: NSObjectProtocol?
     private var reconnectTask: Task<Void, Never>?
     private var retryCount = 0
+    /// Attempts across BOTH streams since the last successful play. Drives the eventual
+    /// give-up, and (once > 0) switches the player into patient buffering.
+    private var totalAttempts = 0
     private var didTryReauth = false
     private var isStopped = false
+    /// Whether the current connect used patient buffering — recorded so that a camera
+    /// which only started once we were patient is remembered as slow-starting.
+    private var connectedPatient = false
+    /// Identifies the camera for the slow-start memory below.
+    private var cameraName = ""
     private var lifecycleObservers: [NSObjectProtocol] = []
 
+    /// Cameras observed this session to need patient buffering (e.g. a doorbell with a
+    /// long ~4s keyframe interval). Lets a reopen start patient instead of stalling once.
+    @MainActor private static var slowStartCameras: Set<String> = []
+
+
     func configure(
+        cameraName: String = "",
         makeURL: @escaping () -> URL?,
         makeSubURL: (() -> URL?)? = nil,
         makeItem: @escaping (URL) -> AVPlayerItem?,
         reauth: @escaping () async -> Bool
     ) {
+        self.cameraName = cameraName
         self.makeURL = makeURL
         self.makeSubURL = makeSubURL
         self.makeItem = makeItem
@@ -60,6 +75,7 @@ final class HLSLiveModel: ObservableObject {
     func start() {
         isStopped = false
         retryCount = 0
+        totalAttempts = 0
         didTryReauth = false
         usingFallback = false
         observeLifecycle()
@@ -89,6 +105,7 @@ final class HLSLiveModel: ObservableObject {
                 // The live edge moved on while suspended — reconnect fresh rather than
                 // resuming a stale buffer.
                 self.retryCount = 0
+                self.totalAttempts = 0
                 self.didTryReauth = false
                 self.connect()
             }
@@ -121,6 +138,7 @@ final class HLSLiveModel: ObservableObject {
 
     func reload() {
         retryCount = 0
+        totalAttempts = 0
         didTryReauth = false
         usingFallback = false
         connect()
@@ -132,10 +150,17 @@ final class HLSLiveModel: ObservableObject {
         teardownObservers()
         player?.pause()
 
-        item.preferredForwardBufferDuration = 2
+        // Patient buffering for cameras with a long keyframe interval (e.g. a doorbell
+        // with a ~4s GOP). A fresh, never-stalled short-GOP stream stays low-latency;
+        // once anything has stalled this session — or this camera is already known to be
+        // slow — we let AVPlayer wait for a decodable keyframe instead of failing fast
+        // into a reconnect (which is what was turning the doorbell black).
+        let patient = totalAttempts > 0 || Self.slowStartCameras.contains(cameraName)
+        connectedPatient = patient
+        item.preferredForwardBufferDuration = patient ? 6 : 2
 
         let newPlayer = AVPlayer(playerItem: item)
-        newPlayer.automaticallyWaitsToMinimizeStalling = false
+        newPlayer.automaticallyWaitsToMinimizeStalling = patient
         newPlayer.actionAtItemEnd = .none
         newPlayer.isMuted = isMuted
         player = newPlayer
@@ -153,7 +178,13 @@ final class HLSLiveModel: ObservableObject {
                 if player.timeControlStatus == .playing {
                     self.state = .playing
                     self.retryCount = 0
+                    self.totalAttempts = 0
                     self.didTryReauth = false
+                    // It only started once we were patient → remember it as slow-starting
+                    // so the next open begins patient instead of stalling first.
+                    if self.connectedPatient, !self.cameraName.isEmpty {
+                        Self.slowStartCameras.insert(self.cameraName)
+                    }
                 }
             }
         }
@@ -199,10 +230,18 @@ final class HLSLiveModel: ObservableObject {
     private func scheduleReconnect(reason: String) {
         guard !isStopped, reconnectTask == nil else { return }
         retryCount += 1
+        totalAttempts += 1
 
-        // After 3 main-stream failures silently downgrade to sub-stream.
-        if !usingFallback, retryCount >= 3, makeSubURL != nil {
-            usingFallback = true
+        // Give up only after sustained failure across BOTH streams, not after a single
+        // stream stalls — so a camera that can recover keeps trying.
+        guard totalAttempts <= 8 else { state = .failed(reason); return }
+
+        // After 3 failures on the current stream, switch main <-> sub. This is a TOGGLE,
+        // not a one-way downgrade: a Main-only camera whose `<camera>_sub` 404s flips
+        // back to main and recovers, instead of dead-ending on a stream that can't exist
+        // (the bug that left the doorbell permanently black).
+        if retryCount >= 3, makeSubURL != nil {
+            usingFallback.toggle()
             retryCount = 0
             didTryReauth = false
             state = .connecting
@@ -213,7 +252,6 @@ final class HLSLiveModel: ObservableObject {
             return
         }
 
-        guard retryCount <= 6 else { state = .failed(reason); return }
         state = .connecting
         let delay = min(pow(2.0, Double(retryCount - 1)), 16)
         reconnectTask = Task { [weak self] in
@@ -324,6 +362,7 @@ struct HLSLivePlayerView: View {
         }
         .onAppear {
             model.configure(
+                cameraName: camera.name,
                 makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
                 makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
                 makeItem: { url in appState.client?.playerItem(for: url) },
