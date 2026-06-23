@@ -285,6 +285,15 @@ struct HLSLivePlayerView: View {
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
     @State private var fillMode = false
+    /// When HLS can't establish for this camera (e.g. a doorbell whose go2rtc HLS path is
+    /// broken even though the camera is healthy), fall back to Frigate's MJPEG stream —
+    /// which Frigate serves itself, not go2rtc — so the view is never stuck on black.
+    @State private var mjpegFallback = false
+    @State private var fallbackTask: Task<Void, Never>?
+
+    /// Cameras whose HLS proved unavailable this session — reopened straight on MJPEG so
+    /// they don't sit black waiting for HLS to fail every single time.
+    @MainActor private static var hlsUnavailable: Set<String> = []
 
     private var isPlaying: Bool { model.state == .playing }
 
@@ -314,6 +323,40 @@ struct HLSLivePlayerView: View {
         }
     }
 
+    /// MJPEG fallback view — shown when HLS is unavailable for this camera.
+    @ViewBuilder
+    private func mjpegPlayer(_ client: FrigateClient) -> some View {
+        let stream = MJPEGStreamView(
+            url: client.mjpegURL(camera: camera.name),
+            client: client,
+            contentMode: fillMode ? .scaleAspectFill : .scaleAspectFit,
+            onFirstFrame: { onPlaying?(true) }
+        )
+        if showControls {
+            ZoomableScrollView(onSingleTap: onSingleTap) { stream }
+        } else {
+            stream
+        }
+    }
+
+    /// Give HLS a window to start; if it never does (or it gives up), switch to MJPEG.
+    private func startFallbackTimer() {
+        fallbackTask?.cancel()
+        fallbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled, !isPlaying else { return }
+            fallToMJPEG()
+        }
+    }
+
+    private func fallToMJPEG() {
+        guard !mjpegFallback else { return }
+        fallbackTask?.cancel(); fallbackTask = nil
+        Self.hlsUnavailable.insert(camera.name)
+        model.stop()
+        withAnimation(.easeIn(duration: 0.25)) { mjpegFallback = true }
+    }
+
     var body: some View {
         ZStack {
             Color.black
@@ -330,12 +373,15 @@ struct HLSLivePlayerView: View {
 
             // AVPlayer layer — invisible until actually playing, then fades in cleanly.
             // Pinch / pan / double-tap zoom handled via SwiftUI gestures when showControls.
-            if let player = model.player {
+            // Once HLS is deemed unavailable, the MJPEG fallback takes over instead.
+            if mjpegFallback, let client = appState.client {
+                mjpegPlayer(client)
+            } else if let player = model.player {
                 playerLayer(player)
             }
 
             // Subtle connecting pill at the bottom — non-intrusive, out of the way.
-            if model.state == .connecting {
+            if model.state == .connecting, !mjpegFallback {
                 VStack {
                     Spacer()
                     HStack(spacing: 6) {
@@ -352,7 +398,7 @@ struct HLSLivePlayerView: View {
                 .allowsHitTesting(false)
             }
 
-            if case .failed(let message) = model.state {
+            if case .failed(let message) = model.state, !mjpegFallback {
                 failureOverlay(message)
             }
 
@@ -361,6 +407,11 @@ struct HLSLivePlayerView: View {
             }
         }
         .onAppear {
+            // Skip the HLS wait for cameras already known to need MJPEG this session.
+            if Self.hlsUnavailable.contains(camera.name) {
+                mjpegFallback = true
+                return
+            }
             model.configure(
                 cameraName: camera.name,
                 makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
@@ -369,10 +420,19 @@ struct HLSLivePlayerView: View {
                 reauth: { await appState.reauthenticate() }
             )
             model.start()
+            startFallbackTimer()
         }
-        .onDisappear { model.stop() }
+        .onDisappear {
+            model.stop()
+            fallbackTask?.cancel(); fallbackTask = nil
+        }
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
+            switch newState {
+            case .playing: fallbackTask?.cancel(); fallbackTask = nil   // HLS works — no fallback
+            case .failed: fallToMJPEG()                                 // HLS gave up — go MJPEG
+            default: break
+            }
         }
     }
 
