@@ -38,9 +38,14 @@ final class HLSLiveModel: ObservableObject {
     private var statusObs: NSKeyValueObservation?
     private var timeControlObs: NSKeyValueObservation?
     private var sizeObs: NSKeyValueObservation?
+    private var timeObserver: Any?
     private var stallObs: NSObjectProtocol?
     private var failObs: NSObjectProtocol?
     private var reconnectTask: Task<Void, Never>?
+    /// Playback-progress watchdog: a stream only counts as live once its time actually
+    /// advances (real frames presented). A frozen/black "playing" stream never does.
+    private var lastProgressTime: Double?
+    private var advancingConfirmed = false
     private var retryCount = 0
     /// Attempts across BOTH streams since the last successful play. Drives the eventual
     /// give-up, and (once > 0) switches the player into patient buffering.
@@ -150,6 +155,8 @@ final class HLSLiveModel: ObservableObject {
         guard !isStopped, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
         teardownObservers()
         player?.pause()
+        lastProgressTime = nil
+        advancingConfirmed = false
 
         // Patient buffering for cameras with a long keyframe interval (e.g. a doorbell
         // with a ~4s GOP). A fresh, never-stalled short-GOP stream stays low-latency;
@@ -190,6 +197,19 @@ final class HLSLiveModel: ObservableObject {
                 self.evaluatePlaying()
             }
         }
+        // Watchdog: confirm playback time is actually advancing (frames presented). A
+        // stream that reports "playing" but is frozen/black never advances, so it never
+        // counts as live and the fallback to MJPEG fires.
+        let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+        timeObserver = newPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                let secs = time.seconds
+                if let last = self.lastProgressTime, secs > last + 0.05 { self.advancingConfirmed = true }
+                self.lastProgressTime = secs
+                self.evaluatePlaying()
+            }
+        }
         stallObs = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main
         ) { [weak self] _ in
@@ -210,7 +230,8 @@ final class HLSLiveModel: ObservableObject {
     /// no-video / black "playing" stream doesn't masquerade as success and block fallback.
     private func evaluatePlaying() {
         guard let player, player.timeControlStatus == .playing,
-              let item = player.currentItem, item.presentationSize != .zero else { return }
+              let item = player.currentItem, item.presentationSize != .zero,
+              advancingConfirmed else { return }
         state = .playing
         retryCount = 0
         totalAttempts = 0
@@ -282,6 +303,7 @@ final class HLSLiveModel: ObservableObject {
         statusObs?.invalidate(); statusObs = nil
         timeControlObs?.invalidate(); timeControlObs = nil
         sizeObs?.invalidate(); sizeObs = nil
+        if let timeObserver { player?.removeTimeObserver(timeObserver) }; timeObserver = nil
         if let stallObs { NotificationCenter.default.removeObserver(stallObs) }; stallObs = nil
         if let failObs { NotificationCenter.default.removeObserver(failObs) }; failObs = nil
     }
