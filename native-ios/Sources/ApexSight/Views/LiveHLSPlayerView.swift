@@ -339,11 +339,11 @@ struct HLSLivePlayerView: View {
         }
     }
 
-    /// Give HLS a window to start; if it never does (or it gives up), switch to MJPEG.
+    /// Give HLS a short window to start; if it never does (or it gives up), switch to MJPEG.
     private func startFallbackTimer() {
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
             guard !Task.isCancelled, !isPlaying else { return }
             fallToMJPEG()
         }
