@@ -146,6 +146,8 @@ targets:
         CFBundleDisplayName: ApexSight
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+    scheme:
+      testTargets: []
 
   ApexSightNotificationService:
     type: app-extension
