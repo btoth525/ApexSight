@@ -88,7 +88,11 @@ private struct TVPatrolView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let cam = shown, let client = state.client {
-                TVPlayerView(url: client.liveHLSURL(camera: cam.name)) { client.playerItem(for: $0) }
+                TVLivePlayerView(
+                    makeURL: { client.liveHLSURL(camera: cam.name, sub: false) },
+                    makeSubURL: { client.liveHLSURL(camera: cam.name, sub: true) },
+                    makeItem: { client.playerItem(for: $0) }
+                )
                     .id(cam.name)
                     .transition(.opacity)
                     .ignoresSafeArea()
@@ -157,7 +161,11 @@ private struct TVCameraTile: View {
         ZStack(alignment: .bottomLeading) {
             Color.black
             if let client = state.client {
-                TVPlayerView(url: client.liveHLSURL(camera: camera.name)) { client.playerItem(for: $0) }
+                TVLivePlayerView(
+                    makeURL: { client.liveHLSURL(camera: camera.name, sub: false) },
+                    makeSubURL: { client.liveHLSURL(camera: camera.name, sub: true) },
+                    makeItem: { client.playerItem(for: $0) }
+                )
             }
             LinearGradient(colors: [.clear, .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
             Text(displayName)
@@ -193,31 +201,140 @@ private struct TVCameraTile: View {
     }
 }
 
-/// AVPlayerLayer-backed live HLS view for tvOS.
-private struct TVPlayerView: UIViewRepresentable {
-    let url: URL
+/// AVPlayerLayer-backed live HLS view for tvOS, with the same stream resilience as the
+/// iOS player: patient buffering so a long-keyframe-interval camera (e.g. a doorbell with
+/// a ~4s GOP) waits for a keyframe instead of stalling to black, plus reconnect-with-backoff
+/// that TOGGLES main<->sub — never dead-ending on a `<camera>_sub` that 404s. A wall is a
+/// persistent display, so it self-heals forever rather than giving up.
+private struct TVLivePlayerView: UIViewRepresentable {
+    let makeURL: () -> URL?
+    var makeSubURL: (() -> URL?)? = nil
     let makeItem: (URL) -> AVPlayerItem
 
-    func makeUIView(context: Context) -> TVPlayerLayerView {
-        let view = TVPlayerLayerView()
-        let player = AVPlayer(playerItem: makeItem(url))
-        player.isMuted = true
-        player.automaticallyWaitsToMinimizeStalling = false
-        view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
-        player.play()
+    func makeUIView(context: Context) -> TVLivePlayerLayerView {
+        let view = TVLivePlayerLayerView()
+        view.configure(makeURL: makeURL, makeSubURL: makeSubURL, makeItem: makeItem)
+        view.start()
         return view
     }
 
-    func updateUIView(_ view: TVPlayerLayerView, context: Context) {}
+    func updateUIView(_ view: TVLivePlayerLayerView, context: Context) {}
 
-    static func dismantleUIView(_ view: TVPlayerLayerView, coordinator: ()) {
-        view.playerLayer.player?.pause()
-        view.playerLayer.player = nil
+    static func dismantleUIView(_ view: TVLivePlayerLayerView, coordinator: ()) {
+        view.stop()
     }
 }
 
-private final class TVPlayerLayerView: UIView {
+final class TVLivePlayerLayerView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
-    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+
+    private var makeURL: (() -> URL?)?
+    private var makeSubURL: (() -> URL?)?
+    private var makeItem: ((URL) -> AVPlayerItem)?
+
+    private var statusObs: NSKeyValueObservation?
+    private var stallObs: NSObjectProtocol?
+    private var failObs: NSObjectProtocol?
+    private var reconnectTask: Task<Void, Never>?
+
+    private var retryCount = 0
+    private var usingFallback = false
+    private var isStopped = true
+
+    func configure(makeURL: @escaping () -> URL?,
+                   makeSubURL: (() -> URL?)?,
+                   makeItem: @escaping (URL) -> AVPlayerItem) {
+        self.makeURL = makeURL
+        self.makeSubURL = makeSubURL
+        self.makeItem = makeItem
+        playerLayer.videoGravity = .resizeAspectFill
+    }
+
+    func start() {
+        isStopped = false
+        retryCount = 0
+        usingFallback = false
+        reconnectTask?.cancel(); reconnectTask = nil
+        connect()
+    }
+
+    func stop() {
+        isStopped = true
+        reconnectTask?.cancel(); reconnectTask = nil
+        teardownObservers()
+        playerLayer.player?.pause()
+        playerLayer.player = nil
+    }
+
+    private func connect() {
+        guard !isStopped, let makeItem else { return }
+        let source = (usingFallback ? makeSubURL : makeURL) ?? makeURL
+        guard let url = source?() else { return }
+        teardownObservers()
+        playerLayer.player?.pause()
+
+        let item = makeItem(url)
+        item.preferredForwardBufferDuration = 6   // patient: wall reliability > latency
+
+        let player = AVPlayer(playerItem: item)
+        player.isMuted = true
+        player.automaticallyWaitsToMinimizeStalling = true
+        playerLayer.player = player
+
+        statusObs = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.playerLayer.player?.play()
+                    self.retryCount = 0
+                case .failed:
+                    self.scheduleReconnect()
+                default:
+                    break
+                }
+            }
+        }
+        stallObs = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.scheduleReconnect() }
+        }
+        failObs = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.scheduleReconnect() }
+        }
+
+        player.play()
+    }
+
+    private func scheduleReconnect() {
+        guard !isStopped, reconnectTask == nil else { return }
+        retryCount += 1
+
+        // Every 3 failures on the current stream, flip main<->sub. A toggle (not a one-way
+        // downgrade) means a Main-only camera whose `<camera>_sub` 404s returns to main and
+        // recovers, while an H.265-main camera settles on its sub.
+        if retryCount >= 3, makeSubURL != nil {
+            usingFallback.toggle()
+            retryCount = 0
+        }
+
+        let delay = min(pow(2.0, Double(max(0, retryCount - 1))), 16)
+        // Created in a @MainActor method, so the body inherits main-actor isolation.
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.reconnectTask = nil
+            self?.connect()
+        }
+    }
+
+    private func teardownObservers() {
+        statusObs?.invalidate(); statusObs = nil
+        if let stallObs { NotificationCenter.default.removeObserver(stallObs) }; stallObs = nil
+        if let failObs { NotificationCenter.default.removeObserver(failObs) }; failObs = nil
+    }
 }
