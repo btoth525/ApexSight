@@ -86,7 +86,8 @@ struct LiveStreamView: View {
     }
 
     private var liveHLS: some View {
-        HLSLivePlayerView(
+        // WebRTC-first (instant, Metal-rendered) with automatic HLS/MJPEG fallback inside.
+        LiveVideoPlayerView(
             camera: camera,
             showControls: true,
             onSingleTap: { toggleChrome() },
