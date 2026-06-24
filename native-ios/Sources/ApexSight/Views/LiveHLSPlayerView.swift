@@ -226,12 +226,13 @@ final class HLSLiveModel: ObservableObject {
         newPlayer.play()
     }
 
-    /// Mark the stream live only when it's both playing AND actually has video — so a
-    /// no-video / black "playing" stream doesn't masquerade as success and block fallback.
+    /// Mark the stream live the moment it's playing AND has real video frames
+    /// (non-zero presentation size). We intentionally do NOT wait for the
+    /// advancing-time watchdog here — that only delays showing the live picture; a
+    /// genuinely stuck/black stream is still caught by the MJPEG fallback timer.
     private func evaluatePlaying() {
         guard let player, player.timeControlStatus == .playing,
-              let item = player.currentItem, item.presentationSize != .zero,
-              advancingConfirmed else { return }
+              let item = player.currentItem, item.presentationSize != .zero else { return }
         state = .playing
         retryCount = 0
         totalAttempts = 0
@@ -345,6 +346,14 @@ struct HLSLivePlayerView: View {
 
     private var isPlaying: Bool { model.state == .playing }
 
+    /// Whether we already have a cached frame to show. When we do, we connect live
+    /// SILENTLY behind it — no "Connecting…" pill — so the camera feels instant
+    /// instead of looking like it's loading over an image that's right there.
+    private var hasSnapshot: Bool {
+        guard let url = appState.client?.latestFrameURL(camera: camera.name) else { return false }
+        return ImageCache.shared.image(for: url) != nil
+    }
+
     /// The AVPlayer layer. In the fullscreen player (`showControls`) it's wrapped in a
     /// `ZoomableScrollView` for smooth native pinch / double-tap / pan zoom (the same engine
     /// the snapshots and clips use). In grid/card cells it's a plain, non-interactive layer.
@@ -415,7 +424,7 @@ struct HLSLivePlayerView: View {
             if let url = appState.client?.latestFrameURL(camera: camera.name) {
                 RemoteImage(url: url, contentMode: .fit)
                     .opacity(isPlaying ? 0 : 1)
-                    .animation(.easeOut(duration: 0.4), value: isPlaying)
+                    .animation(.easeOut(duration: 0.3), value: isPlaying)
                     .allowsHitTesting(false)
             }
 
@@ -428,8 +437,9 @@ struct HLSLivePlayerView: View {
                 playerLayer(player)
             }
 
-            // Subtle connecting pill at the bottom — non-intrusive, out of the way.
-            if model.state == .connecting, !mjpegFallback {
+            // Subtle connecting pill — only when there's no frame to show yet. If a
+            // snapshot is already on screen, we connect silently for an instant feel.
+            if model.state == .connecting, !mjpegFallback, !hasSnapshot {
                 VStack {
                     Spacer()
                     HStack(spacing: 6) {
