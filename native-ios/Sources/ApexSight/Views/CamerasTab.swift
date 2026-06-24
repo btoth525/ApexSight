@@ -102,7 +102,11 @@ struct CamerasTab: View {
             .padding(16)
         }
         .refreshable { await appState.refresh() }
-        .task { if appState.cameras.isEmpty { await appState.refresh() } }
+        .task {
+            if appState.cameras.isEmpty { await appState.refresh() }
+            // Warm snapshots so every tile shows a frame instantly (never black).
+            else { appState.prewarmSnapshots() }
+        }
     }
 
     private var cameraRows: [[FrigateCamera]] {

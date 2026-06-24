@@ -122,6 +122,8 @@ struct MultiCameraGridView: View {
         .task {
             // Don't fire on the existing backlog — only genuinely new events after open.
             lastEventID = appState.events.first?.id
+            // Warm snapshots for ALL tiles up front so scrolling never reveals a black cell.
+            appState.prewarmSnapshots()
         }
     }
 

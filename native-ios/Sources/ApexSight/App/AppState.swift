@@ -512,6 +512,7 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
+            prewarmSnapshots()
             // Mirror camera names to the app group so Siri/Watch/CarPlay can list them.
             SharedSnapshotStore.saveCameraNames(loadedCameras.map(\.name))
             // Index cameras into Spotlight so typing "front door" opens that camera.
@@ -547,6 +548,23 @@ final class AppState: ObservableObject {
             }
         }
         isLoading = false
+    }
+
+    /// Warm the snapshot cache for every camera so live grids paint a real frame
+    /// INSTANTLY (and never flash black) — even tiles you haven't scrolled to yet, and
+    /// even right after a stream is torn down. Each fetch is small + concurrent, so the
+    /// whole wall has something to show within a beat of opening.
+    func prewarmSnapshots() {
+        guard let client else { return }
+        for name in cameras.map(\.name) {
+            let url = client.latestFrameURL(camera: name)
+            if ImageCache.shared.image(for: url) != nil { continue }
+            Task { @MainActor in
+                guard let data = try? await client.imageData(from: url),
+                      let image = RemoteImage.downsample(data, maxPixel: 900) else { return }
+                ImageCache.shared.insert(image, for: url)
+            }
+        }
     }
 
     private func cacheWidgetSnapshot(from cameras: [FrigateCamera]) async {
