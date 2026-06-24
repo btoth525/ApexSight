@@ -20,6 +20,7 @@ struct CameraCard: View {
                 // there's never a black gap. PiP wired so long-press can float it.
                 HLSLivePlayerView(
                     camera: camera,
+                    persistent: true,
                     pipController: pip,
                     onPlaying: { playing in
                         withAnimation(.easeIn(duration: 0.3)) { isLive = playing }

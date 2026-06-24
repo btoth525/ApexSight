@@ -315,6 +315,10 @@ struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
     var showControls: Bool = false
+    /// Keep the stream alive when the view disappears (e.g. switching tabs) instead of
+    /// tearing it down — so returning to it is instant and never reloads from black.
+    /// Used by the always-on Cameras tab; transient surfaces (wall, full-screen) leave it false.
+    var persistent: Bool = false
     /// Pass a controller to enable PiP for this player from outside (e.g. a camera-wall
     /// cell's long-press menu). When nil, the single-camera view uses its own.
     var pipController: LivePiPController? = nil
@@ -326,6 +330,9 @@ struct HLSLivePlayerView: View {
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
     @State private var fillMode = false
+    /// Tracks whether we've already configured + started this view's player, so a
+    /// reappear (tab switch back) resumes instead of restarting from scratch.
+    @State private var started = false
     /// When HLS can't establish for this camera (e.g. a doorbell whose go2rtc HLS path is
     /// broken even though the camera is healthy), fall back to Frigate's MJPEG stream —
     /// which Frigate serves itself, not go2rtc — so the view is never stuck on black.
@@ -448,6 +455,12 @@ struct HLSLivePlayerView: View {
             }
         }
         .onAppear {
+            // Returning to a kept-alive player (tab switch back) — just resume, instantly.
+            if started {
+                if mjpegFallback == false { model.player?.play() }
+                return
+            }
+            started = true
             // Skip the HLS wait for cameras already known to need MJPEG this session.
             if Self.hlsUnavailable.contains(camera.name) {
                 mjpegFallback = true
@@ -464,8 +477,15 @@ struct HLSLivePlayerView: View {
             startFallbackTimer()
         }
         .onDisappear {
-            model.stop()
-            fallbackTask?.cancel(); fallbackTask = nil
+            if persistent {
+                // Keep it loaded across tab switches — just pause decoding. The last
+                // frame stays on screen, so returning is instant with no black flash.
+                model.player?.pause()
+            } else {
+                model.stop()
+                fallbackTask?.cancel(); fallbackTask = nil
+                started = false
+            }
         }
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
