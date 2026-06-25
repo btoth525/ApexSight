@@ -300,11 +300,18 @@ struct RecordingBrowserView: View {
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                 }
-                PiPPlayerView(player: player)
-                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .expandableMedia(.player(player))
+                ZStack {
+                    PiPPlayerView(player: player)
+                        .opacity(clipModel.isReady ? 1 : 0)
+                        .animation(.easeIn(duration: 0.25), value: clipModel.isReady)
+                    // Each scrub loads a fresh VOD window; hold a skeleton over it until the
+                    // new moment is ready instead of flashing black.
+                    if !clipModel.isReady { ClipSkeleton() }
+                }
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .expandableMedia(.player(player))
 
                 Button {
                     Task { await downloadCurrent() }

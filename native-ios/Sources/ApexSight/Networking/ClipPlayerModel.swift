@@ -10,8 +10,12 @@ import Foundation
 @MainActor
 final class ClipPlayerModel: ObservableObject {
     @Published private(set) var player: AVPlayer?
+    /// True once the current item is actually ready to show a frame — so the UI can hold a
+    /// loading skeleton over the player until there's real video, instead of a black box.
+    @Published private(set) var isReady = false
 
     private var endObs: NSObjectProtocol?
+    private var statusObs: NSKeyValueObservation?
 
     /// Load only if nothing is playing yet (idempotent — safe to call from `.task`).
     func loadIfNeeded(client: FrigateClient, url: URL) {
@@ -23,6 +27,7 @@ final class ClipPlayerModel: ObservableObject {
     func load(client: FrigateClient, url: URL) {
         configureAudioSession()
         teardown()
+        isReady = false
 
         let item = client.playerItem(for: url)
         // Reuse the existing AVPlayer instance so the bound SwiftUI view swaps content
@@ -30,6 +35,15 @@ final class ClipPlayerModel: ObservableObject {
         let activePlayer = player ?? AVPlayer()
         activePlayer.replaceCurrentItem(with: item)
         player = activePlayer
+
+        // Reveal the video only when the item can actually present a frame. `.initial` covers
+        // the rare case where the item is already ready by the time we attach.
+        statusObs = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if item.status == .readyToPlay { self.isReady = true }
+            }
+        }
 
         endObs = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
@@ -48,6 +62,7 @@ final class ClipPlayerModel: ObservableObject {
 
     func stop() {
         teardown()
+        isReady = false
         player?.pause()
         player = nil
     }
@@ -60,5 +75,7 @@ final class ClipPlayerModel: ObservableObject {
     private func teardown() {
         if let endObs { NotificationCenter.default.removeObserver(endObs) }
         endObs = nil
+        statusObs?.invalidate()
+        statusObs = nil
     }
 }

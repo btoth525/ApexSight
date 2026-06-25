@@ -13,32 +13,28 @@ struct RecordingContextPlayerView: View {
     @State private var isSliding = false
 
     private let windowSeconds: Double = 300  // ±5 minutes
+    /// Allow ~1s of slop on seeks. Exact-frame seeks (.zero tolerance) force AVPlayer to
+    /// decode all the way to the precise frame over HLS, which makes scrubbing feel sluggish;
+    /// a small tolerance lands within a second and is dramatically snappier.
+    private let seekTolerance = CMTime(seconds: 1, preferredTimescale: 600)
 
     private var windowStart: Double { centerTime - windowSeconds / 2 }
     private var windowEnd: Double { centerTime + windowSeconds / 2 }
 
     var body: some View {
         VStack(spacing: 10) {
-            if let player = model.player {
-                ZoomableClipPlayer(player: player)
-                    .frame(height: 240)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-                        guard !isSliding else { return }
-                        currentTime = player.currentTime().seconds
-                        if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
-                            duration = dur
-                        }
+            LoadingClipPlayer(model: model)
+                .frame(height: 240)
+                .frame(maxWidth: .infinity)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+                    guard !isSliding, let player = model.player else { return }
+                    currentTime = player.currentTime().seconds
+                    if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
+                        duration = dur
                     }
-            } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.black)
-                    .frame(height: 240)
-                    .frame(maxWidth: .infinity)
-                    .overlay { ProgressView().tint(GlassTheme.cyan) }
-            }
+                }
 
             // Scrub bar with event markers
             VStack(spacing: 6) {
@@ -47,7 +43,7 @@ struct RecordingContextPlayerView: View {
                         isSliding = editing
                         if !editing, let player = model.player {
                             let target = CMTime(seconds: currentTime, preferredTimescale: 600)
-                            player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+                            player.seek(to: target, toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
                         }
                     }
                     .tint(GlassTheme.cyan)
@@ -104,7 +100,7 @@ struct RecordingContextPlayerView: View {
                     let target = CMTime(seconds: max(0, offset - 5), preferredTimescale: 600)
                     // Inside this async `.task`, AVPlayer.seek resolves to the async
                     // overload, so it must be awaited (and its Bool result discarded).
-                    _ = await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+                    _ = await player.seek(to: target, toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
                 }
             }
         }
@@ -115,7 +111,7 @@ struct RecordingContextPlayerView: View {
         guard let player = model.player else { return }
         let offset = max(0, eventStartTime - windowStart - 3)
         let target = CMTime(seconds: offset, preferredTimescale: 600)
-        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: target, toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
         currentTime = offset
     }
 
