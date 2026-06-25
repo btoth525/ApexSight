@@ -7,7 +7,6 @@ struct DailyRecap {
     var labelCounts: [(label: String, count: Int)] = []
     var people: [String] = []
     var packages = 0
-    var unknownPlates = 0
     var firstAt: Date?
     var lastAt: Date?
     /// Hour (0–23) with the most activity, for the "busiest time" highlight.
@@ -40,7 +39,6 @@ struct DailyRecap {
         if !people.isEmpty { bits.append("Seen: " + people.prefix(3).map(titleize).joined(separator: ", ")) }
         if let top = cameraCounts.first { bits.append("Busiest: \(titleize(top.camera)) (\(top.count))") }
         if packages > 0 { bits.append("\(packages) 📦") }
-        if unknownPlates > 0 { bits.append("\(unknownPlates) unknown plate\(unknownPlates == 1 ? "" : "s")") }
         return bits.joined(separator: " · ")
     }
 }
@@ -78,10 +76,6 @@ enum RecapBuilder {
             if let start = event.startTime {
                 let hour = cal.component(.hour, from: Date(timeIntervalSince1970: start))
                 hours[hour, default: 0] += 1
-            }
-            if let plate = event.recognizedLicensePlate, !plate.isEmpty,
-               style.knownPlateName(for: plate) == nil {
-                recap.unknownPlates += 1
             }
         }
         recap.cameraCounts = cameras.sorted { $0.value > $1.value }.map { (camera: $0.key, count: $0.value) }

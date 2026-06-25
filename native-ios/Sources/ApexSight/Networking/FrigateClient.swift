@@ -165,26 +165,6 @@ struct FrigateClient {
         try await get("api/labels")
     }
 
-    /// Every license plate Frigate has recognized (for the "recently seen" list).
-    func recognizedLicensePlates() async throws -> [String] {
-        try await get("api/recognized_license_plates")
-    }
-
-    /// The `lpr.known_plates` already configured in the user's Frigate config
-    /// (name → plate strings), read from the live config.
-    func frigateKnownPlates() async throws -> [String: [String]] {
-        let config: KnownPlatesConfig = try await get("api/config")
-        return config.lpr?.knownPlates ?? [:]
-    }
-
-    private struct KnownPlatesConfig: Decodable {
-        let lpr: LPR?
-        struct LPR: Decodable {
-            let knownPlates: [String: [String]]?
-            enum CodingKeys: String, CodingKey { case knownPlates = "known_plates" }
-        }
-    }
-
     func subLabels() async throws -> [String] {
         try await get("api/sub_labels")
     }
@@ -453,46 +433,11 @@ struct FrigateClient {
 
     // MARK: - Face recognition (Frigate 0.16+)
 
-    /// Map of known face names → their training image filenames.
+    /// Map of known face names → their training image filenames. Read-only — used to show
+    /// recognized faces and power "who's home" / name-based search. (Face *management* —
+    /// training/renaming/deleting — lives in Frigate's own UI.)
     func faces() async throws -> [String: [String]] {
         try await get("api/faces")
-    }
-
-    /// Create an empty collection for a new person.
-    func createFace(name: String) async throws {
-        try await post("api/faces/\(name)/create", body: EmptyBody())
-    }
-
-    /// Train a named face from an existing detection/event — turns "person" into "Alex".
-    /// Surfaces Frigate's own reason on failure (e.g. "No face was detected in this
-    /// event" / admin required) so the UI can show why instead of a generic error.
-    func trainFace(name: String, eventId: String) async throws {
-        let url = baseURL.appending(path: "api/faces/train/\(name)/classify")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        applyAuth(to: &request)
-        request.httpBody = try JSONEncoder().encode(["event_id": eventId])
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { return }
-        guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 || http.statusCode == 403 {
-                throw FrigateError.message("That needs an admin Frigate login.")
-            }
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let reason = json?["message"] as? String
-            throw FrigateError.message(reason ?? "Couldn't assign — Frigate found no face to learn in this event.")
-        }
-    }
-
-    /// Remove specific training images for a face (pass all of them to clear a person).
-    func deleteFaceImages(name: String, ids: [String]) async throws {
-        try await post("api/faces/\(name)/delete", body: ["ids": ids])
-    }
-
-    /// Rename a known face.
-    func renameFace(from oldName: String, to newName: String) async throws {
-        try await put("api/faces/\(oldName)/rename", body: ["new_name": newName])
     }
 
     func ptzMove(camera: String, action: String, extra: [String: String] = [:]) async throws {
