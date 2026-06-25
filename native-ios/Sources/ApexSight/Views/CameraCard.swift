@@ -18,7 +18,7 @@ struct CameraCard: View {
             ZStack(alignment: .bottomLeading) {
                 // HLSLivePlayerView shows its own snapshot placeholder internally, so
                 // there's never a black gap. PiP wired so long-press can float it.
-                HLSLivePlayerView(
+                LiveVideoPlayerView(
                     camera: camera,
                     persistent: true,
                     pipController: pip,
