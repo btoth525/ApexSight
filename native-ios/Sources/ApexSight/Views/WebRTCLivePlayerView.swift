@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import SwiftUI
 @preconcurrency import WebRTC
 
@@ -13,6 +14,59 @@ enum WebRTCFactory {
             decoderFactory: RTCDefaultVideoDecoderFactory()
         )
     }()
+}
+
+// MARK: - WebRTC availability (session + network aware)
+
+/// Tracks whether WebRTC can currently reach the cameras. When a connection fails — almost
+/// always because you're off the home LAN, so go2rtc's `8555` media candidate is unreachable —
+/// we poison the WHOLE WebRTC path, not just that one camera. The reachability problem is
+/// global, so the rest of the wall (and any camera opened later) skips the ~3s probe and goes
+/// straight to HLS instead of each one re-discovering the same dead end.
+///
+/// A network change clears the poison: coming home onto Wi-Fi, or bringing up a VPN / Cloudflare
+/// WARP tunnel, makes the LAN reachable again — so WebRTC is re-probed and instant live returns
+/// without needing to force-quit the app.
+@MainActor
+final class WebRTCAvailability {
+    static let shared = WebRTCAvailability()
+
+    private var unavailable: Set<String> = []
+    private var globallyUnavailable = false
+    private let monitor = NWPathMonitor()
+    private var sawInitialPath = false
+
+    private init() {
+        monitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // Skip the first path delivered at startup; only real changes should re-probe.
+                guard self.sawInitialPath else { self.sawInitialPath = true; return }
+                self.reset()
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.brandontoth.apexsight.webrtc.path"))
+    }
+
+    /// True when WebRTC should be skipped for this camera (this one already failed, or the
+    /// whole path is poisoned for the current network).
+    func isUnavailable(_ camera: String) -> Bool {
+        globallyUnavailable || unavailable.contains(camera)
+    }
+
+    /// Record a WebRTC failure. One off-LAN failure means WebRTC can't reach ANY camera on
+    /// the current network, so poison the whole path — not just this camera.
+    func markUnavailable(_ camera: String) {
+        unavailable.insert(camera)
+        globallyUnavailable = true
+    }
+
+    /// Re-enable WebRTC (called on a network change). No-op when nothing is poisoned.
+    func reset() {
+        guard globallyUnavailable || !unavailable.isEmpty else { return }
+        unavailable.removeAll()
+        globallyUnavailable = false
+    }
 }
 
 // MARK: - RTCClient
@@ -236,10 +290,6 @@ struct LiveVideoPlayerView: View {
     @State private var connectTimer: Task<Void, Never>?
     @State private var started = false
 
-    /// Cameras where WebRTC already failed this session — go straight to HLS so we don't pay
-    /// the ~3s probe every time (e.g. while you're away from home). Resets on next app launch.
-    @MainActor private static var webRTCUnavailable: Set<String> = []
-
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
          pipController: LivePiPController? = nil, onSingleTap: (() -> Void)? = nil,
          onPlaying: ((Bool) -> Void)? = nil) {
@@ -255,7 +305,7 @@ struct LiveVideoPlayerView: View {
     private var isLive: Bool { rtc.state == .connected && rtc.remoteVideoTrack != nil }
 
     var body: some View {
-        if fellBackToHLS || Self.webRTCUnavailable.contains(camera.name) {
+        if fellBackToHLS || WebRTCAvailability.shared.isUnavailable(camera.name) {
             HLSLivePlayerView(
                 camera: camera, showControls: showControls, persistent: persistent,
                 pipController: pipController, onSingleTap: onSingleTap, onPlaying: onPlaying
@@ -325,7 +375,7 @@ struct LiveVideoPlayerView: View {
     private func goToHLS() {
         guard !fellBackToHLS else { return }
         connectTimer?.cancel(); connectTimer = nil
-        Self.webRTCUnavailable.insert(camera.name)
+        WebRTCAvailability.shared.markUnavailable(camera.name)
         rtc.teardown()
         withAnimation(.easeIn(duration: 0.2)) { fellBackToHLS = true }
     }
