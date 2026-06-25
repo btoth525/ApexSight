@@ -168,6 +168,11 @@ struct EventDetailView: View {
                         }
                         .frame(height: 300)
                         .frame(maxWidth: .infinity)
+                    } else if let url = appState.client?.latestFrameURL(camera: event.camera) {
+                        // No event snapshot — show the camera's latest frame, never a black box.
+                        RemoteImage(url: url, contentMode: .fit)
+                            .frame(height: 300)
+                            .frame(maxWidth: .infinity)
                     } else {
                         Color.black
                             .frame(height: 300)

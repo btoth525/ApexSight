@@ -19,7 +19,11 @@ final class ImageCache {
     }
 
     func insert(_ image: UIImage, for url: URL) {
-        let cost = Int(image.size.width * image.size.height * 4)
-        cache.setObject(image, forKey: url as NSURL, cost: cost)
+        // Cost in REAL pixels (cgImage), not points. A point-based cost under-counts @2x/@3x
+        // images by 4–9x, so the 64 MB budget overfilled and evicted camera frames too early
+        // (causing re-decodes / black flashes). Accurate cost = fewer evictions.
+        let w = image.cgImage?.width ?? Int(image.size.width)
+        let h = image.cgImage?.height ?? Int(image.size.height)
+        cache.setObject(image, forKey: url as NSURL, cost: w * h * 4)
     }
 }
