@@ -14,7 +14,6 @@ struct LiveStreamView: View {
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
-        case mjpeg = "MJPEG"
         case snapshot = "Snapshot"
     }
 
@@ -78,15 +77,13 @@ struct LiveStreamView: View {
         switch streamMode {
         case .live:
             liveHLS
-        case .mjpeg:
-            liveMJPEG
         case .snapshot:
             snapshotView
         }
     }
 
     private var liveHLS: some View {
-        // WebRTC-first (instant, Metal-rendered) with automatic HLS/MJPEG fallback inside.
+        // Pure WebRTC: instant, Metal-rendered, hardware-decoded. No HLS/MJPEG.
         LiveVideoPlayerView(
             camera: camera,
             showControls: true,
@@ -94,28 +91,6 @@ struct LiveStreamView: View {
             onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
         )
         .id(reloadToken)
-    }
-
-    private var liveMJPEG: some View {
-        ZoomableScrollView(onSingleTap: { toggleChrome() }) {
-            ZStack {
-                if let client = appState.client {
-                    RemoteImage(url: client.latestFrameURL(camera: camera.name), contentMode: .fit)
-                        .opacity(isLive ? 0 : 1)
-                    MJPEGStreamView(
-                        url: client.mjpegURL(camera: camera.name),
-                        client: client,
-                        contentMode: .scaleAspectFit,
-                        onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { isLive = true } }
-                    )
-                    .id(reloadToken)
-                    .opacity(isLive ? 1 : 0)
-                }
-                if !isLive {
-                    ProgressView().tint(.white).scaleEffect(1.4)
-                }
-            }
-        }
     }
 
     private var snapshotView: some View {
@@ -197,14 +172,13 @@ struct LiveStreamView: View {
     private var statusColor: Color {
         switch streamMode {
         case .snapshot: return .orange
-        case .live, .mjpeg: return isLive ? .green : .yellow
+        case .live: return isLive ? .green : .yellow
         }
     }
 
     private var statusText: String {
         switch streamMode {
         case .snapshot: return "Snapshot"
-        case .mjpeg: return isLive ? "MJPEG" : "Connecting…"
         case .live: return isLive ? "Live" : "Connecting…"
         }
     }
@@ -212,7 +186,6 @@ struct LiveStreamView: View {
     private func icon(for mode: StreamMode) -> String {
         switch mode {
         case .live: return "dot.radiowaves.up.forward"
-        case .mjpeg: return "bolt.horizontal.fill"
         case .snapshot: return "photo.fill"
         }
     }
