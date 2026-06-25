@@ -56,11 +56,18 @@ struct RemoteImage: View {
         // window while an expired token is being refreshed, so a thumbnail recovers
         // on its own instead of leaving a permanent blank tile. The client is
         // re-read each pass so a freshly re-authenticated session is picked up.
+        let maxPixel = maxPixelSize
         for attempt in 0..<3 {
             guard let client = appState.client else { break }
             do {
                 let data = try await client.imageData(from: url)
-                if let uiImage = Self.downsample(data, maxPixel: maxPixelSize) {
+                // Decode/downsample OFF the main actor — the JPEG decode is the expensive
+                // part, and doing it inline on the MainActor is what makes image-heavy
+                // lists/grids stutter. Only the cache write + Image assignment hop back.
+                let decoded = await Task.detached(priority: .utility) {
+                    Self.downsample(data, maxPixel: maxPixel)
+                }.value
+                if let uiImage = decoded {
                     ImageCache.shared.insert(uiImage, for: url)
                     image = Image(uiImage: uiImage)
                     isFailed = false

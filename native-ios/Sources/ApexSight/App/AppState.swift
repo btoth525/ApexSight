@@ -492,8 +492,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// In-flight full refresh, so concurrent callers coalesce into one network round-trip.
+    private var refreshTask: Task<Void, Never>?
+
     func refresh() async {
-        await refresh(retryOnAuthFailure: true)
+        // At cold launch several tabs' `.task` and the foreground poller can all call refresh()
+        // at once; without coalescing that's 2-3 racing full fan-outs (cameras+events+reviews+
+        // labels+stats+logs+streams) on the same short-timeout session. Share one.
+        if let refreshTask {
+            await refreshTask.value
+            return
+        }
+        let task = Task { @MainActor in await refresh(retryOnAuthFailure: true) }
+        refreshTask = task
+        await task.value
+        refreshTask = nil
     }
 
     private func refresh(retryOnAuthFailure: Bool) async {
@@ -568,8 +581,12 @@ final class AppState: ObservableObject {
             prewarmingCameras.insert(name)
             Task { @MainActor in
                 defer { prewarmingCameras.remove(name) }
-                guard let data = try? await client.imageData(from: url),
-                      let image = RemoteImage.downsample(data, maxPixel: 1000) else { return }
+                guard let data = try? await client.imageData(from: url) else { return }
+                // Downsample off the main actor — N concurrent 1000px JPEG decodes on main
+                // at the exact moment the wall is trying to render is the open-the-wall hitch.
+                guard let image = await Task.detached(priority: .utility, operation: {
+                    RemoteImage.downsample(data, maxPixel: 1000)
+                }).value else { return }
                 ImageCache.shared.insert(image, for: url)
             }
         }

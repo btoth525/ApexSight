@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -42,6 +43,9 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     private var buffer = Data()
     private var hasDeliveredFrame = false
     private var isDisplayPending = false
+    /// JPEG frames decode here, off the main thread — decoding once per delivered frame
+    /// per camera on main is what janks a multi-camera wall on the MJPEG fallback path.
+    private let decodeQueue = DispatchQueue(label: "com.brandontoth.apexsight.mjpeg.decode", qos: .userInitiated)
 
     // JPEG start-of-image / end-of-image markers.
     private static let soi = Data([0xFF, 0xD8])
@@ -94,19 +98,33 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
         if buffer.count > 2_000_000 { buffer.removeAll(keepingCapacity: true) }
 
         guard let frameData = latestFrameData else { return }
-        // Drop frame if previous is still being rendered.
+        // Drop frame if previous is still being decoded/rendered.
         guard !isDisplayPending else { return }
         isDisplayPending = true
 
-        DispatchQueue.main.async { [weak self] in
+        decodeQueue.async { [weak self] in
             guard let self else { return }
-            defer { self.isDisplayPending = false }
-            guard let image = UIImage(data: frameData) else { return }
-            self.imageView.image = image
-            if !self.hasDeliveredFrame {
-                self.hasDeliveredFrame = true
-                self.onFirstFrame?()
+            // Force the JPEG decode here (off main) via ImageIO; UIImage(data:) alone would
+            // defer the decode to the main thread at display time.
+            let image = Self.decode(frameData)
+            DispatchQueue.main.async {
+                defer { self.isDisplayPending = false }
+                guard let image else { return }
+                self.imageView.image = image
+                if !self.hasDeliveredFrame {
+                    self.hasDeliveredFrame = true
+                    self.onFirstFrame?()
+                }
             }
         }
+    }
+
+    /// Decode a JPEG frame to a fully-decoded UIImage on the calling (background) queue.
+    private static func decode(_ data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateImageAtIndex(
+                source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+              ) else { return UIImage(data: data) }
+        return UIImage(cgImage: cg)
     }
 }

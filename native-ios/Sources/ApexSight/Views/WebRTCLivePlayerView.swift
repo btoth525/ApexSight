@@ -55,11 +55,14 @@ final class WebRTCAvailability {
         globallyUnavailable || unavailable.contains(camera)
     }
 
-    /// Record a WebRTC failure. One off-LAN failure means WebRTC can't reach ANY camera on
-    /// the current network, so poison the whole path — not just this camera.
-    func markUnavailable(_ camera: String) {
+    /// Record a WebRTC failure. A reachability failure (`global` — the peer never connected,
+    /// e.g. you're off-LAN and can't reach the 8555 candidate) poisons the WHOLE path so the
+    /// rest of the wall skips the probe. A per-camera failure (connected but no frame — a
+    /// single broken/slow stream) marks only that camera, so healthy cameras stay on instant
+    /// WebRTC instead of the whole wall being downgraded to HLS by one bad camera.
+    func markUnavailable(_ camera: String, global: Bool) {
         unavailable.insert(camera)
-        globallyUnavailable = true
+        if global { globallyUnavailable = true }
     }
 
     /// Re-enable WebRTC (called on a network change). No-op when nothing is poisoned.
@@ -86,6 +89,10 @@ final class RTCClient: NSObject, ObservableObject {
     /// track arrives. The UI waits for this before crossfading off the snapshot, so the live
     /// layer is never revealed while it's still black (which is what caused the flash).
     @Published private(set) var firstFrameRendered = false
+    /// Whether this attempt's peer connection ever reached `.connected`. Distinguishes a true
+    /// reachability failure (never connected → poison WebRTC globally) from a per-camera
+    /// frame-timeout (connected but no video → only this camera falls back).
+    private(set) var everConnected = false
 
     private var peerConnection: RTCPeerConnection?
     private var gatheringContinuation: CheckedContinuation<Void, Never>?
@@ -120,6 +127,7 @@ final class RTCClient: NSObject, ObservableObject {
     private func buildConnection() {
         guard let client else { return }
         firstFrameRendered = false
+        everConnected = false
         state = .connecting
         didFinishGathering = false
 
@@ -298,7 +306,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
         Task { @MainActor [weak self] in
             guard let self, !self.isTorndown, pc === self.peerConnection else { return }
             switch newState {
-            case .connected: self.state = .connected
+            case .connected: self.everConnected = true; self.state = .connected
             case .failed, .closed: self.state = .failed
             default: break
             }
@@ -482,7 +490,9 @@ struct LiveVideoPlayerView: View {
 
     private func goToHLS() {
         guard !fellBackToHLS else { return }
-        WebRTCAvailability.shared.markUnavailable(camera.name)
+        // Never connected → reachability failure (off-LAN) → poison WebRTC globally so the
+        // rest of the wall skips the probe. Connected but no frame → just this camera.
+        WebRTCAvailability.shared.markUnavailable(camera.name, global: !rtc.everConnected)
         rtc.teardown()
         withAnimation(.easeIn(duration: 0.2)) { fellBackToHLS = true }
     }
