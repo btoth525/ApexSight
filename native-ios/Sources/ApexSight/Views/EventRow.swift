@@ -17,7 +17,7 @@ struct EventRow: View {
                 // Object in the title; the sub-label/plate shows as a chip below, so the
                 // recognized name isn't printed twice (displayLabel == subLabel otherwise).
                 Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.label))")
-                    .font(.system(size: 16, weight: .black))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(GlassTheme.primary)
                 Text("\(titleize(event.camera)) · \(relativeTime(event.startTime))")
                     .font(.system(size: 13, weight: .bold))
@@ -46,7 +46,8 @@ struct EventRow: View {
                 .foregroundStyle(GlassTheme.tertiary)
         }
         .padding(10)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .cardStroke(20)
         .accessibilityElement(children: .combine)
     }
 

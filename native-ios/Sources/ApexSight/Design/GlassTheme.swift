@@ -1,34 +1,66 @@
 import SwiftUI
 
+/// Central design system. Dark-first, content-forward (camera imagery is the hero),
+/// translucent material only on chrome, one accent, semantic status colors, hairline
+/// separators instead of heavy shadows. Existing names are preserved so every screen keeps
+/// compiling; new semantic tokens are added on top.
 enum GlassTheme {
-    // MARK: - Backgrounds
-    static let background = Color(red: 0.02, green: 0.02, blue: 0.04)
+    // MARK: - Layered backgrounds (depth via solid layers, not blur-on-content)
+    static let base        = Color.black                                    // behind video / full-screen
+    static let background   = Color(red: 0.035, green: 0.037, blue: 0.055)  // app background
+    static let surface      = Color(red: 0.090, green: 0.094, blue: 0.118)  // cards / sections
+    static let surfaceHigh  = Color(red: 0.130, green: 0.135, blue: 0.165)  // raised elements / skeletons
+
     static let backgroundGradient = LinearGradient(
         colors: [
-            Color(red: 0.04, green: 0.04, blue: 0.12),
-            Color(red: 0.01, green: 0.01, blue: 0.04)
+            Color(red: 0.07, green: 0.075, blue: 0.105),
+            Color(red: 0.02, green: 0.02, blue: 0.035)
         ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
+        startPoint: .top,
+        endPoint: .bottom
     )
 
     // MARK: - Text
-    static let primary   = Color(red: 0.96, green: 0.96, blue: 0.98)
-    static let secondary = Color.white.opacity(0.60)
-    static let tertiary  = Color.white.opacity(0.36)
+    static let primary   = Color(red: 0.97, green: 0.97, blue: 0.99)
+    static let secondary = Color.white.opacity(0.62)
+    static let tertiary  = Color.white.opacity(0.34)
 
-    // MARK: - Accent palette
+    /// 1px hairline used to separate cards/rows instead of colored or heavy shadows.
+    static let separator = Color.white.opacity(0.08)
+    static let hairline  = Color.white.opacity(0.10)
+
+    // MARK: - Accent + semantic palette
+    /// The single brand accent. Restraint here is the premium cue — don't tint everything.
+    static let accent = Color(red: 0.30, green: 0.74, blue: 1.00)
     static let blue   = Color(red: 0.04, green: 0.52, blue: 1.00)
     static let cyan   = Color(red: 0.39, green: 0.82, blue: 1.00)
-    static let green  = Color(red: 0.19, green: 0.82, blue: 0.35)
-    static let orange = Color(red: 1.00, green: 0.62, blue: 0.04)
-    static let red    = Color(red: 1.00, green: 0.27, blue: 0.23)
+    static let green  = Color(red: 0.20, green: 0.80, blue: 0.36)  // live
+    static let orange = Color(red: 1.00, green: 0.62, blue: 0.04)  // motion / alert
+    static let red    = Color(red: 1.00, green: 0.27, blue: 0.23)  // recording
     static let purple = Color(red: 0.68, green: 0.42, blue: 1.00)
     static let teal   = Color(red: 0.22, green: 0.80, blue: 0.72)
+    static let offline = Color.white.opacity(0.40)                 // neutral — never alarm-red
+
+    // MARK: - Spacing & radius scale (consistent 4pt rhythm)
+    enum Space {
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 8
+        static let m: CGFloat = 12
+        static let l: CGFloat = 16
+        static let xl: CGFloat = 20
+        static let xxl: CGFloat = 24
+    }
+    enum Radius {
+        static let card: CGFloat = 20
+        static let tile: CGFloat = 18
+        static let chip: CGFloat = 11
+    }
 }
 
 // MARK: - GlassCard
 
+/// A content section card: subtle material fill + a clean 1px hairline (no heavy gradient
+/// stroke or colored shadow — that's the cheap tell the spec calls out).
 struct GlassCard<Content: View>: View {
     var material: Material = .regularMaterial
     let content: Content
@@ -40,40 +72,28 @@ struct GlassCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(16)
-            .background(material, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(GlassTheme.Space.l)
+            .background(material, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [.white.opacity(0.22), .white.opacity(0.06)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
+                    .strokeBorder(GlassTheme.separator, lineWidth: 1)
             }
     }
 }
 
 // MARK: - GlassBackground
 
+/// Clean dark app background with a single restrained accent glow (no busy multi-radial
+/// "gamer" wash — the spec explicitly warns against glow-heavy backgrounds).
 struct GlassBackground: View {
     var body: some View {
         ZStack {
             GlassTheme.background.ignoresSafeArea()
             RadialGradient(
-                colors: [GlassTheme.blue.opacity(0.12), .clear],
-                center: .topLeading,
+                colors: [GlassTheme.accent.opacity(0.10), .clear],
+                center: .top,
                 startRadius: 0,
-                endRadius: 460
-            )
-            .ignoresSafeArea()
-            RadialGradient(
-                colors: [GlassTheme.cyan.opacity(0.07), .clear],
-                center: .bottomTrailing,
-                startRadius: 0,
-                endRadius: 380
+                endRadius: 520
             )
             .ignoresSafeArea()
         }
@@ -83,16 +103,16 @@ struct GlassBackground: View {
 // MARK: - PillButtonStyle
 
 struct PillButtonStyle: ButtonStyle {
-    var tint: Color = GlassTheme.blue
+    var tint: Color = GlassTheme.accent
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .heavy))
+            .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, GlassTheme.Space.l)
+            .padding(.vertical, GlassTheme.Space.m)
             .background(tint, in: Capsule())
-            .opacity(configuration.isPressed ? 0.70 : 1)
+            .opacity(configuration.isPressed ? 0.78 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
             .onChange(of: configuration.isPressed) { _, pressed in
@@ -106,12 +126,12 @@ struct PillButtonStyle: ButtonStyle {
 struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.horizontal, 14)
+            .padding(.horizontal, GlassTheme.Space.m)
             .padding(.vertical, 10)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.white.opacity(0.18), lineWidth: 1)
+                    .strokeBorder(GlassTheme.separator, lineWidth: 1)
             }
             .opacity(configuration.isPressed ? 0.72 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
@@ -122,6 +142,98 @@ struct GlassButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Status dot (live / recording / offline)
+
+/// A small semantic status dot — green=live (gently pulsing), red=recording, gray=offline.
+/// Consistent everywhere a camera's state is shown.
+struct StatusDot: View {
+    enum Mode { case live, recording, offline }
+    let state: Mode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    private var color: Color {
+        switch state {
+        case .live: return GlassTheme.green
+        case .recording: return GlassTheme.red
+        case .offline: return GlassTheme.offline
+        }
+    }
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .shadow(color: color.opacity(0.7), radius: pulse ? 4 : 2)
+            .scaleEffect(pulse ? 1.0 : 0.82)
+            .onAppear {
+                guard state != .offline, !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Section header
+
+/// A consistent section header: bold title with an optional trailing accessory.
+struct SectionHeader<Accessory: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder var accessory: () -> Accessory
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(.title3, design: .default).weight(.bold))
+                    .foregroundStyle(GlassTheme.primary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(GlassTheme.secondary)
+                }
+            }
+            Spacer(minLength: GlassTheme.Space.s)
+            accessory()
+        }
+    }
+}
+
+extension SectionHeader where Accessory == EmptyView {
+    init(_ title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle, accessory: { EmptyView() })
+    }
+}
+
+// MARK: - Empty state
+
+/// A calm, native empty state (SF Symbol + headline + one line) — never an error screen.
+struct EmptyStateView: View {
+    let icon: String
+    let title: String
+    var message: String? = nil
+
+    var body: some View {
+        VStack(spacing: GlassTheme.Space.m) {
+            Image(systemName: icon)
+                .font(.system(size: 44, weight: .regular))
+                .foregroundStyle(GlassTheme.tertiary)
+            Text(title)
+                .font(.system(.title3).weight(.semibold))
+                .foregroundStyle(GlassTheme.primary)
+            if let message {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(GlassTheme.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(GlassTheme.Space.xl)
+    }
+}
+
 // MARK: - View Helpers
 
 extension View {
@@ -129,12 +241,20 @@ extension View {
         self.background(GlassBackground())
     }
 
-    /// Apple-style frosted navigation bar: always-visible ultra-thin material with
-    /// a dark scheme so titles and buttons stay legible over the dark glass UI.
+    /// Apple-style frosted navigation bar: translucent material so content scrolls under it,
+    /// with a dark scheme so titles/buttons stay legible over the dark UI.
     func glassNavBar() -> some View {
         self
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+
+    /// Standard content-card chrome (radius + hairline) for views that don't use GlassCard.
+    func cardStroke(_ radius: CGFloat = GlassTheme.Radius.card) -> some View {
+        self.overlay {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(GlassTheme.separator, lineWidth: 1)
+        }
     }
 }
