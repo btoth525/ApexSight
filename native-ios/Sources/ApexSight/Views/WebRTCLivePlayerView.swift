@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import SwiftUI
+import UIKit
 @preconcurrency import WebRTC
 
 // MARK: - Shared factory
@@ -91,6 +92,10 @@ final class RTCClient: NSObject, ObservableObject {
     private var didFinishGathering = false
     private var isTorndown = false
     private var frameSignal: FrameSignalRenderer?
+    private var client: FrigateClient?
+    private var watchdog: Task<Void, Never>?
+    private var negotiateTask: Task<Void, Never>?
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     private let camera: String
     private let useSub: Bool
@@ -101,7 +106,23 @@ final class RTCClient: NSObject, ObservableObject {
         super.init()
     }
 
-    func connect(client: FrigateClient) {
+    /// Connect once and then SURVIVE tab switches — safe to call on every `onAppear`. The
+    /// connection only rebuilds when it has actually been torn down (e.g. app backgrounding),
+    /// so returning to a kept-alive view is instant with the live stream already running.
+    func start(client: FrigateClient) {
+        guard !isTorndown else { return }
+        self.client = client
+        observeLifecycle()
+        guard peerConnection == nil else { return }   // already connecting / connected
+        buildConnection()
+    }
+
+    private func buildConnection() {
+        guard let client else { return }
+        firstFrameRendered = false
+        state = .connecting
+        didFinishGathering = false
+
         let config = RTCConfiguration()
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
         config.sdpSemantics = .unifiedPlan
@@ -115,23 +136,38 @@ final class RTCClient: NSObject, ObservableObject {
         let recvInit = RTCRtpTransceiverInit()
         recvInit.direction = .recvOnly
         pc.addTransceiver(of: .video, init: recvInit)
-        Task { await negotiate(client: client) }
+        negotiateTask = Task { await negotiate(client: client, pc: pc) }
+        startWatchdog()
     }
 
-    private func negotiate(client: FrigateClient) async {
-        guard let pc = peerConnection else { return }
+    /// Give up on WebRTC (so the view can fall back to HLS) if it can't deliver a real frame:
+    /// fast when we never even connect (off-LAN), patient once connected (a doorbell may wait
+    /// a beat for a keyframe).
+    private func startWatchdog() {
+        watchdog?.cancel()
+        watchdog = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, !isTorndown, !firstFrameRendered else { return }
+            if state != .connected { state = .failed; return }
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, !isTorndown, !firstFrameRendered else { return }
+            state = .failed
+        }
+    }
+
+    private func negotiate(client: FrigateClient, pc: RTCPeerConnection) async {
         let c = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         do {
             let offer = try await makeOffer(pc, c)
             try await setLocal(pc, offer)
             await waitForGathering(timeout: 2.0)
-            guard !isTorndown else { return }
+            guard !isTorndown, pc === peerConnection else { return }
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswerSDP(camera: camera, sub: useSub, offerSDP: localSDP)
-            guard !isTorndown else { return }
+            guard !isTorndown, pc === peerConnection else { return }
             try await setRemote(pc, RTCSessionDescription(type: .answer, sdp: answerSDP))
         } catch {
-            if !isTorndown { state = .failed }
+            if !isTorndown, pc === peerConnection { state = .failed }
         }
     }
 
@@ -150,15 +186,56 @@ final class RTCClient: NSObject, ObservableObject {
         frameSignal = signal
     }
 
+    /// Close the current peer connection but keep the object reusable (used on app
+    /// backgrounding and before a rebuild). Nils `peerConnection` first so any late delegate
+    /// callbacks from the old connection are ignored.
+    private func resetConnection() {
+        watchdog?.cancel(); watchdog = nil
+        negotiateTask?.cancel(); negotiateTask = nil
+        resumeGathering()
+        if let frameSignal, let track = remoteVideoTrack { track.remove(frameSignal) }
+        frameSignal = nil
+        remoteVideoTrack = nil
+        firstFrameRendered = false
+        didFinishGathering = false
+        let old = peerConnection
+        peerConnection = nil
+        old?.close()
+    }
+
     func teardown() {
         guard !isTorndown else { return }
         isTorndown = true
-        resumeGathering()
-        if let frameSignal { remoteVideoTrack?.remove(frameSignal) }
-        frameSignal = nil
-        remoteVideoTrack = nil
-        peerConnection?.close()
-        peerConnection = nil
+        teardownLifecycle()
+        resetConnection()
+    }
+
+    // MARK: App lifecycle — free the connection while suspended, rebuild on return
+
+    private func observeLifecycle() {
+        guard lifecycleObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isTorndown else { return }
+                self.resetConnection()
+            }
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isTorndown, self.peerConnection == nil else { return }
+                self.buildConnection()
+            }
+        })
+    }
+
+    private func teardownLifecycle() {
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        lifecycleObservers.removeAll()
     }
 
     // MARK: Continuation-wrapped signaling (portable across WebRTC versions)
@@ -219,7 +296,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown else { return }
+            guard let self, !self.isTorndown, pc === self.peerConnection else { return }
             switch newState {
             case .connected: self.state = .connected
             case .failed, .closed: self.state = .failed
@@ -231,7 +308,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {
         guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown else { return }
+            guard let self, !self.isTorndown, pc === self.peerConnection else { return }
             self.attach(track)
         }
     }
@@ -239,7 +316,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown else { return }
+            guard let self, !self.isTorndown, pc === self.peerConnection else { return }
             self.attach(track)
         }
     }
@@ -330,9 +407,6 @@ struct LiveVideoPlayerView: View {
 
     @StateObject private var rtc: RTCClient
     @State private var fellBackToHLS = false
-    @State private var connectTimer: Task<Void, Never>?
-    @State private var frameTimer: Task<Void, Never>?
-    @State private var started = false
 
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
          pipController: LivePiPController? = nil, onSingleTap: (() -> Void)? = nil,
@@ -375,40 +449,24 @@ struct LiveVideoPlayerView: View {
                 .opacity(isLive ? 1 : 0)
                 .animation(.easeInOut(duration: 0.28), value: isLive)
         }
+        // Connect once; the connection owns its own timeout + reconnect lifecycle. On a
+        // persistent surface (the Cameras tab) we DON'T tear down when the view disappears,
+        // so switching tabs and coming back leaves the stream already running — no reconnect.
         .onAppear {
-            guard !started else { return }
-            started = true
             guard let client = appState.client else { fellBackToHLS = true; return }
-            rtc.connect(client: client)
-            startConnectTimer()
+            rtc.start(client: client)
         }
         .onDisappear {
-            connectTimer?.cancel(); connectTimer = nil
-            frameTimer?.cancel(); frameTimer = nil
-            rtc.teardown()
-            started = false
+            if !persistent { rtc.teardown() }
         }
+        // The connection reports .failed when it can't reach the camera or never delivers a
+        // frame in time — that's our cue to fall back to HLS.
         .onChange(of: rtc.state) { _, newState in
-            switch newState {
-            case .connected:
-                // We can reach the camera — now give it a little longer for the first frame
-                // (a long-GOP camera like a doorbell may wait a beat for a keyframe) before
-                // deciding WebRTC is no good and dropping to HLS.
-                connectTimer?.cancel(); connectTimer = nil
-                startFrameTimer()
-            case .failed:
-                goToHLS()
-            case .connecting:
-                break
-            }
+            if newState == .failed { goToHLS() }
         }
-        // Reveal the live picture (and report "playing") only when a real frame has rendered,
-        // not when the connection opens — so the snapshot holds until there's video to show.
+        // Report "playing" only when a real frame has rendered, not when the connection opens.
         .onChange(of: rtc.firstFrameRendered) { _, rendered in
-            guard rendered else { return }
-            connectTimer?.cancel(); connectTimer = nil
-            frameTimer?.cancel(); frameTimer = nil
-            onPlaying?(true)
+            if rendered { onPlaying?(true) }
         }
     }
 
@@ -422,32 +480,8 @@ struct LiveVideoPlayerView: View {
         }
     }
 
-    /// Reachability window: if WebRTC hasn't even connected in 3s (e.g. off-LAN, can't reach
-    /// the 8555 candidate), give up and drop to HLS.
-    private func startConnectTimer() {
-        connectTimer?.cancel()
-        connectTimer = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled, !isLive else { return }
-            goToHLS()
-        }
-    }
-
-    /// First-frame window: connected but no decoded frame after 4s means the stream is broken
-    /// (not just slow) — fall back to HLS rather than sit on the snapshot forever.
-    private func startFrameTimer() {
-        frameTimer?.cancel()
-        frameTimer = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled, !isLive else { return }
-            goToHLS()
-        }
-    }
-
     private func goToHLS() {
         guard !fellBackToHLS else { return }
-        connectTimer?.cancel(); connectTimer = nil
-        frameTimer?.cancel(); frameTimer = nil
         WebRTCAvailability.shared.markUnavailable(camera.name)
         rtc.teardown()
         withAnimation(.easeIn(duration: 0.2)) { fellBackToHLS = true }
