@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotificationSettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var prefsStore: NotificationPreferencesStore
     @State private var status = NotificationStatus(isAuthorized: false, description: "Checking")
 
@@ -40,6 +41,13 @@ struct NotificationSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task { status = await NativeNotificationManager.status() }
+        // Re-check when returning from iOS Settings — the user may have just toggled
+        // notification permission there, and the card should reflect it immediately.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { status = await NativeNotificationManager.status() }
+            }
+        }
     }
 
     // MARK: - Permission Card

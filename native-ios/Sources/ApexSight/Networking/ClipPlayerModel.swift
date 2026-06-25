@@ -13,7 +13,12 @@ final class ClipPlayerModel: ObservableObject {
     /// True once the current item is actually ready to show a frame — so the UI can hold a
     /// loading skeleton over the player until there's real video, instead of a black box.
     @Published private(set) var isReady = false
+    /// True if the item failed to load (404 / no recording / auth) — so the UI shows a clear
+    /// error + retry instead of a skeleton that spins forever.
+    @Published private(set) var hasError = false
 
+    private var lastURL: URL?
+    private var lastClient: FrigateClient?
     private var endObs: NSObjectProtocol?
     private var statusObs: NSKeyValueObservation?
 
@@ -28,6 +33,9 @@ final class ClipPlayerModel: ObservableObject {
         configureAudioSession()
         teardown()
         isReady = false
+        hasError = false
+        lastURL = url
+        lastClient = client
 
         let item = client.playerItem(for: url)
         // Reuse the existing AVPlayer instance so the bound SwiftUI view swaps content
@@ -41,7 +49,11 @@ final class ClipPlayerModel: ObservableObject {
         statusObs = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             Task { @MainActor in
                 guard let self else { return }
-                if item.status == .readyToPlay { self.isReady = true }
+                switch item.status {
+                case .readyToPlay: self.isReady = true; self.hasError = false
+                case .failed: self.hasError = true
+                default: break
+                }
             }
         }
 
@@ -60,9 +72,16 @@ final class ClipPlayerModel: ObservableObject {
     func play() { player?.play() }
     func pause() { player?.pause() }
 
+    /// Re-attempt the last clip after a failure (wired to the error view's Retry button).
+    func retry() {
+        guard let lastClient, let lastURL else { return }
+        load(client: lastClient, url: lastURL)
+    }
+
     func stop() {
         teardown()
         isReady = false
+        hasError = false
         player?.pause()
         player = nil
     }

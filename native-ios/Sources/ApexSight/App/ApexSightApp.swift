@@ -12,13 +12,10 @@ struct ApexSightApp: App {
 
     init() {
         NativeNotificationManager.registerCategories()
-        configureAudioSession()
-    }
-
-    private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback)
-        try? session.setActive(true)
+        // NOTE: the audio session is intentionally NOT activated here. Activating .playback at
+        // launch interrupts/ducks the user's music or podcast before any video even plays (and
+        // live video defaults to muted). The clip player and live unmute take the session on
+        // demand, only when there's actually audio to play.
     }
 
     private var preferredColorScheme: ColorScheme? {

@@ -75,8 +75,40 @@ struct LoadingClipPlayer: View {
                     .opacity(model.isReady ? 1 : 0)
                     .animation(.easeIn(duration: 0.25), value: model.isReady)
             }
-            if !model.isReady {
+            if model.hasError {
+                clipError
+            } else if !model.isReady {
                 ClipSkeleton().transition(.opacity)
+            }
+        }
+    }
+
+    /// Shown when the clip can't load (no recording for that time, auth, server down) — a clear
+    /// dead-end message + Retry instead of a skeleton that spins forever.
+    private var clipError: some View {
+        ZStack {
+            Color.black
+            VStack(spacing: 12) {
+                Image(systemName: "film.stack")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(.orange)
+                Text("Clip unavailable")
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(.white)
+                Text("No recording for this moment, or the server didn't respond.")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                Button { model.retry() } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(.white, in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
     }

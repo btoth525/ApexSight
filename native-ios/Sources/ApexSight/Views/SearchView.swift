@@ -569,6 +569,9 @@ struct SearchView: View {
 
     private func performSearch() async {
         guard let client = appState.client else { return }
+        // Re-entrancy guard: repeated Return taps fire overlapping multi-request searches
+        // that race on shared @State (results/answer). Ignore submits while one is running.
+        guard !isSearching else { return }
         isSearching = true
         hasSearched = true
         errorMessage = nil
