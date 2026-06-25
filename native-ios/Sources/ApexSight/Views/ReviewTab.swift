@@ -77,28 +77,28 @@ struct ReviewTab: View {
     @ViewBuilder
     private var undoToast: some View {
         if pendingReview != nil {
-            HStack(spacing: 12) {
+            HStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16, weight: .black))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(GlassTheme.green)
                 Text("Marked reviewed")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(.white)
-                Spacer(minLength: 12)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GlassTheme.primary)
+                Spacer(minLength: GlassTheme.Space.m)
                 Button { undoDismiss() } label: {
                     Text("Undo")
-                        .font(.system(size: 14, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, GlassTheme.Space.l)
+            .padding(.vertical, GlassTheme.Space.m)
             .background(.ultraThinMaterial, in: Capsule())
-            .overlay { Capsule().stroke(.white.opacity(0.14), lineWidth: 1) }
-            .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            .padding(.horizontal, GlassTheme.Space.l)
+            .padding(.bottom, GlassTheme.Space.l)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
@@ -118,15 +118,14 @@ struct ReviewTab: View {
                 VStack(spacing: 0) {
                     // Filter chips — always visible regardless of content
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: GlassTheme.Space.s) {
                             chip("All", selected: selectedSeverity == "all") { selectedSeverity = "all" }
-                            chip("🚨 Alerts", selected: selectedSeverity == "alert") { selectedSeverity = "alert" }
-                            chip("🔍 Detections", selected: selectedSeverity == "detection") { selectedSeverity = "detection" }
+                            chip("Alerts", selected: selectedSeverity == "alert") { selectedSeverity = "alert" }
+                            chip("Detections", selected: selectedSeverity == "detection") { selectedSeverity = "detection" }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, GlassTheme.Space.l)
                     }
-                    .padding(.vertical, 8)
-                    .background(GlassTheme.background)
+                    .padding(.vertical, GlassTheme.Space.s)
 
                     Group {
                         if showEmptyState {
@@ -135,7 +134,7 @@ struct ReviewTab: View {
                         } else if (appState.isLoading || loadingDetections) && filtered.isEmpty {
                             ScrollView {
                                 SkeletonList(rows: 7)
-                                    .padding(.top, 8)
+                                    .padding(.top, GlassTheme.Space.s)
                             }
                             .disabled(true)
                         } else {
@@ -159,8 +158,9 @@ struct ReviewTab: View {
                                     }
                                 } header: {
                                     Text("\(filtered.count) items")
-                                        .font(.system(size: 12, weight: .heavy))
+                                        .font(.footnote.weight(.medium))
                                         .foregroundStyle(GlassTheme.secondary)
+                                        .monospacedDigit()
                                         .textCase(nil)
                                 }
                             }
@@ -175,19 +175,19 @@ struct ReviewTab: View {
                 }
             }
             .navigationTitle("Review")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
             .overlay(alignment: .bottom) { undoToast }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
-                        if appState.isLoading { ProgressView().tint(GlassTheme.cyan) }
+                    HStack(spacing: GlassTheme.Space.m) {
+                        if appState.isLoading { ProgressView().tint(GlassTheme.accent) }
                         if !appState.reviews.isEmpty {
                             Button {
                                 showMarkAllConfirm = true
                             } label: {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 18, weight: .black))
+                                    .font(.system(size: 18, weight: .semibold))
                                     .foregroundStyle(GlassTheme.green)
                             }
                             .accessibilityLabel("Mark all reviewed")
@@ -197,8 +197,8 @@ struct ReviewTab: View {
                             sortNewest.toggle()
                         } label: {
                             Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                .font(.system(size: 18, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(GlassTheme.accent)
                         }
                         .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
                         .accessibilityHint("Toggles sort order")
@@ -244,28 +244,29 @@ struct ReviewTab: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: selectedSeverity == "detection" ? "magnifyingglass" : "checkmark.shield.fill")
-                .font(.system(size: 52, weight: .black))
-                .foregroundStyle(selectedSeverity == "detection" ? GlassTheme.cyan : GlassTheme.green)
-            Text(selectedSeverity == "detection" ? "No Detections" : "All Clear")
-                .font(.system(size: 22, weight: .black))
-                .foregroundStyle(GlassTheme.primary)
-            Text(selectedSeverity == "detection" ? "No detection events for this filter." : "No review items")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(GlassTheme.secondary)
-        }
+        EmptyStateView(
+            icon: selectedSeverity == "detection" ? "magnifyingglass" : "checkmark.shield",
+            title: selectedSeverity == "detection" ? "No Detections" : "All Clear",
+            message: selectedSeverity == "detection"
+                ? "No detection events for this filter."
+                : "You're all caught up — no review items."
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: { Haptics.select(); action() }) {
             Text(title)
-                .font(.system(size: 13, weight: .black))
-                .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(selected ? GlassTheme.cyan : .white.opacity(0.10), in: Capsule())
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(selected ? .white : GlassTheme.primary)
+                .padding(.horizontal, GlassTheme.Space.m)
+                .padding(.vertical, GlassTheme.Space.s)
+                .background {
+                    Capsule().fill(selected ? GlassTheme.accent : GlassTheme.surface)
+                }
+                .overlay {
+                    if !selected { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                }
         }
         .buttonStyle(.plain)
     }

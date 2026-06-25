@@ -15,190 +15,27 @@ struct SettingsTab: View {
         return "\(v) (\(b))"
     }
 
+    private var isDisarmed: Bool { armModeRaw == ArmMode.disarmed.rawValue }
+
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(spacing: 16) {
-                        // Server info card
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Server")
-                                    .font(.system(size: 18, weight: .black))
-                                    .foregroundStyle(GlassTheme.primary)
-                                if let session = appState.session {
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(appState.isLive ? GlassTheme.green : GlassTheme.tertiary)
-                                            .frame(width: 8, height: 8)
-                                        Text(appState.isLive ? "Connected" : "Disconnected")
-                                            .font(.system(size: 12, weight: .black))
-                                            .foregroundStyle(appState.isLive ? GlassTheme.green : GlassTheme.secondary)
-                                    }
-                                    HStack {
-                                        Image(systemName: "server.rack")
-                                            .foregroundStyle(GlassTheme.cyan)
-                                        Text(session.baseURL.absoluteString)
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundStyle(GlassTheme.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    HStack {
-                                        Image(systemName: "person.fill")
-                                            .foregroundStyle(GlassTheme.cyan)
-                                        Text(session.username)
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundStyle(GlassTheme.secondary)
-                                    }
-                                }
-                                HStack(spacing: 12) {
-                                    Button {
-                                        path.append("servers")
-                                    } label: {
-                                        Label("Switch Server", systemImage: "arrow.triangle.2.circlepath")
-                                            .font(.system(size: 13, weight: .heavy))
-                                    }
-                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.blue))
-
-                                    Button(role: .destructive) {
-                                        appState.signOut()
-                                    } label: {
-                                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                                            .font(.system(size: 13, weight: .heavy))
-                                    }
-                                    .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
-                                }
-                            }
-                        }
-
-                        // Security / Arm card
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: (ArmMode(rawValue: armModeRaw) ?? .away).systemImage)
-                                        .font(.system(size: 16, weight: .black))
-                                        .foregroundStyle(armModeRaw == ArmMode.disarmed.rawValue ? GlassTheme.red : GlassTheme.green)
-                                    Text("Security")
-                                        .font(.system(size: 18, weight: .black))
-                                        .foregroundStyle(GlassTheme.primary)
-                                }
-                                Picker("Mode", selection: $armModeRaw) {
-                                    ForEach(ArmMode.allCases, id: \.self) { mode in
-                                        Text(mode.title).tag(mode.rawValue)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-                                .onChange(of: armModeRaw) { _, newValue in
-                                    // Route through ArmStateStore so the home/Lock-Screen
-                                    // widgets + Control Center toggle refresh immediately,
-                                    // and push the arm/snooze gate to the relay now (not on
-                                    // the next 15s poll).
-                                    let mode = ArmMode(rawValue: newValue) ?? .away
-                                    ArmStateStore.mode = mode
-                                    appState.syncRelayGateIfChanged()
-                                    // Feel the change: a firm "armed" success vs a softer "disarmed" warning.
-                                    if mode == .disarmed { Haptics.warning() } else { Haptics.success() }
-                                }
-                                Text(armModeRaw == ArmMode.disarmed.rawValue
-                                     ? "Disarmed — all alerts are silenced."
-                                     : "Armed — alerts are on. Change from here, Control Center, or “Hey Siri, disarm ApexSight.”")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(armModeRaw == ArmMode.disarmed.rawValue ? GlassTheme.orange : GlassTheme.secondary)
-                            }
-                        }
-
-                        // Appearance card
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Appearance")
-                                    .font(.system(size: 18, weight: .black))
-                                    .foregroundStyle(GlassTheme.primary)
-                                HStack(spacing: 10) {
-                                    appearanceOption(label: "System", icon: "circle.lefthalf.filled", value: "system")
-                                    appearanceOption(label: "Dark", icon: "moon.fill", value: "dark")
-                                    appearanceOption(label: "Light", icon: "sun.max.fill", value: "light")
-                                }
-                            }
-                        }
+                    VStack(spacing: GlassTheme.Space.l) {
+                        serverCard
+                        securityCard
+                        appearanceCard
 
                         // Privacy / app lock card — only when the device can authenticate.
                         if BiometricLock.isAvailable {
-                            GlassCard {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Toggle(isOn: $biometricLockEnabled) {
-                                        HStack(spacing: 10) {
-                                            Image(systemName: BiometricLock.symbolName)
-                                                .font(.system(size: 18, weight: .black))
-                                                .foregroundStyle(GlassTheme.cyan)
-                                                .frame(width: 30)
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text("Require \(BiometricLock.label)")
-                                                    .font(.system(size: 16, weight: .black))
-                                                    .foregroundStyle(GlassTheme.primary)
-                                                Text("Lock the app when you leave it.")
-                                                    .font(.system(size: 12, weight: .bold))
-                                                    .foregroundStyle(GlassTheme.secondary)
-                                            }
-                                        }
-                                    }
-                                    .tint(GlassTheme.cyan)
-                                    .sensoryFeedback(.selection, trigger: biometricLockEnabled)
-                                }
-                            }
+                            privacyCard
                         }
 
-                        // Quick nav cards
-                        settingsRow(icon: "waveform.path.ecg", title: "System Health", subtitle: "Cameras, detectors, storage", tint: GlassTheme.green) {
-                            path.append("system")
-                        }
-                        settingsRow(icon: "bell.badge.fill", title: "Notifications", subtitle: "Per-camera preferences, quiet hours", tint: GlassTheme.orange) {
-                            path.append("notifications")
-                        }
-                        settingsRow(icon: "paintbrush.pointed.fill", title: "Alert Style", subtitle: "Emojis, fields, snapshot → GIF, buttons", tint: GlassTheme.teal) {
-                            path.append("style")
-                        }
-                        settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Status & test for alerts when closed", tint: GlassTheme.cyan) {
-                            path.append("push")
-                        }
-                        settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
-                            path.append("triggers")
-                        }
-                        settingsRow(icon: "doc.text.image.fill", title: "Daily Recap", subtitle: "Today's activity + an optional daily summary", tint: GlassTheme.orange) {
-                            path.append("recap")
-                        }
-
-                        // About card
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("About")
-                                    .font(.system(size: 18, weight: .black))
-                                    .foregroundStyle(GlassTheme.primary)
-                                HStack {
-                                    Image(systemName: "shield.lefthalf.filled")
-                                        .foregroundStyle(GlassTheme.cyan)
-                                    Text("ApexSight")
-                                        .font(.system(size: 14, weight: .heavy))
-                                        .foregroundStyle(GlassTheme.primary)
-                                    Spacer()
-                                    Text(appVersion)
-                                        .font(.system(size: 13, weight: .heavy))
-                                        .foregroundStyle(GlassTheme.secondary)
-                                }
-                                Text("Native Frigate NVR client. Local-first — no accounts, no telemetry.")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(GlassTheme.secondary)
-                                Button {
-                                    hasCompletedOnboarding = false
-                                } label: {
-                                    Label("Replay Intro", systemImage: "sparkles")
-                                        .font(.system(size: 13, weight: .heavy))
-                                }
-                                .buttonStyle(PillButtonStyle(tint: GlassTheme.purple))
-                            }
-                        }
+                        configurationSection
+                        aboutCard
                     }
-                    .padding(16)
+                    .padding(GlassTheme.Space.l)
                 }
             }
             .navigationTitle("Settings")
@@ -216,47 +53,247 @@ struct SettingsTab: View {
         }
     }
 
+    // MARK: - Server
+
+    private var serverCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Server")
+
+                if let session = appState.session {
+                    HStack(spacing: GlassTheme.Space.s) {
+                        StatusDot(state: appState.isLive ? .live : .offline)
+                        Text(appState.isLive ? "Connected" : "Disconnected")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appState.isLive ? GlassTheme.green : GlassTheme.secondary)
+                    }
+
+                    VStack(spacing: GlassTheme.Space.s) {
+                        infoRow(icon: "server.rack", text: session.baseURL.absoluteString)
+                        infoRow(icon: "person.fill", text: session.username)
+                    }
+                }
+
+                HStack(spacing: GlassTheme.Space.m) {
+                    Button {
+                        path.append("servers")
+                    } label: {
+                        Label("Switch Server", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+
+                    Button(role: .destructive) {
+                        appState.signOut()
+                    } label: {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.red))
+                }
+                .padding(.top, GlassTheme.Space.xs)
+            }
+        }
+    }
+
+    private func infoRow(icon: String, text: String) -> some View {
+        HStack(spacing: GlassTheme.Space.m) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(GlassTheme.tertiary)
+                .frame(width: 22)
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(GlassTheme.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Security / Arm
+
+    private var securityCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Security") {
+                    Image(systemName: (ArmMode(rawValue: armModeRaw) ?? .away).systemImage)
+                        .font(.headline)
+                        .foregroundStyle(isDisarmed ? GlassTheme.red : GlassTheme.green)
+                }
+
+                Picker("Mode", selection: $armModeRaw) {
+                    ForEach(ArmMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: armModeRaw) { _, newValue in
+                    // Route through ArmStateStore so the home/Lock-Screen
+                    // widgets + Control Center toggle refresh immediately,
+                    // and push the arm/snooze gate to the relay now (not on
+                    // the next 15s poll).
+                    let mode = ArmMode(rawValue: newValue) ?? .away
+                    ArmStateStore.mode = mode
+                    appState.syncRelayGateIfChanged()
+                    // Feel the change: a firm "armed" success vs a softer "disarmed" warning.
+                    if mode == .disarmed { Haptics.warning() } else { Haptics.success() }
+                }
+
+                Text(isDisarmed
+                     ? "Disarmed — all alerts are silenced."
+                     : "Armed — alerts are on. Change from here, Control Center, or “Hey Siri, disarm ApexSight.”")
+                    .font(.footnote)
+                    .foregroundStyle(isDisarmed ? GlassTheme.orange : GlassTheme.secondary)
+            }
+        }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Appearance")
+                HStack(spacing: GlassTheme.Space.m) {
+                    appearanceOption(label: "System", icon: "circle.lefthalf.filled", value: "system")
+                    appearanceOption(label: "Dark", icon: "moon.fill", value: "dark")
+                    appearanceOption(label: "Light", icon: "sun.max.fill", value: "light")
+                }
+            }
+        }
+    }
+
+    // MARK: - Privacy / App Lock
+
+    private var privacyCard: some View {
+        GlassCard {
+            Toggle(isOn: $biometricLockEnabled) {
+                HStack(spacing: GlassTheme.Space.m) {
+                    iconTile(systemName: BiometricLock.symbolName, tint: GlassTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Require \(BiometricLock.label)")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("Lock the app when you leave it.")
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                }
+            }
+            .tint(GlassTheme.accent)
+            .sensoryFeedback(.selection, trigger: biometricLockEnabled)
+        }
+    }
+
+    // MARK: - Configuration rows
+
+    private var configurationSection: some View {
+        VStack(spacing: GlassTheme.Space.m) {
+            settingsRow(icon: "waveform.path.ecg", title: "System Health", subtitle: "Cameras, detectors, storage") {
+                path.append("system")
+            }
+            settingsRow(icon: "bell.badge.fill", title: "Notifications", subtitle: "Per-camera preferences, quiet hours") {
+                path.append("notifications")
+            }
+            settingsRow(icon: "paintbrush.pointed.fill", title: "Alert Style", subtitle: "Emojis, fields, snapshot → GIF, buttons") {
+                path.append("style")
+            }
+            settingsRow(icon: "bolt.horizontal.fill", title: "Instant Push", subtitle: "Status & test for alerts when closed") {
+                path.append("push")
+            }
+            settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone") {
+                path.append("triggers")
+            }
+            settingsRow(icon: "doc.text.image.fill", title: "Daily Recap", subtitle: "Today's activity + an optional daily summary") {
+                path.append("recap")
+            }
+        }
+    }
+
+    // MARK: - About
+
+    private var aboutCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("About")
+
+                HStack(spacing: GlassTheme.Space.m) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.headline)
+                        .foregroundStyle(GlassTheme.accent)
+                    Text("ApexSight")
+                        .font(.headline)
+                        .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                    Text(appVersion)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(GlassTheme.secondary)
+                        .monospacedDigit()
+                }
+
+                Text("Native Frigate NVR client. Local-first — no accounts, no telemetry.")
+                    .font(.footnote)
+                    .foregroundStyle(GlassTheme.secondary)
+
+                Button {
+                    hasCompletedOnboarding = false
+                } label: {
+                    Label("Replay Intro", systemImage: "sparkles")
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                .padding(.top, GlassTheme.Space.xs)
+            }
+        }
+    }
+
+    // MARK: - Reusable pieces
+
+    private func iconTile(systemName: String, tint: Color) -> some View {
+        Image(systemName: systemName)
+            .font(.system(.body, design: .default).weight(.semibold))
+            .foregroundStyle(tint)
+            .frame(width: 38, height: 38)
+            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+    }
+
     private func appearanceOption(label: String, icon: String, value: String) -> some View {
         let selected = colorSchemePreference == value
         return Button {
             Haptics.select()
             colorSchemePreference = value
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: GlassTheme.Space.s) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .black))
+                    .font(.system(.title3, design: .default).weight(.semibold))
                     .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-                    .frame(width: 48, height: 48)
-                    .background(selected ? GlassTheme.cyan : .white.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .frame(width: 52, height: 52)
+                    .background(
+                        selected ? GlassTheme.accent : GlassTheme.surfaceHigh,
+                        in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                    )
                 Text(label)
-                    .font(.system(size: 11, weight: .black))
-                    .foregroundStyle(selected ? GlassTheme.cyan : GlassTheme.secondary)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(selected ? GlassTheme.accent : GlassTheme.secondary)
             }
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
     }
 
-    private func settingsRow(icon: String, title: String, subtitle: String, tint: Color, action: @escaping () -> Void) -> some View {
+    private func settingsRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
         Button(action: { Haptics.tap(); action() }) {
             GlassCard {
-                HStack(spacing: 14) {
-                    Image(systemName: icon)
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundStyle(tint)
-                        .frame(width: 44, height: 44)
-                        .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: GlassTheme.Space.l) {
+                    iconTile(systemName: icon, tint: GlassTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(title)
-                            .font(.system(size: 16, weight: .black))
+                            .font(.headline)
                             .foregroundStyle(GlassTheme.primary)
                         Text(subtitle)
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.footnote)
                             .foregroundStyle(GlassTheme.secondary)
                     }
-                    Spacer()
+                    Spacer(minLength: GlassTheme.Space.s)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .black))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(GlassTheme.tertiary)
                 }
             }

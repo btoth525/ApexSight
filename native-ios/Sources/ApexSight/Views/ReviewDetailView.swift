@@ -25,14 +25,14 @@ struct ReviewDetailView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     hero
                     if let reviewAIDescription { aiCard(reviewAIDescription) }
                     timelineCard
                     objectsCard
                     actionsCard
                 }
-                .padding(18)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Review")
@@ -80,7 +80,7 @@ struct ReviewDetailView: View {
 
     private var hero: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 Picker("Media", selection: $mediaMode) {
                     ForEach(MediaMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -124,19 +124,19 @@ struct ReviewDetailView: View {
                     }
                 }
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
                 .expandableMedia(fullscreenMedia)
 
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top, spacing: GlassTheme.Space.m) {
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                         Text(NotificationCopy.title(for: review))
-                            .font(.system(size: 22, weight: .black, design: .rounded))
+                            .font(.title2.weight(.bold))
                             .foregroundStyle(GlassTheme.primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
 
                         Text(NotificationCopy.body(for: review))
-                            .font(.system(size: 13, weight: .heavy))
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(GlassTheme.secondary)
                             .lineLimit(1)
                     }
@@ -151,17 +151,17 @@ struct ReviewDetailView: View {
 
     private func aiCard(_ text: String) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                HStack(spacing: GlassTheme.Space.s) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.purple)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                     Text("AI Summary")
-                        .font(.system(size: 16, weight: .black))
+                        .font(.headline)
                         .foregroundStyle(GlassTheme.primary)
                 }
                 Text(text)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline)
                     .foregroundStyle(GlassTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -186,15 +186,13 @@ struct ReviewDetailView: View {
 
     private var timelineCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Timeline")
-                    .font(.system(size: 21, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Timeline")
 
-                HStack(spacing: 10) {
+                HStack(spacing: GlassTheme.Space.s) {
                     timelineMetric("Start", value: timestamp(review.startTime), icon: "play.fill", tint: GlassTheme.green)
                     timelineMetric("End", value: timestamp(review.endTime), icon: "stop.fill", tint: GlassTheme.orange)
-                    timelineMetric("Duration", value: duration, icon: "timer", tint: GlassTheme.cyan)
+                    timelineMetric("Duration", value: duration, icon: "timer", tint: GlassTheme.accent)
                 }
             }
         }
@@ -202,49 +200,48 @@ struct ReviewDetailView: View {
 
     private var objectsCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Detected")
-                    .font(.system(size: 21, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Detected")
 
                 tagSection(title: "Objects", values: review.data?.objects ?? [])
                 tagSection(title: "Zones", values: review.data?.zones ?? [])
                 tagSection(title: "Audio", values: review.data?.audio ?? [])
 
                 if !detectionEvents.isEmpty || loadingDetections {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("DETECTIONS")
-                            .font(.system(size: 11, weight: .black))
-                            .foregroundStyle(GlassTheme.secondary)
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                        Text("Detections".uppercased())
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(GlassTheme.tertiary)
                         if loadingDetections {
-                            ProgressView().tint(GlassTheme.cyan)
+                            ProgressView().tint(GlassTheme.accent)
                         } else {
-                            VStack(spacing: 6) {
+                            VStack(spacing: GlassTheme.Space.s) {
                                 ForEach(detectionEvents) { event in
                                     NavigationLink(value: event) {
-                                        HStack(spacing: 10) {
+                                        HStack(spacing: GlassTheme.Space.m) {
                                             if let url = appState.client?.eventThumbnailURL(id: event.id) {
                                                 RemoteImage(url: url, maxPixelSize: 150)
                                                     .frame(width: 48, height: 48)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
                                             }
-                                            VStack(alignment: .leading, spacing: 2) {
+                                            VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                                                 Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
-                                                    .font(.system(size: 14, weight: .black))
+                                                    .font(.subheadline.weight(.semibold))
                                                     .foregroundStyle(GlassTheme.primary)
                                                 if let epoch = event.startTime {
                                                     Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
-                                                        .font(.system(size: 11, weight: .bold))
+                                                        .font(.footnote.weight(.medium))
                                                         .foregroundStyle(GlassTheme.secondary)
                                                 }
                                             }
                                             Spacer()
                                             Image(systemName: "chevron.right")
-                                                .font(.system(size: 12, weight: .bold))
+                                                .font(.caption.weight(.semibold))
                                                 .foregroundStyle(GlassTheme.tertiary)
                                         }
-                                        .padding(8)
-                                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .padding(GlassTheme.Space.s)
+                                        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                                        .cardStroke(GlassTheme.Radius.tile)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -258,10 +255,8 @@ struct ReviewDetailView: View {
 
     private var actionsCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Actions")
-                    .font(.system(size: 21, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Actions")
 
                 Button {
                     showReviewedConfirmation = true
@@ -286,12 +281,13 @@ struct ReviewDetailView: View {
     }
 
     private var severityBadge: some View {
-        Text(titleize(review.severity ?? "activity"))
-            .font(.system(size: 12, weight: .black))
-            .foregroundStyle(.black)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background((review.severity == "alert" ? GlassTheme.orange : GlassTheme.cyan), in: Capsule())
+        let tint = review.severity == "alert" ? GlassTheme.orange : GlassTheme.accent
+        return Text(titleize(review.severity ?? "activity"))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, GlassTheme.Space.xs)
+            .background(tint.opacity(0.14), in: Capsule())
     }
 
     private var duration: String {
@@ -309,30 +305,32 @@ struct ReviewDetailView: View {
     }
 
     private func timelineMetric(_ title: String, value: String, icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
             Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(tint)
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .black))
-                .foregroundStyle(GlassTheme.secondary)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(GlassTheme.tertiary)
             Text(value)
-                .font(.system(size: 13, weight: .black))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(GlassTheme.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(GlassTheme.Space.m)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+        .cardStroke(GlassTheme.Radius.tile)
     }
 
     @ViewBuilder
     private func tagSection(title: String, values: [String]) -> some View {
         if !values.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .black))
-                    .foregroundStyle(GlassTheme.secondary)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(GlassTheme.tertiary)
 
                 FlowTags(values: values)
             }
@@ -350,12 +348,12 @@ struct FlowTags: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: GlassTheme.Space.s) {
                 ForEach(values, id: \.self) { value in
                     tag(value)
                 }
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                 ForEach(values, id: \.self) { value in
                     tag(value)
                 }
@@ -365,10 +363,10 @@ struct FlowTags: View {
 
     private func tag(_ value: String) -> some View {
         Text(titleize(value))
-            .font(.system(size: 12, weight: .black))
-            .foregroundStyle(GlassTheme.cyan)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(GlassTheme.cyan.opacity(0.14), in: Capsule())
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(GlassTheme.accent)
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, GlassTheme.Space.s)
+            .background(GlassTheme.accent.opacity(0.12), in: Capsule())
     }
 }

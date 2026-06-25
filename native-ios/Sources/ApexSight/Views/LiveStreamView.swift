@@ -103,34 +103,33 @@ struct LiveStreamView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: GlassTheme.Space.s) {
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .black))
-                    .frame(width: 38, height: 38)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 40, height: 40)
                     .background(.ultraThinMaterial, in: Circle())
-                    .foregroundStyle(.white)
+                    .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                    .foregroundStyle(GlassTheme.primary)
             }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(titleize(camera.name))
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundStyle(.white)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(GlassTheme.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 6, height: 6)
+                HStack(spacing: GlassTheme.Space.xs) {
+                    statusIndicator
                     Text(statusText)
-                        .font(.system(size: 11, weight: .heavy))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(statusColor)
                 }
             }
 
-            Spacer(minLength: 6)
+            Spacer(minLength: GlassTheme.Space.s)
 
             Menu {
                 Picker("Stream", selection: $streamMode) {
@@ -139,18 +138,19 @@ struct LiveStreamView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: GlassTheme.Space.xs) {
                     Image(systemName: icon(for: streamMode))
-                        .font(.system(size: 12, weight: .black))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(streamMode.rawValue)
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.subheadline.weight(.semibold))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .black))
+                        .font(.system(size: 9, weight: .semibold))
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
+                .foregroundStyle(GlassTheme.primary)
+                .padding(.horizontal, GlassTheme.Space.m)
                 .padding(.vertical, 9)
                 .background(.ultraThinMaterial, in: Capsule())
+                .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
             }
 
             if capability?.hasPtz == true {
@@ -158,21 +158,35 @@ struct LiveStreamView: View {
                     showPTZ.toggle()
                 } label: {
                     Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 15, weight: .black))
-                        .frame(width: 38, height: 38)
-                        .background(showPTZ ? AnyShapeStyle(GlassTheme.cyan.opacity(0.4)) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                        .foregroundStyle(.white)
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 40, height: 40)
+                        .background(showPTZ ? AnyShapeStyle(GlassTheme.accent.opacity(0.30)) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
+                        .overlay { Circle().strokeBorder(showPTZ ? GlassTheme.accent.opacity(0.55) : GlassTheme.separator, lineWidth: 1) }
+                        .foregroundStyle(showPTZ ? GlassTheme.accent : GlassTheme.primary)
                 }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, GlassTheme.Space.l)
         .padding(.top, 54)
+    }
+
+    /// Status indicator: StatusDot for live/connecting states, a small solid dot for snapshot.
+    @ViewBuilder
+    private var statusIndicator: some View {
+        switch streamMode {
+        case .live:
+            StatusDot(state: isLive ? .live : .offline)
+        case .snapshot:
+            Circle()
+                .fill(GlassTheme.orange)
+                .frame(width: 8, height: 8)
+        }
     }
 
     private var statusColor: Color {
         switch streamMode {
-        case .snapshot: return .orange
-        case .live: return isLive ? .green : .yellow
+        case .snapshot: return GlassTheme.orange
+        case .live: return isLive ? GlassTheme.green : GlassTheme.secondary
         }
     }
 
@@ -191,13 +205,13 @@ struct LiveStreamView: View {
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: GlassTheme.Space.l) {
             if showPTZ, let client = appState.client {
                 PTZControlView(cameraName: camera.name, client: client)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, GlassTheme.Space.xxl)
             }
 
-            HStack(spacing: 20) {
+            HStack(spacing: GlassTheme.Space.xl) {
                 actionButton(icon: "arrow.clockwise", label: "Refresh") {
                     isLive = false
                     reloadToken = UUID()
@@ -211,7 +225,7 @@ struct LiveStreamView: View {
                     actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
                 }
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, GlassTheme.Space.xxl)
             .padding(.bottom, 40)
         }
     }
@@ -223,15 +237,16 @@ struct LiveStreamView: View {
     }
 
     private func actionButtonContent(icon: String, label: String) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: GlassTheme.Space.s) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .bold))
-                .frame(width: 52, height: 52)
-                .background(.white.opacity(0.15), in: Circle())
-                .foregroundStyle(.white)
+                .font(.system(size: 21, weight: .semibold))
+                .frame(width: 54, height: 54)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                .foregroundStyle(GlassTheme.primary)
             Text(label)
-                .font(.system(size: 11, weight: .heavy))
-                .foregroundStyle(.white.opacity(0.7))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(GlassTheme.secondary)
         }
     }
 }
