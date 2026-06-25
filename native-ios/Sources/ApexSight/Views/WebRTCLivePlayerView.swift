@@ -17,10 +17,10 @@ enum WebRTCFactory {
 
 // MARK: - RTCClient
 
-/// Owns one receive-only WebRTC playback connection to go2rtc (signaled via FrigateClient).
-/// Non-trickle: gather candidates, POST the offer once, apply the complete answer. Auto-retries
-/// transient failures so live self-heals without any HLS fallback. Publishes the remote video
-/// track + a connection state the SwiftUI layer renders.
+/// One receive-only WebRTC playback connection to go2rtc (signaled via FrigateClient).
+/// Non-trickle: gather candidates, POST the offer once, apply the complete answer. Fails fast
+/// so the view can fall back to HLS when WebRTC can't reach the camera (e.g. you're not on the
+/// home LAN). Publishes the remote video track + a connection state.
 @MainActor
 final class RTCClient: NSObject, ObservableObject {
     enum State: Equatable { case connecting, connected, failed }
@@ -35,10 +35,6 @@ final class RTCClient: NSObject, ObservableObject {
 
     private let camera: String
     private let useSub: Bool
-    private var client: FrigateClient?
-    private var attempt = 0
-    private let maxAttempts = 5
-    private var retryTask: Task<Void, Never>?
 
     init(camera: String, useSub: Bool = false) {
         self.camera = camera
@@ -47,87 +43,46 @@ final class RTCClient: NSObject, ObservableObject {
     }
 
     func connect(client: FrigateClient) {
-        self.client = client
-        isTorndown = false
-        attempt = 0
-        state = .connecting
-        openConnection()
-    }
-
-    /// Manual retry after we've given up (user tapped Retry).
-    func retry() {
-        guard client != nil else { return }
-        retryTask?.cancel(); retryTask = nil
-        isTorndown = false
-        attempt = 0
-        state = .connecting
-        openConnection()
-    }
-
-    private func openConnection() {
-        closePeer()
         let config = RTCConfiguration()
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
         config.sdpSemantics = .unifiedPlan
         config.continualGatheringPolicy = .gatherOnce
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let pc = WebRTCFactory.shared.peerConnection(with: config, constraints: constraints, delegate: self) else {
-            handleFailure(); return
+            state = .failed
+            return
         }
         peerConnection = pc
         let recvInit = RTCRtpTransceiverInit()
         recvInit.direction = .recvOnly
         pc.addTransceiver(of: .video, init: recvInit)
-        Task { await negotiate(pc) }
+        Task { await negotiate(client: client) }
     }
 
-    private func negotiate(_ pc: RTCPeerConnection) async {
-        guard let client else { return }
+    private func negotiate(client: FrigateClient) async {
+        guard let pc = peerConnection else { return }
         let c = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         do {
             let offer = try await makeOffer(pc, c)
             try await setLocal(pc, offer)
-            await waitForGathering(timeout: 1.5)
-            guard !isTorndown, peerConnection === pc else { return }
+            await waitForGathering(timeout: 2.0)
+            guard !isTorndown else { return }
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswerSDP(camera: camera, sub: useSub, offerSDP: localSDP)
-            guard !isTorndown, peerConnection === pc else { return }
+            guard !isTorndown else { return }
             try await setRemote(pc, RTCSessionDescription(type: .answer, sdp: answerSDP))
         } catch {
-            if !isTorndown, peerConnection === pc { handleFailure() }
+            if !isTorndown { state = .failed }
         }
-    }
-
-    /// Retry a few times with a short backoff, then surface a terminal failure so the UI can
-    /// show a Retry affordance. WebRTC reconnects sub-second, so retries are cheap.
-    private func handleFailure() {
-        guard !isTorndown else { return }
-        closePeer()
-        guard attempt < maxAttempts else { state = .failed; return }
-        attempt += 1
-        state = .connecting
-        retryTask?.cancel()
-        retryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard let self, !self.isTorndown, !Task.isCancelled else { return }
-            self.retryTask = nil
-            self.openConnection()
-        }
-    }
-
-    private func closePeer() {
-        resumeGathering()
-        remoteVideoTrack = nil
-        peerConnection?.close()
-        peerConnection = nil
-        didFinishGathering = false
     }
 
     func teardown() {
         guard !isTorndown else { return }
         isTorndown = true
-        retryTask?.cancel(); retryTask = nil
-        closePeer()
+        resumeGathering()
+        remoteVideoTrack = nil
+        peerConnection?.close()
+        peerConnection = nil
     }
 
     // MARK: Continuation-wrapped signaling (portable across WebRTC versions)
@@ -188,10 +143,10 @@ extension RTCClient: RTCPeerConnectionDelegate {
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown, pc === self.peerConnection else { return }
+            guard let self, !self.isTorndown else { return }
             switch newState {
-            case .connected: self.state = .connected; self.attempt = 0
-            case .failed: self.handleFailure()
+            case .connected: self.state = .connected
+            case .failed, .closed: self.state = .failed
             default: break
             }
         }
@@ -200,7 +155,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {
         guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown, pc === self.peerConnection, self.remoteVideoTrack == nil else { return }
+            guard let self, !self.isTorndown, self.remoteVideoTrack == nil else { return }
             self.remoteVideoTrack = track
         }
     }
@@ -208,7 +163,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown, pc === self.peerConnection, self.remoteVideoTrack == nil else { return }
+            guard let self, !self.isTorndown, self.remoteVideoTrack == nil else { return }
             self.remoteVideoTrack = track
         }
     }
@@ -260,24 +215,30 @@ struct WebRTCPlayerView: UIViewRepresentable {
     }
 }
 
-// MARK: - LiveVideoPlayerView (pure WebRTC)
+// MARK: - LiveVideoPlayerView (WebRTC primary → HLS/MJPEG fallback)
 
-/// Live video, WebRTC only — instant, Metal-rendered, hardware-decoded, like the big NVR apps.
-/// It connects silently behind the cached snapshot (never black), auto-retries transient drops,
-/// and shows a Retry affordance only if it truly can't reach the camera (e.g. off your LAN with
-/// port 8555 not forwarded). Peers tear down on disappear and reconnect sub-second on return.
+/// Live video: WebRTC as the INSTANT primary path, with automatic fallback to the proven
+/// HLS/MJPEG player when WebRTC can't connect (e.g. you're not on the home LAN, so the phone
+/// can't reach go2rtc's 8555 candidate). WebRTC connects silently behind the cached snapshot;
+/// if it isn't live within ~3s (or fails), we drop to HLSLivePlayerView — which itself cascades
+/// HLS → MJPEG. So live ALWAYS loads: instant at home, reliable everywhere else.
 struct LiveVideoPlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
     var showControls: Bool = false
-    // Accepted for call-site compatibility (WebRTC reconnects instantly, and has no PiP).
     var persistent: Bool = false
     var pipController: LivePiPController? = nil
     var onSingleTap: (() -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
 
     @StateObject private var rtc: RTCClient
+    @State private var fellBackToHLS = false
+    @State private var connectTimer: Task<Void, Never>?
     @State private var started = false
+
+    /// Cameras where WebRTC already failed this session — go straight to HLS so we don't pay
+    /// the ~3s probe every time (e.g. while you're away from home). Resets on next app launch.
+    @MainActor private static var webRTCUnavailable: Set<String> = []
 
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
          pipController: LivePiPController? = nil, onSingleTap: (() -> Void)? = nil,
@@ -294,6 +255,17 @@ struct LiveVideoPlayerView: View {
     private var isLive: Bool { rtc.state == .connected && rtc.remoteVideoTrack != nil }
 
     var body: some View {
+        if fellBackToHLS || Self.webRTCUnavailable.contains(camera.name) {
+            HLSLivePlayerView(
+                camera: camera, showControls: showControls, persistent: persistent,
+                pipController: pipController, onSingleTap: onSingleTap, onPlaying: onPlaying
+            )
+        } else {
+            webRTCContent
+        }
+    }
+
+    private var webRTCContent: some View {
         ZStack {
             Color.black
             if let url = appState.client?.latestFrameURL(camera: camera.name) {
@@ -305,22 +277,29 @@ struct LiveVideoPlayerView: View {
             videoLayer
                 .opacity(isLive ? 1 : 0)
                 .animation(.easeIn(duration: 0.3), value: isLive)
-            if rtc.state == .failed, !isLive {
-                retryOverlay
-            }
         }
         .onAppear {
             guard !started else { return }
             started = true
-            guard let client = appState.client else { return }
+            guard let client = appState.client else { fellBackToHLS = true; return }
             rtc.connect(client: client)
+            startConnectTimer()
         }
         .onDisappear {
+            connectTimer?.cancel(); connectTimer = nil
             rtc.teardown()
             started = false
         }
         .onChange(of: rtc.state) { _, newState in
-            onPlaying?(newState == .connected)
+            switch newState {
+            case .connected:
+                connectTimer?.cancel(); connectTimer = nil
+                onPlaying?(true)
+            case .failed:
+                goToHLS()
+            default:
+                break
+            }
         }
     }
 
@@ -334,26 +313,20 @@ struct LiveVideoPlayerView: View {
         }
     }
 
-    private var retryOverlay: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(.orange)
-            Text("Can't reach this camera")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white.opacity(0.85))
-            Button {
-                Haptics.tap()
-                rtc.retry()
-            } label: {
-                Label("Retry", systemImage: "arrow.clockwise")
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(.white, in: Capsule())
-            }
+    private func startConnectTimer() {
+        connectTimer?.cancel()
+        connectTimer = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, !isLive else { return }
+            goToHLS()
         }
-        .padding(20)
+    }
+
+    private func goToHLS() {
+        guard !fellBackToHLS else { return }
+        connectTimer?.cancel(); connectTimer = nil
+        Self.webRTCUnavailable.insert(camera.name)
+        rtc.teardown()
+        withAnimation(.easeIn(duration: 0.2)) { fellBackToHLS = true }
     }
 }
