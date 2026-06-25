@@ -5,7 +5,6 @@ struct CameraCard: View {
     let camera: FrigateCamera
 
     @State private var isLive = false
-    @StateObject private var pip = LivePiPController()
 
     private var capability: CameraCapability? {
         appState.capabilities.first(where: { $0.camera == camera.name })
@@ -16,12 +15,10 @@ struct CameraCard: View {
             LiveStreamView(camera: camera)
         } label: {
             ZStack(alignment: .bottomLeading) {
-                // HLSLivePlayerView shows its own snapshot placeholder internally, so
-                // there's never a black gap. PiP wired so long-press can float it.
+                // Pure WebRTC live (instant, Metal) with a cached snapshot behind it so
+                // there's never a black gap.
                 LiveVideoPlayerView(
                     camera: camera,
-                    persistent: true,
-                    pipController: pip,
                     onPlaying: { playing in
                         withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
                     }
@@ -50,17 +47,6 @@ struct CameraCard: View {
             .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            if pip.isSupported {
-                Button {
-                    Haptics.tap()
-                    pip.toggle()
-                } label: {
-                    Label(pip.isActive ? "Exit Picture in Picture" : "Picture in Picture",
-                          systemImage: pip.isActive ? "pip.exit" : "pip.enter")
-                }
-            }
-        }
     }
 
     private var nameRow: some View {
