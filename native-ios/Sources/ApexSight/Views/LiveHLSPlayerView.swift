@@ -143,6 +143,8 @@ final class HLSLiveModel: ObservableObject {
     }
 
     func reload() {
+        // Cancel any pending reconnect so a tapped Retry can't spawn a competing connect.
+        reconnectTask?.cancel(); reconnectTask = nil
         retryCount = 0
         totalAttempts = 0
         didTryReauth = false

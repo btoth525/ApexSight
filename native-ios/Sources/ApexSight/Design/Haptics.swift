@@ -28,6 +28,9 @@ enum Haptics {
     }
 
     private static func run(_ work: @escaping () -> Void) {
+        // Respect Reduce Motion — people who enable it generally want less buzz too. One
+        // guard here covers every Haptics call across the app.
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
         if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
     }
 }

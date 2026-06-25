@@ -550,6 +550,9 @@ final class AppState: ObservableObject {
         isLoading = false
     }
 
+    /// Cameras whose snapshot prewarm is in flight, so repeated calls don't re-download.
+    private var prewarmingCameras: Set<String> = []
+
     /// Warm the snapshot cache for every camera so live grids paint a real frame
     /// INSTANTLY (and never flash black) — even tiles you haven't scrolled to yet, and
     /// even right after a stream is torn down. Each fetch is small + concurrent, so the
@@ -558,10 +561,15 @@ final class AppState: ObservableObject {
         guard let client else { return }
         for name in cameras.map(\.name) {
             let url = client.latestFrameURL(camera: name)
-            if ImageCache.shared.image(for: url) != nil { continue }
+            // Skip if already cached OR a fetch is already in flight (fast tab flaps used to
+            // re-dispatch every camera's download). maxPixel matches RemoteImage's default so
+            // the warmed image is exactly what the cell reuses.
+            if ImageCache.shared.image(for: url) != nil || prewarmingCameras.contains(name) { continue }
+            prewarmingCameras.insert(name)
             Task { @MainActor in
+                defer { prewarmingCameras.remove(name) }
                 guard let data = try? await client.imageData(from: url),
-                      let image = RemoteImage.downsample(data, maxPixel: 900) else { return }
+                      let image = RemoteImage.downsample(data, maxPixel: 1000) else { return }
                 ImageCache.shared.insert(image, for: url)
             }
         }
