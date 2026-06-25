@@ -12,24 +12,20 @@ struct SimilarEventsSheet: View {
             ZStack {
                 GlassBackground()
                 if events.isEmpty {
-                    VStack(spacing: 14) {
-                        Image(systemName: errorMessage == nil ? "magnifyingglass.circle" : "exclamationmark.triangle.fill")
-                            .font(.system(size: 44, weight: .black))
-                            .foregroundStyle(errorMessage == nil ? GlassTheme.secondary : GlassTheme.orange)
-                        Text(errorMessage == nil ? "No Similar Events Found" : "Couldn't Load Similar Events")
-                            .font(.system(size: 20, weight: .black))
-                            .foregroundStyle(GlassTheme.primary)
-                        // Distinguish a genuine empty result from a fetch/auth error so the
-                        // user isn't wrongly told their server lacks embeddings.
-                        Text(errorMessage ?? "Semantic search found no matches. This requires Frigate semantic search (embeddings) enabled.")
-                            .font(.system(size: 14, weight: .heavy))
-                            .foregroundStyle(GlassTheme.secondary)
-                            .multilineTextAlignment(.center)
+                    // Distinguish a genuine empty result from a fetch/auth error so the
+                    // user isn't wrongly told their server lacks embeddings.
+                    if let errorMessage {
+                        errorState(errorMessage)
+                    } else {
+                        EmptyStateView(
+                            icon: "magnifyingglass",
+                            title: "No Similar Events Found",
+                            message: "Semantic search found no matches. This requires Frigate semantic search (embeddings) enabled."
+                        )
                     }
-                    .padding(32)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 10) {
+                        LazyVStack(spacing: GlassTheme.Space.s) {
                             ForEach(events) { event in
                                 NavigationLink(destination: EventDetailView(event: event).environmentObject(appState)) {
                                     similarEventRow(event)
@@ -37,7 +33,7 @@ struct SimilarEventsSheet: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        .padding(16)
+                        .padding(GlassTheme.Space.l)
                     }
                 }
             }
@@ -47,43 +43,66 @@ struct SimilarEventsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                 }
             }
         }
     }
 
+    /// A calm error state — distinct from the empty result (orange, semantic warning),
+    /// matching EmptyStateView's proportions so the sheet reads consistently.
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: GlassTheme.Space.m) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 44, weight: .regular))
+                .foregroundStyle(GlassTheme.orange)
+            Text("Couldn't Load Similar Events")
+                .font(.system(.title3).weight(.semibold))
+                .foregroundStyle(GlassTheme.primary)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(GlassTheme.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(GlassTheme.Space.xl)
+    }
+
     private func similarEventRow(_ event: FrigateEvent) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: GlassTheme.Space.m) {
             if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                RemoteImage(url: url)
-                    .frame(width: 64, height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                RemoteImage(url: url, contentMode: .fill, maxPixelSize: 360)
+                    .frame(width: 92, height: 92)
+                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
             } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black)
-                    .frame(width: 64, height: 48)
+                RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                    .fill(GlassTheme.surfaceHigh)
+                    .frame(width: 92, height: 92)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                 Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
-                    .font(.system(size: 15, weight: .black))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(GlassTheme.primary)
+                    .lineLimit(1)
                 Text(titleize(event.camera))
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(.footnote)
                     .foregroundStyle(GlassTheme.secondary)
+                    .lineLimit(1)
                 if let epoch = event.startTime {
                     Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.footnote)
                         .foregroundStyle(GlassTheme.tertiary)
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .bold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(GlassTheme.tertiary)
         }
-        .padding(12)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(GlassTheme.Space.m)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+        .cardStroke()
+        .accessibilityElement(children: .combine)
     }
 }

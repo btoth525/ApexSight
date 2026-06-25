@@ -12,33 +12,27 @@ struct TriggersSettingsView: View {
         ZStack {
             GlassBackground()
             if store.triggers.isEmpty {
-                VStack(spacing: 14) {
-                    Image(systemName: "bell.badge.slash")
-                        .font(.system(size: 44, weight: .black))
-                        .foregroundStyle(GlassTheme.secondary)
-                    Text("No Triggers")
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Text("Create triggers to get notified for specific cameras, objects, and zones — even when global settings are off.")
-                        .font(.system(size: 14, weight: .heavy))
-                        .foregroundStyle(GlassTheme.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
+                VStack(spacing: GlassTheme.Space.l) {
+                    EmptyStateView(
+                        icon: "bell.badge.slash",
+                        title: "No Triggers",
+                        message: "Create triggers to get notified for specific cameras, objects, and zones — even when global settings are off."
+                    )
                     Button {
                         isAdding = true
                     } label: {
                         Label("Add First Trigger", systemImage: "plus.circle.fill")
                     }
-                    .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
-                    .padding(.top, 4)
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                 }
+                .padding(.horizontal, GlassTheme.Space.l)
             } else {
                 List {
                     ForEach(store.triggers) { trigger in
                         triggerRow(trigger)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: GlassTheme.Space.xs, leading: GlassTheme.Space.l, bottom: GlassTheme.Space.xs, trailing: GlassTheme.Space.l))
                     }
                     .onDelete { store.delete(at: $0) }
                 }
@@ -55,8 +49,8 @@ struct TriggersSettingsView: View {
                     isAdding = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .font(.system(.body, weight: .semibold))
+                        .foregroundStyle(GlassTheme.accent)
                 }
             }
         }
@@ -72,18 +66,19 @@ struct TriggersSettingsView: View {
 
     private func triggerRow(_ trigger: NotificationTrigger) -> some View {
         GlassCard {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: GlassTheme.Space.m) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                     Text(trigger.name)
-                        .font(.system(size: 16, weight: .black))
+                        .font(.headline)
+                        .fontWeight(.semibold)
                         .foregroundStyle(trigger.enabled ? GlassTheme.primary : GlassTheme.secondary)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: GlassTheme.Space.xs + 2) {
                         if trigger.cameras.isEmpty {
-                            chip("All Cameras", tint: GlassTheme.cyan)
+                            chip("All Cameras", tint: GlassTheme.accent)
                         } else {
-                            ForEach(trigger.cameras.prefix(2), id: \.self) { chip(titleize($0), tint: GlassTheme.cyan) }
-                            if trigger.cameras.count > 2 { chip("+\(trigger.cameras.count - 2)", tint: GlassTheme.cyan) }
+                            ForEach(trigger.cameras.prefix(2), id: \.self) { chip(titleize($0), tint: GlassTheme.accent) }
+                            if trigger.cameras.count > 2 { chip("+\(trigger.cameras.count - 2)", tint: GlassTheme.accent) }
                         }
                         if trigger.labels.isEmpty {
                             chip("Any Object", tint: GlassTheme.orange)
@@ -93,14 +88,15 @@ struct TriggersSettingsView: View {
                     }
 
                     if !trigger.requiredZones.isEmpty {
-                        HStack(spacing: 6) {
+                        HStack(spacing: GlassTheme.Space.xs + 2) {
                             ForEach(trigger.requiredZones.prefix(3), id: \.self) { chip(titleize($0), tint: GlassTheme.green) }
                         }
                     }
 
                     if trigger.minConfidence > 0 {
                         Text("Min \(Int(trigger.minConfidence * 100))% confidence")
-                            .font(.system(size: 11, weight: .heavy))
+                            .font(.caption)
+                            .fontWeight(.medium)
                             .foregroundStyle(GlassTheme.tertiary)
                     }
                 }
@@ -115,17 +111,18 @@ struct TriggersSettingsView: View {
                     set: { _ in store.toggleEnabled(trigger) }
                 ))
                 .labelsHidden()
-                .tint(GlassTheme.cyan)
+                .tint(GlassTheme.accent)
             }
         }
     }
 
     private func chip(_ text: String, tint: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .black))
+            .font(.caption2)
+            .fontWeight(.semibold)
             .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, GlassTheme.Space.s)
+            .padding(.vertical, GlassTheme.Space.xs)
             .background(tint.opacity(0.14), in: Capsule())
     }
 }

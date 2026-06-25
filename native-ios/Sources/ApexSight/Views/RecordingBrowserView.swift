@@ -28,11 +28,11 @@ struct RecordingBrowserView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     sectionTitle
                     datePicker
                     if isLoading {
-                        ProgressView().tint(GlassTheme.cyan).frame(maxWidth: .infinity).padding(.top, 30)
+                        loadingCard
                     } else {
                         scrubberCard
                         if let player = clipModel.player {
@@ -45,7 +45,7 @@ struct RecordingBrowserView: View {
                         }
                     }
                 }
-                .padding(18)
+                .padding(GlassTheme.Space.l)
                 // Keep it a comfortable, centered column on iPad instead of stretching.
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity)
@@ -63,48 +63,68 @@ struct RecordingBrowserView: View {
     // MARK: - Header
 
     private var sectionTitle: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
             Text(titleize(camera.name))
-                .font(.system(size: 28, weight: .black))
+                .font(.largeTitle.weight(.bold))
                 .foregroundStyle(GlassTheme.primary)
             Text("Recording timeline")
-                .font(.system(size: 13, weight: .heavy))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(GlassTheme.secondary)
+        }
+    }
+
+    /// Skeleton while the day's recordings + events load, so the screen keeps its shape
+    /// instead of a lone spinner.
+    private var loadingCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SkeletonBlock(cornerRadius: GlassTheme.Radius.chip)
+                    .frame(height: 96)
+                SkeletonBlock()
+                    .frame(width: 160, height: 14)
+            }
         }
     }
 
     private var datePicker: some View {
         GlassCard {
-            HStack {
-                Button { shiftDate(by: -1) } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
-                        .frame(width: 44, height: 44)
-                        .background(.white.opacity(0.10), in: Circle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                VStack(spacing: 2) {
+            HStack(spacing: GlassTheme.Space.m) {
+                circleStepButton(systemName: "chevron.left", enabled: true) { shiftDate(by: -1) }
+                Spacer(minLength: GlassTheme.Space.s)
+                VStack(spacing: GlassTheme.Space.xs) {
                     Text(selectedDate, style: .date)
-                        .font(.system(size: 17, weight: .black))
+                        .font(.headline)
                         .foregroundStyle(GlassTheme.primary)
                     if calendar.isDateInToday(selectedDate) {
-                        Text("Today").font(.system(size: 11, weight: .heavy)).foregroundStyle(GlassTheme.cyan)
+                        Text("Today")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, GlassTheme.Space.s)
+                            .padding(.vertical, 3)
+                            .background(GlassTheme.accent, in: Capsule())
                     }
                 }
-                Spacer()
-                Button { shiftDate(by: 1) } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(calendar.isDateInToday(selectedDate) ? GlassTheme.tertiary : GlassTheme.cyan)
-                        .frame(width: 44, height: 44)
-                        .background(.white.opacity(0.10), in: Circle())
-                }
-                .buttonStyle(.plain)
+                Spacer(minLength: GlassTheme.Space.s)
+                circleStepButton(
+                    systemName: "chevron.right",
+                    enabled: !calendar.isDateInToday(selectedDate)
+                ) { shiftDate(by: 1) }
                 .disabled(calendar.isDateInToday(selectedDate))
             }
         }
+    }
+
+    /// Native material circle button used for prev/next day stepping.
+    private func circleStepButton(systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(enabled ? GlassTheme.accent : GlassTheme.tertiary)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+        }
+        .buttonStyle(.plain)
     }
 
     private func shiftDate(by days: Int) {
@@ -117,20 +137,16 @@ struct RecordingBrowserView: View {
 
     private var scrubberCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Timeline")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Spacer()
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Timeline") {
                     Text(scrubTimeLabel)
-                        .font(.system(size: 14, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                         .monospacedDigit()
                 }
 
                 scrubberTrack
-                    .frame(height: 110)
+                    .frame(height: 96)
 
                 // Hour labels for current range. The range end is exclusive (rangeEndHour+1),
                 // so the right label reflects the actual boundary covered.
@@ -141,19 +157,21 @@ struct RecordingBrowserView: View {
                     Spacer()
                     Text(hourLabel((rangeEndHour + 1) % 24))
                 }
-                .font(.system(size: 9, weight: .heavy))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(GlassTheme.tertiary)
+                .monospacedDigit()
 
                 // Quick range chips — friendlier than hour menus, snap the timeline to a
                 // part of the day in one tap.
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: GlassTheme.Space.s) {
                         rangeChip("All day", 0, 23)
                         rangeChip("Morning", 5, 11)
                         rangeChip("Afternoon", 11, 17)
                         rangeChip("Evening", 17, 23)
                         rangeChip("Night", 0, 5)
                     }
+                    .padding(.horizontal, 1)
                 }
 
                 legend
@@ -165,10 +183,15 @@ struct RecordingBrowserView: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
+            let px = (CGFloat(scrubFraction) * w).clampedX(in: w)
             ZStack(alignment: .topLeading) {
-                // Track background
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.black.opacity(0.35))
+                // Track background — deeper, rounded, with a hairline so it reads as a real groove.
+                RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                    .fill(GlassTheme.surfaceHigh)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                            .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                    }
 
                 // Recording coverage + colored event ticks
                 Canvas { ctx, size in
@@ -184,7 +207,10 @@ struct RecordingBrowserView: View {
                         guard f >= 0, f <= 1 else { continue }
                         let x = f * size.width
                         let cov = CGRect(x: x, y: size.height - 7, width: max(1, size.width / 24 / 12), height: 6)
-                        ctx.fill(Path(cov), with: .color(.white.opacity(0.16)))
+                        ctx.fill(
+                            Path(roundedRect: cov, cornerRadius: 1),
+                            with: .color(.white.opacity(0.16))
+                        )
                     }
 
                     // event ticks, colored by object
@@ -194,28 +220,32 @@ struct RecordingBrowserView: View {
                         guard f >= 0, f <= 1 else { continue }
                         let x = f * size.width
                         let rect = CGRect(x: x - 1.25, y: 10, width: 2.5, height: size.height - 24)
-                        ctx.fill(Path(rect), with: .color(color(for: e.label)))
+                        ctx.fill(
+                            Path(roundedRect: rect, cornerRadius: 1.25),
+                            with: .color(color(for: e.label))
+                        )
                     }
                 }
                 .padding(.horizontal, 2)
 
-                // Playhead
-                let px = CGFloat(scrubFraction) * w
+                // Playhead — thin accent line with a large, clearly draggable handle.
                 Rectangle()
-                    .fill(Color.white)
+                    .fill(GlassTheme.accent)
                     .frame(width: 2, height: h)
-                    .offset(x: px.clampedX(in: w))
+                    .offset(x: px)
                 Circle()
-                    .fill(Color.white)
-                    .frame(width: 16, height: 16)
-                    .overlay { Circle().stroke(GlassTheme.cyan, lineWidth: 3) }
-                    .offset(x: px.clampedX(in: w) - 8, y: -8)
-                    .shadow(radius: 3)
+                    .fill(.white)
+                    .frame(width: 22, height: 22)
+                    .overlay { Circle().strokeBorder(GlassTheme.accent, lineWidth: 4) }
+                    .scaleEffect(isScrubbing ? 1.18 : 1)
+                    .offset(x: px - 11, y: h / 2 - 11)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isScrubbing)
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        if !isScrubbing { Haptics.select() }
                         isScrubbing = true
                         scrubFraction = Double(max(0, min(value.location.x / w, 1)))
                     }
@@ -224,6 +254,9 @@ struct RecordingBrowserView: View {
                         playFromScrub()
                     }
             )
+            // Smoothly settle the playhead when the position is set programmatically
+            // (e.g. parked on the latest detection), but follow the finger 1:1 while dragging.
+            .animation(isScrubbing ? nil : .easeOut(duration: 0.2), value: scrubFraction)
         }
     }
 
@@ -248,19 +281,28 @@ struct RecordingBrowserView: View {
             rangeEndHour = end
         } label: {
             Text(title)
-                .font(.system(size: 12, weight: .black))
-                .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .background(selected ? AnyShapeStyle(GlassTheme.cyan) : AnyShapeStyle(.white.opacity(0.08)), in: Capsule())
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(selected ? .white : GlassTheme.secondary)
+                .padding(.horizontal, GlassTheme.Space.m)
+                .padding(.vertical, GlassTheme.Space.s)
+                .background {
+                    if selected {
+                        Capsule().fill(GlassTheme.accent)
+                    } else {
+                        Capsule().fill(GlassTheme.surface)
+                        Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1)
+                    }
+                }
         }
         .buttonStyle(.plain)
     }
 
     private func legendDot(_ title: String, _ color: Color) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: GlassTheme.Space.xs) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(title).font(.system(size: 10, weight: .heavy)).foregroundStyle(GlassTheme.secondary)
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(GlassTheme.secondary)
         }
     }
 
@@ -293,13 +335,13 @@ struct RecordingBrowserView: View {
 
     private func playerCard(_ player: AVPlayer) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(playingTime != nil ? "Playing from \(Date(timeIntervalSince1970: playingTime!).formatted(date: .omitted, time: .shortened))" : "Playing Clip")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Spacer()
-                }
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader(
+                    playingTime != nil
+                        ? "Playing from \(Date(timeIntervalSince1970: playingTime!).formatted(date: .omitted, time: .shortened))"
+                        : "Playing Clip"
+                )
+
                 ZStack {
                     PiPPlayerView(player: player)
                         .opacity(clipModel.isReady ? 1 : 0)
@@ -310,29 +352,32 @@ struct RecordingBrowserView: View {
                 }
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                .cardStroke(GlassTheme.Radius.tile)
                 .expandableMedia(.player(player))
 
                 Button {
                     Task { await downloadCurrent() }
                 } label: {
-                    HStack(spacing: 6) {
-                        if isDownloading { ProgressView().tint(.black) }
-                        else { Image(systemName: "arrow.down.circle.fill").font(.system(size: 14, weight: .black)) }
+                    HStack(spacing: GlassTheme.Space.s) {
+                        if isDownloading {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                        }
                         Text(isDownloading ? "Saving…" : "Save to Photos")
-                            .font(.system(size: 13, weight: .black))
                     }
-                    .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(GlassTheme.cyan, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                 .disabled(isDownloading || playingTime == nil)
+                .opacity(playingTime == nil ? 0.5 : 1)
 
                 if let downloadFeedback {
                     Text(downloadFeedback)
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(GlassTheme.green)
                 }
             }
@@ -341,19 +386,11 @@ struct RecordingBrowserView: View {
 
     private var noRecordingsCard: some View {
         GlassCard {
-            HStack(spacing: 12) {
-                Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(GlassTheme.orange)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No recordings")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Text("No recordings found for this date.")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(GlassTheme.secondary)
-                }
-            }
+            EmptyStateView(
+                icon: "calendar.badge.exclamationmark",
+                title: "No recordings",
+                message: "No recordings found for this date."
+            )
         }
     }
 
@@ -361,17 +398,20 @@ struct RecordingBrowserView: View {
 
     private var recordingList: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(dayEvents.isEmpty ? "\(recordings.count) recording segments" : "\(dayEvents.count) detections")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader(dayEvents.isEmpty ? "Recordings" : "Detections") {
+                    Text(dayEvents.isEmpty ? "\(recordings.count) segments" : "\(dayEvents.count)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.secondary)
+                        .monospacedDigit()
+                }
 
                 if dayEvents.isEmpty {
                     Text("Scrub the timeline above to play any moment.")
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.secondary)
                 } else {
-                    VStack(spacing: 8) {
+                    VStack(spacing: GlassTheme.Space.s) {
                         ForEach(dayEvents.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }) { event in
                             eventJumpRow(event)
                         }
@@ -385,32 +425,48 @@ struct RecordingBrowserView: View {
         Button {
             if let start = event.startTime { playFrom(time: start) }
         } label: {
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(color(for: event.label))
-                    .frame(width: 10, height: 10)
-                if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                    RemoteImage(url: url, contentMode: .fill)
-                        .frame(width: 52, height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            HStack(spacing: GlassTheme.Space.m) {
+                ZStack(alignment: .topLeading) {
+                    if let url = appState.client?.eventThumbnailURL(id: event.id) {
+                        RemoteImage(url: url, contentMode: .fill)
+                            .frame(width: 52, height: 52)
+                            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                            .fill(GlassTheme.surfaceHigh)
+                            .frame(width: 52, height: 52)
+                            .overlay {
+                                Image(systemName: "photo")
+                                    .font(.subheadline)
+                                    .foregroundStyle(GlassTheme.tertiary)
+                            }
+                    }
+                    // Small semantic dot keyed to the detection's object color.
+                    Circle()
+                        .fill(color(for: event.label))
+                        .frame(width: 9, height: 9)
+                        .overlay { Circle().strokeBorder(GlassTheme.surface, lineWidth: 1.5) }
+                        .offset(x: -3, y: -3)
                 }
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                     Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
-                        .font(.system(size: 15, weight: .black))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GlassTheme.primary)
+                        .lineLimit(1)
                     if let start = event.startTime {
                         Text(Date(timeIntervalSince1970: start), style: .time)
-                            .font(.system(size: 12, weight: .heavy))
+                            .font(.footnote.weight(.medium))
                             .foregroundStyle(GlassTheme.secondary)
                     }
                 }
-                Spacer()
+                Spacer(minLength: GlassTheme.Space.s)
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(GlassTheme.cyan)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(GlassTheme.accent)
             }
-            .padding(10)
-            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(GlassTheme.Space.s)
+            .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+            .cardStroke(GlassTheme.Radius.tile)
         }
         .buttonStyle(.plain)
     }

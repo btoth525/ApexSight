@@ -43,20 +43,21 @@ struct FullscreenMediaView: View {
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .black))
+                            .font(.system(size: 15, weight: .semibold))
                             .frame(width: 42, height: 42)
                             .background(.ultraThinMaterial, in: Circle())
+                            .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
                             .foregroundStyle(.white)
                     }
                 }
                 Spacer()
                 Text("Pinch · double-tap to zoom · rotate to fill")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.6))
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 22)
+            .padding(.horizontal, GlassTheme.Space.xl)
+            .padding(.top, GlassTheme.Space.s)
+            .padding(.bottom, GlassTheme.Space.xxl)
         }
         .statusBarHidden(true)
     }
@@ -77,12 +78,13 @@ struct ExpandableMediaModifier: ViewModifier {
                 if media != nil {
                     Button { showFullscreen = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 13, weight: .black))
+                            .font(.system(size: 13, weight: .semibold))
                             .frame(width: 34, height: 34)
                             .background(.ultraThinMaterial, in: Circle())
+                            .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
                             .foregroundStyle(.white)
                     }
-                    .padding(8)
+                    .padding(GlassTheme.Space.s)
                 }
             }
             .fullScreenCover(isPresented: $showFullscreen) {

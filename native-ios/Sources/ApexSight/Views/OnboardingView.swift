@@ -44,48 +44,49 @@ struct OnboardingView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: page)
 
                 pageIndicator
-                    .padding(.bottom, 28)
+                    .padding(.bottom, GlassTheme.Space.xxl)
 
                 controls
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, GlassTheme.Space.l)
                     .padding(.bottom, 44)
             }
         }
     }
 
     private func pageView(_ item: OnboardingPage) -> some View {
-        VStack(spacing: 28) {
+        VStack(spacing: GlassTheme.Space.xxl) {
             Spacer()
             ZStack {
                 Circle()
-                    .fill(item.tint.opacity(0.18))
-                    .frame(width: 168, height: 168)
-                    .blur(radius: 6)
+                    .fill(GlassTheme.surfaceHigh)
+                    .frame(width: 132, height: 132)
+                    .cardStroke(66)
                 Image(systemName: item.icon)
-                    .font(.system(size: 64, weight: .black))
-                    .foregroundStyle(item.tint)
+                    .font(.system(size: 52, weight: .regular))
+                    .foregroundStyle(GlassTheme.accent)
             }
-            VStack(spacing: 14) {
+            VStack(spacing: GlassTheme.Space.m) {
                 Text(item.title)
-                    .font(.system(size: 30, weight: .black, design: .rounded))
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .foregroundStyle(GlassTheme.primary)
                     .multilineTextAlignment(.center)
                 Text(item.subtitle)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.body)
                     .foregroundStyle(GlassTheme.secondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, GlassTheme.Space.xxl)
             }
             Spacer()
         }
+        .padding(.horizontal, GlassTheme.Space.s)
     }
 
     private var pageIndicator: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: GlassTheme.Space.s) {
             ForEach(pages.indices, id: \.self) { index in
                 Capsule()
-                    .fill(index == page ? GlassTheme.cyan : Color.white.opacity(0.2))
+                    .fill(index == page ? GlassTheme.accent : GlassTheme.separator)
                     .frame(width: index == page ? 24 : 8, height: 8)
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: page)
             }
@@ -93,7 +94,7 @@ struct OnboardingView: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: GlassTheme.Space.m) {
             Button {
                 if page < pages.count - 1 {
                     withAnimation { page += 1 }
@@ -105,19 +106,15 @@ struct OnboardingView: View {
                 }
             } label: {
                 Text(page < pages.count - 1 ? "Continue" : "Get Started")
-                    .font(.system(size: 17, weight: .black))
-                    .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(GlassTheme.cyan, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PillButtonStyle())
 
             Button {
                 hasCompletedOnboarding = true
             } label: {
                 Text("Skip")
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(GlassTheme.secondary)
             }
             .opacity(page < pages.count - 1 ? 1 : 0)

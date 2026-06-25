@@ -35,13 +35,13 @@ struct PushCompanionSettingsView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     explainerCard
                     connectionCard
                     testCard
                     advancedCard
                 }
-                .padding(18)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Instant Push")
@@ -68,12 +68,12 @@ struct PushCompanionSettingsView: View {
 
     private var explainerCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                 Label("Instant alerts, app closed", systemImage: "bolt.horizontal.fill")
-                    .font(.system(size: 17, weight: .black))
+                    .font(.headline)
                     .foregroundStyle(GlassTheme.primary)
                 Text("Always on. This device is set up for push automatically — the status below shows whether it's connected.")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.subheadline)
                     .foregroundStyle(GlassTheme.secondary)
             }
         }
@@ -83,28 +83,27 @@ struct PushCompanionSettingsView: View {
     private var connectionCard: some View {
         let s = status
         return GlassCard {
-            HStack(spacing: 12) {
+            HStack(spacing: GlassTheme.Space.m) {
                 Circle()
                     .fill(s.color)
-                    .frame(width: 14, height: 14)
-                    .shadow(color: s.color.opacity(0.7), radius: 6)
-                VStack(alignment: .leading, spacing: 2) {
+                    .frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                     Text(s.title)
-                        .font(.system(size: 16, weight: .black))
+                        .font(.headline)
                         .foregroundStyle(GlassTheme.primary)
                     Text(s.subtitle)
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.secondary)
                 }
                 Spacer()
                 if s.spinning {
-                    ProgressView().tint(GlassTheme.cyan)
+                    ProgressView().tint(GlassTheme.accent)
                 } else if s.showRetry {
                     Button("Retry") {
                         Task { await enablePush(); await checkHealth(); await registerWithRelay() }
                     }
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundStyle(GlassTheme.cyan)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GlassTheme.accent)
                 }
             }
         }
@@ -112,31 +111,30 @@ struct PushCompanionSettingsView: View {
 
     private var testCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 Button {
                     Task { await sendTest() }
                 } label: {
-                    HStack {
+                    HStack(spacing: GlassTheme.Space.s) {
                         if testSending {
-                            ProgressView().tint(.black)
+                            ProgressView().tint(.white)
                         } else {
                             Image(systemName: "paperplane.fill")
                         }
                         Text(testSending ? "Sending…" : "Send Test Push")
-                            .font(.system(size: 15, weight: .black))
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                 .disabled(testSending || !isConnected)
 
                 if let testResult {
                     Text(testResult)
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.footnote)
                         .foregroundStyle(testResult.hasPrefix("Sent") ? GlassTheme.green : GlassTheme.orange)
                 } else {
                     Text("Sends a real push to this phone through the relay. Lock your screen to see it land.")
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.footnote)
                         .foregroundStyle(GlassTheme.secondary)
                 }
             }
@@ -145,39 +143,40 @@ struct PushCompanionSettingsView: View {
 
     private var advancedCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Details (advanced)")
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundStyle(GlassTheme.secondary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Details", subtitle: "Advanced")
 
-                HStack(spacing: 8) {
+                HStack(spacing: GlassTheme.Space.s) {
                     Text("Pairing: \(pairingCode)")
-                        .font(.system(size: 12, weight: .black, design: .monospaced))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .font(.footnote.weight(.semibold))
+                        .monospaced()
+                        .foregroundStyle(GlassTheme.primary)
                     Button {
                         UIPasteboard.general.string = pairingCode
                         copiedCode = true
                     } label: {
                         Image(systemName: copiedCode ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 12, weight: .black))
-                            .foregroundStyle(copiedCode ? GlassTheme.green : GlassTheme.blue)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(copiedCode ? GlassTheme.green : GlassTheme.accent)
                     }
                     .buttonStyle(.plain)
                     Spacer()
                     Button(showJoinField ? "Cancel" : "Use private code") { showJoinField.toggle() }
-                        .font(.system(size: 12, weight: .black))
-                        .foregroundStyle(GlassTheme.purple)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                 }
 
                 if showJoinField {
-                    HStack(spacing: 8) {
+                    HStack(spacing: GlassTheme.Space.s) {
                         TextField("APEX-XXXX-XXXX", text: $joinCode)
                             .textInputAutocapitalization(.characters)
                             .autocorrectionDisabled()
-                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .font(.subheadline.weight(.semibold))
+                            .monospaced()
                             .foregroundStyle(GlassTheme.primary)
-                            .padding(9)
-                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .padding(GlassTheme.Space.m)
+                            .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                            .cardStroke(GlassTheme.Radius.chip)
                         Button("Set") {
                             let code = joinCode.uppercased().trimmingCharacters(in: .whitespaces)
                             guard !code.isEmpty else { return }
@@ -189,12 +188,13 @@ struct PushCompanionSettingsView: View {
                             joinCode = ""
                             Task { await registerWithRelay() }
                         }
-                        .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                        .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                     }
                 }
 
                 Text("Relay: \(relayURL)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.caption)
+                    .monospaced()
                     .foregroundStyle(GlassTheme.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -215,7 +215,7 @@ struct PushCompanionSettingsView: View {
         }
         switch connection {
         case .checking:
-            return (GlassTheme.tertiary, "Checking…", "Contacting the relay", true, false)
+            return (GlassTheme.offline, "Checking…", "Contacting the relay", true, false)
         case .offline:
             return (GlassTheme.red, "Disconnected", "Relay unreachable — check your connection", false, true)
         case let .online(apnsConfigured):

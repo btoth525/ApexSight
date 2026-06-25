@@ -31,38 +31,34 @@ struct LiveAlertBanner: View {
             appState.deepLink = .review(banner.reviewID)
             dismiss()
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: GlassTheme.Space.m) {
                 ZStack {
                     Circle().fill(GlassTheme.orange.opacity(0.18)).frame(width: 42, height: 42)
                     Image(systemName: "bell.badge.fill")
-                        .font(.system(size: 17, weight: .black))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(GlassTheme.orange)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(banner.title)
-                        .font(.system(size: 15, weight: .black))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GlassTheme.primary)
                         .lineLimit(1)
                     Text(banner.body)
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.footnote)
                         .foregroundStyle(GlassTheme.secondary)
                         .lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .black))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(GlassTheme.tertiary)
             }
-            .padding(12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(GlassTheme.orange.opacity(0.35), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+            .padding(GlassTheme.Space.m)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+            .cardStroke(GlassTheme.Radius.card)
         }
         .buttonStyle(.plain)
-        .padding(.top, 8)
+        .padding(.top, GlassTheme.Space.s)
         .gesture(
             DragGesture(minimumDistance: 10)
                 .onEnded { value in if value.translation.height < -20 { dismiss() } }

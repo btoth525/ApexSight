@@ -206,6 +206,13 @@ extension SectionHeader where Accessory == EmptyView {
     }
 }
 
+extension SectionHeader {
+    /// Unlabeled title + a trailing accessory closure, e.g. `SectionHeader("Security") { Image(...) }`.
+    init(_ title: String, subtitle: String? = nil, @ViewBuilder accessory: @escaping () -> Accessory) {
+        self.init(title: title, subtitle: subtitle, accessory: accessory)
+    }
+}
+
 // MARK: - Empty state
 
 /// A calm, native empty state (SF Symbol + headline + one line) — never an error screen.

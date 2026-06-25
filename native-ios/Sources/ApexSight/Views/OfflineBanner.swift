@@ -12,18 +12,21 @@ struct OfflineBanner: View {
     var body: some View {
         Group {
             if isVisible {
-                HStack(spacing: 8) {
+                HStack(spacing: GlassTheme.Space.s) {
                     Image(systemName: "wifi.slash")
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.orange)
                     Text("Can't reach your server — showing last data")
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(GlassTheme.primary)
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(GlassTheme.orange.opacity(0.92), in: Capsule())
-                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
-                .padding(.top, 6)
+                .padding(.horizontal, GlassTheme.Space.m)
+                .padding(.vertical, GlassTheme.Space.s)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1)
+                }
+                .padding(.top, GlassTheme.Space.xs)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Offline. Showing the last loaded data.")

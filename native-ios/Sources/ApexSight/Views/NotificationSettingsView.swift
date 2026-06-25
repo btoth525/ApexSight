@@ -23,7 +23,7 @@ struct NotificationSettingsView: View {
         ZStack {
             GlassTheme.background.ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     permissionCard
                     if status.isAuthorized {
                         camerasCard
@@ -34,7 +34,7 @@ struct NotificationSettingsView: View {
                         testCard
                     }
                 }
-                .padding(18)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Alerts")
@@ -54,20 +54,23 @@ struct NotificationSettingsView: View {
 
     private var permissionCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                HStack(spacing: GlassTheme.Space.m) {
                     Image(systemName: status.isAuthorized ? "bell.badge.fill" : "bell.slash.fill")
-                        .font(.system(size: 20, weight: .black))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(status.isAuthorized ? GlassTheme.green : GlassTheme.orange)
-                        .frame(width: 36, height: 36)
-                        .background((status.isAuthorized ? GlassTheme.green : GlassTheme.orange).opacity(0.16), in: Circle())
-                    VStack(alignment: .leading, spacing: 3) {
+                        .frame(width: 38, height: 38)
+                        .background((status.isAuthorized ? GlassTheme.green : GlassTheme.orange).opacity(0.14), in: Circle())
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                         Text("Push Notifications")
-                            .font(.system(size: 16, weight: .black))
+                            .font(.headline)
                             .foregroundStyle(GlassTheme.primary)
-                        Text(status.description)
-                            .font(.system(size: 12, weight: .heavy))
-                            .foregroundStyle(GlassTheme.secondary)
+                        HStack(spacing: GlassTheme.Space.s) {
+                            StatusDot(state: status.isAuthorized ? .live : .offline)
+                            Text(status.description)
+                                .font(.subheadline)
+                                .foregroundStyle(GlassTheme.secondary)
+                        }
                     }
                     Spacer()
                 }
@@ -77,13 +80,9 @@ struct NotificationSettingsView: View {
                         Task { await requestPermission() }
                     } label: {
                         Label("Allow Notifications", systemImage: "checkmark.shield.fill")
-                            .font(.system(size: 15, weight: .black))
-                            .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(GlassTheme.cyan, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                     .disabled(isWorking)
                 }
             }
@@ -94,8 +93,8 @@ struct NotificationSettingsView: View {
 
     private var camerasCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                sectionHeader("Cameras", icon: "video.fill", tint: GlassTheme.blue)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                SectionHeader("Cameras")
                 if appState.cameras.isEmpty {
                     placeholderText("No cameras loaded.")
                 }
@@ -117,8 +116,8 @@ struct NotificationSettingsView: View {
 
     private var objectsCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                sectionHeader("Object Types", icon: "eye.fill", tint: GlassTheme.green)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                SectionHeader("Object Types")
                 if appState.labels.isEmpty {
                     placeholderText("No labels loaded.")
                 }
@@ -141,8 +140,8 @@ struct NotificationSettingsView: View {
     private var zonesCard: some View {
         let allZones = Array(Set(appState.cameras.flatMap(\.zones))).sorted()
         return GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                sectionHeader("Zones", icon: "map.fill", tint: GlassTheme.cyan)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                SectionHeader("Zones")
                 if allZones.isEmpty {
                     placeholderText("No zones configured.")
                 }
@@ -164,23 +163,23 @@ struct NotificationSettingsView: View {
 
     private var quietHoursCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                sectionHeader("Quiet Hours", icon: "moon.fill", tint: GlassTheme.orange)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                SectionHeader("Quiet Hours")
                 toggleRow(
                     title: "Enable quiet hours",
                     subtitle: "Suppress notifications during set hours",
                     isOn: binding(\.quietHoursEnabled)
                 )
                 if prefsStore.preferences.quietHoursEnabled {
-                    Divider().background(GlassTheme.secondary.opacity(0.2))
+                    Divider().overlay(GlassTheme.separator)
                     DatePicker("Start", selection: quietStartBinding, displayedComponents: .hourAndMinute)
-                        .font(.system(size: 14, weight: .heavy))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.primary)
-                        .tint(GlassTheme.cyan)
+                        .tint(GlassTheme.accent)
                     DatePicker("End", selection: quietEndBinding, displayedComponents: .hourAndMinute)
-                        .font(.system(size: 14, weight: .heavy))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.primary)
-                        .tint(GlassTheme.cyan)
+                        .tint(GlassTheme.accent)
                 }
             }
         }
@@ -190,15 +189,12 @@ struct NotificationSettingsView: View {
 
     private var cooldownCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                sectionHeader("Alert Cooldown", icon: "timer", tint: GlassTheme.secondary)
-                Text("Minimum seconds between alerts per camera")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(GlassTheme.secondary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                SectionHeader("Alert Cooldown", subtitle: "Minimum seconds between alerts per camera")
                 ForEach(appState.cameras) { camera in
                     HStack {
                         Text(titleize(camera.name))
-                            .font(.system(size: 14, weight: .heavy))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GlassTheme.primary)
                         Spacer()
                         Picker("", selection: Binding(
@@ -210,7 +206,7 @@ struct NotificationSettingsView: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .tint(GlassTheme.cyan)
+                        .tint(GlassTheme.accent)
                     }
                 }
             }
@@ -221,27 +217,23 @@ struct NotificationSettingsView: View {
 
     private var testCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                sectionHeader("Test", icon: "paperplane.fill", tint: GlassTheme.blue)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                SectionHeader("Test")
                 if let msg = message {
                     Text(msg)
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(GlassTheme.green)
+                        .font(.footnote)
+                        .foregroundStyle(GlassTheme.secondary)
                 }
                 Button {
                     Task { await sendTest() }
                 } label: {
-                    HStack {
-                        if isWorking { ProgressView().tint(.black) }
+                    HStack(spacing: GlassTheme.Space.s) {
+                        if isWorking { ProgressView().tint(.white) }
                         Text("Send Test Alert")
-                            .font(.system(size: 15, weight: .black))
-                            .foregroundStyle(.black)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(GlassTheme.orange, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                 .disabled(isWorking)
             }
         }
@@ -249,34 +241,28 @@ struct NotificationSettingsView: View {
 
     // MARK: - Helpers
 
-    private func sectionHeader(_ title: String, icon: String, tint: Color) -> some View {
-        Label(title, systemImage: icon)
-            .font(.system(size: 15, weight: .black))
-            .foregroundStyle(tint)
-    }
-
     private func toggleRow(title: String, subtitle: String?, isOn: Binding<Bool>) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                 Text(title)
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(GlassTheme.primary)
                 if let sub = subtitle {
                     Text(sub)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.footnote)
                         .foregroundStyle(GlassTheme.secondary)
                 }
             }
             Spacer()
             Toggle("", isOn: isOn)
-                .tint(GlassTheme.cyan)
+                .tint(GlassTheme.accent)
                 .labelsHidden()
         }
     }
 
     private func placeholderText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .bold))
+            .font(.subheadline)
             .foregroundStyle(GlassTheme.secondary)
     }
 

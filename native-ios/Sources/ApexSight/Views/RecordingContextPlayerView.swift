@@ -22,12 +22,13 @@ struct RecordingContextPlayerView: View {
     private var windowEnd: Double { centerTime + windowSeconds / 2 }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: GlassTheme.Space.m) {
             LoadingClipPlayer(model: model)
                 .frame(height: 240)
                 .frame(maxWidth: .infinity)
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+                .cardStroke(GlassTheme.Radius.card)
                 .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
                     guard !isSliding, let player = model.player else { return }
                     currentTime = player.currentTime().seconds
@@ -36,8 +37,8 @@ struct RecordingContextPlayerView: View {
                     }
                 }
 
-            // Scrub bar with event markers
-            VStack(spacing: 6) {
+            // Scrub bar with event marker
+            VStack(spacing: GlassTheme.Space.s) {
                 ZStack(alignment: .leading) {
                     Slider(value: $currentTime, in: 0...max(duration, 1)) { editing in
                         isSliding = editing
@@ -46,44 +47,49 @@ struct RecordingContextPlayerView: View {
                             player.seek(to: target, toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
                         }
                     }
-                    .tint(GlassTheme.cyan)
+                    .tint(GlassTheme.accent)
 
-                    // Event start/end markers
-                    if duration > 0 {
-                        if let es = eventStart {
-                            let evOffset = es - windowStart
-                            let fraction = evOffset / (windowEnd - windowStart)
-                            let clamped = max(0, min(1, fraction))
-                            GeometryReader { geo in
-                                Rectangle()
-                                    .fill(GlassTheme.orange)
-                                    .frame(width: 3, height: 16)
-                                    .offset(x: geo.size.width * clamped - 1.5, y: -2)
-                            }
-                            .frame(height: 16)
-                            .allowsHitTesting(false)
+                    // Event start marker — a small semantic tick on the track.
+                    if duration > 0, let es = eventStart {
+                        let evOffset = es - windowStart
+                        let fraction = evOffset / (windowEnd - windowStart)
+                        let clamped = max(0, min(1, fraction))
+                        GeometryReader { geo in
+                            Capsule()
+                                .fill(GlassTheme.orange)
+                                .frame(width: 2, height: 14)
+                                .overlay(alignment: .top) {
+                                    Circle()
+                                        .fill(GlassTheme.orange)
+                                        .frame(width: 5, height: 5)
+                                        .offset(y: -4)
+                                }
+                                .offset(x: geo.size.width * clamped - 1, y: -1)
                         }
+                        .frame(height: 14)
+                        .allowsHitTesting(false)
                     }
                 }
 
-                HStack {
+                HStack(spacing: GlassTheme.Space.s) {
                     Text(formatTime(windowStart + currentTime))
-                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .font(.footnote.weight(.medium).monospacedDigit())
                         .foregroundStyle(GlassTheme.secondary)
-                    Spacer()
+                    Spacer(minLength: GlassTheme.Space.s)
                     if let es = eventStart {
                         Button {
                             jumpToEvent(es)
                         } label: {
-                            Label("Jump to Event", systemImage: "arrow.down.circle.fill")
-                                .font(.system(size: 11, weight: .black))
-                                .foregroundStyle(GlassTheme.orange)
+                            Label("Jump to Event", systemImage: "scope")
+                                .font(.footnote.weight(.semibold))
+                                .labelStyle(.titleAndIcon)
+                                .foregroundStyle(GlassTheme.accent)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(GlassButtonStyle())
                     }
-                    Spacer()
+                    Spacer(minLength: GlassTheme.Space.s)
                     Text(formatTime(windowStart + duration))
-                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .font(.footnote.weight(.medium).monospacedDigit())
                         .foregroundStyle(GlassTheme.secondary)
                 }
             }

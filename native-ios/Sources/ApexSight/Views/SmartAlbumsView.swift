@@ -14,14 +14,19 @@ struct SmartAlbumsView: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(spacing: 14) {
+                    VStack(spacing: GlassTheme.Space.m) {
                         if loading {
-                            ProgressView().tint(GlassTheme.cyan).padding(.top, 32)
+                            ProgressView()
+                                .tint(GlassTheme.accent)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 48)
                         } else if albums.isEmpty {
-                            Text("No recent activity to organize yet.")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(GlassTheme.secondary)
-                                .padding(.top, 32)
+                            EmptyStateView(
+                                icon: "square.stack.3d.up.slash",
+                                title: "Nothing to organize yet",
+                                message: "Recent activity from the last 7 days will be grouped into smart albums here."
+                            )
+                            .padding(.top, 48)
                         } else {
                             ForEach(albums) { album in
                                 Button { path.append(album) } label: { albumCard(album) }
@@ -29,7 +34,7 @@ struct SmartAlbumsView: View {
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(GlassTheme.Space.l)
                 }
             }
             .navigationTitle("Smart Albums")
@@ -47,36 +52,44 @@ struct SmartAlbumsView: View {
     }
 
     private func albumCard(_ album: SmartAlbum) -> some View {
-        GlassCard {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(album.tint.opacity(0.15))
-                        .frame(width: 64, height: 64)
-                    if let hero = album.hero {
-                        RemoteImage(url: appState.client?.eventThumbnailURL(id: hero.id))
-                            .frame(width: 64, height: 64)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    } else {
-                        Image(systemName: album.icon)
-                            .font(.system(size: 26, weight: .black))
-                            .foregroundStyle(album.tint)
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                GlassTheme.surfaceHigh
+                if let hero = album.hero {
+                    RemoteImage(url: appState.client?.eventThumbnailURL(id: hero.id))
+                } else {
+                    Image(systemName: album.icon)
+                        .font(.system(size: 40, weight: .regular))
+                        .foregroundStyle(GlassTheme.tertiary)
                 }
-                VStack(alignment: .leading, spacing: 3) {
+            }
+            .frame(height: 132)
+            .clipped()
+
+            HStack(spacing: GlassTheme.Space.m) {
+                Image(systemName: album.icon)
+                    .font(.system(.subheadline, weight: .semibold))
+                    .foregroundStyle(GlassTheme.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(album.name)
-                        .font(.system(size: 17, weight: .black))
+                        .font(.headline)
+                        .fontWeight(.semibold)
                         .foregroundStyle(GlassTheme.primary)
                     Text("\(album.events.count) \(album.events.count == 1 ? "clip" : "clips")")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.secondary)
                 }
-                Spacer()
+                Spacer(minLength: GlassTheme.Space.s)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .black))
+                    .font(.system(.footnote, weight: .semibold))
                     .foregroundStyle(GlassTheme.tertiary)
             }
+            .padding(GlassTheme.Space.l)
         }
+        .background(GlassTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+        .cardStroke(GlassTheme.Radius.card)
     }
 
     private func load() async {
@@ -97,17 +110,18 @@ private struct SmartAlbumDetailView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: GlassTheme.Space.s), GridItem(.flexible(), spacing: GlassTheme.Space.s), GridItem(.flexible())], spacing: GlassTheme.Space.s) {
                     ForEach(album.events) { event in
                         NavigationLink(value: event) {
                             RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id))
                                 .aspectRatio(1, contentMode: .fill)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                                .cardStroke(GlassTheme.Radius.tile)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(16)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle(album.name)

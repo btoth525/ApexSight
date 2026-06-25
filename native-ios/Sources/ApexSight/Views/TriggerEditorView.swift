@@ -33,15 +33,14 @@ struct TriggerEditorView: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(spacing: 14) {
+                    VStack(spacing: GlassTheme.Space.l) {
                         GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Name")
-                                    .font(.system(size: 13, weight: .black))
-                                    .foregroundStyle(GlassTheme.secondary)
+                            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                                SectionHeader("Name")
                                 TextField("e.g. Person at Front Door", text: $name)
-                                    .font(.system(size: 16, weight: .heavy))
+                                    .font(.body)
                                     .foregroundStyle(GlassTheme.primary)
+                                    .tint(GlassTheme.accent)
                             }
                         }
 
@@ -50,7 +49,7 @@ struct TriggerEditorView: View {
                             subtitle: "Empty = all cameras",
                             options: appState.cameras.map(\.name),
                             selected: $selectedCameras,
-                            tint: GlassTheme.cyan
+                            tint: GlassTheme.accent
                         )
 
                         multiSelectCard(
@@ -70,48 +69,47 @@ struct TriggerEditorView: View {
                         )
 
                         GlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("Min Confidence")
-                                        .font(.system(size: 15, weight: .black))
-                                        .foregroundStyle(GlassTheme.primary)
-                                    Spacer()
+                            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                                SectionHeader("Min Confidence") {
                                     Text(minConfidence > 0 ? "\(Int(minConfidence * 100))%" : "Any")
-                                        .font(.system(size: 14, weight: .black))
-                                        .foregroundStyle(GlassTheme.cyan)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(GlassTheme.accent)
                                 }
                                 Slider(value: $minConfidence, in: 0...1, step: 0.05)
-                                    .tint(GlassTheme.cyan)
+                                    .tint(GlassTheme.accent)
                                 Text("Only notify when detection confidence is at least this high.")
-                                    .font(.system(size: 11, weight: .heavy))
+                                    .font(.footnote)
                                     .foregroundStyle(GlassTheme.secondary)
                             }
                         }
 
                         GlassCard {
                             Toggle(isOn: $respectQuietHours) {
-                                VStack(alignment: .leading, spacing: 3) {
+                                VStack(alignment: .leading, spacing: GlassTheme.Space.xs - 1) {
                                     Text("Respect Quiet Hours")
-                                        .font(.system(size: 15, weight: .black))
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
                                         .foregroundStyle(GlassTheme.primary)
                                     Text("Suppress this trigger during your quiet hours window.")
-                                        .font(.system(size: 11, weight: .heavy))
+                                        .font(.footnote)
                                         .foregroundStyle(GlassTheme.secondary)
                                 }
                             }
-                            .tint(GlassTheme.cyan)
+                            .tint(GlassTheme.accent)
                         }
 
                         GlassCard {
                             Toggle(isOn: $enabled) {
                                 Text("Enabled")
-                                    .font(.system(size: 15, weight: .black))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
                                     .foregroundStyle(GlassTheme.primary)
                             }
-                            .tint(GlassTheme.cyan)
+                            .tint(GlassTheme.accent)
                         }
                     }
-                    .padding(16)
+                    .padding(GlassTheme.Space.l)
                 }
             }
             .navigationTitle(existing == nil ? "New Trigger" : "Edit Trigger")
@@ -120,13 +118,14 @@ struct TriggerEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
-                        .font(.system(size: 15, weight: .heavy))
+                        .font(.body)
                         .foregroundStyle(GlassTheme.secondary)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") { save() }
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(name.isEmpty ? GlassTheme.tertiary : GlassTheme.cyan)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(name.isEmpty ? GlassTheme.tertiary : GlassTheme.accent)
                         .disabled(name.isEmpty)
                 }
             }
@@ -161,17 +160,10 @@ struct TriggerEditorView: View {
     private func multiSelectCard(title: String, subtitle: String, options: [String], selected: Binding<Set<String>>, tint: Color) -> some View {
         let uniqueOptions = Array(Set(options)).sorted()
         return GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.primary)
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(GlassTheme.secondary)
-                }
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader(title, subtitle: subtitle)
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                     ForEach(uniqueOptions, id: \.self) { option in
                         let isSelected = selected.wrappedValue.contains(option)
                         Button {
@@ -179,12 +171,18 @@ struct TriggerEditorView: View {
                             else { selected.wrappedValue.insert(option) }
                         } label: {
                             Text(titleize(option))
-                                .font(.system(size: 12, weight: .black))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
                                 .foregroundStyle(isSelected ? .black : tint)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
+                                .padding(.horizontal, GlassTheme.Space.m)
+                                .padding(.vertical, GlassTheme.Space.s - 1)
                                 .frame(maxWidth: .infinity)
                                 .background(isSelected ? tint : tint.opacity(0.12), in: Capsule())
+                                .overlay {
+                                    if !isSelected {
+                                        Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1)
+                                    }
+                                }
                         }
                         .buttonStyle(.plain)
                     }

@@ -9,34 +9,36 @@ struct ServerSwitcherView: View {
 
     var body: some View {
         ZStack {
-            GlassTheme.background.ignoresSafeArea()
+            GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    GlassCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Label("Servers", systemImage: "server.rack")
-                                .font(.system(size: 21, weight: .black))
-                                .foregroundStyle(GlassTheme.primary)
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                    SectionHeader("Servers", subtitle: "Switch between Frigate instances")
 
+                    if allSessions.isEmpty {
+                        GlassCard {
+                            EmptyStateView(
+                                icon: "server.rack",
+                                title: "No servers",
+                                message: "Add a Frigate server to get started."
+                            )
+                        }
+                    } else {
+                        VStack(spacing: GlassTheme.Space.m) {
                             ForEach(allSessions, id: \.baseURL) { session in
                                 serverRow(session)
                             }
-
-                            Button {
-                                showAddServer = true
-                            } label: {
-                                Label("Add Server", systemImage: "plus.circle.fill")
-                                    .font(.system(size: 15, weight: .black))
-                                    .foregroundStyle(GlassTheme.cyan)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 14)
-                                    .background(GlassTheme.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
                         }
                     }
+
+                    Button {
+                        showAddServer = true
+                    } label: {
+                        Label("Add Server", systemImage: "plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GlassButtonStyle())
                 }
-                .padding(18)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Servers")
@@ -53,26 +55,24 @@ struct ServerSwitcherView: View {
 
     private func serverRow(_ session: FrigateSession) -> some View {
         let isActive = appState.session?.baseURL == session.baseURL
-        return HStack(spacing: 12) {
-            Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(isActive ? GlassTheme.green : GlassTheme.secondary)
+        return HStack(spacing: GlassTheme.Space.m) {
+            StatusDot(state: isActive ? .live : .offline)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(session.baseURL.host() ?? session.baseURL.absoluteString)
-                    .font(.system(size: 15, weight: .black))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(GlassTheme.primary)
-                Text(session.username)
-                    .font(.system(size: 12, weight: .bold))
+                Text(isActive ? "\(session.username) · Active" : session.username)
+                    .font(.footnote)
                     .foregroundStyle(GlassTheme.secondary)
             }
-            Spacer()
+            Spacer(minLength: GlassTheme.Space.s)
             if !isActive {
                 Button("Switch") {
                     appState.switchTo(session: session)
                 }
-                .font(.system(size: 13, weight: .black))
-                .foregroundStyle(GlassTheme.cyan)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(GlassTheme.accent)
             }
             Button {
                 appState.keychain.remove(session: session)
@@ -85,12 +85,20 @@ struct ServerSwitcherView: View {
                 }
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(GlassTheme.red)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(GlassTheme.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(GlassTheme.Space.l)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+        .cardStroke()
+        .overlay {
+            if isActive {
+                RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
+                    .strokeBorder(GlassTheme.accent.opacity(0.55), lineWidth: 1)
             }
         }
-        .padding(12)
-        .background(isActive ? GlassTheme.green.opacity(0.08) : .white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -106,44 +114,47 @@ private struct AddServerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                GlassTheme.background.ignoresSafeArea()
-                VStack(spacing: 18) {
+                GlassBackground()
+                VStack(spacing: GlassTheme.Space.l) {
                     GlassCard {
-                        VStack(spacing: 14) {
+                        VStack(spacing: GlassTheme.Space.m) {
                             field("Server URL", text: $baseURL, keyboard: .URL)
                             field("Username", text: $username, keyboard: .default)
                             SecureField("Password", text: $password)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.body)
                                 .foregroundStyle(GlassTheme.primary)
-                                .padding(14)
-                                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .padding(GlassTheme.Space.m)
+                                .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                                .cardStroke(GlassTheme.Radius.chip)
                         }
                     }
                     if let err = error {
-                        Text(err)
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(GlassTheme.red)
-                            .padding(.horizontal, 18)
+                        HStack(spacing: GlassTheme.Space.s) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(GlassTheme.red)
+                            Text(err)
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(GlassTheme.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, GlassTheme.Space.l)
                     }
                     Button {
                         Task { await connect() }
                     } label: {
-                        HStack {
-                            if isLoading { ProgressView().tint(.black) }
+                        HStack(spacing: GlassTheme.Space.s) {
+                            if isLoading { ProgressView().tint(.white) }
                             Text("Connect")
-                                .font(.system(size: 16, weight: .black))
-                                .foregroundStyle(.black)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(GlassTheme.cyan, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PillButtonStyle())
                     .disabled(isLoading || baseURL.isEmpty)
-                    .padding(.horizontal, 18)
+                    .opacity(isLoading || baseURL.isEmpty ? 0.5 : 1)
+                    .padding(.horizontal, GlassTheme.Space.l)
                     Spacer()
                 }
-                .padding(.top, 18)
+                .padding(.top, GlassTheme.Space.l)
             }
             .navigationTitle("Add Server")
             .navigationBarTitleDisplayMode(.inline)
@@ -161,10 +172,11 @@ private struct AddServerView: View {
             .keyboardType(keyboard)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
-            .font(.system(size: 16, weight: .bold))
+            .font(.body)
             .foregroundStyle(GlassTheme.primary)
-            .padding(14)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(GlassTheme.Space.m)
+            .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+            .cardStroke(GlassTheme.Radius.chip)
     }
 
     private func connect() async {

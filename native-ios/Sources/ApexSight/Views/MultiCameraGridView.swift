@@ -47,31 +47,32 @@ struct MultiCameraGridView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20, weight: .black))
-                            .foregroundStyle(GlassTheme.secondary)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(GlassTheme.primary)
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: GlassTheme.Space.l) {
                         Button {
                             Haptics.select()
                             smartFocus.toggle()
                             if !smartFocus { activeCameraName = nil }
                         } label: {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 16, weight: .black))
-                                .foregroundStyle(smartFocus ? GlassTheme.cyan : GlassTheme.tertiary)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(smartFocus ? GlassTheme.accent : GlassTheme.tertiary)
                         }
                         .accessibilityLabel(smartFocus ? "Smart Focus on" : "Smart Focus off")
                         columnPicker
                     }
                 }
             }
-            .toolbarBackground(.black.opacity(0.8), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .sheet(item: $selectedCamera) { camera in
                 NavigationStack {
@@ -165,37 +166,48 @@ struct MultiCameraGridView: View {
             LiveVideoPlayerView(camera: camera)
                 .allowsHitTesting(false)
 
-            // camera name pill
+            // Bottom scrim so the name stays legible over bright scenes (matches CameraCard).
+            LinearGradient(
+                colors: [.clear, .clear, .black.opacity(0.7)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+
+            // Camera name — consistent with CameraCard's bottom-leading title.
             Text(titleize(camera.name))
-                .font(.system(size: columns > 2 ? 9 : 11, weight: .black))
+                .font(.system(size: columns > 2 ? 11 : 14, weight: .semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(.black.opacity(0.55), in: Capsule())
-                .padding(6)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+                .padding(.horizontal, GlassTheme.Space.s)
+                .padding(.vertical, GlassTheme.Space.xs)
         }
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipped()
-        // Smart Focus spotlight — a glowing border + MOTION tag on the active camera.
+        // Hairline tile edge so cells read as crisp panels, not a seamless blob.
+        .cardStroke(0)
+        // Smart Focus spotlight — a clean accent border on the active camera.
         .overlay {
             if active {
                 Rectangle()
-                    .strokeBorder(GlassTheme.cyan, lineWidth: 3)
-                    .shadow(color: GlassTheme.cyan.opacity(0.9), radius: 8)
+                    .strokeBorder(GlassTheme.accent, lineWidth: 2.5)
             }
         }
+        // Semantic motion chip (orange = motion) consistent with the app's status chips.
         .overlay(alignment: .topTrailing) {
             if active {
                 HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
+                    Circle().fill(GlassTheme.orange).frame(width: 5, height: 5)
                     Text("MOTION")
+                        .font(.system(size: columns > 2 ? 9 : 10, weight: .bold))
+                        .foregroundStyle(.white)
                 }
-                .font(.system(size: 9, weight: .black))
-                .foregroundStyle(.black)
                 .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(GlassTheme.cyan, in: Capsule())
-                .padding(6)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                .padding(GlassTheme.Space.s)
                 .transition(.scale.combined(with: .opacity))
             }
         }
@@ -219,8 +231,8 @@ struct MultiCameraGridView: View {
             }
         } label: {
             Image(systemName: layoutIcon)
-                .font(.system(size: 16, weight: .black))
-                .foregroundStyle(GlassTheme.cyan)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(GlassTheme.accent)
         }
     }
 
@@ -235,18 +247,10 @@ struct MultiCameraGridView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "video.slash.fill")
-                .font(.system(size: 48, weight: .black))
-                .foregroundStyle(GlassTheme.secondary)
-            Text("No Cameras")
-                .font(.system(size: 22, weight: .black))
-                .foregroundStyle(GlassTheme.primary)
-            Text("Connect a Frigate server in Settings to see live feeds.")
-                .font(.system(size: 14, weight: .heavy))
-                .foregroundStyle(GlassTheme.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-        }
+        EmptyStateView(
+            icon: "video.slash.fill",
+            title: "No Cameras",
+            message: "Connect a Frigate server in Settings to see live feeds."
+        )
     }
 }

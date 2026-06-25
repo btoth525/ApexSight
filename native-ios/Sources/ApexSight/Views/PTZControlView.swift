@@ -7,53 +7,50 @@ struct PTZControlView: View {
     @State private var presets: [String] = []
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: GlassTheme.Space.l) {
             HStack {
                 Text("PTZ Controls")
-                    .font(.system(size: 14, weight: .black))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GlassTheme.secondary)
                 Spacer()
                 if let msg = feedback {
                     Text(msg)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.cyan)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                         .transition(.opacity)
                 }
             }
 
-            HStack(spacing: 24) {
+            HStack(spacing: GlassTheme.Space.xxl) {
                 dpad
                 zoomStack
             }
 
             if !presets.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: GlassTheme.Space.s) {
                         ForEach(presets, id: \.self) { preset in
                             Button {
                                 send(action: "preset", extra: ["preset": preset])
                             } label: {
                                 Text(preset)
-                                    .font(.system(size: 12, weight: .heavy))
-                                    .foregroundStyle(.black)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background(.cyan, in: Capsule())
                             }
+                            .buttonStyle(PillButtonStyle())
                         }
                     }
                 }
             }
         }
-        .padding(16)
-        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(GlassTheme.Space.l)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+        .cardStroke(GlassTheme.Radius.card)
         .task { await loadPresets() }
     }
 
     private var dpad: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: GlassTheme.Space.s) {
             ptzButton(icon: "chevron.up", action: "move_up")
-            HStack(spacing: 4) {
+            HStack(spacing: GlassTheme.Space.s) {
                 ptzButton(icon: "chevron.left", action: "move_left")
                 stopButton
                 ptzButton(icon: "chevron.right", action: "move_right")
@@ -63,7 +60,7 @@ struct PTZControlView: View {
     }
 
     private var zoomStack: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: GlassTheme.Space.s) {
             ptzButton(icon: "plus.magnifyingglass", action: "zoom_in")
             ptzButton(icon: "minus.magnifyingglass", action: "zoom_out")
         }
@@ -73,13 +70,17 @@ struct PTZControlView: View {
         Button {
             send(action: "stop")
         } label: {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.white.opacity(0.1))
+            RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                .fill(.ultraThinMaterial)
                 .frame(width: 48, height: 48)
+                .overlay {
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                }
                 .overlay(
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(GlassTheme.secondary)
                 )
         }
     }
@@ -88,13 +89,17 @@ struct PTZControlView: View {
         Button {
             send(action: action)
         } label: {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.white.opacity(0.15))
+            RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                .fill(.ultraThinMaterial)
                 .frame(width: 48, height: 48)
+                .overlay {
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                }
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(GlassTheme.accent)
                 )
         }
         .buttonRepeatBehavior(.enabled)

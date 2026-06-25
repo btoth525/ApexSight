@@ -10,7 +10,7 @@ struct CameraGroupsView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                     if store.groups.isEmpty {
                         emptyState
                     } else {
@@ -22,12 +22,13 @@ struct CameraGroupsView: View {
                     Button {
                         showEditor = true
                     } label: {
-                        Label("New Group", systemImage: "plus.circle.fill")
+                        Label("New Group", systemImage: "plus")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(PillButtonStyle(tint: GlassTheme.blue))
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                    .padding(.top, GlassTheme.Space.xs)
                 }
-                .padding(18)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Camera Groups")
@@ -47,18 +48,19 @@ struct CameraGroupsView: View {
 
     private func groupRow(_ group: CameraGroup) -> some View {
         GlassCard {
-            HStack(spacing: 14) {
+            HStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 20, weight: .black))
-                    .foregroundStyle(GlassTheme.cyan)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(GlassTheme.accent)
                     .frame(width: 44, height: 44)
-                    .background(GlassTheme.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
+                    .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                    .cardStroke(GlassTheme.Radius.tile)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(group.name)
-                        .font(.system(size: 16, weight: .black))
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(GlassTheme.primary)
                     Text("\(group.cameraNames.count) cameras · \(group.columns)-up")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.secondary)
                 }
                 Spacer()
@@ -67,11 +69,13 @@ struct CameraGroupsView: View {
                         store.delete(at: IndexSet(integer: index))
                     }
                 } label: {
-                    Image(systemName: "trash.fill")
-                        .font(.system(size: 15, weight: .black))
+                    Image(systemName: "trash")
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(GlassTheme.red)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Delete \(group.name)")
             }
         }
         // Tap anywhere on the card (except the trash button) to edit the group.
@@ -80,16 +84,12 @@ struct CameraGroupsView: View {
     }
 
     private var emptyState: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No groups yet")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-                Text("Create a group to watch a custom set of cameras together in one wall.")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(GlassTheme.secondary)
-            }
-        }
+        EmptyStateView(
+            icon: "square.grid.2x2",
+            title: "No groups yet",
+            message: "Create a group to watch a custom set of cameras together in one wall."
+        )
+        .padding(.top, GlassTheme.Space.xxl)
     }
 }
 
@@ -116,25 +116,22 @@ struct CameraGroupEditor: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                         GlassCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Name")
-                                    .font(.system(size: 13, weight: .black))
-                                    .foregroundStyle(GlassTheme.secondary)
+                            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                                SectionHeader("Name")
                                 TextField("Front of House", text: $name)
-                                    .font(.system(size: 16, weight: .bold))
+                                    .font(.body)
                                     .foregroundStyle(GlassTheme.primary)
-                                    .padding(12)
-                                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .padding(GlassTheme.Space.m)
+                                    .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                                    .cardStroke(GlassTheme.Radius.tile)
                             }
                         }
 
                         GlassCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Layout")
-                                    .font(.system(size: 13, weight: .black))
-                                    .foregroundStyle(GlassTheme.secondary)
+                            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                                SectionHeader("Layout")
                                 Picker("Columns", selection: $columns) {
                                     Text("1-up").tag(1)
                                     Text("2×2").tag(2)
@@ -145,17 +142,16 @@ struct CameraGroupEditor: View {
                         }
 
                         GlassCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Cameras")
-                                    .font(.system(size: 13, weight: .black))
-                                    .foregroundStyle(GlassTheme.secondary)
+                            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                                SectionHeader("Cameras")
+                                    .padding(.bottom, GlassTheme.Space.xs)
                                 ForEach(appState.cameras) { camera in
                                     cameraToggle(camera)
                                 }
                             }
                         }
                     }
-                    .padding(18)
+                    .padding(GlassTheme.Space.l)
                 }
             }
             .navigationTitle(editing == nil ? "New Group" : "Edit Group")
@@ -178,16 +174,17 @@ struct CameraGroupEditor: View {
             if selected.contains(camera.name) { selected.remove(camera.name) }
             else { selected.insert(camera.name) }
         } label: {
-            HStack {
+            HStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: selected.contains(camera.name) ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(selected.contains(camera.name) ? GlassTheme.cyan : GlassTheme.tertiary)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(selected.contains(camera.name) ? GlassTheme.accent : GlassTheme.tertiary)
                 Text(titleize(camera.name))
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(GlassTheme.primary)
                 Spacer()
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, GlassTheme.Space.xs)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

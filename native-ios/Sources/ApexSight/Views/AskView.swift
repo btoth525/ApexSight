@@ -29,18 +29,27 @@ struct AskView: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(spacing: 16) {
+                    VStack(spacing: GlassTheme.Space.l) {
                         askBar
                         if loading {
-                            ProgressView().tint(GlassTheme.cyan).padding(.top, 24)
+                            HStack { Spacer(); ProgressView().tint(GlassTheme.accent); Spacer() }
+                                .padding(.top, 40)
                         } else if let answer {
                             answerCard(answer)
-                            if !results.isEmpty { resultsGrid }
+                            if results.isEmpty {
+                                EmptyStateView(
+                                    icon: "magnifyingglass",
+                                    title: "No matches",
+                                    message: "No clips matched your question."
+                                )
+                            } else {
+                                resultsGrid
+                            }
                         } else {
                             suggestionsCard
                         }
                     }
-                    .padding(16)
+                    .padding(GlassTheme.Space.l)
                 }
             }
             .navigationTitle("Ask Your Cameras")
@@ -64,51 +73,56 @@ struct AskView: View {
     // MARK: - UI
 
     private var askBar: some View {
-        GlassCard {
-            HStack(spacing: 10) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(GlassTheme.purple)
-                TextField("Ask about your cameras…", text: $question)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(GlassTheme.primary)
-                    .submitLabel(.search)
-                    .onSubmit { Task { await ask() } }
-                if !question.isEmpty {
-                    Button {
-                        question = ""; answer = nil; results = []
-                    } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(GlassTheme.tertiary)
-                    }
-                    .buttonStyle(.plain)
+        HStack(spacing: GlassTheme.Space.s) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(GlassTheme.secondary)
+            TextField("Ask about your cameras…", text: $question)
+                .font(.body)
+                .foregroundStyle(GlassTheme.primary)
+                .submitLabel(.search)
+                .onSubmit { Task { await ask() } }
+            if !question.isEmpty {
+                Button {
+                    question = ""; answer = nil; results = []
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(GlassTheme.tertiary)
                 }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, GlassTheme.Space.m)
+        .padding(.vertical, 10)
+        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+        .cardStroke(GlassTheme.Radius.chip)
     }
 
     private var suggestionsCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Try asking")
-                    .font(.system(size: 13, weight: .black))
-                    .foregroundStyle(GlassTheme.tertiary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Try asking")
                 ForEach(suggestions, id: \.self) { s in
                     Button {
                         question = s
                         Task { await ask() }
                     } label: {
-                        HStack {
-                            Image(systemName: "sparkle").foregroundStyle(GlassTheme.purple)
+                        HStack(spacing: GlassTheme.Space.s) {
+                            Image(systemName: "sparkle")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(GlassTheme.accent)
                             Text(s)
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.subheadline.weight(.medium))
                                 .foregroundStyle(GlassTheme.primary)
                             Spacer()
                             Image(systemName: "arrow.up.left")
-                                .font(.system(size: 12, weight: .black))
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(GlassTheme.tertiary)
                         }
-                        .padding(12)
-                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(GlassTheme.Space.m)
+                        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                        .cardStroke(GlassTheme.Radius.chip)
                     }
                     .buttonStyle(.plain)
                 }
@@ -118,12 +132,12 @@ struct AskView: View {
 
     private func answerCard(_ text: String) -> some View {
         GlassCard {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: GlassTheme.Space.m) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 20, weight: .black))
-                    .foregroundStyle(GlassTheme.purple)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(GlassTheme.accent)
                 Text(text)
-                    .font(.system(size: 16, weight: .heavy))
+                    .font(.body)
                     .foregroundStyle(GlassTheme.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -132,12 +146,16 @@ struct AskView: View {
     }
 
     private var resultsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
             ForEach(results.prefix(30)) { event in
                 Button { path.append(event) } label: {
                     RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id))
                         .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                                .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                        }
                 }
                 .buttonStyle(.plain)
             }

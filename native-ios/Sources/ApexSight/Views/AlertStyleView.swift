@@ -21,19 +21,20 @@ struct AlertStyleView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: GlassTheme.Space.m) {
                     previewCard
                     contentCard
                     fieldsCard
                     mediaCard
                     emojiCard
                     Text("Changes sync to your push relay automatically, so they apply even when the app is closed.")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.footnote)
                         .foregroundStyle(GlassTheme.tertiary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, GlassTheme.Space.s)
+                        .padding(.top, GlassTheme.Space.xs)
                 }
-                .padding(16)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Alert Style")
@@ -48,32 +49,33 @@ struct AlertStyleView: View {
 
     private var previewCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("PREVIEW")
-                    .font(.system(size: 11, weight: .black))
-                    .foregroundStyle(GlassTheme.tertiary)
-                HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.white.opacity(0.08))
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Preview", subtitle: "How a push will look on your lock screen")
+                HStack(spacing: GlassTheme.Space.m) {
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                        .fill(GlassTheme.surfaceHigh)
                         .frame(width: 54, height: 54)
                         .overlay {
                             Image(systemName: s.firstFrame == "none" ? "bell.fill" : "photo.fill")
+                                .font(.system(size: 20, weight: .regular))
                                 .foregroundStyle(GlassTheme.secondary)
                         }
+                        .cardStroke(GlassTheme.Radius.tile)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(previewTitle)
-                            .font(.system(size: 15, weight: .heavy))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GlassTheme.primary)
                             .lineLimit(1)
                         Text(previewBody)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote)
                             .foregroundStyle(GlassTheme.secondary)
                             .lineLimit(2)
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(12)
-                .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(GlassTheme.Space.m)
+                .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                .cardStroke(GlassTheme.Radius.tile)
             }
         }
     }
@@ -125,7 +127,7 @@ struct AlertStyleView: View {
             toggle("Time", "When it happened", isOn: bind(\.showTime))
             HStack {
                 Text("Separator")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(GlassTheme.primary)
                 Spacer()
                 Picker("Separator", selection: bind(\.fieldSeparator)) {
@@ -144,7 +146,7 @@ struct AlertStyleView: View {
         card("Media") {
             HStack {
                 Text("First frame")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(GlassTheme.primary)
                 Spacer()
                 Picker("First frame", selection: bind(\.firstFrame)) {
@@ -156,8 +158,8 @@ struct AlertStyleView: View {
                 .frame(width: 200)
             }
             Text("The image shown the instant the alert arrives. \"Cropped\" zooms to the object's box.")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(GlassTheme.tertiary)
+                .font(.footnote)
+                .foregroundStyle(GlassTheme.secondary)
             toggle("Final GIF update", "When the event ends, swap in the full animated GIF (same notification, no duplicate)", isOn: bind(\.finalGif))
         }
     }
@@ -165,20 +167,21 @@ struct AlertStyleView: View {
     private var emojiCard: some View {
         card("Custom emojis") {
             Text("Override or add label → emoji mappings (e.g. your family members or pets).")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(GlassTheme.tertiary)
+                .font(.footnote)
+                .foregroundStyle(GlassTheme.secondary)
 
             ForEach(s.emojiMap.sorted(by: { $0.key < $1.key }), id: \.key) { key, emoji in
-                HStack {
-                    Text(emoji).font(.system(size: 20))
+                HStack(spacing: GlassTheme.Space.m) {
+                    Text(emoji).font(.system(size: 22))
                     Text(key.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                     Button {
                         store.style.emojiMap.removeValue(forKey: key)
                     } label: {
                         Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 20, weight: .regular))
                             .foregroundStyle(GlassTheme.red)
                     }
                     .buttonStyle(.plain)
@@ -186,18 +189,22 @@ struct AlertStyleView: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: GlassTheme.Space.s) {
                 TextField("label (e.g. taylor)", text: $newLabel)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .font(.system(size: 14, weight: .semibold))
-                    .padding(10)
-                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .font(.subheadline)
+                    .foregroundStyle(GlassTheme.primary)
+                    .padding(GlassTheme.Space.m)
+                    .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                    .cardStroke(GlassTheme.Radius.chip)
                 TextField("😎", text: $newEmoji)
                     .font(.system(size: 16))
+                    .multilineTextAlignment(.center)
                     .frame(width: 56)
-                    .padding(10)
-                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(GlassTheme.Space.m)
+                    .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                    .cardStroke(GlassTheme.Radius.chip)
                 Button {
                     let label = newLabel.trimmingCharacters(in: .whitespaces).lowercased()
                     let emoji = newEmoji.trimmingCharacters(in: .whitespaces)
@@ -206,8 +213,8 @@ struct AlertStyleView: View {
                     newLabel = ""; newEmoji = ""
                 } label: {
                     Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(GlassTheme.cyan)
+                        .font(.system(size: 26, weight: .regular))
+                        .foregroundStyle(GlassTheme.accent)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Add emoji mapping")
@@ -226,10 +233,8 @@ struct AlertStyleView: View {
 
     private func card<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(title)
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader(title)
                 content()
             }
         }
@@ -239,13 +244,13 @@ struct AlertStyleView: View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(GlassTheme.primary)
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(GlassTheme.tertiary)
+                    .font(.footnote)
+                    .foregroundStyle(GlassTheme.secondary)
             }
         }
-        .tint(GlassTheme.cyan)
+        .tint(GlassTheme.accent)
     }
 }

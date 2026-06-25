@@ -51,7 +51,7 @@ struct MainTabView: View {
                 tabLayout
             }
         }
-        .tint(GlassTheme.cyan)
+        .tint(GlassTheme.accent)
         .sensoryFeedback(.selection, trigger: selectedTab)
         .sheet(item: $detailSheet) { sheet in
             NavigationStack {
@@ -96,7 +96,7 @@ struct MainTabView: View {
             List(selection: $selectedTab) {
                 ForEach(Tab.allCases) { tab in
                     Label(tab.title, systemImage: tab.icon)
-                        .font(.system(size: 16, weight: .heavy))
+                        .font(.body.weight(.semibold))
                         .badge(tab == .review ? appState.unreviewedCount : 0)
                         .tag(tab)
                 }

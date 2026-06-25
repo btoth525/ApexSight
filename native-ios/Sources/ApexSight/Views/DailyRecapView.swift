@@ -18,16 +18,24 @@ struct DailyRecapView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: GlassTheme.Space.l) {
                     heroCard
                     if let recap, !recap.isEmpty {
                         statsCard(recap)
                         objectsCard(recap)
                         camerasCard(recap)
+                    } else if !loading {
+                        GlassCard {
+                            EmptyStateView(
+                                icon: "checkmark.shield",
+                                title: "All quiet today",
+                                message: "No notable activity yet. Your recap will fill in as events come in."
+                            )
+                        }
                     }
                     scheduleCard
                 }
-                .padding(16)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Daily Recap")
@@ -40,53 +48,65 @@ struct DailyRecapView: View {
 
     private var heroCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                 Text("TODAY")
-                    .font(.system(size: 11, weight: .black))
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .tracking(0.8)
                     .foregroundStyle(GlassTheme.tertiary)
                 if loading {
-                    ProgressView().tint(GlassTheme.cyan)
+                    ProgressView().tint(GlassTheme.accent)
                 } else {
                     Text(recap?.headline ?? "All quiet today")
-                        .font(.system(size: 22, weight: .black, design: .rounded))
+                        .font(.title2)
+                        .fontWeight(.bold)
                         .foregroundStyle(GlassTheme.primary)
                     if let recap, let first = recap.firstAt, let last = recap.lastAt, !recap.isEmpty {
                         Text("First \(first.formatted(date: .omitted, time: .shortened)) · Latest \(last.formatted(date: .omitted, time: .shortened))")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.subheadline)
                             .foregroundStyle(GlassTheme.secondary)
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func statsCard(_ recap: DailyRecap) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Highlights")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Highlights")
                 let stats = chips(recap)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: GlassTheme.Space.s), GridItem(.flexible())], spacing: GlassTheme.Space.s) {
                     ForEach(stats, id: \.label) { stat in
-                        VStack(spacing: 4) {
-                            Text(stat.value)
-                                .font(.system(size: 22, weight: .black, design: .rounded))
-                                .foregroundStyle(stat.tint)
+                        VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
+                            HStack(spacing: GlassTheme.Space.s) {
+                                Circle()
+                                    .fill(stat.tint)
+                                    .frame(width: 7, height: 7)
+                                Text(stat.value)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(GlassTheme.primary)
+                            }
                             Text(stat.label)
-                                .font(.system(size: 11, weight: .heavy))
+                                .font(.footnote)
                                 .foregroundStyle(GlassTheme.secondary)
-                                .multilineTextAlignment(.center)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(GlassTheme.Space.m)
+                        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                        .cardStroke(GlassTheme.Radius.tile)
                     }
                 }
                 if !recap.people.isEmpty {
-                    Text("👤 " + recap.people.map(titleize).joined(separator: ", "))
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(GlassTheme.green)
+                    HStack(spacing: GlassTheme.Space.s) {
+                        StatusDot(state: .live)
+                        Text(recap.people.map(titleize).joined(separator: ", "))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
                 }
             }
         }
@@ -95,29 +115,30 @@ struct DailyRecapView: View {
     private struct Stat { let label: String; let value: String; let tint: Color }
 
     private func chips(_ recap: DailyRecap) -> [Stat] {
-        var out: [Stat] = [Stat(label: "Events", value: "\(recap.total)", tint: GlassTheme.cyan)]
+        var out: [Stat] = [Stat(label: "Events", value: "\(recap.total)", tint: GlassTheme.accent)]
         out.append(Stat(label: "People seen", value: "\(recap.people.count)", tint: GlassTheme.green))
         if recap.packages > 0 { out.append(Stat(label: "Packages", value: "\(recap.packages)", tint: GlassTheme.orange)) }
-        if let busiest = recap.busiestHourLabel { out.append(Stat(label: "Busiest", value: busiest, tint: GlassTheme.purple)) }
+        if let busiest = recap.busiestHourLabel { out.append(Stat(label: "Busiest", value: busiest, tint: GlassTheme.accent)) }
         return out
     }
 
     private func objectsCard(_ recap: DailyRecap) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("By Object")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("By Object")
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                     ForEach(recap.labelCounts.prefix(12), id: \.label) { item in
-                        objectChip(NotificationCopy.emoji(for: item.label), titleize(item.label), item.count, tint: GlassTheme.cyan)
+                        objectChip(NotificationCopy.emoji(for: item.label), titleize(item.label), item.count, tint: GlassTheme.accent)
                     }
                 }
                 if !recap.carriers.isEmpty {
                     Text("DELIVERIES")
-                        .font(.system(size: 11, weight: .black))
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .tracking(0.8)
                         .foregroundStyle(GlassTheme.tertiary)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                        .padding(.top, GlassTheme.Space.xs)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                         ForEach(recap.carriers, id: \.name) { item in
                             objectChip(NotificationCopy.emoji(for: "package", subLabel: item.name), titleize(item.name), item.count, tint: GlassTheme.orange)
                         }
@@ -128,43 +149,49 @@ struct DailyRecapView: View {
     }
 
     private func objectChip(_ emoji: String, _ title: String, _ count: Int, tint: Color) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: GlassTheme.Space.xs) {
             Text("\(emoji) \(title)")
-                .font(.system(size: 12, weight: .heavy))
+                .font(.footnote)
+                .fontWeight(.medium)
                 .foregroundStyle(GlassTheme.primary)
                 .lineLimit(1)
             Spacer(minLength: 2)
             Text("\(count)")
-                .font(.system(size: 12, weight: .black))
+                .font(.footnote)
+                .fontWeight(.semibold)
                 .foregroundStyle(tint)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.white.opacity(0.05), in: Capsule())
+        .padding(.horizontal, GlassTheme.Space.m)
+        .padding(.vertical, GlassTheme.Space.s)
+        .background(GlassTheme.surfaceHigh, in: Capsule())
+        .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
     }
 
     private func camerasCard(_ recap: DailyRecap) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("By Camera")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("By Camera")
                 let maxCount = recap.cameraCounts.first?.count ?? 1
                 ForEach(recap.cameraCounts.prefix(8), id: \.camera) { item in
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                         HStack {
                             Text(titleize(item.camera))
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
                                 .foregroundStyle(GlassTheme.primary)
                             Spacer()
                             Text("\(item.count)")
-                                .font(.system(size: 13, weight: .black))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
                                 .foregroundStyle(GlassTheme.secondary)
                         }
                         GeometryReader { geo in
-                            Capsule()
-                                .fill(GlassTheme.cyan.opacity(0.8))
-                                .frame(width: geo.size.width * CGFloat(item.count) / CGFloat(max(maxCount, 1)))
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(GlassTheme.surfaceHigh)
+                                Capsule()
+                                    .fill(GlassTheme.accent)
+                                    .frame(width: geo.size.width * CGFloat(item.count) / CGFloat(max(maxCount, 1)))
+                            }
                         }
                         .frame(height: 6)
                     }
@@ -175,21 +202,20 @@ struct DailyRecapView: View {
 
     private var scheduleCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Daily Notification")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Daily Notification")
                 Toggle(isOn: $recapEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Send a daily recap")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
                             .foregroundStyle(GlassTheme.primary)
                         Text("A summary notification each day")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(GlassTheme.tertiary)
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
                     }
                 }
-                .tint(GlassTheme.cyan)
+                .tint(GlassTheme.accent)
                 .onChange(of: recapEnabled) { _, isOn in
                     // A recap is useless without notification permission — ask the
                     // moment the user opts in (no-op if already granted/denied).
@@ -199,8 +225,10 @@ struct DailyRecapView: View {
                 }
 
                 if recapEnabled {
+                    Divider().overlay(GlassTheme.separator)
                     DatePicker("Time", selection: $recapTime, displayedComponents: .hourAndMinute)
-                        .tint(GlassTheme.cyan)
+                        .font(.subheadline)
+                        .tint(GlassTheme.accent)
                         .onChange(of: recapTime) { _, newValue in
                             let c = Calendar.current.dateComponents([.hour, .minute], from: newValue)
                             RecapSettings.hour = c.hour ?? 21
@@ -209,7 +237,7 @@ struct DailyRecapView: View {
                         }
                 }
                 Text("Delivered around your chosen time when the app refreshes in the background.")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.footnote)
                     .foregroundStyle(GlassTheme.tertiary)
             }
         }
