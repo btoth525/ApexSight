@@ -32,6 +32,56 @@ struct ZoomableClipPlayer: View {
     }
 }
 
+/// A lightweight loading skeleton for video surfaces — a soft shimmer over a dark base so a
+/// clip that's still buffering reads as "loading," never a dead black rectangle. Respects
+/// Reduce Motion (falls back to a calm spinner with no sweep).
+struct ClipSkeleton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sweep = false
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.black
+                if !reduceMotion {
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.12), .clear],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                    .frame(width: geo.size.width)
+                    .offset(x: sweep ? geo.size.width : -geo.size.width)
+                    .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: false), value: sweep)
+                }
+                ProgressView()
+                    .tint(GlassTheme.cyan)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear { sweep = true }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Renders a clip player that holds a loading skeleton over itself until the model reports a
+/// real frame is ready, then crossfades the video in. Centralizes the "never a black box,
+/// smooth reveal" behavior every clip surface wants.
+struct LoadingClipPlayer: View {
+    @ObservedObject var model: ClipPlayerModel
+
+    var body: some View {
+        ZStack {
+            if let player = model.player {
+                ZoomableClipPlayer(player: player)
+                    .opacity(model.isReady ? 1 : 0)
+                    .animation(.easeIn(duration: 0.25), value: model.isReady)
+            }
+            if !model.isReady {
+                ClipSkeleton().transition(.opacity)
+            }
+        }
+    }
+}
+
 /// A bare AVPlayerLayer host (no transport chrome) so the clip can be freely zoomed.
 struct VideoLayerView: UIViewRepresentable {
     let player: AVPlayer

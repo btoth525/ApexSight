@@ -92,8 +92,10 @@ struct ReviewDetailView: View {
                 }
 
                 ZStack {
-                    if mediaMode == .video, let player = clipModel.player {
-                        ZoomableClipPlayer(player: player)
+                    if mediaMode == .video {
+                        // Holds a loading skeleton until a real frame is ready, then fades the
+                        // clip in — never a black box.
+                        LoadingClipPlayer(model: clipModel)
                             .frame(height: 300)
                             .frame(maxWidth: .infinity)
                     } else if mediaMode == .history, let startTime = review.startTime {
