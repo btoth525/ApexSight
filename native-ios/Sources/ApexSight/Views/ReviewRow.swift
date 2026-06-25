@@ -33,13 +33,10 @@ struct ReviewRow: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 200)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         .overlay(alignment: .topLeading) { severityBadge.padding(10) }
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
+        .cardStroke()
+        .shadow(color: .black.opacity(0.22), radius: 9, y: 4)
     }
 
     @ViewBuilder
@@ -67,16 +64,16 @@ struct ReviewRow: View {
     private var info: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(NotificationCopy.combinedTitle(for: review))
-                .font(.system(size: 18, weight: .black))
+                .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Text(subtitle)
-                .font(.system(size: 12, weight: .heavy))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
             if let epoch = review.startTime {
                 Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 11, weight: .heavy))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
             }

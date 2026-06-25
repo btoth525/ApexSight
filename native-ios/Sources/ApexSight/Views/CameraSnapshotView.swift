@@ -77,12 +77,12 @@ final class CameraSnapshotPoller: ObservableObject {
 struct CameraSnapshotView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
-    var contentMode: ContentMode = .fill
+    var contentMode: ContentMode = .fit
     var onFrame: ((Bool) -> Void)? = nil
 
     @StateObject private var poller: CameraSnapshotPoller
 
-    init(camera: FrigateCamera, contentMode: ContentMode = .fill, onFrame: ((Bool) -> Void)? = nil) {
+    init(camera: FrigateCamera, contentMode: ContentMode = .fit, onFrame: ((Bool) -> Void)? = nil) {
         self.camera = camera
         self.contentMode = contentMode
         self.onFrame = onFrame
@@ -90,19 +90,23 @@ struct CameraSnapshotView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black
-            if let img = poller.image {
-                Image(uiImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
+        // Color.black takes the tile's size; the image is drawn as an OVERLAY sized to that
+        // box and clipped — so a wide frame can never blow past the tile and fill the screen.
+        // `.fit` shows the whole scene (ultra-wide isn't cropped/zoomed); the tile letterboxes.
+        Color.black
+            .overlay {
+                if let img = poller.image {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: contentMode)
+                }
             }
-        }
-        .onAppear {
-            if let client = appState.client { poller.start(client: client) }
-            onFrame?(poller.image != nil)
-        }
-        .onDisappear { poller.stop() }
-        .onChange(of: poller.image == nil) { _, isNil in onFrame?(!isNil) }
+            .clipped()
+            .onAppear {
+                if let client = appState.client { poller.start(client: client) }
+                onFrame?(poller.image != nil)
+            }
+            .onDisappear { poller.stop() }
+            .onChange(of: poller.image == nil) { _, isNil in onFrame?(!isNil) }
     }
 }

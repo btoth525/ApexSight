@@ -38,15 +38,12 @@ struct CameraCard: View {
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
             .overlay(alignment: .topTrailing) {
                 capabilityChips.padding(10)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(.white.opacity(0.10), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
+            .cardStroke(GlassTheme.Radius.tile)
+            .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(titleize(camera.name)) camera. Opens live view.")
             .accessibilityAddTraits(.isButton)
@@ -56,12 +53,9 @@ struct CameraCard: View {
 
     private var nameRow: some View {
         HStack(spacing: 7) {
-            Circle()
-                .fill(isLive ? Color.green : Color.yellow)
-                .frame(width: 7, height: 7)
-                .shadow(color: (isLive ? Color.green : Color.yellow).opacity(0.8), radius: 3)
+            StatusDot(state: isLive ? .live : .offline)
             Text(titleize(camera.name))
-                .font(.system(size: 15, weight: .black))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -82,11 +76,15 @@ struct CameraCard: View {
     }
 
     private func chip(_ label: String, tint: Color) -> some View {
-        Text(label)
-            .font(.system(size: 9, weight: .black))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(tint.opacity(0.85), in: Capsule())
+        HStack(spacing: 4) {
+            Circle().fill(tint).frame(width: 5, height: 5)
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
     }
 }
