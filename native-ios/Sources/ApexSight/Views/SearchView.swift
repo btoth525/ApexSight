@@ -55,13 +55,13 @@ struct SearchView: View {
             ZStack {
                 GlassBackground()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                         searchBar
                         if showFilters { filterSection }
                         if showDateFilter { dateFilterCard }
 
                         if isSearching {
-                            HStack { Spacer(); ProgressView().tint(GlassTheme.cyan); Spacer() }
+                            HStack { Spacer(); ProgressView().tint(GlassTheme.accent); Spacer() }
                                 .padding(.top, 40)
                         } else if hasSearched {
                             resultsSection
@@ -69,12 +69,12 @@ struct SearchView: View {
                             browseSection
                         }
                     }
-                    .padding(18)
+                    .padding(GlassTheme.Space.l)
                 }
                 .refreshable { await loadBrowse() }
             }
             .navigationTitle("Explore")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
@@ -82,9 +82,9 @@ struct SearchView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showAlbums = true } label: {
-                        Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 16, weight: .black))
-                            .foregroundStyle(GlassTheme.cyan)
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(GlassTheme.accent)
                     }
                     .accessibilityLabel("Smart albums")
                 }
@@ -104,14 +104,14 @@ struct SearchView: View {
     // MARK: - Search bar
 
     private var searchBar: some View {
-        GlassCard {
-            HStack(spacing: 10) {
+        HStack(spacing: GlassTheme.Space.s) {
+            HStack(spacing: GlassTheme.Space.s) {
                 Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 17, weight: .heavy))
-                    .foregroundStyle(GlassTheme.purple)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(GlassTheme.secondary)
 
                 TextField("Ask anything…", text: $query)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(.body))
                     .foregroundStyle(GlassTheme.primary)
                     .submitLabel(.search)
                     .onSubmit { Task { await performSearch() } }
@@ -124,30 +124,35 @@ struct SearchView: View {
                         hasSearched = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
                             .foregroundStyle(GlassTheme.tertiary)
                     }
                     .buttonStyle(.plain)
                 }
-
-                Button {
-                    withAnimation { showFilters.toggle() }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundStyle(GlassTheme.cyan)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    Task { await performSearch() }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 27, weight: .black))
-                        .foregroundStyle(isSearching ? GlassTheme.tertiary : GlassTheme.cyan)
-                }
-                .buttonStyle(.plain)
-                .disabled(isSearching)
             }
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, 10)
+            .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+            .cardStroke(GlassTheme.Radius.chip)
+
+            Button {
+                withAnimation { showFilters.toggle() }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(showFilters ? GlassTheme.accent : GlassTheme.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await performSearch() }
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(isSearching ? GlassTheme.tertiary : GlassTheme.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(isSearching)
         }
     }
 
@@ -198,9 +203,9 @@ struct SearchView: View {
     private var browseSection: some View {
         // Lazy so only the groups you've scrolled to instantiate their thumbnails —
         // rendering every group at once fired dozens of image fetches and dropped some.
-        LazyVStack(alignment: .leading, spacing: 18) {
+        LazyVStack(alignment: .leading, spacing: GlassTheme.Space.xl) {
             if loadingBrowse && browseEvents.isEmpty {
-                HStack { Spacer(); ProgressView().tint(GlassTheme.cyan); Spacer() }
+                HStack { Spacer(); ProgressView().tint(GlassTheme.accent); Spacer() }
                     .padding(.top, 40)
             } else if groups.isEmpty {
                 emptyState
@@ -213,36 +218,36 @@ struct SearchView: View {
     }
 
     private func groupRow(_ group: ObjectGroup) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
             Button {
                 selectedLabel = group.label ?? "all"
                 selectedSubLabel = group.subLabel ?? "all"
                 Task { await performSearch() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: GlassTheme.Space.s) {
                     Text("\(group.emoji) \(group.title)")
-                        .font(.system(size: 18, weight: .black))
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(GlassTheme.primary)
                     Text("\(group.events.count)")
-                        .font(.system(size: 12, weight: .black))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(GlassTheme.secondary)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, GlassTheme.Space.s)
                         .padding(.vertical, 3)
-                        .background(.white.opacity(0.08), in: Capsule())
+                        .background(GlassTheme.surfaceHigh, in: Capsule())
                     Spacer()
                     HStack(spacing: 3) {
                         Text("See all")
-                            .font(.system(size: 12, weight: .heavy))
+                            .font(.subheadline.weight(.medium))
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .black))
+                            .font(.caption.weight(.semibold))
                     }
-                    .foregroundStyle(GlassTheme.cyan)
+                    .foregroundStyle(GlassTheme.accent)
                 }
             }
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
+                LazyHStack(spacing: GlassTheme.Space.s) {
                     ForEach(group.events.prefix(8)) { event in
                         Button { path.append(event) } label: {
                             thumbnail(event)
@@ -265,7 +270,7 @@ struct SearchView: View {
             }
             if let start = event.startTime {
                 Text(Date(timeIntervalSince1970: start).formatted(.relative(presentation: .numeric)))
-                    .font(.system(size: 9, weight: .black))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
@@ -274,45 +279,45 @@ struct SearchView: View {
             }
         }
         .frame(width: 104, height: 104)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                .strokeBorder(GlassTheme.separator, lineWidth: 1)
         }
     }
 
     /// A ranked semantic-search hit: thumbnail + label/sub-label, time, the GenAI
     /// description (what matched), and a small badge for the match source.
     private func searchResultRow(_ event: FrigateEvent) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: GlassTheme.Space.m) {
             if let url = appState.client?.eventThumbnailURL(id: event.id) {
                 RemoteImage(url: url, contentMode: .fill)
                     .frame(width: 92, height: 92)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
             } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.black).frame(width: 92, height: 92)
+                RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                    .fill(GlassTheme.surfaceHigh).frame(width: 92, height: 92)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
+                HStack(spacing: GlassTheme.Space.xs) {
                     Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
-                        .font(.system(size: 15, weight: .black))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GlassTheme.primary)
                         .lineLimit(1)
                     if event.searchSource == "description" {
                         Image(systemName: "text.magnifyingglass")
-                            .font(.system(size: 11, weight: .black))
-                            .foregroundStyle(GlassTheme.purple)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GlassTheme.accent)
                             .accessibilityLabel("Matched description")
                     }
                 }
                 Text("\(titleize(event.camera))\(event.startTime.map { " · " + Date(timeIntervalSince1970: $0).formatted(date: .abbreviated, time: .shortened) } ?? "")")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.footnote)
                     .foregroundStyle(GlassTheme.secondary)
                     .lineLimit(1)
                 if let desc = event.description {
                     Text(desc)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.footnote)
                         .foregroundStyle(GlassTheme.tertiary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -320,63 +325,69 @@ struct SearchView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(10)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(GlassTheme.Space.m)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+        .cardStroke()
         .accessibilityElement(children: .combine)
     }
 
     // MARK: - Filters
 
     private var filterSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            chipRow(title: "Cameras", icon: "video", selected: selectedCamera, options: appState.cameras.map(\.name)) {
-                selectedCamera = $0
-            }
-            chipRow(title: "Labels", icon: "tag", selected: selectedLabel, options: allLabels) {
-                selectedLabel = $0
-            }
-            if !allSubLabels.isEmpty {
-                chipRow(title: "Sub-Labels", icon: "tag.fill", selected: selectedSubLabel, options: allSubLabels) {
-                    selectedSubLabel = $0
-                }
-            }
-            if !allZones.isEmpty {
-                chipRow(title: "Zones", icon: "mappin", selected: selectedZone, options: allZones) {
-                    selectedZone = $0
-                }
-            }
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Filters")
 
-            HStack(spacing: 10) {
-                Image(systemName: "car.fill")
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(GlassTheme.purple)
-                TextField("License plate (optional)", text: $plateQuery)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(GlassTheme.primary)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.characters)
-                    .submitLabel(.search)
-                    .onSubmit { Task { await performSearch() } }
-            }
-            .padding(12)
-            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            Button {
-                withAnimation { showDateFilter.toggle() }
-                if !showDateFilter { afterDate = nil }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: showDateFilter ? "calendar.badge.minus" : "calendar.badge.plus")
-                        .font(.system(size: 14, weight: .heavy))
-                    Text(afterDate.map { "From: \($0.formatted(date: .abbreviated, time: .omitted))" } ?? "Date Filter")
-                        .font(.system(size: 13, weight: .heavy))
+                chipRow(title: "Cameras", icon: "video", selected: selectedCamera, options: appState.cameras.map(\.name)) {
+                    selectedCamera = $0
                 }
-                .foregroundStyle(showDateFilter ? GlassTheme.cyan : GlassTheme.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background((showDateFilter ? GlassTheme.cyan : Color.white).opacity(0.12), in: Capsule())
+                chipRow(title: "Labels", icon: "tag", selected: selectedLabel, options: allLabels) {
+                    selectedLabel = $0
+                }
+                if !allSubLabels.isEmpty {
+                    chipRow(title: "Sub-Labels", icon: "tag.fill", selected: selectedSubLabel, options: allSubLabels) {
+                        selectedSubLabel = $0
+                    }
+                }
+                if !allZones.isEmpty {
+                    chipRow(title: "Zones", icon: "mappin", selected: selectedZone, options: allZones) {
+                        selectedZone = $0
+                    }
+                }
+
+                HStack(spacing: GlassTheme.Space.s) {
+                    Image(systemName: "car.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(GlassTheme.secondary)
+                    TextField("License plate (optional)", text: $plateQuery)
+                        .font(.subheadline)
+                        .foregroundStyle(GlassTheme.primary)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                        .submitLabel(.search)
+                        .onSubmit { Task { await performSearch() } }
+                }
+                .padding(GlassTheme.Space.m)
+                .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                .cardStroke(GlassTheme.Radius.chip)
+
+                Button {
+                    withAnimation { showDateFilter.toggle() }
+                    if !showDateFilter { afterDate = nil }
+                } label: {
+                    HStack(spacing: GlassTheme.Space.xs) {
+                        Image(systemName: showDateFilter ? "calendar.badge.minus" : "calendar.badge.plus")
+                            .font(.footnote.weight(.semibold))
+                        Text(afterDate.map { "From: \($0.formatted(date: .abbreviated, time: .omitted))" } ?? "Date Filter")
+                            .font(.footnote.weight(.medium))
+                    }
+                    .foregroundStyle(showDateFilter ? Color.white : GlassTheme.secondary)
+                    .padding(.horizontal, GlassTheme.Space.m)
+                    .padding(.vertical, GlassTheme.Space.s)
+                    .background(showDateFilter ? AnyShapeStyle(GlassTheme.accent) : AnyShapeStyle(GlassTheme.surfaceHigh), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -393,9 +404,9 @@ struct SearchView: View {
 
     private var dateFilterCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                 Text("Events After")
-                    .font(.system(size: 14, weight: .black))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(GlassTheme.secondary)
                 DatePicker("", selection: Binding(
                     get: { afterDate ?? Date().addingTimeInterval(-86400 * 7) },
@@ -411,15 +422,15 @@ struct SearchView: View {
     // MARK: - Results
 
     private var resultsSection: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: GlassTheme.Space.l) {
             if let answer {
                 GlassCard {
-                    HStack(alignment: .top, spacing: 12) {
+                    HStack(alignment: .top, spacing: GlassTheme.Space.m) {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 20, weight: .black))
-                            .foregroundStyle(GlassTheme.purple)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(GlassTheme.accent)
                         Text(answer)
-                            .font(.system(size: 16, weight: .heavy))
+                            .font(.body)
                             .foregroundStyle(GlassTheme.primary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
@@ -427,59 +438,57 @@ struct SearchView: View {
                 }
             }
             GlassCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("Results")
-                            .font(.system(size: 21, weight: .black))
-                            .foregroundStyle(GlassTheme.primary)
-                        Spacer()
-                        Text("\(results.count)")
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(GlassTheme.secondary)
-                        if resultsRanked {
-                            // Semantic results are best-match-first; surface that instead
-                            // of a time-sort toggle that would scramble the ranking.
-                            Label("Best match", systemImage: "sparkles")
-                                .font(.system(size: 12, weight: .black))
-                                .foregroundStyle(GlassTheme.purple)
-                        } else {
-                            Button { sortNewest.toggle() } label: {
-                                Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                    .font(.system(size: 18, weight: .black))
-                                    .foregroundStyle(GlassTheme.cyan)
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                    SectionHeader("Results") {
+                        HStack(spacing: GlassTheme.Space.s) {
+                            Text("\(results.count)")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(GlassTheme.secondary)
+                            if resultsRanked {
+                                // Semantic results are best-match-first; surface that instead
+                                // of a time-sort toggle that would scramble the ranking.
+                                Label("Best match", systemImage: "sparkles")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(GlassTheme.accent)
+                            } else {
+                                Button { sortNewest.toggle() } label: {
+                                    Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                        .font(.title3.weight(.regular))
+                                        .foregroundStyle(GlassTheme.accent)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
 
                     if let error = errorMessage {
                         Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 13, weight: .heavy))
+                            .font(.footnote.weight(.medium))
                             .foregroundStyle(GlassTheme.orange)
                     }
 
                     if results.isEmpty && errorMessage == nil {
-                        VStack(spacing: 12) {
-                            Text("No events match your search.")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(GlassTheme.secondary)
+                        VStack(spacing: GlassTheme.Space.m) {
+                            EmptyStateView(
+                                icon: "magnifyingglass",
+                                title: "No matches",
+                                message: "No events match your search."
+                            )
                             if hasActiveFilters {
                                 Button {
                                     clearFilters()
                                     Task { await performSearch() }
                                 } label: {
                                     Label("Clear Filters", systemImage: "xmark.circle.fill")
-                                        .font(.system(size: 13, weight: .black))
                                 }
-                                .buttonStyle(PillButtonStyle(tint: GlassTheme.cyan))
+                                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 20)
                     } else if resultsRanked {
                         // Ranked semantic results render as rich rows so the GenAI
                         // description and match source ride alongside each hit.
-                        LazyVStack(spacing: 10) {
+                        LazyVStack(spacing: GlassTheme.Space.s) {
                             ForEach(displayResults) { event in
                                 Button { path.append(event) } label: {
                                     searchResultRow(event)
@@ -488,7 +497,7 @@ struct SearchView: View {
                             }
                         }
                     } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                             ForEach(displayResults) { event in
                                 Button { path.append(event) } label: {
                                     thumbnail(event)
@@ -503,34 +512,32 @@ struct SearchView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "sparkle.magnifyingglass")
-                .font(.system(size: 48, weight: .black))
-                .foregroundStyle(GlassTheme.secondary.opacity(0.4))
-            Text("Nothing tracked yet")
-                .font(.system(size: 18, weight: .black))
-                .foregroundStyle(GlassTheme.secondary)
-            Text("Detected objects will appear here grouped by type.")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(GlassTheme.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        EmptyStateView(
+            icon: "sparkle.magnifyingglass",
+            title: "Nothing tracked yet",
+            message: "Detected objects will appear here grouped by type."
+        )
+        .padding(.top, 40)
     }
 
     private func filterChip(_ title: String, icon: String?, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: GlassTheme.Space.xs) {
                 if let icon {
-                    Image(systemName: icon).font(.system(size: 11, weight: .heavy))
+                    Image(systemName: icon).font(.caption.weight(.medium))
                 }
-                Text(title).font(.system(size: 12, weight: .black))
+                Text(title).font(.subheadline.weight(.medium))
             }
-            .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(selected ? GlassTheme.cyan : .white.opacity(0.10), in: Capsule())
+            .foregroundStyle(selected ? Color.white : GlassTheme.primary)
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, GlassTheme.Space.s)
+            .background(
+                selected ? AnyShapeStyle(GlassTheme.accent) : AnyShapeStyle(GlassTheme.surfaceHigh),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule().strokeBorder(GlassTheme.separator, lineWidth: selected ? 0 : 1)
+            )
         }
         .buttonStyle(.plain)
     }

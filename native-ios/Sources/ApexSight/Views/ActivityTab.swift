@@ -89,7 +89,7 @@ struct ActivityTab: View {
                     // Plain LazyVStack (no pinned headers): pinned section headers in a
                     // LazyVStack recompute offsets as async thumbnails load, which made the
                     // tiles drift/glitch while scrolling or sitting still.
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                         header
 
                         if displayedEvents.isEmpty {
@@ -114,8 +114,8 @@ struct ActivityTab: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, GlassTheme.Space.l)
+                    .padding(.bottom, GlassTheme.Space.xl)
                 }
                 .refreshable {
                     await appState.refresh()
@@ -129,17 +129,17 @@ struct ActivityTab: View {
                 .task(id: "\(selectedCamera)|\(selectedLabel)|\(selectedSubLabel)") { await loadFiltered() }
             }
             .navigationTitle("Activity")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
             .overlay(alignment: .bottom) { activityToast }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
-                        if appState.isLoading || loadingFiltered { ProgressView().tint(GlassTheme.cyan) }
+                    HStack(spacing: GlassTheme.Space.m) {
+                        if appState.isLoading || loadingFiltered { ProgressView().tint(GlassTheme.accent) }
                         Button { sortNewest.toggle() } label: {
                             Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                .font(.system(size: 18, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(GlassTheme.accent)
                         }
                         .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
                         .accessibilityHint("Toggles sort order")
@@ -155,11 +155,11 @@ struct ActivityTab: View {
     // MARK: - Header (cameras + last-24h chips)
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: GlassTheme.Space.s) {
                     if isFilterActive {
-                        chip("✕ Clear", selected: false) {
+                        chip("Clear", selected: false, systemImage: "xmark") {
                             selectedCamera = "all"; selectedLabel = "all"; selectedSubLabel = "all"
                         }
                     }
@@ -174,12 +174,12 @@ struct ActivityTab: View {
             }
 
             if !tallies.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("LAST 24 HOURS")
-                        .font(.system(size: 11, weight: .black))
-                        .foregroundStyle(GlassTheme.tertiary)
+                VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                    Text("Last 24 Hours")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.secondary)
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: GlassTheme.Space.s) {
                             ForEach(tallies) { tally in tallyChip(tally) }
                         }
                         .padding(.horizontal, 2)
@@ -187,7 +187,7 @@ struct ActivityTab: View {
                 }
             }
         }
-        .padding(.top, 8)
+        .padding(.top, GlassTheme.Space.xs)
     }
 
     private func tallyChip(_ tally: Tally) -> some View {
@@ -201,65 +201,86 @@ struct ActivityTab: View {
                 selectedSubLabel = "all"
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: GlassTheme.Space.xs) {
                 Text("\(tally.emoji) \(tally.title)")
-                    .font(.system(size: 12, weight: .black))
+                    .font(.subheadline.weight(.semibold))
                 Text("\(tally.count)")
-                    .font(.system(size: 11, weight: .black))
-                    .foregroundStyle(selected ? Color.black : GlassTheme.cyan)
-                    .padding(.horizontal, 6)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(selected ? .white : GlassTheme.accent)
+                    .padding(.horizontal, GlassTheme.Space.xs + 2)
                     .padding(.vertical, 1)
-                    .background((selected ? Color.black.opacity(0.18) : GlassTheme.cyan.opacity(0.18)), in: Capsule())
+                    .background(
+                        (selected ? Color.white.opacity(0.22) : GlassTheme.accent.opacity(0.18)),
+                        in: Capsule()
+                    )
             }
-            .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(selected ? GlassTheme.cyan : .white.opacity(0.10), in: Capsule())
+            .foregroundStyle(selected ? .white : GlassTheme.primary)
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, GlassTheme.Space.s)
+            .background {
+                Capsule().fill(selected ? GlassTheme.accent : GlassTheme.surface)
+            }
+            .overlay {
+                if !selected { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+            }
         }
         .buttonStyle(.plain)
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.system(size: 15, weight: .black))
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(GlassTheme.primary)
             Spacer()
             Text("\(count)")
-                .font(.system(size: 12, weight: .heavy))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(GlassTheme.secondary)
+                .monospacedDigit()
         }
-        .padding(.top, 8)
-        .padding(.horizontal, 4)
+        .padding(.top, GlassTheme.Space.s)
+        .padding(.horizontal, GlassTheme.Space.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var emptyOrLoading: some View {
         if (appState.isLoading && appState.events.isEmpty) || loadingFiltered {
-            SkeletonList(rows: 6).padding(.top, 4)
+            SkeletonList(rows: 6).padding(.top, GlassTheme.Space.xs)
+        } else if isFilterActive {
+            EmptyStateView(
+                icon: "line.3.horizontal.decrease.circle",
+                title: "No Matches",
+                message: "No events match these filters. Try clearing them to see all activity."
+            )
+            .padding(.top, GlassTheme.Space.xxl)
         } else {
-            VStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 36, weight: .black))
-                    .foregroundStyle(GlassTheme.secondary.opacity(0.5))
-                Text(isFilterActive ? "No events match these filters." : "No activity yet.")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(GlassTheme.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 50)
+            EmptyStateView(
+                icon: "sparkles",
+                title: "No Activity Yet",
+                message: "Events from your cameras will appear here as they happen."
+            )
+            .padding(.top, GlassTheme.Space.xxl)
         }
     }
 
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func chip(_ title: String, selected: Bool, systemImage: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .black))
-                .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(selected ? GlassTheme.cyan : .white.opacity(0.10), in: Capsule())
+            HStack(spacing: GlassTheme.Space.xs) {
+                if let systemImage {
+                    Image(systemName: systemImage).font(.caption2.weight(.semibold))
+                }
+                Text(title).font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(selected ? .white : GlassTheme.primary)
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, GlassTheme.Space.s)
+            .background {
+                Capsule().fill(selected ? GlassTheme.accent : GlassTheme.surface)
+            }
+            .overlay {
+                if !selected { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+            }
         }
         .buttonStyle(.plain)
     }
@@ -318,14 +339,14 @@ struct ActivityTab: View {
     private var activityToast: some View {
         if let toast {
             Text(toast)
-                .font(.system(size: 14, weight: .heavy))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, GlassTheme.Space.l)
+                .padding(.vertical, GlassTheme.Space.m)
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay { Capsule().stroke(.white.opacity(0.14), lineWidth: 1) }
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
-                .padding(.bottom, 14)
+                .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+                .padding(.bottom, GlassTheme.Space.l)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }

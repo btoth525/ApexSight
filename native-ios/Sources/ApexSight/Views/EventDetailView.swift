@@ -47,13 +47,13 @@ struct EventDetailView: View {
         ZStack {
             GlassBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     heroCard
                     if let genAIDescription { aiCard(genAIDescription) }
                     detailsCard
                     actionsCard
                 }
-                .padding(16)
+                .padding(GlassTheme.Space.l)
             }
         }
         .navigationTitle("Event")
@@ -74,13 +74,13 @@ struct EventDetailView: View {
 
     private func aiCard(_ text: String) -> some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                HStack(spacing: GlassTheme.Space.s) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(GlassTheme.purple)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                     Text("AI Description")
-                        .font(.system(size: 16, weight: .black))
+                        .font(.headline)
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                     Button {
@@ -88,19 +88,19 @@ struct EventDetailView: View {
                         isEditingAIDescription = true
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.system(size: 13, weight: .black))
-                            .foregroundStyle(GlassTheme.purple)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GlassTheme.accent)
                     }
                     .buttonStyle(.plain)
                     Button {
                         Task { await regenerateAIDescription() }
                     } label: {
                         if isRegeneratingAI {
-                            ProgressView().tint(GlassTheme.purple).scaleEffect(0.75)
+                            ProgressView().tint(GlassTheme.accent).scaleEffect(0.75)
                         } else {
                             Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 13, weight: .black))
-                                .foregroundStyle(GlassTheme.purple)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(GlassTheme.accent)
                         }
                     }
                     .buttonStyle(.plain)
@@ -108,27 +108,29 @@ struct EventDetailView: View {
                 }
                 if isEditingAIDescription {
                     TextEditor(text: $editedAIDescription)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(GlassTheme.secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(GlassTheme.primary)
                         .frame(minHeight: 80)
                         .scrollContentBackground(.hidden)
-                    HStack(spacing: 10) {
+                        .padding(GlassTheme.Space.s)
+                        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                    HStack(spacing: GlassTheme.Space.m) {
                         Button("Cancel") {
                             isEditingAIDescription = false
                         }
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(GlassTheme.secondary)
                         Spacer()
                         Button("Save") {
                             Task { await saveAIDescription() }
                         }
-                        .font(.system(size: 13, weight: .black))
-                        .foregroundStyle(GlassTheme.purple)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
                         .disabled(isSavingAI)
                     }
                 } else {
                     Text(text)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline)
                         .foregroundStyle(GlassTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -138,7 +140,7 @@ struct EventDetailView: View {
 
     private var heroCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 Picker("Media", selection: $mediaMode) {
                     ForEach(MediaMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -182,18 +184,18 @@ struct EventDetailView: View {
                     }
                 }
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
                 .expandableMedia(fullscreenMedia)
 
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .top, spacing: GlassTheme.Space.m) {
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
                         Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
-                            .font(.system(size: 22, weight: .black, design: .rounded))
+                            .font(.title2.weight(.bold))
                             .foregroundStyle(GlassTheme.primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         Text("\(titleize(event.camera)) · \(timestamp(event.startTime))")
-                            .font(.system(size: 13, weight: .heavy))
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(GlassTheme.secondary)
                             .lineLimit(1)
                     }
@@ -203,8 +205,8 @@ struct EventDetailView: View {
                             Task { await downloadClip() }
                         } label: {
                             Image(systemName: isDownloading ? "arrow.down.circle" : "arrow.down.circle.fill")
-                                .font(.system(size: 26, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(GlassTheme.accent)
                                 .symbolEffect(.pulse, isActive: isDownloading)
                         }
                         .buttonStyle(.plain)
@@ -214,7 +216,7 @@ struct EventDetailView: View {
 
                 if let downloadFeedback {
                     Text(downloadFeedback)
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(GlassTheme.green)
                 }
             }
@@ -232,12 +234,10 @@ struct EventDetailView: View {
 
     private var detailsCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Details")
-                    .font(.system(size: 21, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Details")
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                     metric("Confidence", value: confidence)
                     metric("Camera", value: titleize(event.camera))
                     if let face = event.recognizedFace {
@@ -257,14 +257,14 @@ struct EventDetailView: View {
 
                 if let zones = event.zones, !zones.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: GlassTheme.Space.s) {
                             ForEach(zones, id: \.self) { zone in
                                 Text(titleize(zone))
-                                    .font(.system(size: 12, weight: .black))
-                                    .foregroundStyle(GlassTheme.cyan)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(GlassTheme.cyan.opacity(0.14), in: Capsule())
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(GlassTheme.accent)
+                                    .padding(.horizontal, GlassTheme.Space.m)
+                                    .padding(.vertical, GlassTheme.Space.s)
+                                    .background(GlassTheme.accent.opacity(0.12), in: Capsule())
                             }
                         }
                     }
@@ -289,14 +289,12 @@ struct EventDetailView: View {
 
     private var actionsCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Actions")
-                    .font(.system(size: 21, weight: .black))
-                    .foregroundStyle(GlassTheme.primary)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Actions")
 
                 if let feedback = actionFeedback {
                     Text(feedback)
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(actionIsError ? GlassTheme.red : GlassTheme.green)
                 }
 
@@ -319,17 +317,21 @@ struct EventDetailView: View {
                     NavigationLink {
                         LiveStreamView(camera: camera)
                     } label: {
-                        HStack {
+                        HStack(spacing: GlassTheme.Space.m) {
                             Image(systemName: "video.fill")
-                                .font(.system(size: 15, weight: .heavy))
+                                .font(.subheadline.weight(.semibold))
                             Text("Open Live Camera")
-                                .font(.system(size: 15, weight: .black))
+                                .font(.subheadline.weight(.semibold))
                             Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(GlassTheme.tertiary)
                         }
-                        .foregroundStyle(GlassTheme.cyan)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 13)
-                        .background(GlassTheme.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .foregroundStyle(GlassTheme.accent)
+                        .padding(.horizontal, GlassTheme.Space.l)
+                        .padding(.vertical, GlassTheme.Space.m)
+                        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+                        .cardStroke(GlassTheme.Radius.tile)
                     }
                     .buttonStyle(.plain)
                 }
@@ -339,20 +341,22 @@ struct EventDetailView: View {
 
     private func actionButton(_ title: String, icon: String, tint: Color, isLoading: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
                 Text(title)
-                    .font(.system(size: 15, weight: .black))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GlassTheme.primary)
                 Spacer()
                 if isLoading {
                     ProgressView().tint(tint)
                 }
             }
-            .foregroundStyle(tint)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
-            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, GlassTheme.Space.l)
+            .padding(.vertical, GlassTheme.Space.m)
+            .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+            .cardStroke(GlassTheme.Radius.tile)
         }
         .buttonStyle(.plain)
         // Per-action: only this button disables while it's working, not the whole list.
@@ -433,18 +437,19 @@ struct EventDetailView: View {
     }
 
     private func metric(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .black))
-                .foregroundStyle(GlassTheme.secondary)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(GlassTheme.tertiary)
             Text(value)
-                .font(.system(size: 15, weight: .black))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(GlassTheme.primary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(GlassTheme.Space.m)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+        .cardStroke(GlassTheme.Radius.tile)
     }
 
     private func timestamp(_ epoch: Double?) -> String {
