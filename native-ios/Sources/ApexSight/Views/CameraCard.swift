@@ -15,14 +15,14 @@ struct CameraCard: View {
             LiveStreamView(camera: camera)
         } label: {
             ZStack(alignment: .bottomLeading) {
-                // Pure WebRTC live (instant, Metal) with a cached snapshot behind it so
-                // there's never a black gap. `persistent` keeps the stream alive across tab
-                // switches — leave the Cameras tab and come back and it's still live.
-                LiveVideoPlayerView(
+                // Fast auto-refreshing still — NOT a live stream per tile. Running a WebRTC
+                // connection in every card at once was choppy and fought the full-screen
+                // stream for the same camera. The grid stays smooth; tapping opens the single
+                // instant live stream (LiveStreamView).
+                CameraSnapshotView(
                     camera: camera,
-                    persistent: true,
-                    onPlaying: { playing in
-                        withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
+                    onFrame: { hasFrame in
+                        withAnimation(.easeIn(duration: 0.3)) { isLive = hasFrame }
                     }
                 )
 
@@ -48,7 +48,7 @@ struct CameraCard: View {
             }
             .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(titleize(camera.name)) camera, \(isLive ? "live" : "connecting")")
+            .accessibilityLabel("\(titleize(camera.name)) camera. Opens live view.")
             .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
