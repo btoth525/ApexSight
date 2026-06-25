@@ -7,7 +7,8 @@ struct EventRow: View {
     var body: some View {
         HStack(spacing: 12) {
             if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                RemoteImage(url: url, contentMode: .fill)
+                // 110pt cell — decode to ~3x, not the 1000px default (≈9x the pixels shown).
+                RemoteImage(url: url, contentMode: .fill, maxPixelSize: 360)
                 .frame(width: 110, height: 110)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }

@@ -224,7 +224,7 @@ struct ReviewDetailView: View {
                                     NavigationLink(value: event) {
                                         HStack(spacing: 10) {
                                             if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                                                RemoteImage(url: url)
+                                                RemoteImage(url: url, maxPixelSize: 150)
                                                     .frame(width: 48, height: 48)
                                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                             }
