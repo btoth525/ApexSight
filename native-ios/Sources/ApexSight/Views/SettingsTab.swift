@@ -164,12 +164,6 @@ struct SettingsTab: View {
                         settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone", tint: GlassTheme.purple) {
                             path.append("triggers")
                         }
-                        settingsRow(icon: "person.crop.square.filled.and.at.rectangle", title: "People & Faces", subtitle: "Name faces → \"Alex arrived\" instead of \"person\"", tint: GlassTheme.green) {
-                            path.append("faces")
-                        }
-                        settingsRow(icon: "car.fill", title: "License Plates", subtitle: "Name your cars → \"Unknown plate\" for the rest", tint: GlassTheme.blue) {
-                            path.append("plates")
-                        }
                         settingsRow(icon: "doc.text.image.fill", title: "Daily Recap", subtitle: "Today's activity + an optional daily summary", tint: GlassTheme.orange) {
                             path.append("recap")
                         }
@@ -217,8 +211,6 @@ struct SettingsTab: View {
                 else if value == "servers" { ServerSwitcherView() }
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
-                else if value == "plates" { PlateManagerView().environmentObject(appState) }
-                else if value == "faces" { FaceManagerView().environmentObject(appState) }
                 else if value == "recap" { DailyRecapView().environmentObject(appState) }
             }
         }

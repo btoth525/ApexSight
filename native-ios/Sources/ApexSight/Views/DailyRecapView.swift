@@ -98,7 +98,6 @@ struct DailyRecapView: View {
         var out: [Stat] = [Stat(label: "Events", value: "\(recap.total)", tint: GlassTheme.cyan)]
         out.append(Stat(label: "People seen", value: "\(recap.people.count)", tint: GlassTheme.green))
         if recap.packages > 0 { out.append(Stat(label: "Packages", value: "\(recap.packages)", tint: GlassTheme.orange)) }
-        if recap.unknownPlates > 0 { out.append(Stat(label: "Unknown plates", value: "\(recap.unknownPlates)", tint: GlassTheme.red)) }
         if let busiest = recap.busiestHourLabel { out.append(Stat(label: "Busiest", value: busiest, tint: GlassTheme.purple)) }
         return out
     }
