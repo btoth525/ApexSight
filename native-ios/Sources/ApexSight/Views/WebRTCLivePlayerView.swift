@@ -295,11 +295,12 @@ struct LiveVideoPlayerView: View {
             startConnectTimer()
         }
         .onDisappear {
-            if !persistent {
-                connectTimer?.cancel(); connectTimer = nil
-                rtc.teardown()
-                started = false
-            }
+            // Always tear the WebRTC peer down on leave — it reconnects sub-second on return
+            // (the snapshot covers the gap), so we never hold idle peers across tabs/scroll.
+            // This keeps many-camera surfaces light. (HLS fallback handles its own lifecycle.)
+            connectTimer?.cancel(); connectTimer = nil
+            rtc.teardown()
+            started = false
         }
         .onChange(of: rtc.state) { _, newState in
             switch newState {

@@ -151,8 +151,8 @@ struct MultiCameraGridView: View {
         let active = camera.name == activeCameraName
         return ZStack(alignment: .bottomLeading) {
             Color.black
-            // HLSLivePlayerView shows its own snapshot placeholder internally.
-            HLSLivePlayerView(camera: camera)
+            // WebRTC-first (instant, Metal); falls back to HLS/MJPEG per camera internally.
+            LiveVideoPlayerView(camera: camera)
                 .allowsHitTesting(false)
 
             // camera name pill
