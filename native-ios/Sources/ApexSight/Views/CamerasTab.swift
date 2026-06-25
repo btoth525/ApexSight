@@ -68,8 +68,9 @@ struct CamerasTab: View {
     // MARK: - Live wall (normal mode)
 
     /// A plain (non-lazy) stack so every camera's feed loads and STAYS live as you
-    /// scroll, instead of flickering on/off as cells recycle. Players still pause on
-    /// app background and tear down when you leave the tab.
+    /// scroll, instead of flickering on/off as cells recycle. Feeds are persistent: they
+    /// keep streaming across tab switches and only drop the connection while the app is
+    /// backgrounded (rebuilding instantly on return).
     private var liveScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {

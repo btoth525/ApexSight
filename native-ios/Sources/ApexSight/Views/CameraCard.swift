@@ -16,9 +16,11 @@ struct CameraCard: View {
         } label: {
             ZStack(alignment: .bottomLeading) {
                 // Pure WebRTC live (instant, Metal) with a cached snapshot behind it so
-                // there's never a black gap.
+                // there's never a black gap. `persistent` keeps the stream alive across tab
+                // switches — leave the Cameras tab and come back and it's still live.
                 LiveVideoPlayerView(
                     camera: camera,
+                    persistent: true,
                     onPlaying: { playing in
                         withAnimation(.easeIn(duration: 0.3)) { isLive = playing }
                     }
