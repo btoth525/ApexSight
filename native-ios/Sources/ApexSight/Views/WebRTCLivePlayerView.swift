@@ -81,11 +81,16 @@ final class RTCClient: NSObject, ObservableObject {
 
     @Published private(set) var state: State = .connecting
     @Published private(set) var remoteVideoTrack: RTCVideoTrack?
+    /// Flips true only once a real decoded frame has actually rendered — NOT just when the
+    /// track arrives. The UI waits for this before crossfading off the snapshot, so the live
+    /// layer is never revealed while it's still black (which is what caused the flash).
+    @Published private(set) var firstFrameRendered = false
 
     private var peerConnection: RTCPeerConnection?
     private var gatheringContinuation: CheckedContinuation<Void, Never>?
     private var didFinishGathering = false
     private var isTorndown = false
+    private var frameSignal: FrameSignalRenderer?
 
     private let camera: String
     private let useSub: Bool
@@ -130,10 +135,27 @@ final class RTCClient: NSObject, ObservableObject {
         }
     }
 
+    /// Adopt the incoming video track and attach a lightweight frame detector so we know the
+    /// exact moment a real frame is on screen (see `firstFrameRendered`).
+    private func attach(_ track: RTCVideoTrack) {
+        guard remoteVideoTrack == nil else { return }
+        remoteVideoTrack = track
+        let signal = FrameSignalRenderer { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.isTorndown, !self.firstFrameRendered else { return }
+                self.firstFrameRendered = true
+            }
+        }
+        track.add(signal)
+        frameSignal = signal
+    }
+
     func teardown() {
         guard !isTorndown else { return }
         isTorndown = true
         resumeGathering()
+        if let frameSignal { remoteVideoTrack?.remove(frameSignal) }
+        frameSignal = nil
         remoteVideoTrack = nil
         peerConnection?.close()
         peerConnection = nil
@@ -209,16 +231,16 @@ extension RTCClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {
         guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown, self.remoteVideoTrack == nil else { return }
-            self.remoteVideoTrack = track
+            guard let self, !self.isTorndown else { return }
+            self.attach(track)
         }
     }
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.isTorndown, self.remoteVideoTrack == nil else { return }
-            self.remoteVideoTrack = track
+            guard let self, !self.isTorndown else { return }
+            self.attach(track)
         }
     }
 
@@ -231,6 +253,27 @@ extension RTCClient: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
+}
+
+// MARK: - First-frame detector
+
+/// A no-op WebRTC renderer attached alongside the on-screen Metal view. Its only job is to
+/// fire once — the first time a real decoded frame flows through the track — so the UI can
+/// wait for an actual frame before crossfading off the snapshot (eliminating the black flash
+/// you'd otherwise get from revealing the video layer before it has anything to show).
+final class FrameSignalRenderer: NSObject, RTCVideoRenderer {
+    private let onFirstFrame: () -> Void
+    private var fired = false
+
+    init(onFirstFrame: @escaping () -> Void) { self.onFirstFrame = onFirstFrame }
+
+    func setSize(_ size: CGSize) {}
+
+    func renderFrame(_ frame: RTCVideoFrame?) {
+        guard frame != nil, !fired else { return }
+        fired = true
+        onFirstFrame()
+    }
 }
 
 // MARK: - WebRTCPlayerView (Metal renderer)
@@ -288,6 +331,7 @@ struct LiveVideoPlayerView: View {
     @StateObject private var rtc: RTCClient
     @State private var fellBackToHLS = false
     @State private var connectTimer: Task<Void, Never>?
+    @State private var frameTimer: Task<Void, Never>?
     @State private var started = false
 
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
@@ -302,7 +346,9 @@ struct LiveVideoPlayerView: View {
         _rtc = StateObject(wrappedValue: RTCClient(camera: camera.name))
     }
 
-    private var isLive: Bool { rtc.state == .connected && rtc.remoteVideoTrack != nil }
+    /// "Live" means a real frame is actually on screen — not merely that the track arrived.
+    /// Gating the snapshot→video crossfade on this is what removes the black flash.
+    private var isLive: Bool { rtc.firstFrameRendered }
 
     var body: some View {
         if fellBackToHLS || WebRTCAvailability.shared.isUnavailable(camera.name) {
@@ -318,15 +364,16 @@ struct LiveVideoPlayerView: View {
     private var webRTCContent: some View {
         ZStack {
             Color.black
+            // Snapshot stays put UNDERNEATH the video — we never fade it out. The live layer
+            // fades IN on top of it only once a real frame has rendered, so there's never a
+            // black gap or pop between the snapshot and live video.
             if let url = appState.client?.latestFrameURL(camera: camera.name) {
                 RemoteImage(url: url, contentMode: .fit)
-                    .opacity(isLive ? 0 : 1)
-                    .animation(.easeOut(duration: 0.3), value: isLive)
                     .allowsHitTesting(false)
             }
             videoLayer
                 .opacity(isLive ? 1 : 0)
-                .animation(.easeIn(duration: 0.3), value: isLive)
+                .animation(.easeInOut(duration: 0.28), value: isLive)
         }
         .onAppear {
             guard !started else { return }
@@ -337,19 +384,31 @@ struct LiveVideoPlayerView: View {
         }
         .onDisappear {
             connectTimer?.cancel(); connectTimer = nil
+            frameTimer?.cancel(); frameTimer = nil
             rtc.teardown()
             started = false
         }
         .onChange(of: rtc.state) { _, newState in
             switch newState {
             case .connected:
+                // We can reach the camera — now give it a little longer for the first frame
+                // (a long-GOP camera like a doorbell may wait a beat for a keyframe) before
+                // deciding WebRTC is no good and dropping to HLS.
                 connectTimer?.cancel(); connectTimer = nil
-                onPlaying?(true)
+                startFrameTimer()
             case .failed:
                 goToHLS()
-            default:
+            case .connecting:
                 break
             }
+        }
+        // Reveal the live picture (and report "playing") only when a real frame has rendered,
+        // not when the connection opens — so the snapshot holds until there's video to show.
+        .onChange(of: rtc.firstFrameRendered) { _, rendered in
+            guard rendered else { return }
+            connectTimer?.cancel(); connectTimer = nil
+            frameTimer?.cancel(); frameTimer = nil
+            onPlaying?(true)
         }
     }
 
@@ -363,6 +422,8 @@ struct LiveVideoPlayerView: View {
         }
     }
 
+    /// Reachability window: if WebRTC hasn't even connected in 3s (e.g. off-LAN, can't reach
+    /// the 8555 candidate), give up and drop to HLS.
     private func startConnectTimer() {
         connectTimer?.cancel()
         connectTimer = Task { @MainActor in
@@ -372,9 +433,21 @@ struct LiveVideoPlayerView: View {
         }
     }
 
+    /// First-frame window: connected but no decoded frame after 4s means the stream is broken
+    /// (not just slow) — fall back to HLS rather than sit on the snapshot forever.
+    private func startFrameTimer() {
+        frameTimer?.cancel()
+        frameTimer = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled, !isLive else { return }
+            goToHLS()
+        }
+    }
+
     private func goToHLS() {
         guard !fellBackToHLS else { return }
         connectTimer?.cancel(); connectTimer = nil
+        frameTimer?.cancel(); frameTimer = nil
         WebRTCAvailability.shared.markUnavailable(camera.name)
         rtc.teardown()
         withAnimation(.easeIn(duration: 0.2)) { fellBackToHLS = true }
