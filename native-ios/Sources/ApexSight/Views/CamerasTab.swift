@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct CamerasTab: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var groupStore = CameraGroupStore()
     @StateObject private var layout = CameraLayoutStore()
     @State private var liveWall: LiveWallTarget?
@@ -192,9 +193,10 @@ struct CamerasTab: View {
                 else { draftHidden.insert(camera.name) }
             }
         }
-        .rotationEffect(.degrees(wobble ? wobbleAmount(for: camera) : -wobbleAmount(for: camera)))
+        // Home-screen-style jiggle, but respect Reduce Motion (no continuous animation).
+        .rotationEffect(.degrees(reduceMotion ? 0 : (wobble ? wobbleAmount(for: camera) : -wobbleAmount(for: camera))))
         .animation(
-            .easeInOut(duration: wobbleDuration(for: camera)).repeatForever(autoreverses: true),
+            reduceMotion ? nil : .easeInOut(duration: wobbleDuration(for: camera)).repeatForever(autoreverses: true),
             value: wobble
         )
     }

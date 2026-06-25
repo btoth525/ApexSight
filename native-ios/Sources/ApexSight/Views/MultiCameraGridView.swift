@@ -4,6 +4,7 @@ import UIKit
 struct MultiCameraGridView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let group: CameraGroup?
 
@@ -49,7 +50,10 @@ struct MultiCameraGridView: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 20, weight: .black))
                             .foregroundStyle(GlassTheme.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
@@ -75,6 +79,8 @@ struct MultiCameraGridView: View {
                 }
                 .preferredColorScheme(.dark)
             }
+            // Cancel the pending spotlight-clear so it can't mutate state after the wall closes.
+            .onDisappear { clearWork?.cancel(); clearWork = nil }
         }
         .preferredColorScheme(.dark)
     }
@@ -102,11 +108,15 @@ struct MultiCameraGridView: View {
                     }
                 }
             }
-            // Smart Focus: glide to whichever camera just lit up.
+            // Smart Focus: glide to whichever camera just lit up (jump instantly under Reduce Motion).
             .onChange(of: activeCameraName) { _, name in
                 guard let name else { return }
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                if reduceMotion {
                     proxy.scrollTo(name, anchor: .center)
+                } else {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                        proxy.scrollTo(name, anchor: .center)
+                    }
                 }
             }
         }

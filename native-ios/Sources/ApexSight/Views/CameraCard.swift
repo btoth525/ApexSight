@@ -47,6 +47,9 @@ struct CameraCard: View {
                     .stroke(.white.opacity(0.10), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(titleize(camera.name)) camera, \(isLive ? "live" : "connecting")")
+            .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
     }
