@@ -10,5 +10,9 @@
 	<string>production</string>
 	<key>com.apple.developer.carplay-driving-task</key>
 	<true/>
+	<!-- Lets camera alerts break through a Driving / Do Not Disturb Focus and show on
+	     CarPlay by marking them Time Sensitive. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 </dict>
 </plist>

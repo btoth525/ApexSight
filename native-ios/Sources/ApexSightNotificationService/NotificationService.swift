@@ -81,6 +81,10 @@ final class NotificationService: UNNotificationServiceExtension {
             let next = (defaults?.integer(forKey: "apex.badgeCount") ?? 0) + 1
             defaults?.set(next, forKey: "apex.badgeCount")
             mutable.badge = NSNumber(value: next)
+            // Mark real alerts Time Sensitive so they break through a Driving / Do Not Disturb
+            // Focus and surface on CarPlay (requires the time-sensitive entitlement on the app).
+            // The silent "final GIF" follow-up stays .passive and is left untouched.
+            mutable.interruptionLevel = .timeSensitive
         }
         WidgetCenter.shared.reloadAllTimelines()
     }

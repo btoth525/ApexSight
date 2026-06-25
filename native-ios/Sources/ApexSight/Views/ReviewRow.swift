@@ -46,14 +46,10 @@ struct ReviewRow: View {
     private var hero: some View {
         if let url = appState.client?.reviewSnapshotURL(review: review)
             ?? appState.client?.reviewThumbnailURL(review: review) {
+            // The FULL frame, uncropped, on a flat dark background — so ultra-wide cameras show
+            // the whole scene (subject never cropped out of frame), with no blown-up zoom.
             ZStack {
-                // Blurred fill so ultra-wide cameras don't leave dead black bars…
-                RemoteImage(url: url, contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .blur(radius: 24, opaque: true)
-                    .opacity(0.5)
-                // …while the sharp, full frame stays completely uncropped.
+                Color.black
                 RemoteImage(url: url, contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
