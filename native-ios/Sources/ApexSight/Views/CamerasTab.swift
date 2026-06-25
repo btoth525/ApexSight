@@ -44,7 +44,7 @@ struct CamerasTab: View {
                 }
             }
             .navigationTitle(isEditing ? "Arrange Cameras" : "Cameras")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(isEditing ? .inline : .large)
             .glassNavBar()
             .toolbar { toolbarContent }
             .fullScreenCover(item: $liveWall) { target in

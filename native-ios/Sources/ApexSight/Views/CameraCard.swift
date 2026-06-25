@@ -14,62 +14,78 @@ struct CameraCard: View {
         NavigationLink {
             LiveStreamView(camera: camera)
         } label: {
-            ZStack(alignment: .bottomLeading) {
-                // Fast auto-refreshing still — NOT a live stream per tile. Running a WebRTC
-                // connection in every card at once was choppy and fought the full-screen
-                // stream for the same camera. The grid stays smooth; tapping opens the single
-                // instant live stream (LiveStreamView).
-                CameraSnapshotView(
+            ZStack(alignment: .bottom) {
+                // Live, instant WebRTC on the FULL main stream, always on (persistent) for
+                // every camera, with the cached snapshot behind so it's never black and
+                // letterboxed so ultra-wide cameras show the whole scene.
+                LiveVideoPlayerView(
                     camera: camera,
-                    onFrame: { hasFrame in
-                        withAnimation(.easeIn(duration: 0.3)) { isLive = hasFrame }
+                    persistent: true,
+                    onPlaying: { playing in
+                        withAnimation(.easeInOut(duration: 0.3)) { isLive = playing }
                     }
                 )
 
-                // Cinematic legibility gradient — clear at top, dark at the bottom so the
-                // camera name reads cleanly right on the video (pro-NVR look).
                 LinearGradient(
                     colors: [.clear, .clear, .black.opacity(0.8)],
                     startPoint: .top, endPoint: .bottom
                 )
                 .allowsHitTesting(false)
 
-                nameRow
+                bottomBar
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .frame(maxWidth: .infinity)
+            .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
-            .overlay(alignment: .topTrailing) {
-                capabilityChips.padding(10)
-            }
+            .overlay(alignment: .topLeading) { liveBadge.padding(11) }
+            .overlay(alignment: .topTrailing) { capabilityChips.padding(11) }
             .cardStroke(GlassTheme.Radius.tile)
-            .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+            .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(titleize(camera.name)) camera. Opens live view.")
+            .accessibilityLabel("\(titleize(camera.name)) camera\(isLive ? ", live" : ""). Opens live view.")
             .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
     }
 
-    private var nameRow: some View {
-        HStack(spacing: 7) {
-            StatusDot(state: isLive ? .live : .offline)
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
             Text(titleize(camera.name))
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
     }
 
+    /// Broadcast-style LIVE pill once the stream is playing. Nothing is shown while it spins
+    /// up — the snapshot is already on screen, so there's no "Connecting" clutter.
+    @ViewBuilder
+    private var liveBadge: some View {
+        if isLive {
+            HStack(spacing: 5) {
+                Circle().fill(.white).frame(width: 6, height: 6)
+                Text("LIVE")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(GlassTheme.red, in: Capsule())
+            .transition(.opacity.combined(with: .scale))
+        }
+    }
+
     @ViewBuilder
     private var capabilityChips: some View {
         if let cap = capability {
             HStack(spacing: 5) {
-                if cap.hasRecordings { chip("REC", tint: GlassTheme.green) }
+                if cap.hasRecordings { chip("REC", tint: GlassTheme.red) }
                 if cap.hasPtz { chip("PTZ", tint: GlassTheme.orange) }
             }
         }

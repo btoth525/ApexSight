@@ -409,6 +409,9 @@ struct LiveVideoPlayerView: View {
     let camera: FrigateCamera
     var showControls: Bool = false
     var persistent: Bool = false
+    /// Use the low-res sub-stream — grid tiles pass true so several can stream smoothly at
+    /// once; the full-screen view uses the main (high-res) stream.
+    var useSub: Bool = false
     var pipController: LivePiPController? = nil
     var onSingleTap: (() -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
@@ -417,15 +420,16 @@ struct LiveVideoPlayerView: View {
     @State private var fellBackToHLS = false
 
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
-         pipController: LivePiPController? = nil, onSingleTap: (() -> Void)? = nil,
-         onPlaying: ((Bool) -> Void)? = nil) {
+         useSub: Bool = false, pipController: LivePiPController? = nil,
+         onSingleTap: (() -> Void)? = nil, onPlaying: ((Bool) -> Void)? = nil) {
         self.camera = camera
         self.showControls = showControls
         self.persistent = persistent
+        self.useSub = useSub
         self.pipController = pipController
         self.onSingleTap = onSingleTap
         self.onPlaying = onPlaying
-        _rtc = StateObject(wrappedValue: RTCClient(camera: camera.name))
+        _rtc = StateObject(wrappedValue: RTCClient(camera: camera.name, useSub: useSub))
     }
 
     /// "Live" means a real frame is actually on screen — not merely that the track arrived.
