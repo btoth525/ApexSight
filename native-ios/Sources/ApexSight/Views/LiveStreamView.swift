@@ -50,7 +50,7 @@ struct LiveStreamView: View {
             revealChrome()
         }
         .onDisappear { hideWork?.cancel() }
-        .sheet(isPresented: $showControls) {
+        .sheet(isPresented: $showCameraControls) {
             CameraQuickControlsSheet(camera: camera)
                 .environmentObject(appState)
         }
