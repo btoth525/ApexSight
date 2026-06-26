@@ -74,6 +74,11 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     /// match). `searchSource` is "thumbnail" or "description".
     let searchDistance: Double?
     let searchSource: String?
+    /// Bounding box in pixels [x1, y1, x2, y2] from the WebSocket event stream.
+    /// Pair with `frameWidth`/`frameHeight` to get 0-1 normalized overlay coords.
+    let box: [Double]?
+    let frameWidth: Double?
+    let frameHeight: Double?
 
     var displayLabel: String {
         if let sub = subLabel, !sub.isEmpty { return sub }
@@ -104,6 +109,9 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case description
         case searchDistance = "search_distance"
         case searchSource = "search_source"
+        case box
+        case frameWidth = "width"
+        case frameHeight = "height"
     }
 
     /// Accessor for the nested `data` object — kept out of `CodingKeys` so the
@@ -140,6 +148,9 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         recognizedLicensePlateScore = try? c.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)
         searchDistance = try? c.decodeIfPresent(Double.self, forKey: .searchDistance)
         searchSource = try? c.decodeIfPresent(String.self, forKey: .searchSource)
+        box = try? c.decodeIfPresent([Double].self, forKey: .box)
+        frameWidth = try? c.decodeIfPresent(Double.self, forKey: .frameWidth)
+        frameHeight = try? c.decodeIfPresent(Double.self, forKey: .frameHeight)
 
         // score / top_score / description can be top-level OR nested under `data`
         // (the /events/search response nests them) — read both, preferring top-level.
@@ -277,6 +288,41 @@ struct ZoneConfig: Codable, Hashable {}
 
 struct ObjectConfig: Codable, Hashable {
     let track: [String]?
+}
+
+/// Current enabled/disabled state of per-camera Frigate features.
+/// Read via `FrigateClient.cameraControlState(camera:)`.
+struct CameraControlState {
+    var detect: Bool = true
+    var recordings: Bool = false
+    var snapshots: Bool = false
+    var audio: Bool = false
+    var motion: Bool = true
+}
+
+/// Full config used only for reading per-camera feature toggles.
+struct FrigateFullConfig: Decodable {
+    let cameras: [String: FullCameraConfig]
+
+    struct FullCameraConfig: Decodable {
+        let detect: FeatureToggle?
+        let record: FeatureToggle?
+        let snapshots: FeatureToggle?
+        let audio: FeatureToggle?
+        let motion: FeatureToggle?
+    }
+
+    struct FeatureToggle: Decodable {
+        let enabled: Bool?
+    }
+}
+
+/// A single live detection surfaced from the WebSocket event stream.
+struct LiveDetection: Identifiable, Hashable {
+    let id: String
+    let label: String
+    /// Normalized bounding box [x1, y1, x2, y2] in 0-1 fractions of the frame.
+    let normBox: CGRect
 }
 
 enum FrigateError: LocalizedError {

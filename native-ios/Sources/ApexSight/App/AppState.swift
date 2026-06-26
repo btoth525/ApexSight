@@ -60,6 +60,10 @@ final class AppState: ObservableObject {
     @Published var unreviewedCount: Int = 0 {
         didSet { updateAppBadge() }
     }
+    /// Active bounding boxes per camera, keyed by camera name, auto-cleared on event end.
+    @Published var liveDetections: [String: [LiveDetection]] = [:]
+    /// True when the birdseye composite stream is available in go2rtc.
+    @Published var hasBirdseye = false
 
     let keychain = KeychainStore()
     let notificationPrefs = NotificationPreferencesStore()
@@ -321,11 +325,33 @@ final class AppState: ObservableObject {
             isLive = false
         case .stats(let s):
             stats = s
-        case .event(let item, _):
+        case .event(let item, let change):
             upsertEvent(item)
+            updateLiveDetection(item, change: change)
         case .review(let item, let change):
             handleReview(item, change: change)
         }
+    }
+
+    private func updateLiveDetection(_ item: FrigateEvent, change: ChangeType) {
+        guard let box = item.box, box.count == 4,
+              let w = item.frameWidth, w > 0,
+              let h = item.frameHeight, h > 0 else {
+            if change == .end {
+                liveDetections[item.camera]?.removeAll { $0.id == item.id }
+                if liveDetections[item.camera]?.isEmpty == true { liveDetections.removeValue(forKey: item.camera) }
+            }
+            return
+        }
+        let normBox = CGRect(
+            x: box[0] / w, y: box[1] / h,
+            width: (box[2] - box[0]) / w, height: (box[3] - box[1]) / h
+        )
+        let det = LiveDetection(id: item.id, label: item.displayLabel, normBox: normBox)
+        var current = liveDetections[item.camera] ?? []
+        current.removeAll { $0.id == item.id }
+        if change != .end { current.append(det) }
+        if current.isEmpty { liveDetections.removeValue(forKey: item.camera) } else { liveDetections[item.camera] = current }
     }
 
     private func upsertEvent(_ item: FrigateEvent) {
@@ -543,6 +569,7 @@ final class AppState: ObservableObject {
             recentLogs = (try? await nextLogs) ?? recentLogs
 
             let streams = (try? await nextStreams) ?? [:]
+            hasBirdseye = streams["birdseye"] != nil
             await cacheWidgetSnapshot(from: loadedCameras)
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
             isReachable = true

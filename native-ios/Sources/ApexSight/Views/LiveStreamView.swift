@@ -12,6 +12,8 @@ struct LiveStreamView: View {
     @State private var reloadToken = UUID()
     @State private var showChrome = true
     @State private var hideWork: DispatchWorkItem?
+    @State private var showCameraControls = false
+    @State private var showDetectionOverlay = true
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
@@ -46,6 +48,10 @@ struct LiveStreamView: View {
             revealChrome()
         }
         .onDisappear { hideWork?.cancel() }
+        .sheet(isPresented: $showControls) {
+            CameraQuickControlsSheet(camera: camera)
+                .environmentObject(appState)
+        }
     }
 
     // MARK: - Immersive chrome (auto-hide, tap to toggle)
@@ -85,18 +91,22 @@ struct LiveStreamView: View {
     }
 
     private var liveHLS: some View {
-        // Full-screen: WebRTC on the MAIN (high-res) stream, and bypass the grid connect
-        // limiter so a camera the user explicitly opened starts immediately, never queued
-        // behind the wall's tiles. Metal-rendered, hardware-decoded, with HLS/MJPEG fallback.
-        LiveVideoPlayerView(
-            camera: camera,
-            showControls: true,
-            useSub: false,
-            bypassConnectionLimit: true,
-            onSingleTap: { toggleChrome() },
-            onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } }
-        )
-        .id(reloadToken)
+        ZStack {
+            LiveVideoPlayerView(
+                camera: camera,
+                showControls: true,
+                useSub: false,
+                bypassConnectionLimit: true,
+                onSingleTap: { toggleChrome() },
+                onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } }
+            )
+            .id(reloadToken)
+
+            if showDetectionOverlay, let dets = appState.liveDetections[camera.name], !dets.isEmpty {
+                DetectionOverlayView(detections: dets)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private var snapshotView: some View {
@@ -240,8 +250,11 @@ struct LiveStreamView: View {
                 }
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                 .accessibilityLabel("Open recording timeline")
+                actionButton(icon: "slider.horizontal.3", label: "Controls") {
+                    showCameraControls = true
+                }
             }
-            .padding(.horizontal, GlassTheme.Space.xxl)
+            .padding(.horizontal, GlassTheme.Space.l)
             .padding(.bottom, 40)
         }
     }

@@ -470,6 +470,62 @@ struct FrigateClient {
         try await get("api/faces")
     }
 
+    // MARK: - Camera quick controls (temporary in-memory toggles, reset on Frigate restart)
+
+    /// Enables or disables object detection for a camera. Survives until Frigate restarts.
+    func setCameraDetect(camera: String, enabled: Bool) async throws {
+        try await cameraToggle(camera: camera, feature: "detect", enabled: enabled)
+    }
+
+    func setCameraRecordings(camera: String, enabled: Bool) async throws {
+        try await cameraToggle(camera: camera, feature: "recordings", enabled: enabled)
+    }
+
+    func setCameraSnapshots(camera: String, enabled: Bool) async throws {
+        try await cameraToggle(camera: camera, feature: "snapshots", enabled: enabled)
+    }
+
+    func setCameraAudio(camera: String, enabled: Bool) async throws {
+        try await cameraToggle(camera: camera, feature: "audio", enabled: enabled)
+    }
+
+    func setCameraMotion(camera: String, enabled: Bool) async throws {
+        try await cameraToggle(camera: camera, feature: "motion", enabled: enabled)
+    }
+
+    private func cameraToggle(camera: String, feature: String, enabled: Bool) async throws {
+        guard var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/\(feature)/set"), resolvingAgainstBaseURL: false) else { throw FrigateError.invalidURL }
+        components.queryItems = [URLQueryItem(name: "enabled", value: enabled ? "1" : "0")]
+        guard let url = components.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        applyAuth(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
+    /// Returns the enabled/disabled state for detect, recordings, snapshots, and audio
+    /// for a specific camera, read from the live Frigate config.
+    func cameraControlState(camera: String) async throws -> CameraControlState {
+        let config: FrigateFullConfig = try await get("api/config")
+        guard let cam = config.cameras[camera] else {
+            return CameraControlState()
+        }
+        return CameraControlState(
+            detect: cam.detect?.enabled ?? true,
+            recordings: cam.record?.enabled ?? false,
+            snapshots: cam.snapshots?.enabled ?? false,
+            audio: cam.audio?.enabled ?? false,
+            motion: cam.motion?.enabled ?? true
+        )
+    }
+
+    /// True if a "birdseye" go2rtc stream is present (requires `birdseye.enabled` in config).
+    func hasBirdseyeStream() async -> Bool {
+        let streams = (try? await go2rtcStreams()) ?? [:]
+        return streams["birdseye"] != nil
+    }
+
     func ptzMove(camera: String, action: String, extra: [String: String] = [:]) async throws {
         var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/ptz"), resolvingAgainstBaseURL: false)
         var queryItems = [URLQueryItem(name: "action", value: action)]

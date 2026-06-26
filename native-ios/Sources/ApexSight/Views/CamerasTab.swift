@@ -8,6 +8,7 @@ struct CamerasTab: View {
     @StateObject private var groupStore = CameraGroupStore()
     @StateObject private var layout = CameraLayoutStore()
     @State private var liveWall: LiveWallTarget?
+    @State private var showBirdseye = false
     @State private var path = NavigationPath()
 
     // Edit / arrange mode
@@ -56,6 +57,13 @@ struct CamerasTab: View {
                     MultiCameraGridView(group: group)
                         .environmentObject(appState)
                 }
+            }
+            .fullScreenCover(isPresented: $showBirdseye) {
+                NavigationStack {
+                    LiveStreamView(camera: FrigateCamera(name: "birdseye", zones: [], objects: []))
+                        .environmentObject(appState)
+                }
+                .preferredColorScheme(.dark)
             }
             .navigationDestination(for: String.self) { value in
                 if value == "groups" {
@@ -315,6 +323,14 @@ struct CamerasTab: View {
 
     private var multiViewMenu: some View {
         Menu {
+            if appState.hasBirdseye {
+                Button {
+                    Haptics.tap()
+                    showBirdseye = true
+                } label: {
+                    Label("Birdseye View", systemImage: "squareshape.split.2x2")
+                }
+            }
             Button {
                 Haptics.select()
                 liveWall = .all

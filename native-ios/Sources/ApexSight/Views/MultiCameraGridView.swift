@@ -11,6 +11,7 @@ struct MultiCameraGridView: View {
     /// Number of columns: 1, 2 (default), or 3
     @State private var columns: Int
     @State private var selectedCamera: FrigateCamera?
+    @State private var showBirdseye = false
     // Smart Focus: spotlight + scroll to the camera where Frigate just detected something.
     @AppStorage("multiview.smartFocus") private var smartFocus = true
     @State private var activeCameraName: String?
@@ -60,6 +61,19 @@ struct MultiCameraGridView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.l) {
+                        if appState.hasBirdseye {
+                            Button {
+                                Haptics.tap()
+                                showBirdseye = true
+                            } label: {
+                                Image(systemName: "squareshape.split.2x2")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(GlassTheme.accent)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("Birdseye view")
+                        }
                         Button {
                             Haptics.select()
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { smartFocus.toggle() }
@@ -82,6 +96,12 @@ struct MultiCameraGridView: View {
             .sheet(item: $selectedCamera) { camera in
                 NavigationStack {
                     LiveStreamView(camera: camera)
+                }
+                .preferredColorScheme(.dark)
+            }
+            .sheet(isPresented: $showBirdseye) {
+                NavigationStack {
+                    LiveStreamView(camera: FrigateCamera(name: "birdseye", zones: [], objects: []))
                 }
                 .preferredColorScheme(.dark)
             }
