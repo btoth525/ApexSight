@@ -20,6 +20,8 @@ struct LiveStreamView: View {
         case snapshot = "Snapshot"
     }
 
+    private var isBirdseye: Bool { camera.name == "birdseye" }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -135,7 +137,7 @@ struct LiveStreamView: View {
             .accessibilityLabel("Close live view")
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(titleize(camera.name))
+                Text(isBirdseye ? "All Cameras" : titleize(camera.name))
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(GlassTheme.primary)
                     .lineLimit(1)
@@ -150,28 +152,31 @@ struct LiveStreamView: View {
 
             Spacer(minLength: GlassTheme.Space.s)
 
-            Menu {
-                Picker("Stream", selection: $streamMode) {
-                    ForEach(StreamMode.allCases, id: \.self) { mode in
-                        Label(mode.rawValue, systemImage: icon(for: mode)).tag(mode)
+            // Birdseye is live-only — no latest.jpg and no recordings.
+            if !isBirdseye {
+                Menu {
+                    Picker("Stream", selection: $streamMode) {
+                        ForEach(StreamMode.allCases, id: \.self) { mode in
+                            Label(mode.rawValue, systemImage: icon(for: mode)).tag(mode)
+                        }
                     }
+                } label: {
+                    HStack(spacing: GlassTheme.Space.xs) {
+                        Image(systemName: icon(for: streamMode))
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(streamMode.rawValue)
+                            .font(.subheadline.weight(.semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(GlassTheme.primary)
+                    .padding(.horizontal, GlassTheme.Space.m)
+                    .frame(minHeight: 44)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
                 }
-            } label: {
-                HStack(spacing: GlassTheme.Space.xs) {
-                    Image(systemName: icon(for: streamMode))
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(streamMode.rawValue)
-                        .font(.subheadline.weight(.semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                }
-                .foregroundStyle(GlassTheme.primary)
-                .padding(.horizontal, GlassTheme.Space.m)
-                .frame(minHeight: 44)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                .accessibilityLabel("Stream source, currently \(streamMode.rawValue)")
             }
-            .accessibilityLabel("Stream source, currently \(streamMode.rawValue)")
 
             if capability?.hasPtz == true {
                 Button {
@@ -240,18 +245,20 @@ struct LiveStreamView: View {
                     isLive = false
                     reloadToken = UUID()
                 }
-                actionButton(icon: "photo", label: "Snapshot") {
-                    streamMode = .snapshot
-                }
-                NavigationLink {
-                    RecordingBrowserView(camera: camera)
-                } label: {
-                    actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
-                }
-                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-                .accessibilityLabel("Open recording timeline")
-                actionButton(icon: "slider.horizontal.3", label: "Controls") {
-                    showCameraControls = true
+                if !isBirdseye {
+                    actionButton(icon: "photo", label: "Snapshot") {
+                        streamMode = .snapshot
+                    }
+                    NavigationLink {
+                        RecordingBrowserView(camera: camera)
+                    } label: {
+                        actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
+                    }
+                    .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                    .accessibilityLabel("Open recording timeline")
+                    actionButton(icon: "slider.horizontal.3", label: "Controls") {
+                        showCameraControls = true
+                    }
                 }
             }
             .padding(.horizontal, GlassTheme.Space.l)

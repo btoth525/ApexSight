@@ -351,8 +351,10 @@ struct HLSLivePlayerView: View {
     /// Whether we already have a cached frame to show. When we do, we connect live
     /// SILENTLY behind it — no "Connecting…" pill — so the camera feels instant
     /// instead of looking like it's loading over an image that's right there.
+    /// Birdseye has no latest.jpg, so it never has a cached snapshot.
     private var hasSnapshot: Bool {
-        guard let url = appState.client?.latestFrameURL(camera: camera.name) else { return false }
+        guard camera.name != "birdseye",
+              let url = appState.client?.latestFrameURL(camera: camera.name) else { return false }
         return ImageCache.shared.image(for: url) != nil
     }
 
@@ -402,7 +404,7 @@ struct HLSLivePlayerView: View {
     private func startFallbackTimer() {
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled, !isPlaying else { return }
             fallToMJPEG()
         }
@@ -422,8 +424,9 @@ struct HLSLivePlayerView: View {
 
             // Snapshot placeholder — shows instantly so there's never a black gap.
             // Sits behind the video layer and fades out the moment the stream is live.
-            // Never hit-testable so it can't swallow the player's zoom gestures.
-            if let url = appState.client?.latestFrameURL(camera: camera.name) {
+            // Birdseye has no latest.jpg, so skip the attempt to avoid a guaranteed 404.
+            if camera.name != "birdseye",
+               let url = appState.client?.latestFrameURL(camera: camera.name) {
                 RemoteImage(url: url, contentMode: .fit)
                     .opacity(isPlaying ? 0 : 1)
                     .animation(.easeOut(duration: 0.3), value: isPlaying)

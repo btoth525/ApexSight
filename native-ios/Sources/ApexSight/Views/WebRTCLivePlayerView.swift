@@ -216,7 +216,11 @@ final class RTCClient: NSObject, ObservableObject {
         didFinishGathering = false
 
         let config = RTCConfiguration()
-        config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
+        // No external STUN — go2rtc is on the same LAN, so host candidates connect
+        // directly and STUN lookup to stun.l.google.com only delays ICE gathering.
+        // When off-LAN, WebRTC will fail fast (no matching candidate) and fall through
+        // to HLS in <2s instead of burning the full 1s gather cap on a STUN roundtrip.
+        config.iceServers = []
         config.sdpSemantics = .unifiedPlan
         config.continualGatheringPolicy = .gatherOnce
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
@@ -233,16 +237,17 @@ final class RTCClient: NSObject, ObservableObject {
         startWatchdog()
     }
 
-    /// Give up on WebRTC (so the view can fall back to HLS) if it can't deliver a real frame:
-    /// fast when we never even connect (off-LAN), patient once connected (a doorbell may wait
-    /// a beat for a keyframe).
+    /// Give up on WebRTC (so the view can fall back to HLS) if it can't deliver a real frame.
+    /// First phase: if we haven't even connected in 2s, the path is dead (off-LAN, no route).
+    /// Second phase: if connected but still no frame after another 1.5s, this camera is slow
+    /// to key-frame — fall back rather than staying black.
     private func startWatchdog() {
         watchdog?.cancel()
         watchdog = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled, !isTorndown, !firstFrameRendered else { return }
             if state != .connected { markFailed(); return }
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled, !isTorndown, !firstFrameRendered else { return }
             markFailed()
         }
@@ -260,10 +265,9 @@ final class RTCClient: NSObject, ObservableObject {
         do {
             let offer = try await makeOffer(pc, c)
             try await setLocal(pc, offer)
-            // On a LAN, host candidates gather almost instantly and `.complete` resolves this
-            // immediately; the cap is only the off-LAN ceiling, so ~1s keeps first paint fast
-            // without breaking the STUN-assisted fallback path.
-            await waitForGathering(timeout: 1.0)
+            // Without STUN, host candidates are ready in <10ms. The 0.5s ceiling is a
+            // safety net for unusual network stacks; in practice it fires at ~complete instantly.
+            await waitForGathering(timeout: 0.5)
             guard !isTorndown, pc === peerConnection else { return }
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswerSDP(camera: camera, sub: useSub, offerSDP: localSDP)
@@ -554,11 +558,14 @@ struct LiveVideoPlayerView: View {
     private var webRTCContent: some View {
         ZStack {
             Color.black
-            // Snapshot stays put UNDERNEATH the video — we never fade it out. The live layer
-            // fades IN on top of it only once a real frame has rendered, so there's never a
-            // black gap or pop between the snapshot and live video.
-            if let url = appState.client?.latestFrameURL(camera: camera.name) {
+            // Snapshot placeholder — shown until the first real frame renders. Birdseye has
+            // no `latest.jpg` endpoint, so skip the network request and show ConnectingHint.
+            if camera.name != "birdseye",
+               let url = appState.client?.latestFrameURL(camera: camera.name) {
                 RemoteImage(url: url, contentMode: .fit)
+                    .allowsHitTesting(false)
+            } else if camera.name == "birdseye", !isLive {
+                ConnectingHint()
                     .allowsHitTesting(false)
             }
             videoLayer

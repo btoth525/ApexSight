@@ -252,8 +252,9 @@ struct FrigateClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         applyAuth(to: &request)
-        // Short timeout so remote/unreachable signaling fails fast into the HLS fallback.
-        request.timeoutInterval = 4
+        // Tight timeout: on LAN this round-trips in <100ms; if it takes >2s something is wrong
+        // and we want the HLS fallback to start as soon as possible.
+        request.timeoutInterval = 2
         request.httpBody = try JSONSerialization.data(withJSONObject: ["type": "offer", "sdp": offerSDP])
 
         let (data, response) = try await session.data(for: request)
