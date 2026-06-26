@@ -5,6 +5,7 @@ struct CameraGroupsView: View {
     @ObservedObject var store: CameraGroupStore
     @State private var showEditor = false
     @State private var editingGroup: CameraGroup?
+    @State private var pendingDeletion: CameraGroup?
 
     var body: some View {
         ZStack {
@@ -20,6 +21,7 @@ struct CameraGroupsView: View {
                     }
 
                     Button {
+                        Haptics.tap()
                         showEditor = true
                     } label: {
                         Label("New Group", systemImage: "plus")
@@ -44,6 +46,20 @@ struct CameraGroupsView: View {
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
         }
+        // Deleting a group is destructive — confirm before dropping it.
+        .confirmationDialog(
+            "Delete this group?",
+            isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDeletion
+        ) { group in
+            Button("Delete \(group.name)", role: .destructive) {
+                if let index = store.groups.firstIndex(where: { $0.id == group.id }) {
+                    store.delete(at: IndexSet(integer: index))
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private func groupRow(_ group: CameraGroup) -> some View {
@@ -65,9 +81,8 @@ struct CameraGroupsView: View {
                 }
                 Spacer()
                 Button(role: .destructive) {
-                    if let index = store.groups.firstIndex(where: { $0.id == group.id }) {
-                        store.delete(at: IndexSet(integer: index))
-                    }
+                    Haptics.warning()
+                    pendingDeletion = group
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 16, weight: .medium))
@@ -80,7 +95,7 @@ struct CameraGroupsView: View {
         }
         // Tap anywhere on the card (except the trash button) to edit the group.
         .contentShape(Rectangle())
-        .onTapGesture { editingGroup = group }
+        .onTapGesture { Haptics.tap(); editingGroup = group }
     }
 
     private var emptyState: some View {
@@ -171,6 +186,7 @@ struct CameraGroupEditor: View {
 
     private func cameraToggle(_ camera: FrigateCamera) -> some View {
         Button {
+            Haptics.select()
             if selected.contains(camera.name) { selected.remove(camera.name) }
             else { selected.insert(camera.name) }
         } label: {

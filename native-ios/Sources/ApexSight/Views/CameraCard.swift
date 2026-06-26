@@ -15,9 +15,10 @@ struct CameraCard: View {
             LiveStreamView(camera: camera)
         } label: {
             ZStack(alignment: .bottom) {
-                // Live, instant WebRTC on the FULL main stream, always on (persistent) for
-                // every camera, with the cached snapshot behind so it's never black and
-                // letterboxed so ultra-wide cameras show the whole scene.
+                // Live, instant WebRTC on the full-resolution MAIN stream — full quality on every
+                // tile, always on (persistent) for every camera. The connection limiter staggers
+                // how many spin up at once so load stays fast; the cached snapshot sits behind so
+                // it's never black, and it's letterboxed so ultra-wide cameras show the whole scene.
                 LiveVideoPlayerView(
                     camera: camera,
                     persistent: true,

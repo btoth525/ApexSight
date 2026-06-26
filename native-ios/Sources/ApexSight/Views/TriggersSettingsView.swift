@@ -19,6 +19,7 @@ struct TriggersSettingsView: View {
                         message: "Create triggers to get notified for specific cameras, objects, and zones — even when global settings are off."
                     )
                     Button {
+                        Haptics.tap()
                         isAdding = true
                     } label: {
                         Label("Add First Trigger", systemImage: "plus.circle.fill")
@@ -34,7 +35,7 @@ struct TriggersSettingsView: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: GlassTheme.Space.xs, leading: GlassTheme.Space.l, bottom: GlassTheme.Space.xs, trailing: GlassTheme.Space.l))
                     }
-                    .onDelete { store.delete(at: $0) }
+                    .onDelete { Haptics.warning(); store.delete(at: $0) }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -46,6 +47,7 @@ struct TriggersSettingsView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
+                    Haptics.tap()
                     isAdding = true
                 } label: {
                     Image(systemName: "plus")
@@ -102,13 +104,13 @@ struct TriggersSettingsView: View {
                 }
                 // Only the info area opens the editor, so it can't fight the Toggle's tap.
                 .contentShape(Rectangle())
-                .onTapGesture { editingTrigger = trigger }
+                .onTapGesture { Haptics.tap(); editingTrigger = trigger }
 
                 Spacer()
 
                 Toggle("", isOn: Binding(
                     get: { trigger.enabled },
-                    set: { _ in store.toggleEnabled(trigger) }
+                    set: { _ in Haptics.select(); store.toggleEnabled(trigger) }
                 ))
                 .labelsHidden()
                 .tint(GlassTheme.accent)

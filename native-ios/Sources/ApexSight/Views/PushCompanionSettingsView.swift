@@ -100,6 +100,7 @@ struct PushCompanionSettingsView: View {
                     ProgressView().tint(GlassTheme.accent)
                 } else if s.showRetry {
                     Button("Retry") {
+                        Haptics.tap()
                         Task { await enablePush(); await checkHealth(); await registerWithRelay() }
                     }
                     .font(.subheadline.weight(.semibold))
@@ -153,7 +154,13 @@ struct PushCompanionSettingsView: View {
                         .foregroundStyle(GlassTheme.primary)
                     Button {
                         UIPasteboard.general.string = pairingCode
+                        Haptics.success()
                         copiedCode = true
+                        // Revert the checkmark so the button reads as "copy" again next time.
+                        Task {
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            copiedCode = false
+                        }
                     } label: {
                         Image(systemName: copiedCode ? "checkmark" : "doc.on.doc")
                             .font(.footnote.weight(.semibold))
@@ -180,6 +187,7 @@ struct PushCompanionSettingsView: View {
                         Button("Set") {
                             let code = joinCode.uppercased().trimmingCharacters(in: .whitespaces)
                             guard !code.isEmpty else { return }
+                            Haptics.tap()
                             pairingCode = code
                             DeviceTokenStore.pairingCode = code
                             DeviceTokenStore.pairingOverridden = true
@@ -189,6 +197,7 @@ struct PushCompanionSettingsView: View {
                             Task { await registerWithRelay() }
                         }
                         .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                        .disabled(joinCode.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
 
@@ -279,8 +288,10 @@ struct PushCompanionSettingsView: View {
         do {
             try await RelayClient.sendTest(relayURL: relayURL, deviceToken: token, environment: APNSEnvironment.current)
             testResult = "Sent ✓ — lock your phone to see it land."
+            Haptics.success()
         } catch {
             testResult = error.localizedDescription
+            Haptics.error()
         }
     }
 }

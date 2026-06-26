@@ -45,9 +45,11 @@ struct ReviewRow: View {
             ?? appState.client?.reviewThumbnailURL(review: review) {
             // The FULL frame, uncropped, on a flat dark background — so ultra-wide cameras show
             // the whole scene (subject never cropped out of frame), with no blown-up zoom.
+            // 200pt card → downsample to ~700px so a 4K snapshot doesn't decode full-res
+            // while the list scrolls.
             ZStack {
                 Color.black
-                RemoteImage(url: url, contentMode: .fit)
+                RemoteImage(url: url, contentMode: .fit, maxPixelSize: 700)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {

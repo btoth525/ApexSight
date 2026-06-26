@@ -125,8 +125,8 @@ struct TriggerEditorView: View {
                     Button("Save") { save() }
                         .font(.body)
                         .fontWeight(.semibold)
-                        .foregroundStyle(name.isEmpty ? GlassTheme.tertiary : GlassTheme.accent)
-                        .disabled(name.isEmpty)
+                        .foregroundStyle(isNameValid ? GlassTheme.accent : GlassTheme.tertiary)
+                        .disabled(!isNameValid)
                 }
             }
             .task {
@@ -139,9 +139,14 @@ struct TriggerEditorView: View {
         }
     }
 
+    private var isNameValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private func save() {
-        var trigger = existing ?? NotificationTrigger(name: name)
-        trigger.name = name
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        var trigger = existing ?? NotificationTrigger(name: trimmedName)
+        trigger.name = trimmedName
         trigger.cameras = Array(selectedCameras)
         trigger.labels = Array(selectedLabels)
         trigger.requiredZones = Array(selectedZones)
@@ -167,6 +172,7 @@ struct TriggerEditorView: View {
                     ForEach(uniqueOptions, id: \.self) { option in
                         let isSelected = selected.wrappedValue.contains(option)
                         Button {
+                            Haptics.select()
                             if isSelected { selected.wrappedValue.remove(option) }
                             else { selected.wrappedValue.insert(option) }
                         } label: {

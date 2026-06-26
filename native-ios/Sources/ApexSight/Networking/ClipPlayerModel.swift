@@ -82,8 +82,15 @@ final class ClipPlayerModel: ObservableObject {
         teardown()
         isReady = false
         hasError = false
+        // Detach the item before dropping the player so AVFoundation releases the asset and its
+        // decoder immediately, rather than holding the buffered clip until ARC gets around to it.
         player?.pause()
+        player?.replaceCurrentItem(with: nil)
         player = nil
+        // Clear the retry references too — a deliberately stopped surface must not be able to
+        // resurrect a clip from a stale Retry tap after it's gone.
+        lastURL = nil
+        lastClient = nil
     }
 
     private func configureAudioSession() {

@@ -21,8 +21,13 @@ enum ClipDownloader {
     static func downloadToPhotos(url: URL, client: FrigateClient, fileName: String) async throws {
         let data = try await client.imageData(from: url)
 
+        // Camera names come from arbitrary Frigate config, so a "/" (or ":") in the name would
+        // turn the file component into a non-existent subpath and fail the write. Flatten any
+        // path separators to keep the temp file a single valid component.
+        let safeName = fileName.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(fileName)
+            .appendingPathComponent(safeName)
             .appendingPathExtension("mp4")
         do {
             try data.write(to: tempURL, options: .atomic)

@@ -49,25 +49,26 @@ struct PTZControlView: View {
 
     private var dpad: some View {
         VStack(spacing: GlassTheme.Space.s) {
-            ptzButton(icon: "chevron.up", action: "move_up")
+            ptzButton(icon: "chevron.up", action: "move_up", label: "Tilt up")
             HStack(spacing: GlassTheme.Space.s) {
-                ptzButton(icon: "chevron.left", action: "move_left")
+                ptzButton(icon: "chevron.left", action: "move_left", label: "Pan left")
                 stopButton
-                ptzButton(icon: "chevron.right", action: "move_right")
+                ptzButton(icon: "chevron.right", action: "move_right", label: "Pan right")
             }
-            ptzButton(icon: "chevron.down", action: "move_down")
+            ptzButton(icon: "chevron.down", action: "move_down", label: "Tilt down")
         }
     }
 
     private var zoomStack: some View {
         VStack(spacing: GlassTheme.Space.s) {
-            ptzButton(icon: "plus.magnifyingglass", action: "zoom_in")
-            ptzButton(icon: "minus.magnifyingglass", action: "zoom_out")
+            ptzButton(icon: "plus.magnifyingglass", action: "zoom_in", label: "Zoom in")
+            ptzButton(icon: "minus.magnifyingglass", action: "zoom_out", label: "Zoom out")
         }
     }
 
     private var stopButton: some View {
         Button {
+            Haptics.tap()
             send(action: "stop")
         } label: {
             RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
@@ -83,10 +84,14 @@ struct PTZControlView: View {
                         .foregroundStyle(GlassTheme.secondary)
                 )
         }
+        .accessibilityLabel("Stop movement")
     }
 
-    private func ptzButton(icon: String, action: String) -> some View {
+    private func ptzButton(icon: String, action: String, label: String) -> some View {
         Button {
+            // No explicit haptic here: button-repeat fires this closure continuously while
+            // held, so a per-tick buzz would feel like a rattle. The on-screen feedback label
+            // already confirms the move.
             send(action: action)
         } label: {
             RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
@@ -103,6 +108,7 @@ struct PTZControlView: View {
                 )
         }
         .buttonRepeatBehavior(.enabled)
+        .accessibilityLabel(label)
     }
 
     private func send(action: String, extra: [String: String] = [:]) {

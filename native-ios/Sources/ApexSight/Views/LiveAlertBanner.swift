@@ -58,6 +58,10 @@ struct LiveAlertBanner: View {
             .cardStroke(GlassTheme.Radius.card)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(banner.title). \(banner.body)")
+        .accessibilityHint("Opens the review")
+        .accessibilityAddTraits(.isButton)
         .padding(.top, GlassTheme.Space.s)
         .gesture(
             DragGesture(minimumDistance: 10)

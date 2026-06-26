@@ -73,6 +73,50 @@ final class WebRTCAvailability {
     }
 }
 
+// MARK: - Connection establishment limiter
+
+/// Caps how many grid tiles are *establishing* a WebRTC connection at once. Opening a peer
+/// connection (offer + ICE gather + decoder spin-up) is the expensive part of first paint;
+/// firing all of them simultaneously at launch is what makes the wall slow to come alive. The
+/// snapshot already sits behind every tile, so tiles can upgrade to live progressively: a few
+/// connect first, and as each renders its first frame (or fails over to HLS) the next tile's
+/// slot opens. The full-screen viewer bypasses this entirely so a camera the user explicitly
+/// opened never waits behind the wall.
+@MainActor
+final class WebRTCConnectionLimiter {
+    static let shared = WebRTCConnectionLimiter()
+
+    /// ~3 concurrent connects keeps several decoders warming without stampeding the CPU/network
+    /// at launch. Tuned for the wall feeling instant while staying smooth.
+    private let maxConcurrent = 3
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    private init() {}
+
+    /// Suspend until a connection slot is free. Each successful acquire MUST be balanced by
+    /// exactly one `release()` (on first frame, fail, or teardown) so the wall can never deadlock.
+    func acquire() async {
+        if active < maxConcurrent {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            waiters.append(cont)
+        }
+    }
+
+    /// Free a slot and let the next waiting tile begin connecting.
+    func release() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.resume()           // hands the just-freed slot straight to the next waiter
+        } else if active > 0 {
+            active -= 1
+        }
+    }
+}
+
 // MARK: - RTCClient
 
 /// One receive-only WebRTC playback connection to go2rtc (signaled via FrigateClient).
@@ -102,14 +146,22 @@ final class RTCClient: NSObject, ObservableObject {
     private var client: FrigateClient?
     private var watchdog: Task<Void, Never>?
     private var negotiateTask: Task<Void, Never>?
+    private var connectTask: Task<Void, Never>?
     private var lifecycleObservers: [NSObjectProtocol] = []
+    /// True while this client is holding a connection slot from the shared limiter, so we
+    /// release it exactly once (on first frame, fail, or teardown) and never over-release.
+    private var holdsConnectSlot = false
 
     private let camera: String
     private let useSub: Bool
+    /// When true (the full-screen viewer) this client skips the grid connect limiter, so a
+    /// camera the user explicitly opened starts connecting immediately instead of queueing.
+    private let bypassLimiter: Bool
 
-    init(camera: String, useSub: Bool = false) {
+    init(camera: String, useSub: Bool = false, bypassLimiter: Bool = false) {
         self.camera = camera
         self.useSub = useSub
+        self.bypassLimiter = bypassLimiter
         super.init()
     }
 
@@ -120,12 +172,44 @@ final class RTCClient: NSObject, ObservableObject {
         guard !isTorndown else { return }
         self.client = client
         observeLifecycle()
-        guard peerConnection == nil else { return }   // already connecting / connected
+        guard peerConnection == nil, connectTask == nil else { return }   // already connecting / connected
         buildConnection()
     }
 
+    /// Acquire a connection slot (unless bypassing) and then open the peer connection. Gating
+    /// here — not at the view layer — keeps callers simple: grid tiles upgrade to live a few at
+    /// a time while the full-screen viewer connects immediately. The slot is released the moment
+    /// the stream is live, fails, or is torn down, so the next queued tile starts.
     private func buildConnection() {
-        guard let client else { return }
+        guard client != nil, connectTask == nil, peerConnection == nil else { return }
+        state = .connecting
+        if bypassLimiter {
+            openConnection()
+            return
+        }
+        connectTask = Task { @MainActor [weak self] in
+            await WebRTCConnectionLimiter.shared.acquire()
+            guard let self else { WebRTCConnectionLimiter.shared.release(); return }
+            self.connectTask = nil
+            // Torn down (or already rebuilt) while we waited for a slot — hand it back at once.
+            guard !self.isTorndown, self.peerConnection == nil else {
+                WebRTCConnectionLimiter.shared.release()
+                return
+            }
+            self.holdsConnectSlot = true
+            self.openConnection()
+        }
+    }
+
+    /// Release the held connection slot exactly once. Safe to call repeatedly.
+    private func releaseConnectSlot() {
+        guard holdsConnectSlot else { return }
+        holdsConnectSlot = false
+        WebRTCConnectionLimiter.shared.release()
+    }
+
+    private func openConnection() {
+        guard let client else { releaseConnectSlot(); return }
         firstFrameRendered = false
         everConnected = false
         state = .connecting
@@ -138,6 +222,7 @@ final class RTCClient: NSObject, ObservableObject {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let pc = WebRTCFactory.shared.peerConnection(with: config, constraints: constraints, delegate: self) else {
             state = .failed
+            releaseConnectSlot()
             return
         }
         peerConnection = pc
@@ -156,11 +241,18 @@ final class RTCClient: NSObject, ObservableObject {
         watchdog = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled, !isTorndown, !firstFrameRendered else { return }
-            if state != .connected { state = .failed; return }
+            if state != .connected { markFailed(); return }
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard !Task.isCancelled, !isTorndown, !firstFrameRendered else { return }
-            state = .failed
+            markFailed()
         }
+    }
+
+    /// Mark this attempt failed and immediately free any held connection slot so a queued
+    /// grid tile can take it (rather than waiting for the view to drive the teardown).
+    private func markFailed() {
+        state = .failed
+        releaseConnectSlot()
     }
 
     private func negotiate(client: FrigateClient, pc: RTCPeerConnection) async {
@@ -168,14 +260,17 @@ final class RTCClient: NSObject, ObservableObject {
         do {
             let offer = try await makeOffer(pc, c)
             try await setLocal(pc, offer)
-            await waitForGathering(timeout: 2.0)
+            // On a LAN, host candidates gather almost instantly and `.complete` resolves this
+            // immediately; the cap is only the off-LAN ceiling, so ~1s keeps first paint fast
+            // without breaking the STUN-assisted fallback path.
+            await waitForGathering(timeout: 1.0)
             guard !isTorndown, pc === peerConnection else { return }
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswerSDP(camera: camera, sub: useSub, offerSDP: localSDP)
             guard !isTorndown, pc === peerConnection else { return }
             try await setRemote(pc, RTCSessionDescription(type: .answer, sdp: answerSDP))
         } catch {
-            if !isTorndown, pc === peerConnection { state = .failed }
+            if !isTorndown, pc === peerConnection { markFailed() }
         }
     }
 
@@ -188,6 +283,8 @@ final class RTCClient: NSObject, ObservableObject {
             Task { @MainActor in
                 guard let self, !self.isTorndown, !self.firstFrameRendered else { return }
                 self.firstFrameRendered = true
+                // Live now — free the slot so the next queued tile can start connecting.
+                self.releaseConnectSlot()
             }
         }
         track.add(signal)
@@ -200,6 +297,8 @@ final class RTCClient: NSObject, ObservableObject {
     private func resetConnection() {
         watchdog?.cancel(); watchdog = nil
         negotiateTask?.cancel(); negotiateTask = nil
+        connectTask?.cancel(); connectTask = nil
+        releaseConnectSlot()
         resumeGathering()
         if let frameSignal, let track = remoteVideoTrack { track.remove(frameSignal) }
         frameSignal = nil
@@ -307,7 +406,7 @@ extension RTCClient: RTCPeerConnectionDelegate {
             guard let self, !self.isTorndown, pc === self.peerConnection else { return }
             switch newState {
             case .connected: self.everConnected = true; self.state = .connected
-            case .failed, .closed: self.state = .failed
+            case .failed, .closed: self.markFailed()
             default: break
             }
         }
@@ -412,6 +511,9 @@ struct LiveVideoPlayerView: View {
     /// Use the low-res sub-stream — grid tiles pass true so several can stream smoothly at
     /// once; the full-screen view uses the main (high-res) stream.
     var useSub: Bool = false
+    /// Skip the shared grid connect limiter — the full-screen viewer passes true so a camera
+    /// the user explicitly opened connects immediately instead of queueing behind the wall.
+    var bypassConnectionLimit: Bool = false
     var pipController: LivePiPController? = nil
     var onSingleTap: (() -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
@@ -420,16 +522,18 @@ struct LiveVideoPlayerView: View {
     @State private var fellBackToHLS = false
 
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
-         useSub: Bool = false, pipController: LivePiPController? = nil,
+         useSub: Bool = false, bypassConnectionLimit: Bool = false,
+         pipController: LivePiPController? = nil,
          onSingleTap: (() -> Void)? = nil, onPlaying: ((Bool) -> Void)? = nil) {
         self.camera = camera
         self.showControls = showControls
         self.persistent = persistent
         self.useSub = useSub
+        self.bypassConnectionLimit = bypassConnectionLimit
         self.pipController = pipController
         self.onSingleTap = onSingleTap
         self.onPlaying = onPlaying
-        _rtc = StateObject(wrappedValue: RTCClient(camera: camera.name, useSub: useSub))
+        _rtc = StateObject(wrappedValue: RTCClient(camera: camera.name, useSub: useSub, bypassLimiter: bypassConnectionLimit))
     }
 
     /// "Live" means a real frame is actually on screen — not merely that the track arrived.

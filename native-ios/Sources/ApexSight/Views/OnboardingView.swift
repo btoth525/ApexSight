@@ -63,7 +63,7 @@ struct OnboardingView: View {
                     .cardStroke(66)
                 Image(systemName: item.icon)
                     .font(.system(size: 52, weight: .regular))
-                    .foregroundStyle(GlassTheme.accent)
+                    .foregroundStyle(item.tint)
             }
             VStack(spacing: GlassTheme.Space.m) {
                 Text(item.title)
@@ -91,6 +91,8 @@ struct OnboardingView: View {
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: page)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Page \(page + 1) of \(pages.count)")
     }
 
     private var controls: some View {

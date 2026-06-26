@@ -136,7 +136,7 @@ struct ActivityTab: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.m) {
                         if appState.isLoading || loadingFiltered { ProgressView().tint(GlassTheme.accent) }
-                        Button { sortNewest.toggle() } label: {
+                        Button { Haptics.select(); sortNewest.toggle() } label: {
                             Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(GlassTheme.accent)
@@ -193,6 +193,7 @@ struct ActivityTab: View {
     private func tallyChip(_ tally: Tally) -> some View {
         let selected = tally.isSub ? selectedSubLabel == tally.key : selectedLabel == tally.key
         return Button {
+            Haptics.select()
             if tally.isSub {
                 selectedSubLabel = selected ? "all" : tally.key
                 selectedLabel = "all"
@@ -265,7 +266,7 @@ struct ActivityTab: View {
     }
 
     private func chip(_ title: String, selected: Bool, systemImage: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { Haptics.select(); action() }) {
             HStack(spacing: GlassTheme.Space.xs) {
                 if let systemImage {
                     Image(systemName: systemImage).font(.caption2.weight(.semibold))

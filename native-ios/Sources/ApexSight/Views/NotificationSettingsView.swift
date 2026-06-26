@@ -308,6 +308,7 @@ struct NotificationSettingsView: View {
         _ = try? await NativeNotificationManager.requestPermission()
         status = await NativeNotificationManager.status()
         message = status.isAuthorized ? "Notifications are ready." : "Could not enable notifications — check Settings."
+        if status.isAuthorized { Haptics.success() } else { Haptics.warning() }
     }
 
     private func sendTest() async {
@@ -326,5 +327,6 @@ struct NotificationSettingsView: View {
             try? await NativeNotificationManager.sendTestNotification()
             message = "Test alert sent — lock your phone to see it. Trigger a real event to preview the GIF."
         }
+        Haptics.success()
     }
 }

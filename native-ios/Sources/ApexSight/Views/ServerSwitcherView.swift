@@ -6,6 +6,7 @@ struct ServerSwitcherView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var allSessions: [FrigateSession] = []
     @State private var showAddServer = false
+    @State private var pendingRemoval: FrigateSession?
 
     var body: some View {
         ZStack {
@@ -51,6 +52,33 @@ struct ServerSwitcherView: View {
                 allSessions = appState.keychain.loadAllSessions()
             }
         }
+        // Removing a server drops its stored credentials — confirm first, and warn
+        // explicitly when it's the one you're signed into.
+        .confirmationDialog(
+            "Remove this server?",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { session in
+            Button(appState.session?.baseURL == session.baseURL ? "Remove & Sign Out" : "Remove", role: .destructive) {
+                remove(session)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { session in
+            Text(session.baseURL.host() ?? session.baseURL.absoluteString)
+        }
+    }
+
+    private func remove(_ session: FrigateSession) {
+        let wasActive = appState.session?.baseURL == session.baseURL
+        appState.keychain.remove(session: session)
+        allSessions = appState.keychain.loadAllSessions()
+        if wasActive {
+            // Pop this pushed screen first — otherwise signing out leaves a
+            // blank detail view stranded on top of the re-rendered root.
+            dismiss()
+            appState.signOut()
+        }
     }
 
     private func serverRow(_ session: FrigateSession) -> some View {
@@ -69,20 +97,15 @@ struct ServerSwitcherView: View {
             Spacer(minLength: GlassTheme.Space.s)
             if !isActive {
                 Button("Switch") {
+                    Haptics.tap()
                     appState.switchTo(session: session)
                 }
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(GlassTheme.accent)
             }
             Button {
-                appState.keychain.remove(session: session)
-                allSessions = appState.keychain.loadAllSessions()
-                if isActive {
-                    // Pop this pushed screen first — otherwise signing out leaves a
-                    // blank detail view stranded on top of the re-rendered root.
-                    dismiss()
-                    appState.signOut()
-                }
+                Haptics.warning()
+                pendingRemoval = session
             } label: {
                 Image(systemName: "trash")
                     .font(.footnote.weight(.semibold))

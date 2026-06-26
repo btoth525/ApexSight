@@ -8,6 +8,7 @@ struct SettingsTab: View {
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
+    @State private var showSignOutConfirm = false
 
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -76,6 +77,7 @@ struct SettingsTab: View {
 
                 HStack(spacing: GlassTheme.Space.m) {
                     Button {
+                        Haptics.tap()
                         path.append("servers")
                     } label: {
                         Label("Switch Server", systemImage: "arrow.triangle.2.circlepath")
@@ -83,7 +85,8 @@ struct SettingsTab: View {
                     .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
 
                     Button(role: .destructive) {
-                        appState.signOut()
+                        Haptics.warning()
+                        showSignOutConfirm = true
                     } label: {
                         Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                     }
@@ -91,6 +94,11 @@ struct SettingsTab: View {
                 }
                 .padding(.top, GlassTheme.Space.xs)
             }
+        }
+        // Signing out clears the keychain session — guard the accidental tap.
+        .confirmationDialog("Sign out of this server?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) { appState.signOut() }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -234,6 +242,7 @@ struct SettingsTab: View {
                     .foregroundStyle(GlassTheme.secondary)
 
                 Button {
+                    Haptics.tap()
                     hasCompletedOnboarding = false
                 } label: {
                     Label("Replay Intro", systemImage: "sparkles")

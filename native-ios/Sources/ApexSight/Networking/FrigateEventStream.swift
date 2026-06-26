@@ -31,8 +31,25 @@ final class FrigateEventStream {
     private var heartbeat: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var pendingConnectedEvent = false
+    /// Set while a reconnect is being scheduled/awaited so a racing receive failure and
+    /// heartbeat ping failure can't both spawn a socket (which would leak the first task).
+    private var isReconnecting = false
 
-    init(urlSession: URLSession = .shared) {
+    /// A dedicated session for the long-lived `/ws` upgrade so it doesn't share connection
+    /// or cache state with bulk REST/image traffic. `waitsForConnectivity` lets a connect
+    /// that races device wake/network-up succeed instead of failing straight into backoff,
+    /// and the shared cookie jar carries the same `frigate_token` auth as REST/AVFoundation.
+    private static let streamSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.waitsForConnectivity = true
+        config.httpCookieStorage = .shared
+        config.httpCookieAcceptPolicy = .always
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config)
+    }()
+
+    init(urlSession: URLSession = FrigateEventStream.streamSession) {
         self.urlSession = urlSession
     }
 
@@ -43,6 +60,7 @@ final class FrigateEventStream {
         isActive = true
         reconnectAttempts = 0
         useQueryTokenFallback = false
+        isReconnecting = false
         openSocket()
     }
 
@@ -53,6 +71,7 @@ final class FrigateEventStream {
         heartbeat = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+        isReconnecting = false
     }
 
     func disconnect() {
@@ -65,6 +84,7 @@ final class FrigateEventStream {
 
     private func openSocket() {
         guard isActive, let session else { return }
+        isReconnecting = false
         let client = FrigateClient(session: session)
         var request = client.webSocketRequest()
 
@@ -120,7 +140,10 @@ final class FrigateEventStream {
     }
 
     private func scheduleReconnect() {
-        guard isActive else { return }
+        // A receive failure and a heartbeat-ping failure can fire back-to-back; without this
+        // guard each would tear down and re-open, orphaning the first socket/backoff task.
+        guard isActive, !isReconnecting else { return }
+        isReconnecting = true
         heartbeat?.cancel()
         task?.cancel(with: .abnormalClosure, reason: nil)
         task = nil

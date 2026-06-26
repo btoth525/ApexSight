@@ -59,12 +59,14 @@ struct MultiCameraGridView: View {
                     HStack(spacing: GlassTheme.Space.l) {
                         Button {
                             Haptics.select()
-                            smartFocus.toggle()
+                            withAnimation(.easeInOut(duration: 0.2)) { smartFocus.toggle() }
                             if !smartFocus { activeCameraName = nil }
                         } label: {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(smartFocus ? GlassTheme.accent : GlassTheme.tertiary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .accessibilityLabel(smartFocus ? "Smart Focus on" : "Smart Focus off")
                         columnPicker
@@ -163,6 +165,8 @@ struct MultiCameraGridView: View {
         return ZStack(alignment: .bottomLeading) {
             Color.black
             // WebRTC-first (instant, Metal); falls back to HLS/MJPEG per camera internally.
+            // Always the full-resolution MAIN stream — every camera, every layout, full quality.
+            // The connection limiter staggers how many spin up at once so the wall stays smooth.
             LiveVideoPlayerView(camera: camera)
                 .allowsHitTesting(false)
 
@@ -212,7 +216,10 @@ struct MultiCameraGridView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { selectedCamera = camera }
+        .onTapGesture {
+            Haptics.tap()
+            selectedCamera = camera
+        }
     }
 
     // MARK: - Column picker
@@ -221,11 +228,16 @@ struct MultiCameraGridView: View {
         Menu {
             ForEach([1, 2, 3, 4], id: \.self) { n in
                 Button {
-                    columns = n
+                    guard columns != n else { return }
+                    Haptics.select()
+                    withAnimation(.easeInOut(duration: 0.2)) { columns = n }
                 } label: {
+                    // A checkmark marks the active layout so the picker reads as a real selector.
                     Label(
                         n == 1 ? "Single" : "\(n)-up Wall",
-                        systemImage: n == 1 ? "rectangle" : (n == 2 ? "rectangle.grid.2x2" : "rectangle.grid.3x2")
+                        systemImage: columns == n
+                            ? "checkmark"
+                            : (n == 1 ? "rectangle" : (n == 2 ? "rectangle.grid.2x2" : "rectangle.grid.3x2"))
                     )
                 }
             }
@@ -233,7 +245,10 @@ struct MultiCameraGridView: View {
             Image(systemName: layoutIcon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(GlassTheme.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel("Wall layout")
     }
 
     private var layoutIcon: String {

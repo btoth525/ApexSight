@@ -56,7 +56,8 @@ struct SmartAlbumsView: View {
             ZStack {
                 GlassTheme.surfaceHigh
                 if let hero = album.hero {
-                    RemoteImage(url: appState.client?.eventThumbnailURL(id: hero.id))
+                    // Full-width 132pt hero — cap the decode rather than holding a 4K frame.
+                    RemoteImage(url: appState.client?.eventThumbnailURL(id: hero.id), maxPixelSize: 600)
                 } else {
                     Image(systemName: album.icon)
                         .font(.system(size: 40, weight: .regular))
@@ -113,7 +114,8 @@ private struct SmartAlbumDetailView: View {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: GlassTheme.Space.s), GridItem(.flexible(), spacing: GlassTheme.Space.s), GridItem(.flexible())], spacing: GlassTheme.Space.s) {
                     ForEach(album.events) { event in
                         NavigationLink(value: event) {
-                            RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id))
+                            // 3-up grid tile — downsample instead of decoding the full frame.
+                            RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id), maxPixelSize: 360)
                                 .aspectRatio(1, contentMode: .fill)
                                 .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
                                 .cardStroke(GlassTheme.Radius.tile)

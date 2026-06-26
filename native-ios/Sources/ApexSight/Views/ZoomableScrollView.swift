@@ -68,7 +68,12 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { hostVC.view }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
-            guard let view = scrollView.subviews.first else { return }
+            // Center the zoomed content. While zoomed-out (or while the content is smaller
+            // than the viewport on an axis) keep it pinned to the middle so the video / image
+            // never drifts into a corner; once it overflows an axis the offset is 0 and the
+            // user pans freely. Operate on the hosted view directly rather than guessing at
+            // `subviews.first`, which can be a scroll indicator.
+            guard let view = hostVC.view else { return }
             let offsetX = max((scrollView.bounds.width - scrollView.contentSize.width) / 2, 0)
             let offsetY = max((scrollView.bounds.height - scrollView.contentSize.height) / 2, 0)
             view.center = CGPoint(

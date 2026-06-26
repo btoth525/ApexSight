@@ -12,20 +12,30 @@ struct SystemHealthView: View {
 
                 HStack(spacing: GlassTheme.Space.m) {
                     Button {
+                        Haptics.tap()
                         Task { await appState.refresh() }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GlassButtonStyle())
+                    .disabled(appState.isLoading)
 
                     Button {
+                        Haptics.tap()
                         Task { await appState.refreshCapabilityDiagnostics() }
                     } label: {
                         Label("Diagnostics", systemImage: "stethoscope")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GlassButtonStyle())
+                    .disabled(appState.isLoading)
+                }
+                .opacity(appState.isLoading ? 0.6 : 1)
+                .overlay(alignment: .center) {
+                    if appState.isLoading {
+                        ProgressView().tint(GlassTheme.accent)
+                    }
                 }
 
                 GlassCard {

@@ -83,10 +83,14 @@ struct LiveStreamView: View {
     }
 
     private var liveHLS: some View {
-        // Pure WebRTC: instant, Metal-rendered, hardware-decoded. No HLS/MJPEG.
+        // Full-screen: WebRTC on the MAIN (high-res) stream, and bypass the grid connect
+        // limiter so a camera the user explicitly opened starts immediately, never queued
+        // behind the wall's tiles. Metal-rendered, hardware-decoded, with HLS/MJPEG fallback.
         LiveVideoPlayerView(
             camera: camera,
             showControls: true,
+            useSub: false,
+            bypassConnectionLimit: true,
             onSingleTap: { toggleChrome() },
             onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
         )

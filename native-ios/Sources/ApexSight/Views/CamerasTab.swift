@@ -234,10 +234,15 @@ struct CamerasTab: View {
                         ProgressView().tint(GlassTheme.cyan)
                     }
                     if appState.cameras.count > 1 {
-                        Button { beginEditing() } label: {
+                        Button {
+                            Haptics.tap()
+                            beginEditing()
+                        } label: {
                             Image(systemName: "arrow.up.arrow.down.circle")
                                 .font(.system(size: 18, weight: .black))
                                 .foregroundStyle(GlassTheme.cyan)
+                                .frame(width: 40, height: 40)
+                                .contentShape(Rectangle())
                         }
                         .accessibilityLabel("Arrange cameras")
                     }
@@ -255,11 +260,13 @@ struct CamerasTab: View {
     }
 
     private func cancelEditing() {
+        Haptics.tap()
         wobble = false
         withAnimation { isEditing = false }
     }
 
     private func commitEditing() {
+        Haptics.select()
         layout.commit(order: draft.map(\.name), hidden: draftHidden)
         wobble = false
         withAnimation { isEditing = false }

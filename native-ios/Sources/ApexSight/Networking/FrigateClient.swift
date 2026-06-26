@@ -9,12 +9,22 @@ struct FrigateClient {
     /// Shared session with real timeouts so a slow/unreachable Frigate (or proxy)
     /// fails fast instead of hanging on URLSession.shared's 60s default and stacking
     /// behind the 15s poller. `waitsForConnectivity = false` keeps offline calls from
-    /// parking indefinitely.
+    /// parking indefinitely. A modest disk+memory `URLCache` lets immutable assets
+    /// (event thumbnails/snapshots, keyed by event id) be reused across views without
+    /// a second round-trip; live `latest.jpg` frames opt out per-request (see
+    /// `imageData(from:)`). Auth rides the shared cookie jar so AVFoundation and the
+    /// WebSocket upgrade stay consistent with REST calls.
     static let apiSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 60
         config.waitsForConnectivity = false
+        config.httpCookieStorage = .shared
+        config.httpCookieAcceptPolicy = .always
+        config.urlCache = URLCache(memoryCapacity: 16 * 1024 * 1024,
+                                   diskCapacity: 128 * 1024 * 1024,
+                                   diskPath: "frigate-api")
+        config.requestCachePolicy = .useProtocolCachePolicy
         return URLSession(configuration: config)
     }()
 
@@ -33,7 +43,7 @@ struct FrigateClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "X-CSRF-TOKEN")
-        request.httpBody = try JSONEncoder().encode(["user": username, "password": password])
+        request.httpBody = try JSONEncoder.frigate.encode(["user": username, "password": password])
 
         let (data, response) = try await session.data(for: request)
         try validate(response)
@@ -456,6 +466,12 @@ struct FrigateClient {
     func imageData(from url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         applyAuth(to: &request)
+        // Live camera frames (`.../latest.jpg`) change every fetch — never serve a stale
+        // cached copy. Immutable assets (event thumbnails/snapshots/gifs, keyed by id) fall
+        // through to protocol caching so repeated views reuse bytes instead of re-downloading.
+        if url.lastPathComponent == "latest.jpg" {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
         let (data, response) = try await session.data(for: request)
         try validate(response)
         return data
@@ -523,7 +539,7 @@ struct FrigateClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuth(to: &request)
-        request.httpBody = try JSONEncoder().encode(body)
+        request.httpBody = try JSONEncoder.frigate.encode(body)
 
         let (_, response) = try await session.data(for: request)
         try validate(response)
@@ -535,7 +551,7 @@ struct FrigateClient {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuth(to: &request)
-        request.httpBody = try JSONEncoder().encode(body)
+        request.httpBody = try JSONEncoder.frigate.encode(body)
 
         let (_, response) = try await session.data(for: request)
         try validate(response)
@@ -592,8 +608,12 @@ private struct LogResponse: Decodable {
 }
 
 private extension JSONDecoder {
-    static var frigate: JSONDecoder {
-        let decoder = JSONDecoder()
-        return decoder
-    }
+    /// One reused decoder for all REST responses — `JSONDecoder` is thread-safe for
+    /// decoding and allocating a fresh one per request is wasted work on the poll path.
+    static let frigate = JSONDecoder()
+}
+
+private extension JSONEncoder {
+    /// Shared request-body encoder, mirroring `JSONDecoder.frigate`.
+    static let frigate = JSONEncoder()
 }

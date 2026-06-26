@@ -31,16 +31,26 @@ struct EventDetailView: View {
 
     private var hasClip: Bool { event.hasClip != false }
 
-    /// What the fullscreen viewer should show: the live clip while in Video mode, else the snapshot.
+    /// What the fullscreen viewer shows — it MUST mirror exactly what the hero is
+    /// rendering inline, so expand never opens the wrong medium (a snapshot while the
+    /// user is watching the clip, or vice-versa).
     private var fullscreenMedia: FullscreenMediaView.Media? {
-        if hasClip, mediaMode == .video, let player = clipModel.player {
+        switch mediaMode {
+        case .video where hasClip:
+            // A real clip is showing — expand opens the zoomable video. While it's still
+            // loading (no player yet) we hide the button rather than fall back to the
+            // snapshot, so expand never shows the wrong medium.
+            guard let player = clipModel.player else { return nil }
             return .player(player)
-        }
-        if mediaMode == .history { return nil }
-        if let url = appState.client?.eventSnapshotURL(id: event.id) {
+        case .video, .snapshot:
+            // Either Snapshot mode, or Video mode for a clip-less event — both render the
+            // event snapshot inline, so expand opens that same image.
+            guard let url = appState.client?.eventSnapshotURL(id: event.id) else { return nil }
             return .image(url)
+        case .history:
+            // The history scrubber has its own controls; nothing to expand.
+            return nil
         }
-        return nil
     }
 
     var body: some View {
@@ -148,6 +158,7 @@ struct EventDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: mediaMode) { _, mode in
+                    Haptics.select()
                     if mode == .video { clipModel.play() } else { clipModel.pause() }
                 }
 
@@ -275,14 +286,17 @@ struct EventDetailView: View {
 
     private func downloadClip() async {
         guard let client = appState.client else { return }
+        Haptics.tap()
         isDownloading = true
         downloadFeedback = nil
         defer { isDownloading = false }
         do {
             let url = client.eventClipURL(id: event.id)
             try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(event.id)")
+            Haptics.success()
             downloadFeedback = "Saved to Photos."
         } catch {
+            Haptics.error()
             downloadFeedback = error.localizedDescription
         }
     }
@@ -340,7 +354,7 @@ struct EventDetailView: View {
     }
 
     private func actionButton(_ title: String, icon: String, tint: Color, isLoading: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { Haptics.tap(); action() }) {
             HStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
@@ -427,6 +441,7 @@ struct EventDetailView: View {
         } catch {
             similarEvents = []
             similarError = error.localizedDescription
+            Haptics.error()
         }
         showSimilarSheet = true
     }

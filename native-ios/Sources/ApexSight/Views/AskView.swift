@@ -149,7 +149,8 @@ struct AskView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
             ForEach(results.prefix(30)) { event in
                 Button { path.append(event) } label: {
-                    RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id))
+                    // Adaptive ~104pt tile — downsample instead of decoding the full frame.
+                    RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id), maxPixelSize: 360)
                         .aspectRatio(1, contentMode: .fill)
                         .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
                         .overlay {
@@ -167,6 +168,9 @@ struct AskView: View {
     private func ask() async {
         let q = question.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty, let client = appState.client else { return }
+        // Re-entrancy guard: tapping a suggestion (or Return) while a question is in
+        // flight would race two requests on the shared answer/results state.
+        guard !loading else { return }
         loading = true
         defer { loading = false }
 

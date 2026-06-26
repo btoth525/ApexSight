@@ -45,6 +45,13 @@ struct AlertStyleView: View {
 
     private var s: NotificationStyle { store.style }
 
+    /// The add button only fires with a non-empty label *and* emoji — mirror that
+    /// in the control's enabled state so the tap target reads honestly.
+    private var canAddEmoji: Bool {
+        !newLabel.trimmingCharacters(in: .whitespaces).isEmpty
+            && !newEmoji.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     // MARK: - Preview
 
     private var previewCard: some View {
@@ -178,6 +185,7 @@ struct AlertStyleView: View {
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                     Button {
+                        Haptics.tap()
                         store.style.emojiMap.removeValue(forKey: key)
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -209,14 +217,16 @@ struct AlertStyleView: View {
                     let label = newLabel.trimmingCharacters(in: .whitespaces).lowercased()
                     let emoji = newEmoji.trimmingCharacters(in: .whitespaces)
                     guard !label.isEmpty, !emoji.isEmpty else { return }
+                    Haptics.success()
                     store.style.emojiMap[label] = emoji
                     newLabel = ""; newEmoji = ""
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 26, weight: .regular))
-                        .foregroundStyle(GlassTheme.accent)
+                        .foregroundStyle(canAddEmoji ? GlassTheme.accent : GlassTheme.tertiary)
                 }
                 .buttonStyle(.plain)
+                .disabled(!canAddEmoji)
                 .accessibilityLabel("Add emoji mapping")
             }
         }

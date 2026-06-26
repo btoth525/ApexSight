@@ -132,6 +132,8 @@ struct LoginView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .keyboardType(keyboard)
+            // Let password managers and the keyboard offer the right autofill per field.
+            .textContentType(keyboard == .URL ? .URL : .username)
             .font(.body)
             .fontWeight(.medium)
             .foregroundStyle(GlassTheme.primary)
@@ -172,7 +174,13 @@ struct LoginView: View {
             .onSubmit(onSubmit)
 
             Button {
+                let wasFocused = focus == focusField
                 showPassword.toggle()
+                // Swapping SecureField <-> TextField rebuilds the field and drops the
+                // keyboard; re-assert focus so the user can keep typing uninterrupted.
+                if wasFocused {
+                    DispatchQueue.main.async { focus = focusField }
+                }
             } label: {
                 Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
                     .font(.subheadline)

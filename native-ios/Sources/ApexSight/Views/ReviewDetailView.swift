@@ -88,6 +88,7 @@ struct ReviewDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: mediaMode) { _, mode in
+                    Haptics.select()
                     if mode == .video { clipModel.play() } else { clipModel.pause() }
                 }
 
@@ -173,15 +174,23 @@ struct ReviewDetailView: View {
             ?? appState.client?.reviewThumbnailURL(review: review)
     }
 
-    /// What the fullscreen viewer should show: the live clip while in Video mode, else the snapshot.
+    /// What the fullscreen viewer shows — it MUST mirror exactly what the hero renders
+    /// inline, so expand never opens the wrong medium (a snapshot while watching the
+    /// clip, or vice-versa) and the history scrubber isn't replaced by a still.
     private var fullscreenMedia: FullscreenMediaView.Media? {
-        if mediaMode == .video, let player = clipModel.player {
+        switch mediaMode {
+        case .video:
+            // The clip is expandable to the zoomable video. While it's still loading
+            // (no player yet) hide the button rather than fall back to the snapshot.
+            guard let player = clipModel.player else { return nil }
             return .player(player)
-        }
-        if let url = snapshotURL {
+        case .snapshot:
+            guard let url = snapshotURL else { return nil }
             return .image(url)
+        case .history:
+            // The history scrubber has its own controls; nothing to expand.
+            return nil
         }
-        return nil
     }
 
     private var timelineCard: some View {
@@ -300,6 +309,7 @@ struct ReviewDetailView: View {
     private func markReviewed() async {
         isWorking = true
         await appState.markReviewViewed(review)
+        Haptics.success()
         isWorking = false
         dismiss()
     }

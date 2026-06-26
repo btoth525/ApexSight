@@ -262,7 +262,8 @@ struct SearchView: View {
     private func thumbnail(_ event: FrigateEvent) -> some View {
         ZStack(alignment: .bottomLeading) {
             if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                RemoteImage(url: url, contentMode: .fill)
+                // 104pt tile — decode to ~3x, not the 1000px default (≈9x the pixels shown).
+                RemoteImage(url: url, contentMode: .fill, maxPixelSize: 360)
                     .frame(width: 104, height: 104)
                     .clipped()
             } else {
@@ -291,7 +292,8 @@ struct SearchView: View {
     private func searchResultRow(_ event: FrigateEvent) -> some View {
         HStack(alignment: .top, spacing: GlassTheme.Space.m) {
             if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                RemoteImage(url: url, contentMode: .fill)
+                // 92pt thumbnail — downsample instead of decoding the full-res frame.
+                RemoteImage(url: url, contentMode: .fill, maxPixelSize: 360)
                     .frame(width: 92, height: 92)
                     .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
             } else {
@@ -462,12 +464,21 @@ struct SearchView: View {
                     }
 
                     if let error = errorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(GlassTheme.orange)
-                    }
-
-                    if results.isEmpty && errorMessage == nil {
+                        VStack(spacing: GlassTheme.Space.m) {
+                            EmptyStateView(
+                                icon: "exclamationmark.triangle",
+                                title: "Search Failed",
+                                message: error
+                            )
+                            Button {
+                                Task { await performSearch() }
+                            } label: {
+                                Label("Try Again", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else if results.isEmpty {
                         VStack(spacing: GlassTheme.Space.m) {
                             EmptyStateView(
                                 icon: "magnifyingglass",

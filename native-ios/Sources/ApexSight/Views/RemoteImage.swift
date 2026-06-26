@@ -88,7 +88,12 @@ struct RemoteImage: View {
 
     /// Decode-and-downsample with ImageIO so we never hold a full-resolution frame for
     /// a small cell. Falls back to a plain decode if thumbnailing fails.
-    static func downsample(_ data: Data, maxPixel: CGFloat) -> UIImage? {
+    ///
+    /// `nonisolated` because `RemoteImage` conforms to the `@MainActor` `View` protocol, so its
+    /// members are otherwise main-actor inferred — calling this from a `Task.detached` would
+    /// then warn (and silently hop the heavy decode back onto main). It only touches its
+    /// arguments + ImageIO, so it's safe to run anywhere and genuinely stays off the main thread.
+    nonisolated static func downsample(_ data: Data, maxPixel: CGFloat) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
             return UIImage(data: data)
         }
@@ -108,7 +113,8 @@ struct RemoteImage: View {
         return UIImage(cgImage: cg)
     }
 
-    private static func animatedImage(from source: CGImageSource) -> UIImage? {
+    // Also `nonisolated` so the GIF path runs in the same off-main decode context as `downsample`.
+    nonisolated private static func animatedImage(from source: CGImageSource) -> UIImage? {
         let count = CGImageSourceGetCount(source)
         var frames: [UIImage] = []
         var duration = 0.0
