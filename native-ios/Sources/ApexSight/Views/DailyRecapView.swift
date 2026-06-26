@@ -8,6 +8,9 @@ struct DailyRecapView: View {
 
     @State private var recap: DailyRecap?
     @State private var loading = true
+    // Distinguishes a failed fetch ("couldn't load") from a genuinely quiet day
+    // ("all quiet") so we can offer a retry instead of implying nothing happened.
+    @State private var loadFailed = false
 
     @AppStorage("apex.recap.enabled") private var recapEnabled = false
     @State private var recapTime = Calendar.current.date(
@@ -20,11 +23,15 @@ struct DailyRecapView: View {
             ScrollView {
                 VStack(spacing: GlassTheme.Space.l) {
                     heroCard
-                    if let recap, !recap.isEmpty {
+                    if loading {
+                        loadingSkeleton
+                    } else if loadFailed {
+                        errorCard
+                    } else if let recap, !recap.isEmpty {
                         statsCard(recap)
                         objectsCard(recap)
                         camerasCard(recap)
-                    } else if !loading {
+                    } else {
                         GlassCard {
                             EmptyStateView(
                                 icon: "checkmark.shield",
@@ -36,6 +43,8 @@ struct DailyRecapView: View {
                     scheduleCard
                 }
                 .padding(GlassTheme.Space.l)
+                .animation(.easeInOut(duration: 0.25), value: loading)
+                .animation(.easeInOut(duration: 0.25), value: loadFailed)
             }
         }
         .navigationTitle("Daily Recap")
@@ -55,9 +64,10 @@ struct DailyRecapView: View {
                     .tracking(0.8)
                     .foregroundStyle(GlassTheme.tertiary)
                 if loading {
-                    ProgressView().tint(GlassTheme.accent)
+                    SkeletonBlock().frame(width: 200, height: 26)
+                        .accessibilityHidden(true)
                 } else {
-                    Text(recap?.headline ?? "All quiet today")
+                    Text(loadFailed ? "Couldn't load today" : (recap?.headline ?? "All quiet today"))
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundStyle(GlassTheme.primary)
@@ -216,6 +226,7 @@ struct DailyRecapView: View {
                     }
                 }
                 .tint(GlassTheme.accent)
+                .sensoryFeedback(.selection, trigger: recapEnabled)
                 .onChange(of: recapEnabled) { _, isOn in
                     // A recap is useless without notification permission — ask the
                     // moment the user opts in (no-op if already granted/denied).
@@ -243,11 +254,74 @@ struct DailyRecapView: View {
         }
     }
 
+    // MARK: - Loading & Error states
+
+    /// Skeleton that mirrors the highlights grid while today's events are fetched,
+    /// instead of a lone spinner floating in the hero.
+    private var loadingSkeleton: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SkeletonBlock().frame(width: 110, height: 17)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: GlassTheme.Space.s), GridItem(.flexible())], spacing: GlassTheme.Space.s) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        SkeletonBlock(cornerRadius: GlassTheme.Radius.tile).frame(height: 64)
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// A calm error banner with a one-tap retry, shown when the recap fetch fails so
+    /// the user never confuses a network problem with a genuinely quiet day.
+    private var errorCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                HStack(alignment: .top, spacing: GlassTheme.Space.m) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(GlassTheme.orange)
+                        .frame(width: 38, height: 38)
+                        .background(GlassTheme.orange.opacity(0.14), in: Circle())
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
+                        Text("Couldn't load today's recap")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("Check your connection to Frigate and try again.")
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                Button {
+                    Haptics.tap()
+                    Task { await load() }
+                } label: {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                .disabled(loading)
+            }
+        }
+    }
+
     private func load() async {
         loading = true
+        loadFailed = false
         defer { loading = false }
-        guard let client = appState.client else { return }
-        let events = await RecapBuilder.fetchToday(client: client)
-        recap = RecapBuilder.build(events: events, style: styleStore.style)
+        guard let client = appState.client else {
+            loadFailed = true
+            return
+        }
+        // Fetch directly (rather than via RecapBuilder.fetchToday, which swallows errors)
+        // so we can surface a retryable error state instead of a misleading "all quiet".
+        do {
+            let start = Calendar.current.startOfDay(for: Date())
+            let events = try await client.events(after: start, before: Date(), limit: 500)
+            recap = RecapBuilder.build(events: events, style: styleStore.style)
+        } catch {
+            loadFailed = true
+        }
     }
 }

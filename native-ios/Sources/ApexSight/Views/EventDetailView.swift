@@ -22,6 +22,9 @@ struct EventDetailView: View {
     @State private var similarError: String?
     @State private var isLoadingSimilar = false
     @State private var createTrigger: NotificationTrigger?
+    /// Distinguishes "no description yet" from "still fetching", so the AI card can show a
+    /// skeleton on first load instead of silently appearing only once text arrives.
+    @State private var isLoadingAIDescription = true
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -59,7 +62,12 @@ struct EventDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     heroCard
-                    if let genAIDescription { aiCard(genAIDescription) }
+                    if let genAIDescription {
+                        aiCard(genAIDescription)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    } else if isLoadingAIDescription {
+                        aiSkeletonCard
+                    }
                     detailsCard
                     actionsCard
                 }
@@ -70,7 +78,12 @@ struct EventDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task(id: event.id) {
-            genAIDescription = try? await appState.client?.eventDescription(id: event.id)
+            isLoadingAIDescription = true
+            let fetched = try? await appState.client?.eventDescription(id: event.id)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                genAIDescription = fetched
+                isLoadingAIDescription = false
+            }
         }
         .sheet(isPresented: $showSimilarSheet) {
             SimilarEventsSheet(sourceEvent: event, events: similarEvents, errorMessage: similarError)
@@ -94,14 +107,18 @@ struct EventDetailView: View {
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                     Button {
+                        Haptics.tap()
                         editedAIDescription = text
-                        isEditingAIDescription = true
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            isEditingAIDescription = true
+                        }
                     } label: {
                         Image(systemName: "pencil")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GlassTheme.accent)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Edit description")
                     Button {
                         Task { await regenerateAIDescription() }
                     } label: {
@@ -115,6 +132,7 @@ struct EventDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isRegeneratingAI)
+                    .accessibilityLabel("Regenerate description")
                 }
                 if isEditingAIDescription {
                     TextEditor(text: $editedAIDescription)
@@ -126,7 +144,10 @@ struct EventDetailView: View {
                         .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
                     HStack(spacing: GlassTheme.Space.m) {
                         Button("Cancel") {
-                            isEditingAIDescription = false
+                            Haptics.tap()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                isEditingAIDescription = false
+                            }
                         }
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(GlassTheme.secondary)
@@ -146,6 +167,28 @@ struct EventDetailView: View {
                 }
             }
         }
+    }
+
+    /// Skeleton shown while the GenAI description is being fetched, so the card keeps its
+    /// shape instead of popping in only once text arrives.
+    private var aiSkeletonCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                HStack(spacing: GlassTheme.Space.s) {
+                    Image(systemName: "sparkles")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
+                    Text("AI Description")
+                        .font(.headline)
+                        .foregroundStyle(GlassTheme.primary)
+                    Spacer()
+                }
+                SkeletonBlock().frame(height: 13).frame(maxWidth: .infinity, alignment: .leading)
+                SkeletonBlock().frame(height: 13).frame(maxWidth: .infinity, alignment: .leading)
+                SkeletonBlock().frame(width: 180, height: 13)
+            }
+        }
+        .accessibilityLabel("Loading AI description")
     }
 
     private var heroCard: some View {
@@ -222,6 +265,7 @@ struct EventDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isDownloading)
+                        .accessibilityLabel(isDownloading ? "Saving clip" : "Save clip to Photos")
                     }
                 }
 
@@ -229,6 +273,7 @@ struct EventDetailView: View {
                     Text(downloadFeedback)
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(GlassTheme.green)
+                        .transition(.opacity)
                 }
             }
             .task(id: event.id) {
@@ -270,12 +315,13 @@ struct EventDetailView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: GlassTheme.Space.s) {
                             ForEach(zones, id: \.self) { zone in
-                                Text(titleize(zone))
+                                Label(titleize(zone), systemImage: "mappin.and.ellipse")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(GlassTheme.accent)
                                     .padding(.horizontal, GlassTheme.Space.m)
                                     .padding(.vertical, GlassTheme.Space.s)
                                     .background(GlassTheme.accent.opacity(0.12), in: Capsule())
+                                    .accessibilityLabel("Zone \(titleize(zone))")
                             }
                         }
                     }
@@ -294,10 +340,14 @@ struct EventDetailView: View {
             let url = client.eventClipURL(id: event.id)
             try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(event.id)")
             Haptics.success()
-            downloadFeedback = "Saved to Photos."
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                downloadFeedback = "Saved to Photos."
+            }
         } catch {
             Haptics.error()
-            downloadFeedback = error.localizedDescription
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                downloadFeedback = error.localizedDescription
+            }
         }
     }
 
@@ -310,6 +360,7 @@ struct EventDetailView: View {
                     Text(feedback)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(actionIsError ? GlassTheme.red : GlassTheme.green)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 actionButton("Retain Event", icon: "pin.fill", tint: GlassTheme.blue, isLoading: isActing) {
@@ -379,11 +430,15 @@ struct EventDetailView: View {
 
     /// Shows a transient feedback line (auto-clears) in the Actions card.
     private func showFeedback(_ message: String, isError: Bool) {
-        actionFeedback = message
-        actionIsError = isError
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            actionFeedback = message
+            actionIsError = isError
+        }
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            if actionFeedback == message { actionFeedback = nil }
+            if actionFeedback == message {
+                withAnimation(.easeOut(duration: 0.2)) { actionFeedback = nil }
+            }
         }
     }
 

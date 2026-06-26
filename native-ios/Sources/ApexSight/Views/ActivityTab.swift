@@ -248,6 +248,8 @@ struct ActivityTab: View {
     private var emptyOrLoading: some View {
         if (appState.isLoading && appState.events.isEmpty) || loadingFiltered {
             SkeletonList(rows: 6).padding(.top, GlassTheme.Space.xs)
+        } else if showErrorState {
+            errorState
         } else if isFilterActive {
             EmptyStateView(
                 icon: "line.3.horizontal.decrease.circle",
@@ -263,6 +265,37 @@ struct ActivityTab: View {
             )
             .padding(.top, GlassTheme.Space.xxl)
         }
+    }
+
+    /// The last fetch failed (server unreachable) AND we have nothing to show — so we offer
+    /// Retry instead of a misleading "No Activity Yet" over a dead connection.
+    private var showErrorState: Bool {
+        !appState.isReachable && displayedEvents.isEmpty
+    }
+
+    private func retry() async {
+        Haptics.tap()
+        await appState.refresh()
+        await loadSummary()
+        await loadFiltered()
+    }
+
+    /// Calm error state with a retry, so a failed load is recoverable instead of a blank feed.
+    private var errorState: some View {
+        VStack(spacing: GlassTheme.Space.l) {
+            EmptyStateView(
+                icon: "wifi.exclamationmark",
+                title: "Can't Reach Server",
+                message: "We couldn't load activity. Check your connection and try again."
+            )
+            Button {
+                Task { await retry() }
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+        }
+        .padding(.top, GlassTheme.Space.xxl)
     }
 
     private func chip(_ title: String, selected: Bool, systemImage: String? = nil, action: @escaping () -> Void) -> some View {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var selectedCamera = "all"
     @State private var selectedLabel = "all"
@@ -61,15 +62,21 @@ struct SearchView: View {
                         if showDateFilter { dateFilterCard }
 
                         if isSearching {
-                            HStack { Spacer(); ProgressView().tint(GlassTheme.accent); Spacer() }
-                                .padding(.top, 40)
+                            // A results-shaped skeleton, not a lone spinner — the screen
+                            // keeps its rhythm while the multi-matcher search runs.
+                            resultsSkeleton
+                                .transition(.opacity)
                         } else if hasSearched {
                             resultsSection
+                                .transition(.opacity)
                         } else {
                             browseSection
+                                .transition(.opacity)
                         }
                     }
                     .padding(GlassTheme.Space.l)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isSearching)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: hasSearched)
                 }
                 .refreshable { await loadBrowse() }
             }
@@ -81,7 +88,7 @@ struct SearchView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showAlbums = true } label: {
+                    Button { Haptics.tap(); showAlbums = true } label: {
                         Image(systemName: "square.grid.2x2")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(GlassTheme.accent)
@@ -114,10 +121,11 @@ struct SearchView: View {
                     .font(.system(.body))
                     .foregroundStyle(GlassTheme.primary)
                     .submitLabel(.search)
-                    .onSubmit { Task { await performSearch() } }
+                    .onSubmit { Haptics.tap(); Task { await performSearch() } }
 
                 if !query.isEmpty || hasSearched {
                     Button {
+                        Haptics.tap()
                         query = ""
                         results = []
                         answer = nil
@@ -128,23 +136,30 @@ struct SearchView: View {
                             .foregroundStyle(GlassTheme.tertiary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                    .transition(.opacity)
                 }
             }
             .padding(.horizontal, GlassTheme.Space.m)
             .padding(.vertical, 10)
             .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
             .cardStroke(GlassTheme.Radius.chip)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: query.isEmpty)
 
             Button {
-                withAnimation { showFilters.toggle() }
+                Haptics.select()
+                withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) { showFilters.toggle() }
             } label: {
                 Image(systemName: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(showFilters ? GlassTheme.accent : GlassTheme.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Filters")
+            .accessibilityValue(showFilters ? "Shown" : "Hidden")
 
             Button {
+                Haptics.tap()
                 Task { await performSearch() }
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
@@ -153,6 +168,7 @@ struct SearchView: View {
             }
             .buttonStyle(.plain)
             .disabled(isSearching)
+            .accessibilityLabel("Search")
         }
     }
 
@@ -205,8 +221,9 @@ struct SearchView: View {
         // rendering every group at once fired dozens of image fetches and dropped some.
         LazyVStack(alignment: .leading, spacing: GlassTheme.Space.xl) {
             if loadingBrowse && browseEvents.isEmpty {
-                HStack { Spacer(); ProgressView().tint(GlassTheme.accent); Spacer() }
-                    .padding(.top, 40)
+                // A grouped-shelf skeleton (header + a row of tiles) so the browse
+                // layout is visible immediately instead of a centered spinner.
+                browseSkeleton
             } else if groups.isEmpty {
                 emptyState
             } else {
@@ -217,9 +234,53 @@ struct SearchView: View {
         }
     }
 
+    /// Mirrors `browseSection`'s shelves (title bar + a horizontal strip of tiles) so
+    /// the screen shows its structure while the deep recent window loads.
+    private var browseSkeleton: some View {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.xl) {
+            ForEach(0..<3, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                    SkeletonBlock(cornerRadius: GlassTheme.Radius.chip)
+                        .frame(width: 150, height: 18)
+                    HStack(spacing: GlassTheme.Space.s) {
+                        ForEach(0..<4, id: \.self) { _ in
+                            SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
+                                .frame(width: 104, height: 104)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// A results-list skeleton (rich rows) used while a search is running.
+    private var resultsSkeleton: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SkeletonBlock(cornerRadius: GlassTheme.Radius.chip)
+                    .frame(width: 110, height: 20)
+                ForEach(0..<5, id: \.self) { _ in
+                    HStack(alignment: .top, spacing: GlassTheme.Space.m) {
+                        SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
+                            .frame(width: 92, height: 92)
+                        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                            SkeletonBlock(cornerRadius: 6).frame(height: 14).frame(maxWidth: .infinity, alignment: .leading)
+                            SkeletonBlock(cornerRadius: 6).frame(width: 160, height: 12)
+                            SkeletonBlock(cornerRadius: 6).frame(height: 12).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
     private func groupRow(_ group: ObjectGroup) -> some View {
         VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
             Button {
+                Haptics.tap()
                 selectedLabel = group.label ?? "all"
                 selectedSubLabel = group.subLabel ?? "all"
                 Task { await performSearch() }
@@ -245,11 +306,12 @@ struct SearchView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("See all \(group.title), \(group.events.count) events")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: GlassTheme.Space.s) {
                     ForEach(group.events.prefix(8)) { event in
-                        Button { path.append(event) } label: {
+                        Button { Haptics.tap(); path.append(event) } label: {
                             thumbnail(event)
                         }
                         .buttonStyle(.plain)
@@ -374,7 +436,8 @@ struct SearchView: View {
                 .cardStroke(GlassTheme.Radius.chip)
 
                 Button {
-                    withAnimation { showDateFilter.toggle() }
+                    Haptics.select()
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) { showDateFilter.toggle() }
                     if !showDateFilter { afterDate = nil }
                 } label: {
                     HStack(spacing: GlassTheme.Space.xs) {
@@ -453,12 +516,17 @@ struct SearchView: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(GlassTheme.accent)
                             } else {
-                                Button { sortNewest.toggle() } label: {
+                                Button {
+                                    Haptics.select()
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { sortNewest.toggle() }
+                                } label: {
                                     Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                                         .font(.title3.weight(.regular))
                                         .foregroundStyle(GlassTheme.accent)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Sort order")
+                                .accessibilityValue(sortNewest ? "Newest first" : "Oldest first")
                             }
                         }
                     }
@@ -471,6 +539,7 @@ struct SearchView: View {
                                 message: error
                             )
                             Button {
+                                Haptics.tap()
                                 Task { await performSearch() }
                             } label: {
                                 Label("Try Again", systemImage: "arrow.clockwise")
@@ -487,6 +556,7 @@ struct SearchView: View {
                             )
                             if hasActiveFilters {
                                 Button {
+                                    Haptics.tap()
                                     clearFilters()
                                     Task { await performSearch() }
                                 } label: {
@@ -501,7 +571,7 @@ struct SearchView: View {
                         // description and match source ride alongside each hit.
                         LazyVStack(spacing: GlassTheme.Space.s) {
                             ForEach(displayResults) { event in
-                                Button { path.append(event) } label: {
+                                Button { Haptics.tap(); path.append(event) } label: {
                                     searchResultRow(event)
                                 }
                                 .buttonStyle(.plain)
@@ -510,7 +580,7 @@ struct SearchView: View {
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
                             ForEach(displayResults) { event in
-                                Button { path.append(event) } label: {
+                                Button { Haptics.tap(); path.append(event) } label: {
                                     thumbnail(event)
                                 }
                                 .buttonStyle(.plain)
@@ -532,7 +602,7 @@ struct SearchView: View {
     }
 
     private func filterChip(_ title: String, icon: String?, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button { Haptics.select(); action() } label: {
             HStack(spacing: GlassTheme.Space.xs) {
                 if let icon {
                     Image(systemName: icon).font(.caption.weight(.medium))
@@ -551,6 +621,7 @@ struct SearchView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     // MARK: - Data
@@ -673,9 +744,13 @@ struct SearchView: View {
             }
 
             results = found
+            // Tactile confirmation the search finished: a soft success for hits, a
+            // gentle warning when nothing matched.
+            if found.isEmpty { Haptics.warning() } else { Haptics.success() }
         } catch {
             errorMessage = error.localizedDescription
             results = []
+            Haptics.error()
         }
     }
 

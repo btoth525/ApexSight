@@ -4,6 +4,7 @@ struct LiveStreamView: View {
     let camera: FrigateCamera
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var streamMode: StreamMode = .live
     @State private var isLive = false
     @State private var showPTZ = false
@@ -31,7 +32,7 @@ struct LiveStreamView: View {
             }
             .opacity(showChrome ? 1 : 0)
             .allowsHitTesting(showChrome)
-            .animation(.easeInOut(duration: 0.25), value: showChrome)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showChrome)
         }
         .navigationBarHidden(true)
         .statusBarHidden(!showChrome)
@@ -52,21 +53,22 @@ struct LiveStreamView: View {
     private func scheduleHideChrome() {
         hideWork?.cancel()
         let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.25)) { showChrome = false }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { showChrome = false }
         }
         hideWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
 
     private func revealChrome() {
-        withAnimation(.easeInOut(duration: 0.25)) { showChrome = true }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { showChrome = true }
         scheduleHideChrome()
     }
 
     private func toggleChrome() {
+        Haptics.tap()
         if showChrome {
             hideWork?.cancel()
-            withAnimation(.easeInOut(duration: 0.25)) { showChrome = false }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { showChrome = false }
         } else {
             revealChrome()
         }
@@ -92,7 +94,7 @@ struct LiveStreamView: View {
             useSub: false,
             bypassConnectionLimit: true,
             onSingleTap: { toggleChrome() },
-            onPlaying: { playing in withAnimation(.easeIn(duration: 0.2)) { isLive = playing } }
+            onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } }
         )
         .id(reloadToken)
     }
@@ -109,15 +111,18 @@ struct LiveStreamView: View {
     private var topBar: some View {
         HStack(spacing: GlassTheme.Space.s) {
             Button {
+                Haptics.tap()
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
                     .foregroundStyle(GlassTheme.primary)
+                    .contentShape(Circle())
             }
+            .accessibilityLabel("Close live view")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(titleize(camera.name))
@@ -152,22 +157,27 @@ struct LiveStreamView: View {
                 }
                 .foregroundStyle(GlassTheme.primary)
                 .padding(.horizontal, GlassTheme.Space.m)
-                .padding(.vertical, 9)
+                .frame(minHeight: 44)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
             }
+            .accessibilityLabel("Stream source, currently \(streamMode.rawValue)")
 
             if capability?.hasPtz == true {
                 Button {
+                    Haptics.select()
                     showPTZ.toggle()
                 } label: {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .background(showPTZ ? AnyShapeStyle(GlassTheme.accent.opacity(0.30)) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
                         .overlay { Circle().strokeBorder(showPTZ ? GlassTheme.accent.opacity(0.55) : GlassTheme.separator, lineWidth: 1) }
                         .foregroundStyle(showPTZ ? GlassTheme.accent : GlassTheme.primary)
+                        .contentShape(Circle())
                 }
+                .accessibilityLabel("Pan, tilt, zoom controls")
+                .accessibilityValue(showPTZ ? "Shown" : "Hidden")
             }
         }
         .padding(.horizontal, GlassTheme.Space.l)
@@ -228,6 +238,8 @@ struct LiveStreamView: View {
                 } label: {
                     actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
                 }
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                .accessibilityLabel("Open recording timeline")
             }
             .padding(.horizontal, GlassTheme.Space.xxl)
             .padding(.bottom, 40)
@@ -235,9 +247,13 @@ struct LiveStreamView: View {
     }
 
     private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
             actionButtonContent(icon: icon, label: label)
         }
+        .accessibilityLabel(label)
     }
 
     private func actionButtonContent(icon: String, label: String) -> some View {

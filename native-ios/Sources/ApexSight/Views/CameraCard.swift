@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CameraCard: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
 
     @State private var isLive = false
@@ -23,9 +24,17 @@ struct CameraCard: View {
                     camera: camera,
                     persistent: true,
                     onPlaying: { playing in
-                        withAnimation(.easeInOut(duration: 0.3)) { isLive = playing }
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
                     }
                 )
+
+                // Calm "warming up" hint while the tile is still connecting — a soft breathing
+                // dot over the cached snapshot, never a spinner. Beats Protect's frozen-frame
+                // look: a tile that hasn't gone live yet reads as alive, not stuck.
+                if !isLive {
+                    ConnectingHint()
+                        .transition(.opacity)
+                }
 
                 LinearGradient(
                     colors: [.clear, .clear, .black.opacity(0.8)],
@@ -43,11 +52,13 @@ struct CameraCard: View {
             .overlay(alignment: .topTrailing) { capabilityChips.padding(11) }
             .cardStroke(GlassTheme.Radius.tile)
             .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
+            .contentShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(titleize(camera.name)) camera\(isLive ? ", live" : ""). Opens live view.")
             .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
     }
 
     private var bottomBar: some View {
@@ -78,7 +89,7 @@ struct CameraCard: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(GlassTheme.red, in: Capsule())
-            .transition(.opacity.combined(with: .scale))
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
         }
     }
 

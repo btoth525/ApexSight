@@ -4,6 +4,7 @@ import SwiftUI
 /// user knows the lists may be stale rather than assuming everything is live.
 struct OfflineBanner: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isVisible: Bool {
         appState.session != nil && !appState.isReachable
@@ -27,11 +28,12 @@ struct OfflineBanner: View {
                     Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1)
                 }
                 .padding(.top, GlassTheme.Space.xs)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Offline. Showing the last loaded data.")
+                .accessibilityAddTraits(.updatesFrequently)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isVisible)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.8), value: isVisible)
     }
 }

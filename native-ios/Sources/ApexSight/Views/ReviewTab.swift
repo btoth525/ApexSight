@@ -105,10 +105,44 @@ struct ReviewTab: View {
 
     private var showEmptyState: Bool {
         guard !appState.isLoading && !loadingDetections else { return false }
+        // Don't mistake an unreachable server for "All Clear" — the error state owns that case.
+        guard !showErrorState else { return false }
         // Use the same filtered/visible set the list renders (which excludes
         // just-viewed ids), so marking the last items reviewed shows "All Clear"
         // instead of a "0 items" header with no rows.
         return filtered.isEmpty
+    }
+
+    /// The last fetch failed (server unreachable) AND we have nothing cached to show — so the
+    /// screen offers Retry instead of falsely reading as "All Clear" over a dead connection.
+    private var showErrorState: Bool {
+        guard !appState.isLoading && !loadingDetections else { return false }
+        return !appState.isReachable && filtered.isEmpty
+    }
+
+    private func retry() async {
+        Haptics.tap()
+        await appState.refresh()
+        if selectedSeverity == "detection" { await loadDetections() }
+    }
+
+    /// Calm error state with a retry, so a failed load is recoverable instead of a blank queue.
+    private var errorState: some View {
+        VStack(spacing: GlassTheme.Space.l) {
+            EmptyStateView(
+                icon: "wifi.exclamationmark",
+                title: "Can't Reach Server",
+                message: "We couldn't load your review items. Check your connection and try again."
+            )
+            Button {
+                Task { await retry() }
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(GlassTheme.Space.l)
     }
 
     var body: some View {
@@ -128,7 +162,9 @@ struct ReviewTab: View {
                     .padding(.vertical, GlassTheme.Space.s)
 
                     Group {
-                        if showEmptyState {
+                        if showErrorState {
+                            errorState
+                        } else if showEmptyState {
                             emptyState
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else if (appState.isLoading || loadingDetections) && filtered.isEmpty {

@@ -11,6 +11,9 @@ struct NotificationSettingsView: View {
     }
     @State private var message: String?
     @State private var isWorking = false
+    // First-load gate so we show a calm skeleton instead of flashing the "off" card
+    // before the real authorization status comes back from the system.
+    @State private var didLoadStatus = false
 
     private func binding<T>(_ keyPath: WritableKeyPath<NotificationPreferences, T>) -> Binding<T> {
         Binding(
@@ -24,23 +27,32 @@ struct NotificationSettingsView: View {
             GlassTheme.background.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                    permissionCard
-                    if status.isAuthorized {
-                        camerasCard
-                        objectsCard
-                        zonesCard
-                        quietHoursCard
-                        cooldownCard
-                        testCard
+                    if !didLoadStatus {
+                        loadingSkeleton
+                    } else {
+                        permissionCard
+                        if status.isAuthorized {
+                            camerasCard
+                            objectsCard
+                            zonesCard
+                            quietHoursCard
+                            cooldownCard
+                            testCard
+                        }
                     }
                 }
                 .padding(GlassTheme.Space.l)
+                .animation(.easeInOut(duration: 0.25), value: status.isAuthorized)
+                .animation(.easeInOut(duration: 0.25), value: didLoadStatus)
             }
         }
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
-        .task { status = await NativeNotificationManager.status() }
+        .task {
+            status = await NativeNotificationManager.status()
+            didLoadStatus = true
+        }
         // Re-check when returning from iOS Settings — the user may have just toggled
         // notification permission there, and the card should reflect it immediately.
         .onChange(of: scenePhase) { _, phase in
@@ -48,6 +60,34 @@ struct NotificationSettingsView: View {
                 Task { status = await NativeNotificationManager.status() }
             }
         }
+    }
+
+    // MARK: - Loading
+
+    /// A calm skeleton mirroring the permission + first content card while the system
+    /// reports authorization status, instead of flashing the "notifications off" state.
+    private var loadingSkeleton: some View {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+            GlassCard {
+                HStack(spacing: GlassTheme.Space.m) {
+                    SkeletonBlock(cornerRadius: 19).frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                        SkeletonBlock().frame(width: 160, height: 15)
+                        SkeletonBlock().frame(width: 100, height: 12)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                    SkeletonBlock().frame(width: 120, height: 17)
+                    ForEach(0..<3, id: \.self) { _ in
+                        SkeletonBlock().frame(height: 14).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 
     // MARK: - Permission Card
@@ -77,10 +117,14 @@ struct NotificationSettingsView: View {
 
                 if !status.isAuthorized {
                     Button {
+                        Haptics.tap()
                         Task { await requestPermission() }
                     } label: {
-                        Label("Allow Notifications", systemImage: "checkmark.shield.fill")
-                            .frame(maxWidth: .infinity)
+                        HStack(spacing: GlassTheme.Space.s) {
+                            if isWorking { ProgressView().tint(.white) }
+                            Label("Allow Notifications", systemImage: "checkmark.shield.fill")
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                     .disabled(isWorking)
@@ -225,6 +269,7 @@ struct NotificationSettingsView: View {
                         .foregroundStyle(GlassTheme.secondary)
                 }
                 Button {
+                    Haptics.tap()
                     Task { await sendTest() }
                 } label: {
                     HStack(spacing: GlassTheme.Space.s) {
@@ -254,9 +299,10 @@ struct NotificationSettingsView: View {
                 }
             }
             Spacer()
-            Toggle("", isOn: isOn)
+            Toggle(title, isOn: isOn)
                 .tint(GlassTheme.accent)
                 .labelsHidden()
+                .sensoryFeedback(.selection, trigger: isOn.wrappedValue)
         }
     }
 
@@ -322,11 +368,19 @@ struct NotificationSettingsView: View {
            let session = appState.session {
             await LocalAlertNotifier.notify(review: review, client: client, session: session, asTest: true)
             message = "Rich test alert sent (with preview) — lock your phone to see it on the Lock Screen."
+            Haptics.success()
         } else {
             // No event cached yet — send a basic sample so the user can still verify delivery.
-            try? await NativeNotificationManager.sendTestNotification()
-            message = "Test alert sent — lock your phone to see it. Trigger a real event to preview the GIF."
+            // Gate the success feedback on the send actually going through: the fallback can
+            // throw (e.g. scheduling failure), and a haptic that buzzes anyway would be a lie.
+            do {
+                try await NativeNotificationManager.sendTestNotification()
+                message = "Test alert sent — lock your phone to see it. Trigger a real event to preview the GIF."
+                Haptics.success()
+            } catch {
+                message = "Couldn't send the test alert — check notification permission in Settings."
+                Haptics.error()
+            }
         }
-        Haptics.success()
     }
 }

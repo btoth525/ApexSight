@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -19,7 +20,12 @@ struct RootView: View {
         }
         // Crossfade between onboarding, login, and the signed-in app so the hand-offs
         // (finishing onboarding, connecting, signing out) feel deliberate rather than abrupt.
-        .animation(.easeInOut(duration: 0.3), value: hasCompletedOnboarding)
-        .animation(.easeInOut(duration: 0.3), value: appState.session == nil)
+        // Reduce Motion swaps the screens instantly rather than fading.
+        .animation(handoff, value: hasCompletedOnboarding)
+        .animation(handoff, value: appState.session == nil)
+    }
+
+    private var handoff: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.3)
     }
 }

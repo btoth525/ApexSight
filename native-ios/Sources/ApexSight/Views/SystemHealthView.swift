@@ -3,6 +3,12 @@ import SwiftUI
 struct SystemHealthView: View {
     @EnvironmentObject private var appState: AppState
 
+    /// True before the first successful fetch — drives the loading skeleton rather than
+    /// rendering empty "0" metric tiles while the very first stats request is in flight.
+    private var isInitialLoad: Bool {
+        appState.isLoading && appState.stats == nil && appState.errorMessage == nil
+    }
+
     var body: some View {
         ZStack {
             GlassBackground()
@@ -20,6 +26,7 @@ struct SystemHealthView: View {
                     }
                     .buttonStyle(GlassButtonStyle())
                     .disabled(appState.isLoading)
+                    .accessibilityLabel("Refresh system stats")
 
                     Button {
                         Haptics.tap()
@@ -30,6 +37,7 @@ struct SystemHealthView: View {
                     }
                     .buttonStyle(GlassButtonStyle())
                     .disabled(appState.isLoading)
+                    .accessibilityLabel("Run capability diagnostics")
                 }
                 .opacity(appState.isLoading ? 0.6 : 1)
                 .overlay(alignment: .center) {
@@ -37,6 +45,14 @@ struct SystemHealthView: View {
                         ProgressView().tint(GlassTheme.accent)
                     }
                 }
+
+                if let error = appState.errorMessage {
+                    errorCard(error)
+                }
+
+                if isInitialLoad {
+                    loadingSkeleton
+                } else {
 
                 GlassCard {
                     VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
@@ -121,13 +137,86 @@ struct SystemHealthView: View {
                         }
                     }
                 }
+
+                } // end content (non-loading) branch
             }
             .padding(GlassTheme.Space.l)
+            .animation(.easeInOut(duration: 0.25), value: isInitialLoad)
             }
         }
         .navigationTitle("System")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+    }
+
+    // MARK: - Loading & Error states
+
+    /// Skeleton that mirrors the overview metric grid + a detail card while the first
+    /// stats fetch is running, so the screen shows its shape instead of empty zeros.
+    private var loadingSkeleton: some View {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                    SkeletonBlock().frame(width: 110, height: 17)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: GlassTheme.Space.m)], spacing: GlassTheme.Space.m) {
+                        ForEach(0..<4, id: \.self) { _ in
+                            SkeletonBlock(cornerRadius: GlassTheme.Radius.tile).frame(height: 58)
+                        }
+                    }
+                }
+            }
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                    SkeletonBlock().frame(width: 130, height: 17)
+                    ForEach(0..<3, id: \.self) { _ in
+                        HStack(spacing: GlassTheme.Space.m) {
+                            SkeletonBlock(cornerRadius: 18).frame(width: 36, height: 36)
+                            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                                SkeletonBlock().frame(width: 120, height: 14)
+                                SkeletonBlock().frame(width: 180, height: 12)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// A calm error banner with a one-tap retry, shown above the (possibly stale) cards
+    /// so the user always knows when a fetch failed and can recover without leaving.
+    private func errorCard(_ message: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                HStack(alignment: .top, spacing: GlassTheme.Space.m) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(GlassTheme.orange)
+                        .frame(width: 38, height: 38)
+                        .background(GlassTheme.orange.opacity(0.14), in: Circle())
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
+                        Text("Couldn't reach Frigate")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
+                            .lineLimit(3)
+                    }
+                    Spacer(minLength: 0)
+                }
+                Button {
+                    Haptics.tap()
+                    Task { await appState.refresh() }
+                } label: {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                .disabled(appState.isLoading)
+            }
+        }
     }
 
     private func metric(_ label: String, value: String, state: StatusDot.Mode? = nil) -> some View {

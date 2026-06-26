@@ -13,10 +13,20 @@ struct ReviewRow: View {
         ZStack(alignment: .topTrailing) {
             Button(action: onOpen) { card }
                 .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint("Opens this review")
             // Fast "got it" dismiss — clears the item without opening it.
             dismissButton
                 .padding(10)
         }
+    }
+
+    /// A spoken summary of the card so VoiceOver doesn't read the layered image + gradient as
+    /// separate fragments: "Alert. Person — Alex. Front Door • Zone: Porch."
+    private var accessibilityLabel: String {
+        let kind = isAlert ? "Alert" : "Detection"
+        return "\(kind). \(NotificationCopy.combinedTitle(for: review)). \(subtitle)"
     }
 
     // MARK: - Big glanceable card
@@ -97,6 +107,7 @@ struct ReviewRow: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(tint, in: Capsule())
+        .accessibilityHidden(true)
     }
 
     private var dismissButton: some View {

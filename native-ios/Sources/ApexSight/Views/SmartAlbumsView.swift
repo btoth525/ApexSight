@@ -4,8 +4,10 @@ import SwiftUI
 /// People, Vehicles, Animals) using labels + your faces/plates — entirely on-device.
 struct SmartAlbumsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var albums: [SmartAlbum] = []
     @State private var loading = true
+    @State private var errorMessage: String?
     @State private var path = NavigationPath()
     @Environment(\.dismiss) private var dismiss
 
@@ -16,10 +18,13 @@ struct SmartAlbumsView: View {
                 ScrollView {
                     VStack(spacing: GlassTheme.Space.m) {
                         if loading {
-                            ProgressView()
-                                .tint(GlassTheme.accent)
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 48)
+                            // Album-card skeletons (hero + title row) so the gallery shape
+                            // is visible immediately rather than a centered spinner.
+                            albumsSkeleton
+                                .transition(.opacity)
+                        } else if let error = errorMessage {
+                            errorState(error)
+                                .transition(.opacity)
                         } else if albums.isEmpty {
                             EmptyStateView(
                                 icon: "square.stack.3d.up.slash",
@@ -27,14 +32,17 @@ struct SmartAlbumsView: View {
                                 message: "Recent activity from the last 7 days will be grouped into smart albums here."
                             )
                             .padding(.top, 48)
+                            .transition(.opacity)
                         } else {
                             ForEach(albums) { album in
-                                Button { path.append(album) } label: { albumCard(album) }
+                                Button { Haptics.tap(); path.append(album) } label: { albumCard(album) }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("\(album.name), \(album.events.count) \(album.events.count == 1 ? "clip" : "clips")")
                             }
                         }
                     }
                     .padding(GlassTheme.Space.l)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: loading)
                 }
             }
             .navigationTitle("Smart Albums")
@@ -45,10 +53,55 @@ struct SmartAlbumsView: View {
             }
             .navigationDestination(for: FrigateEvent.self) { EventDetailView(event: $0) }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { Haptics.tap(); dismiss() } }
             }
             .task { await load() }
         }
+    }
+
+    /// A stack of album-card skeletons that mirror the real cards' hero + title row.
+    private var albumsSkeleton: some View {
+        VStack(spacing: GlassTheme.Space.m) {
+            ForEach(0..<4, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 0) {
+                    SkeletonBlock(cornerRadius: 0)
+                        .frame(height: 132)
+                    HStack(spacing: GlassTheme.Space.m) {
+                        SkeletonBlock(cornerRadius: 6).frame(width: 22, height: 22)
+                        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                            SkeletonBlock(cornerRadius: 6).frame(width: 140, height: 16)
+                            SkeletonBlock(cornerRadius: 6).frame(width: 60, height: 12)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(GlassTheme.Space.l)
+                }
+                .background(GlassTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+                .cardStroke(GlassTheme.Radius.card)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Fetch failed — explain it and offer a retry, never a silent empty gallery.
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: GlassTheme.Space.m) {
+            EmptyStateView(
+                icon: "exclamationmark.triangle",
+                title: "Couldn't load albums",
+                message: message
+            )
+            Button {
+                Haptics.tap()
+                Task { await load() }
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 48)
     }
 
     private func albumCard(_ album: SmartAlbum) -> some View {
@@ -95,11 +148,20 @@ struct SmartAlbumsView: View {
 
     private func load() async {
         loading = true
+        errorMessage = nil
         defer { loading = false }
         guard let client = appState.client else { return }
         let after = Calendar.current.date(byAdding: .day, value: -7, to: Date())
-        let events = (try? await client.events(after: after, limit: 400)) ?? []
-        albums = AlbumBuilder.build(events: events)
+        do {
+            // A thrown fetch error now surfaces a retryable error state instead of
+            // silently presenting an empty gallery.
+            let events = try await client.events(after: after, limit: 400)
+            albums = AlbumBuilder.build(events: events)
+        } catch {
+            errorMessage = error.localizedDescription
+            albums = []
+            Haptics.error()
+        }
     }
 }
 
@@ -121,6 +183,7 @@ private struct SmartAlbumDetailView: View {
                                 .cardStroke(GlassTheme.Radius.tile)
                         }
                         .buttonStyle(.plain)
+                        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                     }
                 }
                 .padding(GlassTheme.Space.l)

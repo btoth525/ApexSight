@@ -46,20 +46,23 @@ struct MultiCameraGridView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { dismiss() } label: {
+                    Button {
+                        Haptics.tap()
+                        dismiss()
+                    } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(GlassTheme.primary)
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
-                    .accessibilityLabel("Close")
+                    .accessibilityLabel("Close wall")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.l) {
                         Button {
                             Haptics.select()
-                            withAnimation(.easeInOut(duration: 0.2)) { smartFocus.toggle() }
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { smartFocus.toggle() }
                             if !smartFocus { activeCameraName = nil }
                         } label: {
                             Image(systemName: "sparkles")
@@ -98,8 +101,13 @@ struct MultiCameraGridView: View {
                     ForEach(cameraRows, id: \.self) { rowIndices in
                         HStack(spacing: 2) {
                             ForEach(rowIndices, id: \.self) { idx in
-                                cameraCell(displayedCameras[idx])
-                                    .id(displayedCameras[idx].name)
+                                MultiCameraCell(
+                                    camera: displayedCameras[idx],
+                                    columns: columns,
+                                    active: displayedCameras[idx].name == activeCameraName,
+                                    onTap: { selectedCamera = displayedCameras[idx] }
+                                )
+                                .id(displayedCameras[idx].name)
                             }
                             // Fill partial last row
                             if rowIndices.count < columns {
@@ -143,9 +151,9 @@ struct MultiCameraGridView: View {
     private func spotlight(_ name: String) {
         clearWork?.cancel()
         Haptics.tap()
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { activeCameraName = name }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8)) { activeCameraName = name }
         let work = DispatchWorkItem {
-            withAnimation(.easeOut(duration: 0.3)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
                 if activeCameraName == name { activeCameraName = nil }
             }
         }
@@ -160,15 +168,88 @@ struct MultiCameraGridView: View {
         }
     }
 
-    private func cameraCell(_ camera: FrigateCamera) -> some View {
-        let active = camera.name == activeCameraName
-        return ZStack(alignment: .bottomLeading) {
+    // MARK: - Column picker
+
+    private var columnPicker: some View {
+        Menu {
+            ForEach([1, 2, 3, 4], id: \.self) { n in
+                Button {
+                    guard columns != n else { return }
+                    Haptics.select()
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { columns = n }
+                } label: {
+                    // A checkmark marks the active layout so the picker reads as a real selector.
+                    Label(
+                        n == 1 ? "Single" : "\(n)-up Wall",
+                        systemImage: columns == n
+                            ? "checkmark"
+                            : (n == 1 ? "rectangle" : (n == 2 ? "rectangle.grid.2x2" : "rectangle.grid.3x2"))
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: layoutIcon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(GlassTheme.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Wall layout")
+        .accessibilityValue(columns == 1 ? "Single" : "\(columns) up")
+    }
+
+    private var layoutIcon: String {
+        switch columns {
+        case 1:  return "rectangle"
+        case 3:  return "rectangle.grid.3x2"
+        default: return "rectangle.grid.2x2"
+        }
+    }
+
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        EmptyStateView(
+            icon: "video.slash.fill",
+            title: "No Cameras",
+            message: "Connect a Frigate server in Settings to see live feeds."
+        )
+    }
+}
+
+// MARK: - Wall cell
+
+/// One tile on the multi-camera wall. Owns its own "is it live yet" state so it can show a
+/// calm connecting hint over the cached snapshot until the first frame arrives — the wall
+/// never reads as a grid of frozen or dead-black panels.
+private struct MultiCameraCell: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let camera: FrigateCamera
+    let columns: Int
+    let active: Bool
+    let onTap: () -> Void
+
+    @State private var isLive = false
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
             Color.black
             // WebRTC-first (instant, Metal); falls back to HLS/MJPEG per camera internally.
             // Always the full-resolution MAIN stream — every camera, every layout, full quality.
             // The connection limiter staggers how many spin up at once so the wall stays smooth.
-            LiveVideoPlayerView(camera: camera)
-                .allowsHitTesting(false)
+            LiveVideoPlayerView(
+                camera: camera,
+                onPlaying: { playing in
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
+                }
+            )
+            .allowsHitTesting(false)
+
+            // Calm "warming up" hint over the snapshot until the tile goes live.
+            if !isLive {
+                ConnectingHint()
+                    .transition(.opacity)
+            }
 
             // Bottom scrim so the name stays legible over bright scenes (matches CameraCard).
             LinearGradient(
@@ -212,60 +293,16 @@ struct MultiCameraGridView: View {
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
                 .padding(GlassTheme.Space.s)
-                .transition(.scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
             Haptics.tap()
-            selectedCamera = camera
+            onTap()
         }
-    }
-
-    // MARK: - Column picker
-
-    private var columnPicker: some View {
-        Menu {
-            ForEach([1, 2, 3, 4], id: \.self) { n in
-                Button {
-                    guard columns != n else { return }
-                    Haptics.select()
-                    withAnimation(.easeInOut(duration: 0.2)) { columns = n }
-                } label: {
-                    // A checkmark marks the active layout so the picker reads as a real selector.
-                    Label(
-                        n == 1 ? "Single" : "\(n)-up Wall",
-                        systemImage: columns == n
-                            ? "checkmark"
-                            : (n == 1 ? "rectangle" : (n == 2 ? "rectangle.grid.2x2" : "rectangle.grid.3x2"))
-                    )
-                }
-            }
-        } label: {
-            Image(systemName: layoutIcon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(GlassTheme.accent)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("Wall layout")
-    }
-
-    private var layoutIcon: String {
-        switch columns {
-        case 1:  return "rectangle"
-        case 3:  return "rectangle.grid.3x2"
-        default: return "rectangle.grid.2x2"
-        }
-    }
-
-    // MARK: - Empty state
-
-    private var emptyState: some View {
-        EmptyStateView(
-            icon: "video.slash.fill",
-            title: "No Cameras",
-            message: "Connect a Frigate server in Settings to see live feeds."
-        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(titleize(camera.name)) camera\(isLive ? ", live" : ""). Opens live view.")
+        .accessibilityAddTraits(.isButton)
     }
 }

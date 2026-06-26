@@ -83,6 +83,9 @@ struct AlertStyleView: View {
                 .padding(GlassTheme.Space.m)
                 .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
                 .cardStroke(GlassTheme.Radius.tile)
+                // Let the live preview ease between states as the user flips options.
+                .animation(.easeInOut(duration: 0.2), value: previewTitle)
+                .animation(.easeInOut(duration: 0.2), value: previewBody)
             }
         }
     }
@@ -145,6 +148,7 @@ struct AlertStyleView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 180)
+                .sensoryFeedback(.selection, trigger: s.fieldSeparator)
             }
         }
     }
@@ -163,6 +167,7 @@ struct AlertStyleView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 200)
+                .sensoryFeedback(.selection, trigger: s.firstFrame)
             }
             Text("The image shown the instant the alert arrives. \"Cropped\" zooms to the object's box.")
                 .font(.footnote)
@@ -185,7 +190,7 @@ struct AlertStyleView: View {
                         .foregroundStyle(GlassTheme.primary)
                     Spacer()
                     Button {
-                        Haptics.tap()
+                        Haptics.warning()
                         store.style.emojiMap.removeValue(forKey: key)
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -262,5 +267,6 @@ struct AlertStyleView: View {
             }
         }
         .tint(GlassTheme.accent)
+        .sensoryFeedback(.selection, trigger: isOn.wrappedValue)
     }
 }

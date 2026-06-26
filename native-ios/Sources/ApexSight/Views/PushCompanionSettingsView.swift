@@ -105,8 +105,10 @@ struct PushCompanionSettingsView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(GlassTheme.accent)
+                    .accessibilityLabel("Retry push connection")
                 }
             }
+            .animation(.easeInOut(duration: 0.25), value: s.title)
         }
     }
 
@@ -139,6 +141,7 @@ struct PushCompanionSettingsView: View {
                         .foregroundStyle(GlassTheme.secondary)
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: testResult)
         }
     }
 
@@ -167,6 +170,7 @@ struct PushCompanionSettingsView: View {
                             .foregroundStyle(copiedCode ? GlassTheme.green : GlassTheme.accent)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(copiedCode ? "Pairing code copied" : "Copy pairing code")
                     Spacer()
                     Button(showJoinField ? "Cancel" : "Use private code") { showJoinField.toggle() }
                         .font(.footnote.weight(.semibold))

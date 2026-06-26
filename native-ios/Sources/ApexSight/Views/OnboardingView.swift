@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
 
     private let pages: [OnboardingPage] = [
@@ -41,7 +42,7 @@ struct OnboardingView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: page)
+                .animation(pageAnimation, value: page)
 
                 pageIndicator
                     .padding(.bottom, GlassTheme.Space.xxl)
@@ -88,19 +89,33 @@ struct OnboardingView: View {
                 Capsule()
                     .fill(index == page ? GlassTheme.accent : GlassTheme.separator)
                     .frame(width: index == page ? 24 : 8, height: 8)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: page)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: page)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Page \(page + 1) of \(pages.count)")
+        // Let VoiceOver users swipe up/down on the dots to move between pages.
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment where page < pages.count - 1:
+                withAnimation(pageAnimation) { page += 1 }
+            case .decrement where page > 0:
+                withAnimation(pageAnimation) { page -= 1 }
+            default:
+                break
+            }
+        }
     }
 
     private var controls: some View {
         VStack(spacing: GlassTheme.Space.m) {
             Button {
                 if page < pages.count - 1 {
-                    withAnimation { page += 1 }
+                    // PillButtonStyle already fires a press tick; just advance.
+                    withAnimation(pageAnimation) { page += 1 }
                 } else {
+                    // A distinct success notification marks finishing onboarding.
+                    Haptics.success()
                     Task {
                         _ = try? await NativeNotificationManager.requestPermission()
                     }
@@ -125,6 +140,10 @@ struct OnboardingView: View {
             // notification-permission prompt).
             .allowsHitTesting(page < pages.count - 1)
         }
+    }
+
+    private var pageAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85)
     }
 }
 

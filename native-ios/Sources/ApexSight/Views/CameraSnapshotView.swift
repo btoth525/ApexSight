@@ -76,6 +76,7 @@ final class CameraSnapshotPoller: ObservableObject {
 /// when it has a frame so the card's status dot can go green.
 struct CameraSnapshotView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
     var contentMode: ContentMode = .fit
     var onFrame: ((Bool) -> Void)? = nil
@@ -99,14 +100,48 @@ struct CameraSnapshotView: View {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
+                        .transition(.opacity)
+                } else {
+                    // Calm loading affordance instead of a dead black box while the first
+                    // frame is still on its way.
+                    ConnectingHint()
                 }
             }
             .clipped()
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: poller.image == nil)
             .onAppear {
                 if let client = appState.client { poller.start(client: client) }
                 onFrame?(poller.image != nil)
             }
             .onDisappear { poller.stop() }
             .onChange(of: poller.image == nil) { _, isNil in onFrame?(!isNil) }
+    }
+}
+
+/// A calm "still connecting" affordance for live/snapshot tiles: a single soft, slowly
+/// breathing dot over the dark base — never a jarring spinner. Used behind grid tiles so a
+/// camera that hasn't delivered a frame yet reads as "warming up," not broken or frozen.
+/// Respects Reduce Motion (holds steady, no continuous pulse).
+struct ConnectingHint: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathe = false
+
+    var body: some View {
+        // Fill and self-center so the dot always sits mid-tile regardless of the parent
+        // ZStack's alignment (cards align .bottom, wall cells align .bottomLeading).
+        Circle()
+            .fill(Color.white.opacity(0.14))
+            .frame(width: 10, height: 10)
+            .scaleEffect(reduceMotion ? 1 : (breathe ? 1.0 : 0.6))
+            .opacity(reduceMotion ? 0.7 : (breathe ? 0.85 : 0.35))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    breathe = true
+                }
+            }
+            .accessibilityHidden(true)
     }
 }

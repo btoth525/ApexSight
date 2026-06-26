@@ -41,6 +41,7 @@ struct TriggersSettingsView: View {
                 .scrollContentBackground(.hidden)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: store.triggers.isEmpty)
         .navigationTitle("Triggers")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
@@ -54,6 +55,7 @@ struct TriggersSettingsView: View {
                         .font(.system(.body, weight: .semibold))
                         .foregroundStyle(GlassTheme.accent)
                 }
+                .accessibilityLabel("Add trigger")
             }
         }
         .sheet(isPresented: $isAdding) {
@@ -114,6 +116,7 @@ struct TriggersSettingsView: View {
                 ))
                 .labelsHidden()
                 .tint(GlassTheme.accent)
+                .accessibilityLabel("\(trigger.name) enabled")
             }
         }
     }

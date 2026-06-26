@@ -53,6 +53,11 @@ struct MainTabView: View {
         }
         .tint(GlassTheme.accent)
         .sensoryFeedback(.selection, trigger: selectedTab)
+        // A soft tick when a deep link (push tap / in-app banner) surfaces a detail sheet,
+        // so the jump registers tactically.
+        .sensoryFeedback(.impact(weight: .light), trigger: detailSheet?.id) { old, new in
+            old == nil && new != nil
+        }
         .sheet(item: $detailSheet) { sheet in
             NavigationStack {
                 switch sheet {

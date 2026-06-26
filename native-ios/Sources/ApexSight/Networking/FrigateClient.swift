@@ -343,6 +343,26 @@ struct FrigateClient {
         baseURL.appending(path: "vod/event/\(id)/master.m3u8")
     }
 
+    /// Lightweight preview "frames" Frigate keeps for a recording range — its documented
+    /// `GET api/preview/<camera>/start/<start>/end/<end>/frames`. Returns the timestamps of
+    /// the low-res scrub-preview frames so a timeline can show a richer still while dragging.
+    ///
+    /// Defensive on purpose: yields `[]` on any failure (older Frigate, previews disabled,
+    /// reverse-proxy quirks) so callers can treat previews as a best-effort enhancement that
+    /// never blocks or breaks scrubbing.
+    func previewFrameTimes(camera: String, start: Double, end: Double) async -> [Double] {
+        let path = "api/preview/\(camera)/start/\(Int(start))/end/\(Int(end))/frames"
+        guard let times: [Double] = try? await get(path) else { return [] }
+        return times
+    }
+
+    /// URL of a single preview frame at a given epoch time — Frigate's documented
+    /// `api/preview/<camera>/<timestamp>/thumbnail.jpg`. Pairs with `previewFrameTimes`
+    /// to drive a continuous scrub-preview strip without a heavyweight VOD load.
+    func previewFrameURL(camera: String, time: Double) -> URL {
+        baseURL.appending(path: "api/preview/\(camera)/\(Int(time))/thumbnail.jpg")
+    }
+
     // Events with full filter params
     func events(
         camera: String? = nil,

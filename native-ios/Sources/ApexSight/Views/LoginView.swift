@@ -70,6 +70,8 @@ struct LoginView: View {
                                     .foregroundStyle(GlassTheme.red)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .accessibilityElement(children: .combine)
                         }
 
                         Button {
@@ -88,6 +90,8 @@ struct LoginView: View {
                         .buttonStyle(PillButtonStyle())
                         .disabled(appState.isLoading || baseURL.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.errorMessage)
+                    .animation(.easeInOut(duration: 0.2), value: appState.isLoading)
                 }
                 .padding(.horizontal, GlassTheme.Space.l)
                 .opacity(appeared ? 1 : 0)
@@ -103,6 +107,11 @@ struct LoginView: View {
                     .opacity(appeared ? 1 : 0)
                     .animation(.easeOut(duration: 0.4).delay(0.55), value: appeared)
             }
+        }
+        // Buzz when a sign-in attempt fails so the error registers even if the user
+        // isn't looking at the form's error line.
+        .sensoryFeedback(.error, trigger: appState.errorMessage) { old, new in
+            old == nil && new != nil
         }
         .onAppear {
             appeared = true

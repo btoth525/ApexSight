@@ -76,29 +76,31 @@ struct CamerasTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if let error = appState.errorMessage {
-                    GlassCard {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 14, weight: .heavy))
-                            .foregroundStyle(GlassTheme.orange)
-                    }
+                    errorCard(error)
                 }
 
-                ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
-                    HStack(spacing: 12) {
-                        ForEach(row) { camera in
-                            CameraCard(camera: camera)
-                                .frame(maxWidth: .infinity)
-                        }
-                        if row.count < columns {
-                            ForEach(0..<(columns - row.count), id: \.self) { _ in
-                                Color.clear.frame(maxWidth: .infinity)
+                if appState.cameras.isEmpty {
+                    if appState.isLoading {
+                        // Tile-shaped skeleton (not a lone spinner) so the wall shows its
+                        // shape immediately while the first fetch is in flight.
+                        loadingSkeleton
+                    } else if appState.errorMessage == nil {
+                        emptyState
+                    }
+                } else {
+                    ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: 12) {
+                            ForEach(row) { camera in
+                                CameraCard(camera: camera)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            if row.count < columns {
+                                ForEach(0..<(columns - row.count), id: \.self) { _ in
+                                    Color.clear.frame(maxWidth: .infinity)
+                                }
                             }
                         }
                     }
-                }
-
-                if appState.cameras.isEmpty && !appState.isLoading {
-                    emptyState
                 }
             }
             .padding(16)
@@ -108,6 +110,39 @@ struct CamerasTab: View {
             if appState.cameras.isEmpty { await appState.refresh() }
             // Warm snapshots so every tile shows a frame instantly (never black).
             else { appState.prewarmSnapshots() }
+        }
+    }
+
+    /// A few tile-shaped shimmer placeholders so the first load reads as "filling in," not
+    /// a blank screen or a centered spinner.
+    private var loadingSkeleton: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<4, id: \.self) { _ in
+                SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// A calm error+retry card — the fetch failed but the user can recover in place.
+    private func errorCard(_ message: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(GlassTheme.orange)
+                Button {
+                    Haptics.tap()
+                    Task { await appState.refresh() }
+                } label: {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(PillButtonStyle())
+                .accessibilityLabel("Retry loading cameras")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -188,11 +223,17 @@ struct CamerasTab: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.15)) {
+            Haptics.select()
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
                 if draftHidden.contains(camera.name) { draftHidden.remove(camera.name) }
                 else { draftHidden.insert(camera.name) }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(titleize(camera.name)) camera")
+        .accessibilityValue(isHidden ? "Hidden" : "Shown on wall")
+        .accessibilityHint("Double tap to show or hide on your wall")
+        .accessibilityAddTraits(.isButton)
         // Home-screen-style jiggle, but respect Reduce Motion (no continuous animation).
         .rotationEffect(.degrees(reduceMotion ? 0 : (wobble ? wobbleAmount(for: camera) : -wobbleAmount(for: camera))))
         .animation(
@@ -275,6 +316,7 @@ struct CamerasTab: View {
     private var multiViewMenu: some View {
         Menu {
             Button {
+                Haptics.select()
                 liveWall = .all
             } label: {
                 Label("All Cameras Wall", systemImage: "rectangle.grid.2x2.fill")
@@ -283,6 +325,7 @@ struct CamerasTab: View {
                 Section("Saved Grids") {
                     ForEach(groupStore.groups) { group in
                         Button {
+                            Haptics.select()
                             liveWall = .group(group)
                         } label: {
                             Label("\(group.name) (\(group.cameraNames.count))", systemImage: "square.grid.2x2")
@@ -292,6 +335,7 @@ struct CamerasTab: View {
             }
             Divider()
             Button {
+                Haptics.tap()
                 path.append("groups")
             } label: {
                 Label("Manage Grids", systemImage: "slider.horizontal.3")
@@ -300,24 +344,18 @@ struct CamerasTab: View {
             Image(systemName: "rectangle.grid.2x2.fill")
                 .font(.system(size: 18, weight: .black))
                 .foregroundStyle(GlassTheme.cyan)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
         }
         .accessibilityLabel("Multi-camera views")
     }
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "video.slash.fill")
-                .font(.system(size: 44, weight: .black))
-                .foregroundStyle(GlassTheme.secondary)
-            Text("No Cameras")
-                .font(.system(size: 20, weight: .black))
-                .foregroundStyle(GlassTheme.primary)
-            Text("Pull to refresh, or check your Frigate connection in Settings.")
-                .font(.system(size: 14, weight: .heavy))
-                .foregroundStyle(GlassTheme.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
+        EmptyStateView(
+            icon: "video.slash.fill",
+            title: "No Cameras",
+            message: "Pull to refresh, or check your Frigate connection in Settings."
+        )
         .padding(.top, 60)
     }
 }

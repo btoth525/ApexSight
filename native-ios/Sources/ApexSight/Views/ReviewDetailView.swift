@@ -14,6 +14,9 @@ struct ReviewDetailView: View {
     @State private var detectionEvents: [FrigateEvent] = []
     @State private var loadingDetections = false
     @State private var reviewAIDescription: String?
+    /// Distinguishes "no summary" from "still fetching", so the AI card can show a skeleton
+    /// on first load instead of silently appearing only once text arrives.
+    @State private var isLoadingAIDescription = true
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -27,7 +30,12 @@ struct ReviewDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     hero
-                    if let reviewAIDescription { aiCard(reviewAIDescription) }
+                    if let reviewAIDescription {
+                        aiCard(reviewAIDescription)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    } else if isLoadingAIDescription {
+                        aiSkeletonCard
+                    }
                     timelineCard
                     objectsCard
                     actionsCard
@@ -52,7 +60,12 @@ struct ReviewDetailView: View {
         .onDisappear { clipModel.stop() }
         .task(id: review.id) {
             guard let client = appState.client else { return }
-            reviewAIDescription = try? await client.reviewDescription(id: review.id)
+            isLoadingAIDescription = true
+            let fetched = try? await client.reviewDescription(id: review.id)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                reviewAIDescription = fetched
+                isLoadingAIDescription = false
+            }
             let ids = review.data?.detections ?? []
             guard !ids.isEmpty else { return }
             loadingDetections = true
@@ -61,8 +74,10 @@ struct ReviewDetailView: View {
                 for id in ids { group.addTask { try? await client.event(id: id) } }
                 for await event in group { if let event { loaded.append(event) } }
             }
-            detectionEvents = loaded.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
-            loadingDetections = false
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                detectionEvents = loaded.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+                loadingDetections = false
+            }
         }
         .confirmationDialog(
             "Mark this review as handled?",
@@ -169,6 +184,26 @@ struct ReviewDetailView: View {
         }
     }
 
+    /// Skeleton shown while the review's AI summary is being fetched, so the card keeps its
+    /// shape instead of popping in only once text arrives.
+    private var aiSkeletonCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                HStack(spacing: GlassTheme.Space.s) {
+                    Image(systemName: "sparkles")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.accent)
+                    Text("AI Summary")
+                        .font(.headline)
+                        .foregroundStyle(GlassTheme.primary)
+                }
+                SkeletonBlock().frame(height: 13).frame(maxWidth: .infinity, alignment: .leading)
+                SkeletonBlock().frame(width: 200, height: 13)
+            }
+        }
+        .accessibilityLabel("Loading AI summary")
+    }
+
     private var snapshotURL: URL? {
         appState.client?.reviewSnapshotURL(review: review)
             ?? appState.client?.reviewThumbnailURL(review: review)
@@ -222,7 +257,11 @@ struct ReviewDetailView: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(GlassTheme.tertiary)
                         if loadingDetections {
-                            ProgressView().tint(GlassTheme.accent)
+                            // A couple of skeleton rows matching the detection layout, so the
+                            // section keeps its shape instead of a lone spinner.
+                            VStack(spacing: GlassTheme.Space.s) {
+                                ForEach(0..<2, id: \.self) { _ in detectionSkeletonRow }
+                            }
                         } else {
                             VStack(spacing: GlassTheme.Space.s) {
                                 ForEach(detectionEvents) { event in
@@ -253,6 +292,7 @@ struct ReviewDetailView: View {
                                         .cardStroke(GlassTheme.Radius.tile)
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityElement(children: .combine)
                                 }
                             }
                         }
@@ -268,6 +308,7 @@ struct ReviewDetailView: View {
                 SectionHeader("Actions")
 
                 Button {
+                    Haptics.tap()
                     showReviewedConfirmation = true
                 } label: {
                     Label("Mark Reviewed", systemImage: "checkmark.seal.fill")
@@ -312,6 +353,23 @@ struct ReviewDetailView: View {
         Haptics.success()
         isWorking = false
         dismiss()
+    }
+
+    /// One skeleton row mirroring a detection row (thumbnail + two text lines).
+    private var detectionSkeletonRow: some View {
+        HStack(spacing: GlassTheme.Space.m) {
+            SkeletonBlock(cornerRadius: GlassTheme.Radius.chip)
+                .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
+                SkeletonBlock().frame(width: 130, height: 13)
+                SkeletonBlock().frame(width: 90, height: 11)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(GlassTheme.Space.s)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+        .cardStroke(GlassTheme.Radius.tile)
+        .accessibilityHidden(true)
     }
 
     private func timelineMetric(_ title: String, value: String, icon: String, tint: Color) -> some View {

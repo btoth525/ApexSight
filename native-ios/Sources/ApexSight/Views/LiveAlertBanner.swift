@@ -11,23 +11,25 @@ struct LiveBannerModel: Identifiable, Equatable {
 /// is foregrounded. Tapping deep-links to the review; auto-dismisses after a few seconds.
 struct LiveAlertBanner: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
         VStack {
             if let banner = appState.liveBanner {
                 bannerCard(banner)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     .onAppear { scheduleDismiss(banner) }
             }
             Spacer()
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: appState.liveBanner)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.8), value: appState.liveBanner)
         .padding(.horizontal, 14)
     }
 
     private func bannerCard(_ banner: LiveBannerModel) -> some View {
         Button {
+            Haptics.tap()
             appState.deepLink = .review(banner.reviewID)
             dismiss()
         } label: {

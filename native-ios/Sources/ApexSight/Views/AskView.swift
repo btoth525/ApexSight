@@ -7,11 +7,13 @@ import SwiftUI
 struct AskView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var styleStore = NotificationStyleStore()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var question = ""
     @State private var answer: String?
     @State private var results: [FrigateEvent] = []
     @State private var loading = false
+    @State private var errorMessage: String?
     @State private var path = NavigationPath()
     @State private var faceNames: [String] = []
     @Environment(\.dismiss) private var dismiss
@@ -32,8 +34,13 @@ struct AskView: View {
                     VStack(spacing: GlassTheme.Space.l) {
                         askBar
                         if loading {
-                            HStack { Spacer(); ProgressView().tint(GlassTheme.accent); Spacer() }
-                                .padding(.top, 40)
+                            // A results-shaped skeleton instead of a lone spinner, so the
+                            // screen keeps its rhythm while the question resolves.
+                            askSkeleton
+                                .transition(.opacity)
+                        } else if let error = errorMessage {
+                            errorCard(error)
+                                .transition(.opacity)
                         } else if let answer {
                             answerCard(answer)
                             if results.isEmpty {
@@ -47,9 +54,12 @@ struct AskView: View {
                             }
                         } else {
                             suggestionsCard
+                                .transition(.opacity)
                         }
                     }
                     .padding(GlassTheme.Space.l)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: loading)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: answer)
                 }
             }
             .navigationTitle("Ask Your Cameras")
@@ -58,7 +68,7 @@ struct AskView: View {
             .navigationDestination(for: FrigateEvent.self) { EventDetailView(event: $0) }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { Haptics.tap(); dismiss() }
                 }
             }
             .task {
@@ -81,22 +91,26 @@ struct AskView: View {
                 .font(.body)
                 .foregroundStyle(GlassTheme.primary)
                 .submitLabel(.search)
-                .onSubmit { Task { await ask() } }
+                .onSubmit { Haptics.tap(); Task { await ask() } }
             if !question.isEmpty {
                 Button {
-                    question = ""; answer = nil; results = []
+                    Haptics.tap()
+                    question = ""; answer = nil; results = []; errorMessage = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
                         .foregroundStyle(GlassTheme.tertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear question")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, GlassTheme.Space.m)
         .padding(.vertical, 10)
         .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
         .cardStroke(GlassTheme.Radius.chip)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: question.isEmpty)
     }
 
     private var suggestionsCard: some View {
@@ -105,6 +119,7 @@ struct AskView: View {
                 SectionHeader("Try asking")
                 ForEach(suggestions, id: \.self) { s in
                     Button {
+                        Haptics.tap()
                         question = s
                         Task { await ask() }
                     } label: {
@@ -145,10 +160,53 @@ struct AskView: View {
         }
     }
 
+    /// Fetch failed — explain it and offer a retry, never a silent dead end.
+    private func errorCard(_ message: String) -> some View {
+        GlassCard {
+            VStack(spacing: GlassTheme.Space.m) {
+                EmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    title: "Couldn't ask your cameras",
+                    message: message
+                )
+                Button {
+                    Haptics.tap()
+                    Task { await ask() }
+                } label: {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// An answer-card + thumbnail-grid skeleton shown while a question resolves.
+    private var askSkeleton: some View {
+        VStack(spacing: GlassTheme.Space.l) {
+            GlassCard {
+                HStack(alignment: .top, spacing: GlassTheme.Space.m) {
+                    SkeletonBlock(cornerRadius: 8).frame(width: 26, height: 26)
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                        SkeletonBlock(cornerRadius: 6).frame(height: 16).frame(maxWidth: .infinity, alignment: .leading)
+                        SkeletonBlock(cornerRadius: 6).frame(width: 200, height: 14)
+                    }
+                }
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
+                ForEach(0..<6, id: \.self) { _ in
+                    SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
+                        .aspectRatio(1, contentMode: .fill)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
     private var resultsGrid: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: GlassTheme.Space.s)], spacing: GlassTheme.Space.s) {
             ForEach(results.prefix(30)) { event in
-                Button { path.append(event) } label: {
+                Button { Haptics.tap(); path.append(event) } label: {
                     // Adaptive ~104pt tile — downsample instead of decoding the full frame.
                     RemoteImage(url: appState.client?.eventThumbnailURL(id: event.id), maxPixelSize: 360)
                         .aspectRatio(1, contentMode: .fill)
@@ -172,6 +230,7 @@ struct AskView: View {
         // flight would race two requests on the shared answer/results state.
         guard !loading else { return }
         loading = true
+        errorMessage = nil
         defer { loading = false }
 
         let plan = AskParser.interpret(
@@ -181,20 +240,30 @@ struct AskView: View {
             style: styleStore.style
         )
 
-        // Pull a generous window, then refine on-device.
-        let raw = (try? await client.events(
-            camera: plan.camera,
-            label: plan.label,
-            after: plan.after,
-            before: plan.before,
-            limit: 200
-        )) ?? []
+        do {
+            // Pull a generous window, then refine on-device. A thrown fetch error now
+            // surfaces a retryable error state instead of silently answering "none".
+            let raw = try await client.events(
+                camera: plan.camera,
+                label: plan.label,
+                after: plan.after,
+                before: plan.before,
+                limit: 200
+            )
 
-        let filtered = raw.filter { plan.matches($0, style: styleStore.style) }
-            .sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+            let filtered = raw.filter { plan.matches($0, style: styleStore.style) }
+                .sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
 
-        results = filtered
-        answer = AskParser.answer(for: plan, results: filtered)
+            results = filtered
+            answer = AskParser.answer(for: plan, results: filtered)
+            // Tactile confirmation: a soft success for hits, a gentle warning for none.
+            if filtered.isEmpty { Haptics.warning() } else { Haptics.success() }
+        } catch {
+            errorMessage = error.localizedDescription
+            results = []
+            answer = nil
+            Haptics.error()
+        }
     }
 }
 

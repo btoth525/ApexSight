@@ -31,6 +31,7 @@ struct CameraGroupsView: View {
                     .padding(.top, GlassTheme.Space.xs)
                 }
                 .padding(GlassTheme.Space.l)
+                .animation(.easeInOut(duration: 0.25), value: store.groups.isEmpty)
             }
         }
         .navigationTitle("Camera Groups")
@@ -153,6 +154,7 @@ struct CameraGroupEditor: View {
                                     Text("3-up").tag(3)
                                 }
                                 .pickerStyle(.segmented)
+                                .sensoryFeedback(.selection, trigger: columns)
                             }
                         }
 
@@ -174,7 +176,7 @@ struct CameraGroupEditor: View {
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { Haptics.tap(); dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") { save() }
@@ -203,6 +205,9 @@ struct CameraGroupEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(titleize(camera.name))
+        .accessibilityAddTraits(selected.contains(camera.name) ? [.isButton, .isSelected] : .isButton)
     }
 
     private func save() {
@@ -216,6 +221,7 @@ struct CameraGroupEditor: View {
         } else {
             store.add(name: trimmed, cameraNames: ordered, columns: columns)
         }
+        Haptics.success()
         dismiss()
     }
 }

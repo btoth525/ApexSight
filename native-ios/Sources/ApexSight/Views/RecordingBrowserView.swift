@@ -20,6 +20,14 @@ struct RecordingBrowserView: View {
     @State private var playingTime: Double?           // epoch currently playing
     @State private var rangeStartHour: Int = 0
     @State private var rangeEndHour: Int = 23
+    /// Index of the event tick the playhead most recently crossed — used to fire a single
+    /// selection tick when the finger snaps past a detection, instead of buzzing continuously.
+    @State private var lastTickedEventIndex: Int?
+    /// Best-effort continuous preview frame timestamps for the visible range (Frigate Preview
+    /// API). Empty when previews are unavailable; scrubbing degrades to event thumbnails.
+    @State private var previewTimes: [Double] = []
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let calendar = Calendar.current
     private let windowSeconds: Double = 300           // 5-minute clip per scrub
@@ -33,6 +41,8 @@ struct RecordingBrowserView: View {
                     datePicker
                     if isLoading {
                         loadingCard
+                    } else if let errorMessage {
+                        errorCard(errorMessage)
                     } else {
                         scrubberCard
                         if let player = clipModel.player {
@@ -82,6 +92,28 @@ struct RecordingBrowserView: View {
                     .frame(height: 96)
                 SkeletonBlock()
                     .frame(width: 160, height: 14)
+            }
+        }
+    }
+
+    /// Calm error state with a retry, so a failed day fetch is recoverable instead of a
+    /// blank timeline.
+    private func errorCard(_ message: String) -> some View {
+        GlassCard {
+            VStack(spacing: GlassTheme.Space.m) {
+                EmptyStateView(
+                    icon: "wifi.exclamationmark",
+                    title: "Couldn't load this day",
+                    message: message
+                )
+                Button {
+                    Haptics.tap()
+                    Task { await loadDay(selectedDate) }
+                } label: {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
             }
         }
     }
@@ -240,17 +272,29 @@ struct RecordingBrowserView: View {
                     .scaleEffect(isScrubbing ? 1.18 : 1)
                     .offset(x: px - 11, y: h / 2 - 11)
                     .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isScrubbing)
+
+                // Floating scrub-preview bubble above the playhead while dragging.
+                if isScrubbing {
+                    scrubPreviewBubble(width: w, playheadX: px)
+                }
             }
+            .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82), value: isScrubbing)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        if !isScrubbing { Haptics.select() }
+                        if !isScrubbing {
+                            Haptics.select()
+                            lastTickedEventIndex = nil
+                        }
                         isScrubbing = true
-                        scrubFraction = Double(max(0, min(value.location.x / w, 1)))
+                        let f = Double(max(0, min(value.location.x / w, 1)))
+                        updateSnapHaptic(for: f)
+                        scrubFraction = f
                     }
                     .onEnded { _ in
                         isScrubbing = false
+                        lastTickedEventIndex = nil
                         playFromScrub()
                     }
             )
@@ -306,12 +350,116 @@ struct RecordingBrowserView: View {
         }
     }
 
-    private var scrubTimeLabel: String {
+    /// Start/end epoch of the currently selected hour range.
+    private var rangeBounds: (start: Double, end: Double) {
         let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
-        let rangeStart = dayStart + Double(rangeStartHour) * 3600
-        let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600
-        let t = rangeStart + scrubFraction * (rangeEnd - rangeStart)
-        return Date(timeIntervalSince1970: t).formatted(date: .omitted, time: .shortened)
+        return (dayStart + Double(rangeStartHour) * 3600,
+                dayStart + Double(rangeEndHour + 1) * 3600)
+    }
+
+    /// Epoch time under the playhead for the current scrub fraction.
+    private var scrubEpoch: Double {
+        let b = rangeBounds
+        return b.start + scrubFraction * (b.end - b.start)
+    }
+
+    private var scrubTimeLabel: String {
+        Date(timeIntervalSince1970: scrubEpoch).formatted(date: .omitted, time: .shortened)
+    }
+
+    /// The detection nearest the playhead, but only when it's within ~3 minutes — close
+    /// enough that its still is representative of what the user is scrubbing toward.
+    private var nearestEvent: FrigateEvent? {
+        let t = scrubEpoch
+        let candidate = dayEvents
+            .compactMap { e -> (FrigateEvent, Double)? in
+                guard let s = e.startTime else { return nil }
+                return (e, abs(s - t))
+            }
+            .min { $0.1 < $1.1 }
+        guard let (event, delta) = candidate, delta <= 180 else { return nil }
+        return event
+    }
+
+    /// Best continuous preview frame for the playhead time, when the Preview API is
+    /// available — used to keep the bubble live even between detections.
+    private var nearestPreviewURL: URL? {
+        guard !previewTimes.isEmpty, let client = appState.client else { return nil }
+        let t = scrubEpoch
+        guard let frameTime = previewTimes.min(by: { abs($0 - t) < abs($1 - t) }) else { return nil }
+        return client.previewFrameURL(camera: camera.name, time: frameTime)
+    }
+
+    /// Floating preview shown above the playhead while dragging — Protect's "zoomed-in
+    /// still while scrubbing", driven entirely by data we already hold (nearest detection
+    /// thumbnail), with a continuous preview frame as a bonus when Frigate exposes it, and a
+    /// graceful degrade to just the time label when neither is near.
+    @ViewBuilder
+    private func scrubPreviewBubble(width: CGFloat, playheadX: CGFloat) -> some View {
+        let event = nearestEvent
+        let thumbURL = event.flatMap { appState.client?.eventThumbnailURL(id: $0.id) } ?? nearestPreviewURL
+        VStack(spacing: GlassTheme.Space.xs) {
+            ZStack {
+                if let thumbURL {
+                    RemoteImage(url: thumbURL, contentMode: .fill)
+                } else {
+                    GlassTheme.surfaceHigh
+                    Image(systemName: "clock")
+                        .font(.title3)
+                        .foregroundStyle(GlassTheme.tertiary)
+                }
+            }
+            .frame(width: 112, height: 72)
+            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+
+            VStack(spacing: 1) {
+                Text(scrubTimeLabel)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(GlassTheme.primary)
+                    .monospacedDigit()
+                if let event {
+                    Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.displayLabel))")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(GlassTheme.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(GlassTheme.Space.s)
+        .frame(width: bubbleWidth)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
+                .strokeBorder(GlassTheme.separator, lineWidth: 1)
+        }
+        // Keep the bubble on-screen: it tracks the playhead but clamps near the edges.
+        .offset(x: max(0, min(playheadX - bubbleWidth / 2, width - bubbleWidth)), y: -100)
+        .allowsHitTesting(false)
+        .transition(.scale(scale: 0.85).combined(with: .opacity))
+        .accessibilityHidden(true)
+    }
+
+    /// Fixed width of the scrub-preview bubble — used both to size it and to clamp it
+    /// inside the track so it never runs off either edge.
+    private var bubbleWidth: CGFloat { 128 }
+
+    /// Fire one selection tick when the dragging playhead crosses a detection tick, so
+    /// scrubbing has the same tactile "click past markers" feel as a native picker.
+    private func updateSnapHaptic(for fraction: Double) {
+        let b = rangeBounds
+        let span = max(1, b.end - b.start)
+        let t = b.start + fraction * span
+        // ~6px worth of time on a typical track counts as "on" a tick.
+        let tolerance = span * 0.012
+        var hitIndex: Int?
+        for (i, e) in dayEvents.enumerated() {
+            guard let s = e.startTime else { continue }
+            if abs(s - t) <= tolerance { hitIndex = i; break }
+        }
+        if let hitIndex, hitIndex != lastTickedEventIndex {
+            Haptics.select()
+        }
+        lastTickedEventIndex = hitIndex
     }
 
     private func hourLabel(_ hour: Int) -> String {
@@ -481,6 +629,7 @@ struct RecordingBrowserView: View {
         playingTime = nil
         downloadFeedback = nil
 
+        previewTimes = []
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
 
@@ -489,7 +638,17 @@ struct RecordingBrowserView: View {
             camera: camera.name, after: startOfDay, before: endOfDay, limit: 500
         )
 
-        recordings = ((try? await recs) ?? []).sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+        // Recordings are the page's spine — if that fetch fails, surface a retry instead
+        // of a silently-empty timeline. Events are best-effort and never fail the screen.
+        do {
+            recordings = try await recs.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+        } catch {
+            recordings = []
+            dayEvents = []
+            errorMessage = error.localizedDescription
+            isLoading = false
+            return
+        }
         dayEvents = (try? await evs) ?? []
 
         // Park the playhead on the most recent detection and start playing immediately.
@@ -502,6 +661,17 @@ struct RecordingBrowserView: View {
         isLoading = false
         // Auto-play from the parked position so the user sees footage immediately.
         if !recordings.isEmpty { playFromScrub() }
+
+        // Best-effort continuous scrub previews. Fully detached and defensive: it no-ops on
+        // any failure and only enriches the bubble — it never blocks load or scrubbing.
+        Task {
+            let frames = await client.previewFrameTimes(
+                camera: camera.name,
+                start: startOfDay.timeIntervalSince1970,
+                end: endOfDay.timeIntervalSince1970
+            )
+            if !frames.isEmpty { previewTimes = frames }
+        }
     }
 
     private func playFromScrub() {

@@ -31,19 +31,31 @@ struct PTZControlView: View {
                     HStack(spacing: GlassTheme.Space.s) {
                         ForEach(presets, id: \.self) { preset in
                             Button {
+                                // Haptic comes from the unified .sensoryFeedback below.
                                 send(action: "preset", extra: ["preset": preset])
                             } label: {
                                 Text(preset)
                             }
                             .buttonStyle(PillButtonStyle())
+                            .accessibilityLabel("Go to preset \(preset)")
                         }
                     }
+                    .padding(.vertical, 2)
                 }
             }
         }
         .padding(GlassTheme.Space.l)
         .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         .cardStroke(GlassTheme.Radius.card)
+        // One light tick when a move command lands — not per repeat-tick, so a held
+        // direction confirms once instead of rattling. An error buzzes distinctly.
+        .sensoryFeedback(trigger: feedback) { _, new in
+            switch new {
+            case "Error": return .error
+            case .some: return .impact(weight: .light)
+            case nil: return nil
+            }
+        }
         .task { await loadPresets() }
     }
 
@@ -68,7 +80,8 @@ struct PTZControlView: View {
 
     private var stopButton: some View {
         Button {
-            Haptics.tap()
+            // Haptic confirmation comes from the unified .sensoryFeedback below (keyed to
+            // the feedback label) so stop doesn't double-buzz.
             send(action: "stop")
         } label: {
             RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
@@ -89,9 +102,10 @@ struct PTZControlView: View {
 
     private func ptzButton(icon: String, action: String, label: String) -> some View {
         Button {
-            // No explicit haptic here: button-repeat fires this closure continuously while
-            // held, so a per-tick buzz would feel like a rattle. The on-screen feedback label
-            // already confirms the move.
+            // No explicit per-tap haptic here: button-repeat fires this closure continuously
+            // while held, so a per-tick buzz would feel like a rattle. The unified
+            // .sensoryFeedback (keyed to the feedback label) gives one tick when the move
+            // lands, and the on-screen label confirms it visually.
             send(action: action)
         } label: {
             RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)

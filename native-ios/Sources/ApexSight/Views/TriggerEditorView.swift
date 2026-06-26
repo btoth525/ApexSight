@@ -78,6 +78,7 @@ struct TriggerEditorView: View {
                                 }
                                 Slider(value: $minConfidence, in: 0...1, step: 0.05)
                                     .tint(GlassTheme.accent)
+                                    .sensoryFeedback(.selection, trigger: minConfidence)
                                 Text("Only notify when detection confidence is at least this high.")
                                     .font(.footnote)
                                     .foregroundStyle(GlassTheme.secondary)
@@ -97,6 +98,7 @@ struct TriggerEditorView: View {
                                 }
                             }
                             .tint(GlassTheme.accent)
+                            .sensoryFeedback(.selection, trigger: respectQuietHours)
                         }
 
                         GlassCard {
@@ -107,6 +109,7 @@ struct TriggerEditorView: View {
                                     .foregroundStyle(GlassTheme.primary)
                             }
                             .tint(GlassTheme.accent)
+                            .sensoryFeedback(.selection, trigger: enabled)
                         }
                     }
                     .padding(GlassTheme.Space.l)
@@ -117,7 +120,7 @@ struct TriggerEditorView: View {
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { Haptics.tap(); dismiss() }
                         .font(.body)
                         .foregroundStyle(GlassTheme.secondary)
                 }
@@ -159,6 +162,7 @@ struct TriggerEditorView: View {
         } else {
             store.add(trigger)
         }
+        Haptics.success()
         dismiss()
     }
 
@@ -191,6 +195,8 @@ struct TriggerEditorView: View {
                                 }
                         }
                         .buttonStyle(.plain)
+                        .animation(.easeInOut(duration: 0.15), value: isSelected)
+                        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
                     }
                 }
             }

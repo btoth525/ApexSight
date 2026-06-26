@@ -285,6 +285,9 @@ struct SettingsTab: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label) appearance")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
@@ -308,5 +311,9 @@ struct SettingsTab: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle)
+        .accessibilityAddTraits(.isButton)
     }
 }

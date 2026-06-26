@@ -32,6 +32,7 @@ struct ServerSwitcherView: View {
                     }
 
                     Button {
+                        Haptics.tap()
                         showAddServer = true
                     } label: {
                         Label("Add Server", systemImage: "plus")
@@ -112,6 +113,7 @@ struct ServerSwitcherView: View {
                     .foregroundStyle(GlassTheme.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(session.baseURL.host() ?? session.baseURL.absoluteString)")
         }
         .padding(GlassTheme.Space.l)
         .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
@@ -161,6 +163,7 @@ private struct AddServerView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, GlassTheme.Space.l)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                     Button {
                         Task { await connect() }
@@ -178,6 +181,7 @@ private struct AddServerView: View {
                     Spacer()
                 }
                 .padding(.top, GlassTheme.Space.l)
+                .animation(.easeInOut(duration: 0.2), value: error)
             }
             .navigationTitle("Add Server")
             .navigationBarTitleDisplayMode(.inline)
@@ -210,10 +214,12 @@ private struct AddServerView: View {
             let client = FrigateClient(baseURL: normalized)
             let token = try await client.login(username: username, password: password)
             let session = FrigateSession(baseURL: normalized, username: username, token: token, password: password)
+            Haptics.success()
             onSave(session)
             dismiss()
         } catch {
             self.error = error.localizedDescription
+            Haptics.error()
         }
         isLoading = false
     }

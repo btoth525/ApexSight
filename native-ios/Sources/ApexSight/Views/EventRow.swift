@@ -16,33 +16,42 @@ struct EventRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 // Object in the title; the sub-label/plate shows as a chip below, so the
                 // recognized name isn't printed twice (displayLabel == subLabel otherwise).
+                // Semantic fonts (capped) so the row scales with Dynamic Type without breaking
+                // the fixed-height thumbnail layout at the largest accessibility sizes.
                 Text("\(NotificationCopy.emoji(for: event.label, subLabel: event.subLabel)) \(titleize(event.label))")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(GlassTheme.primary)
+                    .lineLimit(1)
                 Text("\(titleize(event.camera)) · \(relativeTime(event.startTime))")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.footnote.weight(.bold))
                     .foregroundStyle(GlassTheme.secondary)
+                    .lineLimit(1)
                 HStack(spacing: 8) {
                     if let score = event.score ?? event.topScore {
                         Text("\(Int(score * 100))% confidence")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(GlassTheme.tertiary)
+                            .lineLimit(1)
                     }
                     if let plate = event.recognizedLicensePlate, !plate.isEmpty {
                         chip("🔎 \(plate.uppercased())", tint: GlassTheme.purple)
+                    } else if let face = event.recognizedFace {
+                        // A recognized person reads cleaner as a face chip than a bare name.
+                        chip("👤 \(titleize(face))", tint: GlassTheme.cyan)
                     } else if let sub = event.subLabel, !sub.isEmpty {
                         chip(titleize(sub), tint: GlassTheme.cyan)
                     }
                 }
                 if let epoch = event.startTime {
                     Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(GlassTheme.tertiary)
+                        .lineLimit(1)
                 }
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .black))
+                .font(.footnote.weight(.black))
                 .foregroundStyle(GlassTheme.tertiary)
         }
         .padding(10)
@@ -53,8 +62,9 @@ struct EventRow: View {
 
     private func chip(_ text: String, tint: Color) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .black))
+            .font(.caption2.weight(.black))
             .foregroundStyle(tint)
+            .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(tint.opacity(0.14), in: Capsule())

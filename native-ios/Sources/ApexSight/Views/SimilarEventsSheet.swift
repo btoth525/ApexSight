@@ -42,7 +42,7 @@ struct SimilarEventsSheet: View {
             .glassNavBar()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { Haptics.tap(); dismiss() }
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GlassTheme.accent)
                 }
@@ -99,10 +99,12 @@ struct SimilarEventsSheet: View {
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(GlassTheme.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(GlassTheme.Space.m)
         .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         .cardStroke()
         .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens this event")
     }
 }
