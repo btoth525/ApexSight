@@ -97,12 +97,14 @@ struct MultiCameraGridView: View {
                 NavigationStack {
                     LiveStreamView(camera: camera)
                 }
+                .environmentObject(appState)
                 .preferredColorScheme(.dark)
             }
             .sheet(isPresented: $showBirdseye) {
                 NavigationStack {
                     LiveStreamView(camera: FrigateCamera(name: "birdseye", zones: [], objects: []))
                 }
+                .environmentObject(appState)
                 .preferredColorScheme(.dark)
             }
             // Cancel the pending spotlight-clear so it can't mutate state after the wall closes.
@@ -183,8 +185,11 @@ struct MultiCameraGridView: View {
 
     private var cameraRows: [[Int]] {
         let count = displayedCameras.count
-        return stride(from: 0, to: count, by: columns).map { start in
-            Array(start..<min(start + columns, count))
+        // max(1,...) so a corrupted/legacy persisted group with columns == 0 can't trap
+        // stride (stride(by: 0) is a fatal precondition).
+        let step = max(1, columns)
+        return stride(from: 0, to: count, by: step).map { start in
+            Array(start..<min(start + step, count))
         }
     }
 

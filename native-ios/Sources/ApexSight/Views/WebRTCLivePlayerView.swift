@@ -90,30 +90,53 @@ final class WebRTCConnectionLimiter {
     /// at launch. Tuned for the wall feeling instant while staying smooth.
     private let maxConcurrent = 3
     private var active = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    private struct Waiter { let id: UUID; let cont: CheckedContinuation<Bool, Never> }
+    private var waiters: [Waiter] = []
 
     private init() {}
 
-    /// Suspend until a connection slot is free. Each successful acquire MUST be balanced by
-    /// exactly one `release()` (on first frame, fail, or teardown) so the wall can never deadlock.
-    func acquire() async {
+    /// Suspend until a connection slot is free. Returns `true` when a slot was granted (the
+    /// caller MUST balance it with exactly one `release()`), or `false` if the awaiting task
+    /// was cancelled while queued (no slot was taken — the caller must NOT release). Making the
+    /// cancel path explicit stops a torn-down tile from orphaning its continuation in `waiters`
+    /// (which would drift the slot accounting and stall the wall's progressive upgrade).
+    func acquire() async -> Bool {
         if active < maxConcurrent {
             active += 1
-            return
+            return true
         }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            waiters.append(cont)
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                // Cancelled before we could park → don't take a slot.
+                if Task.isCancelled {
+                    cont.resume(returning: false)
+                } else {
+                    waiters.append(Waiter(id: id, cont: cont))
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancelWaiter(id) }
         }
     }
 
     /// Free a slot and let the next waiting tile begin connecting.
     func release() {
-        if let next = waiters.first {
-            waiters.removeFirst()
-            next.resume()           // hands the just-freed slot straight to the next waiter
+        if !waiters.isEmpty {
+            let next = waiters.removeFirst()
+            next.cont.resume(returning: true)   // hands the just-freed slot straight to the next waiter
         } else if active > 0 {
             active -= 1
         }
+    }
+
+    /// A queued tile was torn down: remove its waiter and resume it with `false` so its task
+    /// unblocks without consuming a slot. No-op if it was already granted a slot by `release()`.
+    private func cancelWaiter(_ id: UUID) {
+        guard let idx = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let w = waiters.remove(at: idx)
+        w.cont.resume(returning: false)
     }
 }
 
@@ -188,7 +211,9 @@ final class RTCClient: NSObject, ObservableObject {
             return
         }
         connectTask = Task { @MainActor [weak self] in
-            await WebRTCConnectionLimiter.shared.acquire()
+            let gotSlot = await WebRTCConnectionLimiter.shared.acquire()
+            // Cancelled while queued → no slot was taken, nothing to release.
+            guard gotSlot else { return }
             guard let self else { WebRTCConnectionLimiter.shared.release(); return }
             self.connectTask = nil
             // Torn down (or already rebuilt) while we waited for a slot — hand it back at once.

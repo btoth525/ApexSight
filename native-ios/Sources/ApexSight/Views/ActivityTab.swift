@@ -38,7 +38,8 @@ struct ActivityTab: View {
 
     private var sections: [DaySection] {
         let cal = Calendar.current
-        let grouped = Dictionary(grouping: displayedEvents) { event in
+        // Drop timestamp-less events so they don't bucket into a phantom "Jan 1, 1970" day.
+        let grouped = Dictionary(grouping: displayedEvents.filter { $0.startTime != nil }) { event in
             cal.startOfDay(for: Date(timeIntervalSince1970: event.startTime ?? 0))
         }
         return grouped.keys.sorted(by: sortNewest ? (>) : (<)).map { day in

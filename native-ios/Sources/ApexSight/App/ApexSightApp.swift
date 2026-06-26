@@ -61,8 +61,10 @@ struct ApexSightApp: App {
                     appState.startRealtime()
                     appState.startForegroundPolling()
                     appState.consumePendingIntentLink()
-                    // Register for push + (re)send the token to the relay on launch.
-                    PushRegistrar.ensureRegistered()
+                    // Register for push + (re)send the token to the relay on launch — but only
+                    // once signed in, so a brand-new user isn't hit with a notifications prompt
+                    // before they've even connected a server (sign-in requests it in context).
+                    if appState.session != nil { PushRegistrar.ensureRegistered() }
                     // Stream the Live Activity push-to-start token to the relay so incident
                     // banners can appear on the Lock Screen even when the app is closed.
                     LiveActivityPushManager.start()
@@ -80,8 +82,8 @@ struct ApexSightApp: App {
                         appState.startRealtime()
                         appState.startForegroundPolling()
                         appState.consumePendingIntentLink()
-                        // Re-assert push registration each time the app comes forward.
-                        PushRegistrar.ensureRegistered()
+                        // Re-assert push registration each time the app comes forward (signed in only).
+                        if appState.session != nil { PushRegistrar.ensureRegistered() }
                         // You're in the app now — clear the Dynamic Island/Lock-Screen
                         // incident so it gets out of your way.
                         IncidentActivityController.end()

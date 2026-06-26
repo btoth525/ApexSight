@@ -48,7 +48,14 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // Propagate SwiftUI content changes into the hosted view. Without this the host is
+        // frozen at its initial value — so a live WebRTC track (or a swapped AVPlayer/image)
+        // that arrives a moment AFTER this view is inserted never reaches the screen, leaving
+        // full-screen live black. Reassigning rootView lets the hosted representable's own
+        // updateUIView run and attach the new track/player.
+        context.coordinator.hostVC.rootView = content
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(content: content, onSingleTap: onSingleTap)
@@ -87,7 +94,9 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             if scrollView.zoomScale > scrollView.minimumZoomScale {
                 scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
             } else {
-                let tapPoint = gesture.location(in: scrollView.subviews.first)
+                // Locate the tap in the hosted view (not subviews.first, which can be a
+                // scroll indicator) so double-tap zooms to where the user actually tapped.
+                let tapPoint = gesture.location(in: hostVC.view)
                 let zoomRect = CGRect(
                     x: tapPoint.x - scrollView.bounds.width / 5,
                     y: tapPoint.y - scrollView.bounds.height / 5,

@@ -171,12 +171,12 @@ struct CameraQuickControlsSheet: View {
         .listRowBackground(Color.white.opacity(0.04))
     }
 
-    private func loadState() async {
-        isLoading = true
+    private func loadState(showLoading: Bool = true) async {
+        if showLoading { isLoading = true }
         if let state = try? await appState.client?.cameraControlState(camera: camera.name) {
             self.state = state
         }
-        isLoading = false
+        if showLoading { isLoading = false }
     }
 
     private func toggle(label: String, action: @escaping () async throws -> Void) async {
@@ -185,6 +185,9 @@ struct CameraQuickControlsSheet: View {
             showToast(label)
         } catch {
             showToast("Failed — check Frigate connection")
+            // The switch was flipped optimistically; re-sync to Frigate's real state so the
+            // control never shows a value that didn't actually take effect.
+            await loadState(showLoading: false)
         }
     }
 

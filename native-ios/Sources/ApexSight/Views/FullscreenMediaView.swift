@@ -70,6 +70,10 @@ struct FullscreenMediaView: View {
 /// full-screen with the same smooth zoom. Pass `nil` to hide the button (e.g. while loading).
 struct ExpandableMediaModifier: ViewModifier {
     let media: FullscreenMediaView.Media?
+    // The fullscreen cover hosts RemoteImage (for the .image case), which needs appState
+    // to load via appState.client. Cover content doesn't reliably inherit the presenter's
+    // environment objects, so capture and re-inject it here.
+    @EnvironmentObject private var appState: AppState
     @State private var showFullscreen = false
 
     func body(content: Content) -> some View {
@@ -90,6 +94,7 @@ struct ExpandableMediaModifier: ViewModifier {
             .fullScreenCover(isPresented: $showFullscreen) {
                 if let media {
                     FullscreenMediaView(media: media)
+                        .environmentObject(appState)
                 }
             }
     }

@@ -31,10 +31,14 @@ struct RecordingContextPlayerView: View {
                 .cardStroke(GlassTheme.Radius.card)
                 .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
                     guard !isSliding, let player = model.player else { return }
-                    currentTime = player.currentTime().seconds
+                    // Update duration FIRST so the clamp below uses the real range. Both
+                    // values are NaN until the HLS item is ready — feeding NaN into the
+                    // Slider or CMTime(seconds:) triggers a CoreGraphics NaN crash.
                     if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
                         duration = dur
                     }
+                    let t = player.currentTime().seconds
+                    if t.isFinite { currentTime = min(max(t, 0), max(duration, 1)) }
                 }
 
             // Scrub bar with event marker
