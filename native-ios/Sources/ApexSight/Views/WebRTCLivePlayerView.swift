@@ -525,23 +525,24 @@ struct WebRTCPlayerView: UIViewRepresentable {
     }
 }
 
-// MARK: - LiveVideoPlayerView (WebRTC primary → HLS/MJPEG fallback)
+// MARK: - LiveVideoPlayerView (WebRTC + HLS parallel race → MJPEG last resort)
 
-/// Live video: WebRTC as the INSTANT primary path, with automatic fallback to the proven
-/// HLS/MJPEG player when WebRTC can't connect (e.g. you're not on the home LAN, so the phone
-/// can't reach go2rtc's 8555 candidate). WebRTC connects silently behind the cached snapshot;
-/// if it isn't live within ~3s (or fails), we drop to HLSLivePlayerView — which itself cascades
-/// HLS → MJPEG. So live ALWAYS loads: instant at home, reliable everywhere else.
+/// Live video with a true parallel race: WebRTC and HLS both start at t=0. On the home LAN
+/// WebRTC wins in <1 s (instant live) and the HLS warmup is discarded. Off the home LAN —
+/// where go2rtc's 8555 port is unreachable — WebRTC fails in ~2 s, but HLS has been loading
+/// that whole time and is often already playing the moment WebRTC gives up. This turns a
+/// sequential 2 s + HLS-connect penalty into a parallel race where the user sees live video
+/// as fast as the slower of the two streams can deliver — not the SUM. HLS itself cascades
+/// HLS → MJPEG, so live ALWAYS loads everywhere.
 struct LiveVideoPlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
     var showControls: Bool = false
     var persistent: Bool = false
-    /// Use the low-res sub-stream — grid tiles pass true so several can stream smoothly at
-    /// once; the full-screen view uses the main (high-res) stream.
+    /// Always false everywhere — full quality stream only, no sub-stream.
     var useSub: Bool = false
     /// Skip the shared grid connect limiter — the full-screen viewer passes true so a camera
-    /// the user explicitly opened connects immediately instead of queueing behind the wall.
+    /// the user explicitly opened starts connecting immediately instead of queueing.
     var bypassConnectionLimit: Bool = false
     var pipController: LivePiPController? = nil
     var onSingleTap: (() -> Void)? = nil
@@ -549,6 +550,14 @@ struct LiveVideoPlayerView: View {
 
     @StateObject private var rtc: RTCClient
     @State private var fellBackToHLS = false
+    /// True while the parallel HLS layer is mounted. Flips to false when WebRTC delivers its
+    /// first frame (WebRTC won — stop the HLS warmup to save bandwidth). Stays true forever
+    /// when WebRTC fails so the already-loading HLS layer transitions to visible without
+    /// restarting from scratch.
+    @State private var hlsRaceActive = true
+    /// Tracks whether HLS has reported playing. Not propagated to `onPlaying` while HLS is
+    /// hidden behind the WebRTC layer — only surfaced once HLS becomes the visible primary.
+    @State private var hlsIsPlaying = false
 
     init(camera: FrigateCamera, showControls: Bool = false, persistent: Bool = false,
          useSub: Bool = false, bypassConnectionLimit: Bool = false,
@@ -565,18 +574,49 @@ struct LiveVideoPlayerView: View {
         _rtc = StateObject(wrappedValue: RTCClient(camera: camera.name, useSub: useSub, bypassLimiter: bypassConnectionLimit))
     }
 
-    /// "Live" means a real frame is actually on screen — not merely that the track arrived.
-    /// Gating the snapshot→video crossfade on this is what removes the black flash.
+    /// True when WebRTC should be skipped: it already failed for this camera, or a prior
+    /// camera poisoned the whole path (global off-LAN detection).
+    private var skipWebRTC: Bool {
+        fellBackToHLS || WebRTCAvailability.shared.isUnavailable(camera.name)
+    }
+
     private var isLive: Bool { rtc.firstFrameRendered }
 
     var body: some View {
-        if fellBackToHLS || WebRTCAvailability.shared.isUnavailable(camera.name) {
-            HLSLivePlayerView(
-                camera: camera, showControls: showControls, persistent: persistent,
-                pipController: pipController, onSingleTap: onSingleTap, onPlaying: onPlaying
-            )
-        } else {
-            webRTCContent
+        ZStack {
+            // HLS: pre-loading silently from t=0 alongside WebRTC.
+            // • Hidden (opacity 0) while WebRTC is still racing — no visible gap.
+            // • Visible the moment WebRTC fails or was already known-unavailable.
+            // • Only unmounted when WebRTC wins (firstFrameRendered), which stops it
+            //   to save bandwidth. The same instance survives the hidden→visible
+            //   transition so HLS never restarts mid-connection when WebRTC fails.
+            if hlsRaceActive {
+                HLSLivePlayerView(
+                    camera: camera,
+                    showControls: showControls,
+                    persistent: skipWebRTC ? persistent : false,
+                    pipController: skipWebRTC ? pipController : nil,
+                    onSingleTap: skipWebRTC ? onSingleTap : nil,
+                    onPlaying: { playing in
+                        hlsIsPlaying = playing
+                        // Only forward the playing state while HLS is the VISIBLE player —
+                        // not while it is warming up behind the WebRTC layer.
+                        if skipWebRTC { onPlaying?(playing) }
+                    }
+                )
+                .opacity(skipWebRTC ? 1 : 0)
+                .allowsHitTesting(skipWebRTC)
+            }
+
+            // WebRTC: on top while it still has a chance. Removed once it loses.
+            if !skipWebRTC {
+                webRTCContent
+            }
+        }
+        // The instant WebRTC gives up, surface HLS's buffered playing state so the caller
+        // sees "Live" immediately if HLS was already playing behind the scenes.
+        .onChange(of: skipWebRTC) { _, nowSkipping in
+            if nowSkipping { onPlaying?(hlsIsPlaying) }
         }
     }
 
@@ -597,9 +637,6 @@ struct LiveVideoPlayerView: View {
                 .opacity(isLive ? 1 : 0)
                 .animation(.easeInOut(duration: 0.28), value: isLive)
         }
-        // Connect once; the connection owns its own timeout + reconnect lifecycle. On a
-        // persistent surface (the Cameras tab) we DON'T tear down when the view disappears,
-        // so switching tabs and coming back leaves the stream already running — no reconnect.
         .onAppear {
             guard let client = appState.client else { fellBackToHLS = true; return }
             rtc.start(client: client)
@@ -607,14 +644,15 @@ struct LiveVideoPlayerView: View {
         .onDisappear {
             if !persistent { rtc.teardown() }
         }
-        // The connection reports .failed when it can't reach the camera or never delivers a
-        // frame in time — that's our cue to fall back to HLS.
         .onChange(of: rtc.state) { _, newState in
             if newState == .failed { goToHLS() }
         }
-        // Report "playing" only when a real frame has rendered, not when the connection opens.
         .onChange(of: rtc.firstFrameRendered) { _, rendered in
-            if rendered { onPlaying?(true) }
+            if rendered {
+                onPlaying?(true)
+                // WebRTC won the race — stop the parallel HLS warmup to save bandwidth.
+                hlsRaceActive = false
+            }
         }
     }
 
@@ -635,5 +673,7 @@ struct LiveVideoPlayerView: View {
         WebRTCAvailability.shared.markUnavailable(camera.name, global: !rtc.everConnected)
         rtc.teardown()
         withAnimation(.easeIn(duration: 0.2)) { fellBackToHLS = true }
+        // hlsRaceActive stays true — the HLS layer was pre-loading and now becomes the
+        // visible primary without restarting, giving the user the fastest possible transition.
     }
 }
