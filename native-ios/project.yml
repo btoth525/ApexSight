@@ -6,7 +6,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 18
+    CURRENT_PROJECT_VERSION: 65
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -38,6 +38,10 @@ targets:
           UIColorName: LaunchBackground
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: CarPlay
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
@@ -48,11 +52,13 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSFaceIDUsageDescription: Use Face ID to unlock your saved Frigate sign-in.
+        NSFaceIDUsageDescription: Unlock ApexSight with Face ID to keep your cameras private.
         NSLocalNetworkUsageDescription: ApexSight connects to Frigate on your local network.
-        NSCameraUsageDescription: Camera access is reserved for future visual search and setup features.
         NSPhotoLibraryAddUsageDescription: ApexSight saves camera clips you download to your photo library.
+        NSCameraUsageDescription: ApexSight uses real-time video components to play your live camera feeds instantly. It does not capture or record from this device's camera.
+        NSMicrophoneUsageDescription: ApexSight's real-time video components require this permission. ApexSight does not record audio from this device's microphone.
         NSSupportsLiveActivities: true
+        ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes:
           - audio
           - fetch
@@ -86,6 +92,8 @@ targets:
       path: Sources/ApexSightWidgets/Info.plist
       properties:
         CFBundleDisplayName: ApexSight Widgets
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
