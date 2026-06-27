@@ -8,7 +8,7 @@ struct ServerSwitcherView: View {
 
     var body: some View {
         ZStack {
-            GlassTheme.background.ignoresSafeArea()
+            GlassBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     GlassCard {
@@ -100,7 +100,7 @@ private struct AddServerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                GlassTheme.background.ignoresSafeArea()
+                GlassBackground()
                 VStack(spacing: 18) {
                     GlassCard {
                         VStack(spacing: 14) {

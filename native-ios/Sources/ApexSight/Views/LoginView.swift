@@ -150,7 +150,7 @@ struct LoginView: View {
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(focus == focusField ? GlassTheme.cyan.opacity(0.6) : .clear, lineWidth: 1.5)
+                    .stroke(focus == focusField ? GlassTheme.cyan.opacity(0.6) : .white.opacity(0.12), lineWidth: 1.5)
             )
             .focused($focus, equals: focusField)
             .submitLabel(submitLabel)
@@ -173,7 +173,7 @@ struct LoginView: View {
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(focus == focusField ? GlassTheme.cyan.opacity(0.6) : .clear, lineWidth: 1.5)
+                    .stroke(focus == focusField ? GlassTheme.cyan.opacity(0.6) : .white.opacity(0.12), lineWidth: 1.5)
             )
             .focused($focus, equals: focusField)
             .submitLabel(submitLabel)

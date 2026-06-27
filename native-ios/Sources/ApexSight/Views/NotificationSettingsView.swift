@@ -20,7 +20,7 @@ struct NotificationSettingsView: View {
 
     var body: some View {
         ZStack {
-            GlassTheme.background.ignoresSafeArea()
+            GlassBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     permissionCard

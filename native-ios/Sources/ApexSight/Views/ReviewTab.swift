@@ -157,7 +157,7 @@ struct ReviewTab: View {
             Text(selectedSeverity == "detection" ? "No Detections" : "All Clear")
                 .font(.system(size: 22, weight: .black))
                 .foregroundStyle(GlassTheme.primary)
-            Text(selectedSeverity == "detection" ? "No detection events for this filter." : "No review items")
+            Text(selectedSeverity == "detection" ? "No pending detections" : "Nothing pending review")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(GlassTheme.secondary)
         }

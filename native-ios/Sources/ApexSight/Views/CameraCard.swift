@@ -5,6 +5,7 @@ struct CameraCard: View {
     let camera: FrigateCamera
 
     @State private var isLive = false
+    @State private var pulsing = false
 
     private var capability: CameraCapability? {
         appState.capabilities.first(where: { $0.camera == camera.name })
@@ -78,9 +79,21 @@ struct CameraCard: View {
 
     private var liveBadge: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(isLive ? Color.green : Color.yellow)
-                .frame(width: 7, height: 7)
+            ZStack {
+                if isLive {
+                    Circle()
+                        .fill(Color.green.opacity(0.35))
+                        .frame(width: 14, height: 14)
+                        .scaleEffect(pulsing ? 1.6 : 0.6)
+                        .opacity(pulsing ? 0 : 0.9)
+                        .animation(.easeOut(duration: 1.1).repeatForever(autoreverses: false), value: pulsing)
+                }
+                Circle()
+                    .fill(isLive ? Color.green : GlassTheme.yellow)
+                    .frame(width: 7, height: 7)
+            }
+            .onAppear { pulsing = isLive }
+            .onChange(of: isLive) { _, live in pulsing = live }
             Text(isLive ? "LIVE" : "…")
                 .font(.system(size: 10, weight: .black))
                 .foregroundStyle(.white)

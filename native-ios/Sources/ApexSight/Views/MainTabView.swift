@@ -82,6 +82,7 @@ struct MainTabView: View {
             ForEach(Tab.allCases) { tab in
                 view(for: tab)
                     .tabItem { Label(tab.title, systemImage: tab.icon) }
+                    .badge(tab == .review ? appState.reviews.count : 0)
                     .tag(tab)
             }
         }

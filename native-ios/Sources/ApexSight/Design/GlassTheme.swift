@@ -25,6 +25,7 @@ enum GlassTheme {
     static let red    = Color(red: 1.00, green: 0.27, blue: 0.23)
     static let purple = Color(red: 0.68, green: 0.42, blue: 1.00)
     static let teal   = Color(red: 0.22, green: 0.80, blue: 0.72)
+    static let yellow = Color(red: 1.00, green: 0.84, blue: 0.20)
 }
 
 // MARK: - GlassCard
@@ -53,6 +54,7 @@ struct GlassCard<Content: View>: View {
                         lineWidth: 1
                     )
             }
+            .shadow(color: .black.opacity(0.28), radius: 16, x: 0, y: 6)
     }
 }
 
@@ -74,6 +76,13 @@ struct GlassBackground: View {
                 center: .bottomTrailing,
                 startRadius: 0,
                 endRadius: 380
+            )
+            .ignoresSafeArea()
+            RadialGradient(
+                colors: [GlassTheme.purple.opacity(0.06), .clear],
+                center: .center,
+                startRadius: 0,
+                endRadius: 300
             )
             .ignoresSafeArea()
         }
