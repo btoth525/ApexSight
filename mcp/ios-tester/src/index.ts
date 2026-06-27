@@ -514,7 +514,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── Add finding ───────────────────────────────────────────────────────
       case "add_finding": {
-        const { screen, status, description } = args as Finding;
+        const { screen, status, description } = args as unknown as Finding;
         findings.push({ screen, status, description, timestamp: new Date().toISOString() });
         const icon = status === "pass" ? "✅" : status === "fail" ? "❌" : "⚠️";
         return {
