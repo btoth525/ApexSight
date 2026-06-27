@@ -77,6 +77,59 @@ function findBuiltApp(derivedData: string): string | null {
   }
 }
 
+// ── Reliable touch input ───────────────────────────────────────────────────
+// `simctl io` has no tap/swipe; idb is archived/unavailable. So we map device
+// LOGICAL points -> macOS desktop points using the LIVE Simulator window frame
+// (aspect-fit, centered, title-bar aware) and drive cliclick. This adapts if the
+// window moves/resizes and works on any device size (no hardcoded resolution).
+
+const TITLE_BAR = 28; // Simulator window title bar height (points)
+
+function simWindowFrame(): { x: number; y: number; w: number; h: number } {
+  const js =
+    'var se=Application("System Events");var w=se.processes["Simulator"].windows[0];' +
+    "JSON.stringify({p:w.position(),s:w.size()});";
+  const out = execFileSync("osascript", ["-l", "JavaScript", "-e", js], { encoding: "utf8" });
+  const d = JSON.parse(out);
+  return { x: d.p[0], y: d.p[1], w: d.s[0], h: d.s[1] };
+}
+
+// Device logical size = screenshot pixels / backing scale. Cached per process.
+let deviceLogical: { w: number; h: number } | null = null;
+function deviceLogicalSize(udid: string): { w: number; h: number } {
+  if (deviceLogical) return deviceLogical;
+  const tmp = path.join(os.tmpdir(), `apexsight-cal-${Date.now()}.png`);
+  sim("io", udid, "screenshot", tmp);
+  const out = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", tmp], { encoding: "utf8" });
+  fs.unlinkSync(tmp);
+  let pw = 0, ph = 0;
+  for (const line of out.split("\n")) {
+    if (line.includes("pixelWidth")) pw = parseInt(line.split(":")[1].trim(), 10);
+    if (line.includes("pixelHeight")) ph = parseInt(line.split(":")[1].trim(), 10);
+  }
+  const scale = pw >= 1000 ? 3 : 2; // Pro/Max are @3x, others @2x
+  deviceLogical = { w: pw / scale, h: ph / scale };
+  return deviceLogical;
+}
+
+function logicalToScreen(lx: number, ly: number, udid: string): { sx: number; sy: number } {
+  const win = simWindowFrame();
+  const dev = deviceLogicalSize(udid);
+  const cx = win.x, cy = win.y + TITLE_BAR;
+  const cw = win.w, ch = win.h - TITLE_BAR;
+  const a = dev.w / dev.h;
+  let sW: number, sH: number;
+  if (cw / ch > a) { sH = ch; sW = ch * a; } else { sW = cw; sH = cw / a; }
+  const sX = cx + (cw - sW) / 2;
+  const sY = cy + (ch - sH) / 2;
+  return { sx: Math.round(sX + (lx / dev.w) * sW), sy: Math.round(sY + (ly / dev.h) * sH) };
+}
+
+function activateSimulator(): void {
+  // cliclick on a background window only focuses it; activate first so the tap lands.
+  execFileSync("osascript", ["-e", 'tell application "Simulator" to activate'], { stdio: "pipe" });
+}
+
 // ── Findings accumulator (persists for the lifetime of the server process) ─
 
 interface Finding {
@@ -108,7 +161,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "tap",
       description:
         "Tap at (x, y) on the simulator screen. " +
-        "iPhone 16 Pro screen is 393×852 logical points. " +
+        "Coordinates are device LOGICAL points (auto-detected per device; " +
+        "iPhone 17 Pro is 402×874, 16 Pro is 393×852). " +
         "Always call screenshot first to identify the right coordinates.",
       inputSchema: {
         type: "object",
@@ -332,8 +386,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // ── Tap ───────────────────────────────────────────────────────────────
       case "tap": {
         const { x, y } = args as { x: number; y: number };
-        sim("io", udid, "tap", String(Math.round(x)), String(Math.round(y)));
-        await new Promise((r) => setTimeout(r, 350));
+        const { sx, sy } = logicalToScreen(x, y, udid);
+        activateSimulator();
+        execFileSync("cliclick", [`c:${sx},${sy}`], { stdio: "pipe" });
+        await new Promise((r) => setTimeout(r, 400));
         return { content: [{ type: "text", text: `Tapped (${x}, ${y})` }] };
       }
 
@@ -342,13 +398,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { x1, y1, x2, y2, duration = 0.5 } = args as {
           x1: number; y1: number; x2: number; y2: number; duration?: number;
         };
-        sim(
-          "io", udid, "swipe",
-          String(Math.round(x1)), String(Math.round(y1)),
-          String(Math.round(x2)), String(Math.round(y2)),
-          String(duration)
-        );
-        await new Promise((r) => setTimeout(r, Math.round(duration * 1000) + 200));
+        const from = logicalToScreen(x1, y1, udid);
+        const to = logicalToScreen(x2, y2, udid);
+        activateSimulator();
+        // Press, glide through interpolated points (so it reads as a drag, not a flick),
+        // release. `w:8` waits 8ms between moves for a natural velocity.
+        const steps = Math.max(12, Math.round(duration * 40));
+        const cli: string[] = [`dd:${from.sx},${from.sy}`];
+        for (let i = 1; i <= steps; i++) {
+          const mx = Math.round(from.sx + ((to.sx - from.sx) * i) / steps);
+          const my = Math.round(from.sy + ((to.sy - from.sy) * i) / steps);
+          cli.push("w:8", `dm:${mx},${my}`);
+        }
+        cli.push(`du:${to.sx},${to.sy}`);
+        execFileSync("cliclick", cli, { stdio: "pipe" });
+        await new Promise((r) => setTimeout(r, Math.round(duration * 1000) + 250));
         return { content: [{ type: "text", text: `Swiped (${x1},${y1}) → (${x2},${y2})` }] };
       }
 
@@ -363,7 +427,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // ── Hardware button ───────────────────────────────────────────────────
       case "press_button": {
         const { button } = args as { button: string };
-        sim("io", udid, "button", button);
+        activateSimulator();
+        // simctl has no button command; drive the Simulator's keyboard shortcuts.
+        if (button === "home") {
+          execFileSync("osascript", ["-e",
+            'tell application "System Events" to keystroke "h" using {command down, shift down}'], { stdio: "pipe" });
+        } else if (button === "lock") {
+          execFileSync("osascript", ["-e",
+            'tell application "System Events" to keystroke "l" using {command down}'], { stdio: "pipe" });
+        } else {
+          return { content: [{ type: "text", text: `Unsupported button "${button}" (use home or lock)` }] };
+        }
         await new Promise((r) => setTimeout(r, 500));
         return { content: [{ type: "text", text: `Pressed ${button}` }] };
       }
