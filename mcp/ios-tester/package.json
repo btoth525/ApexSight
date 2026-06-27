@@ -1,0 +1,22 @@
+{
+  "name": "apexsight-ios-tester",
+  "version": "1.0.0",
+  "description": "MCP server for AI-driven iOS Simulator testing of ApexSight",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "apexsight-ios-tester": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
