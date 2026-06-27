@@ -3,6 +3,7 @@ import UIKit
 
 struct ReviewTab: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     // Persisted so the filter/sort choice survives navigating away and back.
     @AppStorage("review.selectedSeverity") private var selectedSeverity = "all"
     @AppStorage("review.sortNewest") private var sortNewest = true
@@ -266,8 +267,10 @@ struct ReviewTab: View {
                 EventDetailView(event: event)
             }
             .task { if appState.reviews.isEmpty { await appState.refresh() } }
-            .task(id: selectedSeverity) {
-                guard selectedSeverity == "detection" else { return }
+            .task(id: "\(selectedSeverity)-\(scenePhase)") {
+                // Re-keyed on scenePhase so backgrounding cancels the loop and foreground
+                // restarts it — no 15s polling while the app is in the background.
+                guard selectedSeverity == "detection", scenePhase == .active else { return }
                 if detectionItems.isEmpty { await loadDetections() }
                 // Keep detections live while this filter is active (the 15s poller only
                 // refreshes alerts); the task is cancelled when the filter changes or the
@@ -312,5 +315,6 @@ struct ReviewTab: View {
                 }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

@@ -22,6 +22,14 @@ final class ClipPlayerModel: ObservableObject {
     private var endObs: NSObjectProtocol?
     private var statusObs: NSKeyValueObservation?
 
+    deinit {
+        // Defensive cleanup if the owning view never called stop(): the block-based
+        // NotificationCenter token is NOT auto-removed on dealloc. Both APIs are
+        // thread-safe, so this is safe from the nonisolated deinit.
+        if let endObs { NotificationCenter.default.removeObserver(endObs) }
+        statusObs?.invalidate()
+    }
+
     /// Load only if nothing is playing yet (idempotent — safe to call from `.task`).
     func loadIfNeeded(client: FrigateClient, url: URL) {
         guard player == nil else { return }

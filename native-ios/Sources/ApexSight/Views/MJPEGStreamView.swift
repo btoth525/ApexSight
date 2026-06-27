@@ -43,6 +43,9 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     private var buffer = Data()
     private var hasDeliveredFrame = false
     private var isDisplayPending = false
+    /// Kept so we can re-open the stream after returning from background.
+    private var currentRequest: URLRequest?
+    private var lifecycleObservers: [NSObjectProtocol] = []
     /// JPEG frames decode here, off the main thread — decoding once per delivered frame
     /// per camera on main is what janks a multi-camera wall on the MJPEG fallback path.
     private let decodeQueue = DispatchQueue(label: "com.brandontoth.apexsight.mjpeg.decode", qos: .userInitiated)
@@ -63,23 +66,67 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    deinit {
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
     func start(request: URLRequest) {
+        currentRequest = request
+        observeLifecycle()
+        openConnection()
+    }
+
+    /// Open (or re-open) the MJPEG connection for the stored request.
+    private func openConnection() {
+        guard let request = currentRequest, task == nil else { return }
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = .infinity
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        // Deliver delegate callbacks on main so `buffer`/`isDisplayPending` are only ever
+        // touched there — including from suspend()/stop() — with no cross-thread data race.
+        // The expensive part (JPEG decode) still runs off-main on `decodeQueue`; only the
+        // cheap multipart byte-scan happens on main.
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
         self.session = session
         let task = session.dataTask(with: request)
         self.task = task
         task.resume()
     }
 
-    func stop() {
+    /// Pause networking when the app backgrounds — keep the last frame on screen and the
+    /// request so we can resume instantly on return. Without this the data task keeps
+    /// pulling frames in the background (battery/data drain) on the HLS→MJPEG fallback path.
+    private func observeLifecycle() {
+        guard lifecycleObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.suspend()
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.openConnection()
+        })
+    }
+
+    /// Tear down the live connection but keep `currentRequest` so it can be re-opened.
+    private func suspend() {
         task?.cancel()
         task = nil
         session?.invalidateAndCancel()
         session = nil
+        buffer.removeAll(keepingCapacity: true)
+        isDisplayPending = false
+    }
+
+    func stop() {
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        lifecycleObservers.removeAll()
+        currentRequest = nil
+        suspend()
         buffer.removeAll()
     }
 

@@ -321,6 +321,7 @@ struct ActivityTab: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     // MARK: - Data

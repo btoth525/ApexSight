@@ -155,7 +155,9 @@ struct IncidentLiveActivity: Widget {
     /// Percent-encode the camera name so names with spaces/specials still build a valid URL.
     private func cameraDeepLink(_ camera: String) -> URL {
         let encoded = camera.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? camera
-        return URL(string: "apex://camera?name=\(encoded)") ?? URL(string: "apex://camera")!
+        return URL(string: "apex://camera?name=\(encoded)")
+            ?? URL(string: "apex://camera")
+            ?? URL(fileURLWithPath: "/")
     }
 
     /// The object emoji — the title already starts with it (e.g. "🚗 Car", "🧍 Person").
