@@ -95,7 +95,7 @@ final class HLSLiveModel: ObservableObject {
         teardownObservers()
         player?.pause()
 
-        item.preferredForwardBufferDuration = 2
+        item.preferredForwardBufferDuration = 4
 
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.automaticallyWaitsToMinimizeStalling = false
@@ -242,13 +242,13 @@ struct HLSLivePlayerView: View {
                 playerLayer(player)
             }
 
-            // Subtle connecting pill at the bottom — non-intrusive, out of the way.
+            // Subtle status pill at the bottom — non-intrusive, out of the way.
             if model.state == .connecting {
                 VStack {
                     Spacer()
                     HStack(spacing: 6) {
                         ProgressView().tint(.white).scaleEffect(0.65)
-                        Text(model.usingFallback ? "Reconnecting…" : "Connecting…")
+                        Text(model.usingFallback ? "Sub-stream…" : "Connecting…")
                             .font(.system(size: 11, weight: .heavy))
                             .foregroundStyle(.white)
                     }
@@ -256,6 +256,26 @@ struct HLSLivePlayerView: View {
                     .padding(.vertical, 7)
                     .background(.black.opacity(0.55), in: Capsule())
                     .padding(.bottom, 14)
+                }
+                .allowsHitTesting(false)
+            }
+
+            // Sub-stream quality badge — shown when playing to let the user know the
+            // lower-quality fallback stream is active (main stream failed 3+ times).
+            if model.usingFallback && model.state == .playing {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text("SUB")
+                            .font(.system(size: 9, weight: .black))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.black.opacity(0.45), in: Capsule())
+                            .padding(.trailing, showControls ? 56 : 8)
+                            .padding(.bottom, 8)
+                    }
                 }
                 .allowsHitTesting(false)
             }

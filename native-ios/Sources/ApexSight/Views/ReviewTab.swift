@@ -26,8 +26,12 @@ struct ReviewTab: View {
     private func loadDetections() async {
         guard let client = appState.client else { return }
         loadingDetections = true
-        detectionItems = (try? await client.reviews(limit: 100, severity: "detection")) ?? []
-        loadingDetections = false
+        defer { loadingDetections = false }
+        do {
+            detectionItems = try await client.reviews(limit: 100, severity: "detection")
+        } catch {
+            if !error.isCancellation { detectionItems = [] }
+        }
     }
 
     private var showEmptyState: Bool {
@@ -136,7 +140,7 @@ struct ReviewTab: View {
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
             }
-            .task { if appState.reviews.isEmpty { await appState.refresh() } }
+            .task { await appState.refreshAlerts() }
             .task(id: selectedSeverity) {
                 if selectedSeverity == "detection" && detectionItems.isEmpty {
                     await loadDetections()

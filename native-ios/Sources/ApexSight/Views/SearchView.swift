@@ -470,7 +470,9 @@ struct SearchView: View {
                 results = results.filter { ($0.recognizedLicensePlate ?? "").uppercased().contains(plate) }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            if !error.isCancellation {
+                errorMessage = error.localizedDescription
+            }
             results = []
         }
     }

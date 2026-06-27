@@ -101,7 +101,7 @@ struct CamerasTab: View {
             .padding(16)
         }
         .refreshable { await appState.refresh() }
-        .task { if appState.cameras.isEmpty { await appState.refresh() } }
+        .task { if appState.cameras.isEmpty { await appState.refresh() } else { await appState.refreshAlerts() } }
     }
 
     private var cameraRows: [[FrigateCamera]] {

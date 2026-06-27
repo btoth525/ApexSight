@@ -43,7 +43,7 @@ struct ReviewDetailView: View {
             let end = review.endTime ?? (start + 20)
             // VOD HLS for the review's time range — Frigate's documented, iOS-recommended
             // recording source (`/vod/<camera>/start/<start>/end/<end>/master.m3u8`).
-            clipModel.loadIfNeeded(
+            clipModel.load(
                 client: client,
                 url: client.recordingHLSURL(camera: review.camera, start: start, end: end)
             )

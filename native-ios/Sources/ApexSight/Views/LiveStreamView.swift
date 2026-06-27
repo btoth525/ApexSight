@@ -29,7 +29,7 @@ struct LiveStreamView: View {
                 bottomBar
             }
         }
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
         }

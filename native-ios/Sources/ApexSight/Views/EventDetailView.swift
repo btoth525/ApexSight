@@ -207,13 +207,13 @@ struct EventDetailView: View {
                         .foregroundStyle(GlassTheme.green)
                 }
             }
-            .task {
+            .task(id: event.id) {
                 guard hasClip, let client = appState.client else { return }
                 // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`) —
                 // the documented, iOS-recommended way to play an event back.
-                clipModel.loadIfNeeded(client: client, url: client.eventVodURL(id: event.id))
+                clipModel.load(client: client, url: client.eventVodURL(id: event.id))
             }
-            .onDisappear { clipModel.pause() }
+            .onDisappear { clipModel.stop() }
         }
     }
 

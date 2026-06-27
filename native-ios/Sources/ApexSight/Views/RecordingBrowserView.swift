@@ -33,6 +33,23 @@ struct RecordingBrowserView: View {
                     datePicker
                     if isLoading {
                         ProgressView().tint(GlassTheme.cyan).frame(maxWidth: .infinity).padding(.top, 30)
+                    } else if let error = errorMessage {
+                        GlassCard {
+                            HStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundStyle(GlassTheme.orange)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Could not load recordings")
+                                        .font(.system(size: 15, weight: .black))
+                                        .foregroundStyle(GlassTheme.primary)
+                                    Text(error)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(GlassTheme.secondary)
+                                }
+                            }
+                        }
+                        .padding(.top, 12)
                     } else {
                         scrubberCard
                         if let player = clipModel.player {
@@ -415,13 +432,21 @@ struct RecordingBrowserView: View {
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
 
-        async let recs = client.recordings(camera: camera.name, after: startOfDay, end: endOfDay)
-        async let evs = client.events(
-            camera: camera.name, after: startOfDay, before: endOfDay, limit: 500
-        )
-
-        recordings = ((try? await recs) ?? []).sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
-        dayEvents = (try? await evs) ?? []
+        do {
+            async let recs = client.recordings(camera: camera.name, after: startOfDay, end: endOfDay)
+            async let evs = client.events(
+                camera: camera.name, after: startOfDay, before: endOfDay, limit: 500
+            )
+            let loadedRecs = try await recs
+            recordings = loadedRecs.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+            dayEvents = (try? await evs) ?? []
+        } catch {
+            if !error.isCancellation {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+            return
+        }
 
         // Park the playhead on the most recent detection and start playing immediately.
         if let latest = dayEvents.compactMap(\.startTime).max() {

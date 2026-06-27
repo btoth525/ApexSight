@@ -96,16 +96,18 @@ struct RecordingContextPlayerView: View {
             guard let client = appState.client else { return }
             let url = client.recordingHLSURL(camera: camera, start: windowStart, end: windowEnd)
             model.loadIfNeeded(client: client, url: url)
-            // Seek to event start offset
-            if let es = eventStart {
-                let offset = es - windowStart
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if let player = model.player {
-                    let target = CMTime(seconds: max(0, offset - 5), preferredTimescale: 600)
-                    // Inside this async `.task`, AVPlayer.seek resolves to the async
-                    // overload, so it must be awaited (and its Bool result discarded).
-                    _ = await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+            // Seek to a few seconds before the event starts. Poll until the item is
+            // ready — a fixed sleep is fragile on slow connections.
+            if let es = eventStart, let player = model.player {
+                let offset = max(0, es - windowStart - 3)
+                var attempts = 0
+                while attempts < 20, player.currentItem?.status != .readyToPlay {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    attempts += 1
                 }
+                guard !Task.isCancelled else { return }
+                let target = CMTime(seconds: offset, preferredTimescale: 600)
+                _ = await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
             }
         }
         .onDisappear { model.pause() }

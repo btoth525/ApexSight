@@ -37,7 +37,9 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.hostVC.rootView = content
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(content: content)

@@ -79,7 +79,7 @@ struct ActivityTab: View {
                     }
                 }
                 .refreshable { await appState.refresh() }
-                .task { if appState.events.isEmpty { await appState.refresh() } }
+                .task { await appState.refreshAlerts() }
             }
             .navigationTitle("Activity")
             .navigationBarTitleDisplayMode(.inline)
