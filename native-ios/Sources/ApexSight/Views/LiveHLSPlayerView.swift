@@ -34,6 +34,10 @@ final class HLSLiveModel: ObservableObject {
     private var makeSubURL: (() -> URL?)?
     private var makeItem: ((URL) -> AVPlayerItem?)?
     private var reauth: (() async -> Bool)?
+    /// Start on the lighter `_sub` stream (camera wall / grid — keeps many simultaneous
+    /// feeds smooth on real hardware), falling back to main if sub is unavailable. The
+    /// full-screen viewer leaves this false so a single focused camera plays full quality.
+    private var preferSub = false
 
     private var statusObs: NSKeyValueObservation?
     private var timeControlObs: NSKeyValueObservation?
@@ -66,12 +70,14 @@ final class HLSLiveModel: ObservableObject {
 
     func configure(
         cameraName: String = "",
+        preferSub: Bool = false,
         makeURL: @escaping () -> URL?,
         makeSubURL: (() -> URL?)? = nil,
         makeItem: @escaping (URL) -> AVPlayerItem?,
         reauth: @escaping () async -> Bool
     ) {
         self.cameraName = cameraName
+        self.preferSub = preferSub
         self.makeURL = makeURL
         self.makeSubURL = makeSubURL
         self.makeItem = makeItem
@@ -155,7 +161,11 @@ final class HLSLiveModel: ObservableObject {
     }
 
     private func connect() {
-        let urlSource = (usingFallback ? makeSubURL : makeURL) ?? makeURL
+        // Wall/grid start on sub and fall back to main; the full-screen viewer starts on
+        // main (full quality) and falls back to sub. So the fallback is always "the other".
+        let primary = preferSub ? makeSubURL : makeURL
+        let fallback = preferSub ? makeURL : makeSubURL
+        let urlSource = (usingFallback ? fallback : primary) ?? makeURL
         guard !isStopped, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
         teardownObservers(player: player)
         player?.pause()
@@ -321,6 +331,10 @@ struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
     let camera: FrigateCamera
     var showControls: Bool = false
+    /// Start on the lighter `_sub` stream — set for the multi-camera wall/grid so many
+    /// feeds stay smooth on real hardware. The full-screen viewer leaves this false for
+    /// full-quality main-stream playback.
+    var preferSub: Bool = false
     /// Keep the stream alive when the view disappears (e.g. switching tabs) instead of
     /// tearing it down — so returning to it is instant and never reloads from black.
     /// Used by the always-on Cameras tab; transient surfaces (wall, full-screen) leave it false.
@@ -486,6 +500,7 @@ struct HLSLivePlayerView: View {
             }
             model.configure(
                 cameraName: camera.name,
+                preferSub: preferSub,
                 makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
                 makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
                 makeItem: { url in appState.client?.playerItem(for: url) },

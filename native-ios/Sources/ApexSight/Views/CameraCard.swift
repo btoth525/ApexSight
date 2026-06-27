@@ -16,12 +16,15 @@ struct CameraCard: View {
             LiveStreamView(camera: camera)
         } label: {
             ZStack(alignment: .bottom) {
-                // Live HLS on the full-resolution MAIN stream — full quality on every
-                // tile, always on (persistent) for every camera. The connection limiter staggers
-                // how many spin up at once so load stays fast; the cached snapshot sits behind so
-                // it's never black, and it's letterboxed so ultra-wide cameras show the whole scene.
+                // Live HLS on the lighter sub-stream so the whole wall stays smooth with
+                // many feeds at once (tapping a camera opens it full-quality on the main
+                // stream). Always on (persistent) for every camera; the connection limiter
+                // staggers how many spin up at once so load stays fast; the cached snapshot
+                // sits behind so it's never black, and it's letterboxed so ultra-wide
+                // cameras show the whole scene.
                 HLSLivePlayerView(
                     camera: camera,
+                    preferSub: true,
                     persistent: true,
                     onPlaying: { playing in
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }

@@ -259,11 +259,13 @@ private struct MultiCameraCell: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.black
-            // Live HLS with an MJPEG fallback per camera internally.
-            // Always the full-resolution MAIN stream — every camera, every layout, full quality.
-            // The connection limiter staggers how many spin up at once so the wall stays smooth.
+            // Live HLS on the lighter sub-stream (with an MJPEG fallback per camera) so a
+            // dense grid of feeds stays smooth on real hardware — the device's hardware
+            // decoders can't sustain many simultaneous full-res streams. The connection
+            // limiter staggers how many spin up at once so the wall stays fast.
             HLSLivePlayerView(
                 camera: camera,
+                preferSub: true,
                 onPlaying: { playing in
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
                 }
