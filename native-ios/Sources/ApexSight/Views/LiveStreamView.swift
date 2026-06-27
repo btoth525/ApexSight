@@ -94,11 +94,9 @@ struct LiveStreamView: View {
 
     private var liveHLS: some View {
         ZStack {
-            LiveVideoPlayerView(
+            HLSLivePlayerView(
                 camera: camera,
                 showControls: true,
-                useSub: false,
-                bypassConnectionLimit: true,
                 onSingleTap: { toggleChrome() },
                 onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } }
             )

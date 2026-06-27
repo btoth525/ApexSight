@@ -20,7 +20,7 @@ struct CameraCard: View {
                 // tile, always on (persistent) for every camera. The connection limiter staggers
                 // how many spin up at once so load stays fast; the cached snapshot sits behind so
                 // it's never black, and it's letterboxed so ultra-wide cameras show the whole scene.
-                LiveVideoPlayerView(
+                HLSLivePlayerView(
                     camera: camera,
                     persistent: true,
                     onPlaying: { playing in

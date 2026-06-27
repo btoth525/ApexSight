@@ -262,7 +262,7 @@ private struct MultiCameraCell: View {
             // WebRTC-first (instant, Metal); falls back to HLS/MJPEG per camera internally.
             // Always the full-resolution MAIN stream — every camera, every layout, full quality.
             // The connection limiter staggers how many spin up at once so the wall stays smooth.
-            LiveVideoPlayerView(
+            HLSLivePlayerView(
                 camera: camera,
                 onPlaying: { playing in
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }

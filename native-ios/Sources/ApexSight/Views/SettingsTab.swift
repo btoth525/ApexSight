@@ -33,7 +33,6 @@ struct SettingsTab: View {
                             privacyCard
                         }
 
-                        aiCard
                         configurationSection
                         aboutCard
                     }
@@ -189,70 +188,6 @@ struct SettingsTab: View {
             }
             .tint(GlassTheme.accent)
             .sensoryFeedback(.selection, trigger: biometricLockEnabled)
-        }
-    }
-
-    // MARK: - AI Assistant
-
-    @AppStorage(ClaudeAPIClient.apiKeyDefaultsKey) private var claudeAPIKey = ""
-    @State private var showAPIKey = false
-
-    private var aiCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                SectionHeader("AI Assistant")
-
-                HStack(spacing: GlassTheme.Space.m) {
-                    iconTile(systemName: "sparkles", tint: GlassTheme.accent)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Claude API Key")
-                            .font(.headline).foregroundStyle(GlassTheme.primary)
-                        Text("Powers the AI tab. Get a free key at console.anthropic.com")
-                            .font(.footnote).foregroundStyle(GlassTheme.secondary)
-                    }
-                }
-
-                HStack(spacing: GlassTheme.Space.s) {
-                    Group {
-                        if showAPIKey {
-                            TextField("sk-ant-…", text: $claudeAPIKey)
-                        } else {
-                            SecureField("sk-ant-…", text: $claudeAPIKey)
-                        }
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(GlassTheme.primary)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .padding(GlassTheme.Space.m)
-                    .background(GlassTheme.surface,
-                                in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip,
-                                                     style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                            .strokeBorder(GlassTheme.separator, lineWidth: 1)
-                    }
-
-                    Button {
-                        showAPIKey.toggle()
-                    } label: {
-                        Image(systemName: showAPIKey ? "eye.slash" : "eye")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(GlassTheme.secondary)
-                            .frame(width: 36, height: 36)
-                    }
-                    .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
-                }
-
-                if !claudeAPIKey.isEmpty {
-                    HStack(spacing: GlassTheme.Space.xs) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption).foregroundStyle(GlassTheme.green)
-                        Text("API key saved")
-                            .font(.caption.weight(.semibold)).foregroundStyle(GlassTheme.green)
-                    }
-                }
-            }
         }
     }
 
