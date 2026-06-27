@@ -748,7 +748,9 @@ struct SearchView: View {
             // gentle warning when nothing matched.
             if found.isEmpty { Haptics.warning() } else { Haptics.success() }
         } catch {
-            errorMessage = error.localizedDescription
+            if !error.isCancellation {
+                errorMessage = error.localizedDescription
+            }
             results = []
             Haptics.error()
         }
