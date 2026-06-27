@@ -110,7 +110,7 @@ struct RecordingContextPlayerView: View {
                 _ = await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
             }
         }
-        .onDisappear { model.pause() }
+        .onDisappear { model.stop() }
     }
 
     private func jumpToEvent(_ eventStartTime: Double) {
