@@ -7,23 +7,25 @@ struct MainTabView: View {
     @State private var detailSheet: DetailSheet?
 
     enum Tab: Int, Hashable, CaseIterable, Identifiable {
-        case cameras, review, activity, explore, settings
+        case cameras, review, activity, explore, ai, settings
         var id: Int { rawValue }
         var title: String {
             switch self {
-            case .cameras: return "Cameras"
-            case .review: return "Review"
+            case .cameras:  return "Cameras"
+            case .review:   return "Review"
             case .activity: return "Activity"
-            case .explore: return "Explore"
+            case .explore:  return "Explore"
+            case .ai:       return "AI"
             case .settings: return "Settings"
             }
         }
         var icon: String {
             switch self {
-            case .cameras: return "video.fill"
-            case .review: return "bell.badge.fill"
+            case .cameras:  return "video.fill"
+            case .review:   return "bell.badge.fill"
             case .activity: return "list.bullet.rectangle.portrait.fill"
-            case .explore: return "magnifyingglass"
+            case .explore:  return "magnifyingglass"
+            case .ai:       return "sparkles"
             case .settings: return "gearshape.fill"
             }
         }
@@ -118,10 +120,11 @@ struct MainTabView: View {
     @ViewBuilder
     private func view(for tab: Tab) -> some View {
         switch tab {
-        case .cameras: CamerasTab()
-        case .review: ReviewTab()
+        case .cameras:  CamerasTab()
+        case .review:   ReviewTab()
         case .activity: ActivityTab()
-        case .explore: SearchView()
+        case .explore:  SearchView()
+        case .ai:       AIAssistantView()
         case .settings: SettingsTab()
         }
     }
