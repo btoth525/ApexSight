@@ -18,6 +18,8 @@ struct PushCompanionSettingsView: View {
     @State private var copiedCode = false
     @State private var showJoinField = false
     @State private var joinCode = ""
+    @State private var tokenPollingTask: Task<Void, Never>?
+    @State private var healthPollingTask: Task<Void, Never>?
 
     private var relayURL: String { DeviceTokenStore.relayURL }
 
@@ -48,19 +50,31 @@ struct PushCompanionSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task {
-            DeviceTokenStore.pushEnabled = true   // always on
+            DeviceTokenStore.pushEnabled = true
             await enablePush()
             await checkHealth()
-        }
-        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
-            token = DeviceTokenStore.deviceTokenHex
-            if let token, !token.isEmpty, token != lastRegisteredToken,
-               !pairingCode.isEmpty, registerStatus != .registering {
-                Task { await registerWithRelay() }
+            tokenPollingTask = Task { @MainActor in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    guard !Task.isCancelled else { break }
+                    token = DeviceTokenStore.deviceTokenHex
+                    if let token, !token.isEmpty, token != lastRegisteredToken,
+                       !pairingCode.isEmpty, registerStatus != .registering {
+                        await registerWithRelay()
+                    }
+                }
+            }
+            healthPollingTask = Task { @MainActor in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 6_000_000_000)
+                    guard !Task.isCancelled else { break }
+                    await checkHealth()
+                }
             }
         }
-        .onReceive(Timer.publish(every: 6, on: .main, in: .common).autoconnect()) { _ in
-            Task { await checkHealth() }
+        .onDisappear {
+            tokenPollingTask?.cancel()
+            healthPollingTask?.cancel()
         }
     }
 

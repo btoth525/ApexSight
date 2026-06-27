@@ -42,12 +42,13 @@ struct ActivityTab: View {
         let grouped = Dictionary(grouping: displayedEvents.filter { $0.startTime != nil }) { event in
             cal.startOfDay(for: Date(timeIntervalSince1970: event.startTime ?? 0))
         }
-        return grouped.keys.sorted(by: sortNewest ? (>) : (<)).map { day in
-            let evs = grouped[day]!.sorted {
+        return grouped.keys.sorted(by: sortNewest ? (>) : (<)).compactMap { day in
+            guard let evs = grouped[day] else { return nil }
+            let sorted = evs.sorted {
                 sortNewest ? ($0.startTime ?? 0) > ($1.startTime ?? 0)
                            : ($0.startTime ?? 0) < ($1.startTime ?? 0)
             }
-            return DaySection(id: day, title: dayTitle(day), events: evs)
+            return DaySection(id: day, title: dayTitle(day), events: sorted)
         }
     }
 

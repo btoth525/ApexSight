@@ -128,9 +128,11 @@ final class HLSLiveModel: ObservableObject {
         teardownLifecycle()
         reconnectTask?.cancel()
         reconnectTask = nil
-        teardownObservers()
-        player?.pause()
+        // Capture player before nilling so teardownObservers can remove the time observer.
+        let p = player
         player = nil
+        teardownObservers(player: p)
+        p?.pause()
     }
 
     func toggleMute() {
@@ -155,7 +157,7 @@ final class HLSLiveModel: ObservableObject {
     private func connect() {
         let urlSource = (usingFallback ? makeSubURL : makeURL) ?? makeURL
         guard !isStopped, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
-        teardownObservers()
+        teardownObservers(player: player)
         player?.pause()
         lastProgressTime = nil
         advancingConfirmed = false
@@ -302,11 +304,12 @@ final class HLSLiveModel: ObservableObject {
         }
     }
 
-    private func teardownObservers() {
+    private func teardownObservers(player explicitPlayer: AVPlayer? = nil) {
         statusObs?.invalidate(); statusObs = nil
         timeControlObs?.invalidate(); timeControlObs = nil
         sizeObs?.invalidate(); sizeObs = nil
-        if let timeObserver { player?.removeTimeObserver(timeObserver) }; timeObserver = nil
+        let p = explicitPlayer ?? player
+        if let timeObserver { p?.removeTimeObserver(timeObserver) }; timeObserver = nil
         if let stallObs { NotificationCenter.default.removeObserver(stallObs) }; stallObs = nil
         if let failObs { NotificationCenter.default.removeObserver(failObs) }; failObs = nil
     }

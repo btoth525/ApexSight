@@ -11,7 +11,7 @@ struct LiveStreamView: View {
     @State private var capability: CameraCapability?
     @State private var reloadToken = UUID()
     @State private var showChrome = true
-    @State private var hideWork: DispatchWorkItem?
+    @State private var hideTask: Task<Void, Never>?
     @State private var showCameraControls = false
     @State private var showDetectionOverlay = true
 
@@ -49,7 +49,7 @@ struct LiveStreamView: View {
             reloadToken = UUID()
             revealChrome()
         }
-        .onDisappear { hideWork?.cancel() }
+        .onDisappear { hideTask?.cancel() }
         .sheet(isPresented: $showCameraControls) {
             CameraQuickControlsSheet(camera: camera)
                 .environmentObject(appState)
@@ -59,12 +59,12 @@ struct LiveStreamView: View {
     // MARK: - Immersive chrome (auto-hide, tap to toggle)
 
     private func scheduleHideChrome() {
-        hideWork?.cancel()
-        let work = DispatchWorkItem {
+        hideTask?.cancel()
+        hideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { showChrome = false }
         }
-        hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
 
     private func revealChrome() {
@@ -75,7 +75,7 @@ struct LiveStreamView: View {
     private func toggleChrome() {
         Haptics.tap()
         if showChrome {
-            hideWork?.cancel()
+            hideTask?.cancel()
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { showChrome = false }
         } else {
             revealChrome()
