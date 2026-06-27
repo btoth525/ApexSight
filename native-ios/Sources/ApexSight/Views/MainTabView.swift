@@ -135,16 +135,20 @@ struct MainTabView: View {
             selectedTab = .cameras
             if let camera = appState.cameras.first(where: { $0.name == name }) {
                 detailSheet = .camera(camera)
+            } else {
+                // Cold launch straight into a deep link: the camera list may not be
+                // loaded yet. Fetch it (with retry) so the tile still opens.
+                resolveDeepLink {
+                    (try? await appState.client?.cameras())?.first { $0.name == name }.map { .camera($0) }
+                }
             }
         case .review(let id):
             selectedTab = .review
             if let review = appState.reviews.first(where: { $0.id == id }) {
                 detailSheet = .review(review)
             } else {
-                Task {
-                    if let review = try? await appState.client?.review(id: id) {
-                        detailSheet = .review(review)
-                    }
+                resolveDeepLink {
+                    (try? await appState.client?.review(id: id)).map { .review($0) }
                 }
             }
         case .event(let id):
@@ -152,13 +156,26 @@ struct MainTabView: View {
             if let event = appState.events.first(where: { $0.id == id }) {
                 detailSheet = .event(event)
             } else {
-                Task {
-                    if let event = try? await appState.client?.event(id: id) {
-                        detailSheet = .event(event)
-                    }
+                resolveDeepLink {
+                    (try? await appState.client?.event(id: id)).map { .event($0) }
                 }
             }
         }
         appState.deepLink = nil
+    }
+
+    /// Resolve a deep link's target by fetching it, retrying with backoff. A push tap
+    /// often lands while the network is still coming up (phone just woke), so a single
+    /// attempt can silently fail and the alert never opens — retry a few times instead.
+    private func resolveDeepLink(_ fetch: @escaping () async -> DetailSheet?) {
+        Task {
+            for attempt in 0..<4 where detailSheet == nil {
+                if let sheet = await fetch() {
+                    detailSheet = sheet
+                    return
+                }
+                try? await Task.sleep(nanoseconds: UInt64(800_000_000 * (attempt + 1)))
+            }
+        }
     }
 }
