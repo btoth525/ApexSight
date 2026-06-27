@@ -11,10 +11,6 @@ settings:
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
 packages:
-  # Prebuilt WebRTC xcframework (Metal-rendered, hardware-decoded) for instant live.
-  WebRTC:
-    url: https://github.com/stasel/WebRTC
-    from: "149.0.0"
 targets:
   ApexSightNative:
     type: application
@@ -84,7 +80,6 @@ targets:
         embed: true
       - target: ApexSightWatch
         embed: true
-      - package: WebRTC
     scheme:
       testTargets: []
 
