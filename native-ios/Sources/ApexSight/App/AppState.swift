@@ -130,6 +130,14 @@ final class AppState: ObservableObject {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshAlerts()
+                // Recover a camera wall that a prior full refresh failed to load (e.g. a
+                // transient outage at launch). refreshAlerts only reloads alerts, so once
+                // it succeeds — proving connectivity is back — re-run the full refresh to
+                // clear the stale error and fill the wall, instead of stranding the user
+                // on the error card until they pull to refresh.
+                if self?.isReachable == true, self?.cameras.isEmpty == true, self?.errorMessage != nil {
+                    await self?.refresh()
+                }
                 self?.syncRelayGateIfChanged()
                 self?.syncRecapIfChanged()
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
