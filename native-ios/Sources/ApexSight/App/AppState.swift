@@ -64,6 +64,8 @@ final class AppState: ObservableObject {
     @Published var liveDetections: [String: [LiveDetection]] = [:]
     /// True when the birdseye composite stream is available in go2rtc.
     @Published var hasBirdseye = false
+    /// Whether the user is signed into their ApexSight cloud account.
+    @Published var accountSignedIn: Bool = false
 
     let keychain = KeychainStore()
     let notificationPrefs = NotificationPreferencesStore()

@@ -1,0 +1,20 @@
+{% extends "site/base.html" %}
+{% block title %}Choose a new password{% endblock %}
+{% block nav %}<a class="btn ghost" href="/login">Log in</a>{% endblock %}
+{% block body %}
+  <div class="card auth">
+    <h2>Choose a new password</h2>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    {% if valid %}
+      <form method="post" action="/reset">
+        <input type="hidden" name="token" value="{{ token }}">
+        <label for="password">New password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+        <div style="margin-top:22px"><button class="btn block" type="submit">Set new password</button></div>
+      </form>
+    {% else %}
+      <div class="err">This reset link is invalid or has expired.</div>
+      <p class="muted center" style="margin-top:18px"><a href="/forgot">Request a new link</a></p>
+    {% endif %}
+  </div>
+{% endblock %}

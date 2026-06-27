@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05060a">
+  <title>{% block title %}ApexSight{% endblock %}</title>
+  <style>
+    :root{
+      --bg:#05060a; --panel:#0d1017; --panel2:#11151f; --line:#1c2230;
+      --text:#f4f6f9; --muted:#929bac; --dim:#6a7484;
+      --cyan:#63d2ff; --cyan2:#0a84ff; --green:#3ad17e; --red:#ff6b6b; --orange:#ffae42;
+      --grad:linear-gradient(135deg,#63d2ff,#0a84ff);
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;color:var(--text);background:var(--bg);
+      font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      min-height:100vh;position:relative;overflow-x:hidden}
+    body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+      background:
+        radial-gradient(1000px 560px at 80% -10%, rgba(99,210,255,.18), transparent 60%),
+        radial-gradient(820px 540px at 4% 2%, rgba(10,132,255,.16), transparent 55%)}
+    body::after{content:"";position:fixed;inset:-20% -20% auto -20%;height:70vh;z-index:-1;pointer-events:none;
+      background:radial-gradient(closest-side, rgba(99,210,255,.10), transparent);
+      animation:float 14s ease-in-out infinite}
+    @keyframes float{0%,100%{transform:translateY(-4%)}50%{transform:translateY(6%)}}
+    a{color:var(--cyan);text-decoration:none}
+
+    /* sticky translucent header */
+    .hdr{position:sticky;top:0;z-index:50;backdrop-filter:saturate(140%) blur(14px);
+      background:rgba(5,6,10,.62);border-bottom:1px solid rgba(28,34,48,.7)}
+    .hdr-in{max-width:1040px;margin:0 auto;padding:13px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .brand{display:flex;align-items:center;gap:11px;font-weight:900;font-size:19px;letter-spacing:-.02em;color:var(--text)}
+    .brand .logo{width:30px;height:30px;border-radius:9px;background:var(--grad);
+      box-shadow:0 6px 20px rgba(10,132,255,.45);display:grid;place-items:center;color:#04121f;font-weight:900}
+
+    .wrap{max-width:1040px;margin:0 auto;padding:8px 20px 80px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+      border-radius:22px;padding:26px;margin-top:20px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+    h1{font-size:clamp(34px,6.4vw,58px);line-height:1.04;letter-spacing:-.035em;margin:.1em 0}
+    h2{font-size:clamp(22px,3.6vw,30px);margin:0 0 14px;letter-spacing:-.02em}
+    h3{font-size:18px;margin:0 0 8px}
+    .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+    p.lead{font-size:clamp(16px,2.4vw,19px);color:var(--muted);max-width:46ch}
+    .muted{color:var(--muted)} .dim{color:var(--dim)}
+    .pill{display:inline-flex;gap:7px;align-items:center;font-size:13px;color:var(--muted);
+      border:1px solid var(--line);padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.02)}
+    label{display:block;font-weight:700;font-size:13px;margin:16px 0 6px;color:var(--muted)}
+    input[type=email],input[type=password],input[type=text]{
+      width:100%;padding:14px 15px;border-radius:13px;border:1px solid var(--line);
+      background:#070a10;color:var(--text);font-size:16px;transition:border-color .15s,box-shadow .15s}
+    input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 4px rgba(99,210,255,.14)}
+    .btn{display:inline-block;border:0;cursor:pointer;font-weight:800;font-size:15px;
+      padding:13px 22px;border-radius:999px;background:var(--grad);color:#04121f;
+      box-shadow:0 10px 28px rgba(10,132,255,.4);transition:transform .12s,box-shadow .12s}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 14px 34px rgba(10,132,255,.55)}
+    .btn:active{transform:translateY(0)}
+    .btn.block{width:100%;text-align:center}
+    .btn.lg{font-size:16px;padding:15px 26px}
+    .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text);box-shadow:none}
+    .btn.ghost:hover{border-color:var(--cyan)}
+    .btn.danger{background:transparent;border:1px solid #5a2230;color:var(--red);box-shadow:none}
+    .err{background:#2a0f15;border:1px solid #5a2230;color:#ff9aa6;padding:12px 14px;border-radius:12px;margin-top:14px;font-size:14px}
+    .ok{background:#0f2a1c;border:1px solid #224a33;color:#9ff0c2;padding:12px 14px;border-radius:12px;margin-top:14px;font-size:14px}
+    .banner{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+      background:#1c1606;border:1px solid #4a3a12;color:#ffd98a;padding:12px 16px;border-radius:14px;margin-top:20px;font-size:14px}
+    pre{background:#070a10;border:1px solid var(--line);border-radius:13px;padding:15px;overflow:auto;font-size:13px;color:#cdd6e4}
+    code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .token{font-family:ui-monospace,Menlo,monospace;background:#070a10;border:1px solid var(--line);
+      border-radius:11px;padding:11px 13px;word-break:break-all;font-size:14px;color:var(--cyan)}
+
+    /* hero */
+    .hero{display:grid;grid-template-columns:1.15fr .85fr;gap:30px;align-items:center;padding:44px 0 14px}
+    @media (max-width:780px){.hero{grid-template-columns:1fr;text-align:center}.hero .cta{justify-content:center}.lead{margin-inline:auto}}
+
+    /* feature grid */
+    .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+    .feat .f{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;transition:transform .15s,border-color .15s}
+    .feat .f:hover{transform:translateY(-3px);border-color:#2b3550}
+    .feat .ic{font-size:22px}
+    .feat b{display:block;margin:8px 0 4px;font-size:15px}
+    .feat span.d{color:var(--muted);font-size:13.5px}
+    @media (max-width:680px){.feat{grid-template-columns:1fr 1fr}}
+    @media (max-width:440px){.feat{grid-template-columns:1fr}}
+
+    /* "works with" chips */
+    .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+    .chip{font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:12px;padding:9px 13px;background:rgba(255,255,255,.02)}
+
+    /* FAQ */
+    details{border:1px solid var(--line);border-radius:14px;padding:4px 16px;margin-top:10px;background:var(--panel)}
+    details summary{cursor:pointer;font-weight:700;padding:12px 0;list-style:none}
+    details summary::-webkit-details-marker{display:none}
+    details summary::after{content:"+";float:right;color:var(--cyan);font-weight:900}
+    details[open] summary::after{content:"–"}
+    details p{color:var(--muted);margin:0 0 14px;font-size:14.5px}
+
+    .auth{max-width:440px;margin:6vh auto 0}
+    .hairline{height:1px;background:var(--line);margin:18px 0}
+    .center{text-align:center}
+    .sec{margin-top:48px}
+
+    /* iPhone mockup */
+    .device{width:248px;height:512px;margin:0 auto;border-radius:46px;background:#0a0d14;
+      border:1px solid #232a3a;box-shadow:0 40px 90px rgba(0,0,0,.6),inset 0 0 0 7px #05070c;position:relative;padding:14px}
+    .device .notch{position:absolute;top:14px;left:50%;transform:translateX(-50%);width:104px;height:26px;background:#000;border-radius:0 0 18px 18px;z-index:2}
+    .scr{height:100%;border-radius:32px;overflow:hidden;position:relative;
+      background:radial-gradient(120% 80% at 50% 0%, #16233b 0%, #0a1020 55%, #070a12 100%)}
+    .scr .time{text-align:center;color:#fff;font-weight:700;letter-spacing:-.02em;padding-top:54px}
+    .scr .time .h{font-size:52px;line-height:1}
+    .scr .time .d{font-size:13px;color:rgba(255,255,255,.7);margin-top:2px}
+    .la{position:absolute;left:14px;right:14px;bottom:20px;background:rgba(12,15,22,.86);
+      border:1px solid #283247;border-radius:20px;padding:13px;backdrop-filter:blur(8px);box-shadow:0 16px 40px rgba(0,0,0,.5)}
+    .la .top{display:flex;align-items:center;gap:9px}
+    .la .badge{width:34px;height:34px;border-radius:50%;background:rgba(255,174,66,.16);
+      border:1px solid rgba(255,174,66,.5);display:grid;place-items:center;font-size:16px}
+    .la .t{font-weight:900;font-size:14px}
+    .la .s{font-size:11px;color:rgba(255,255,255,.6)}
+    .la .live{margin-left:auto;font-size:9px;font-weight:900;color:#04121f;background:var(--orange);padding:3px 7px;border-radius:999px}
+    .la .bar{display:flex;gap:8px;margin-top:11px}
+    .la .vbtn{flex:1;text-align:center;font-size:12px;font-weight:900;color:#04121f;background:var(--cyan);border-radius:999px;padding:8px}
+    .la .x{width:32px;display:grid;place-items:center;color:rgba(255,255,255,.6);background:rgba(255,255,255,.12);border-radius:50%}
+
+    footer{color:var(--dim);font-size:13px;margin-top:48px;padding-top:18px;border-top:1px solid var(--line);
+      display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+    footer a{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header class="hdr">
+    <div class="hdr-in">
+      <a class="brand" href="/"><span class="logo">◎</span> ApexSight</a>
+      <div class="row">{% block nav %}{% endblock %}</div>
+    </div>
+  </header>
+  <div class="wrap">
+    {% block body %}{% endblock %}
+    <footer>
+      <span>© ApexSight · Local-first Frigate companion</span>
+      <span class="row"><a href="/privacy">Privacy</a> · <a href="/login">Log in</a> · <a href="/admin">Relay admin</a></span>
+    </footer>
+  </div>
+</body>
+</html>

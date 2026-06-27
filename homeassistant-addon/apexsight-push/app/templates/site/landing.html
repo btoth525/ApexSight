@@ -1,0 +1,91 @@
+{% extends "site/base.html" %}
+{% block title %}ApexSight — your Frigate cameras, everywhere{% endblock %}
+{% block nav %}
+  <a class="btn ghost" href="/login">Log in</a>
+  <a class="btn" href="/signup">Get started</a>
+{% endblock %}
+{% block body %}
+
+  <section class="hero">
+    <div>
+      <span class="pill">🔒 Local-first · no telemetry</span>
+      <h1 style="margin-top:14px">Your Frigate cameras,<br><span class="grad">beautifully native.</span></h1>
+      <p class="lead" style="margin-top:16px">
+        Create an account, link your own Frigate NVR, and get instant rich alerts on your
+        iPhone, Apple&nbsp;Watch, Lock&nbsp;Screen, and CarPlay. Sign in once — it just works.
+      </p>
+      <div class="row cta" style="margin-top:24px">
+        <a class="btn lg" href="/signup">Create your account</a>
+        <a class="btn ghost lg" href="/login">I already have one</a>
+      </div>
+      <div class="chips">
+        <span class="chip">⌚️ Apple Watch</span>
+        <span class="chip">🚗 CarPlay</span>
+        <span class="chip">🧩 Widgets</span>
+        <span class="chip">🗣️ Siri</span>
+        <span class="chip">🌙 StandBy</span>
+      </div>
+    </div>
+
+    <div class="device" aria-hidden="true">
+      <div class="notch"></div>
+      <div class="scr">
+        <div class="time"><div class="h">9:41</div><div class="d">Friday, June 20</div></div>
+        <div class="la">
+          <div class="top">
+            <div class="badge">🚶</div>
+            <div>
+              <div class="t">Person · Front Door</div>
+              <div class="s">Driveway · just now</div>
+            </div>
+            <div class="live">LIVE</div>
+          </div>
+          <div class="bar">
+            <div class="vbtn">▶ View Live</div>
+            <div class="x">✕</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Built for the way you actually watch.</h2>
+    <div class="feat">
+      <div class="f"><div class="ic">⚡️</div><b>Instant alerts</b><span class="d">Rich push with snapshots the moment something happens — even with the app closed.</span></div>
+      <div class="f"><div class="ic">🏝️</div><b>Live Activities</b><span class="d">A live incident banner right on your Lock Screen &amp; Dynamic Island.</span></div>
+      <div class="f"><div class="ic">🛡️</div><b>Private by design</b><span class="d">Connects to your own server. Passwords encrypted, zero analytics.</span></div>
+      <div class="f"><div class="ic">📹</div><b>Live &amp; smooth</b><span class="d">Low-latency HLS, single camera or a full multi-camera wall.</span></div>
+      <div class="f"><div class="ic">🎯</div><b>Smart rules</b><span class="d">Per-camera, per-zone, quiet hours, cooldowns — no alert fatigue.</span></div>
+      <div class="f"><div class="ic">🍎</div><b>One sign-in</b><span class="d">Sign in with Apple or email. Every device auto-connects.</span></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Up and running in three steps.</h2>
+    <div class="feat">
+      <div class="f"><div class="ic">①</div><b>Create an account</b><span class="d">Right here, or in the app with Sign in with Apple.</span></div>
+      <div class="f"><div class="ic">②</div><b>Link your Frigate</b><span class="d">Add your server URL once — it syncs to all your devices.</span></div>
+      <div class="f"><div class="ic">③</div><b>Open the app</b><span class="d">Sign in and your cameras + alerts are ready. That's it.</span></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Questions, answered.</h2>
+    <details><summary>Do I need my own Frigate server?</summary>
+      <p>Yes — ApexSight is a companion for your self-hosted <a href="https://frigate.video">Frigate</a> NVR. It connects to the server you run; we never see your footage.</p></details>
+    <details><summary>Is my data private?</summary>
+      <p>Completely. The app talks directly to your server, your Frigate password is encrypted at rest, and there's no analytics or tracking. The relay only forwards alert notifications.</p></details>
+    <details><summary>How do notifications work?</summary>
+      <p>A small add-on next to Frigate forwards detections to our relay, which delivers an Apple push to your devices — routed privately by your account's token, so only you get your alerts.</p></details>
+    <details><summary>Does it work with Apple Watch and CarPlay?</summary>
+      <p>Yes — plus Home/Lock Screen widgets, StandBy, Siri shortcuts, and Live Activities. Sign in once and it's everywhere.</p></details>
+  </section>
+
+  <section class="card sec center" style="background:linear-gradient(135deg,rgba(99,210,255,.10),rgba(10,132,255,.08))">
+    <h2>Ready to see your cameras like this?</h2>
+    <p class="muted" style="max-width:48ch;margin:0 auto 18px">Free to use with your own Frigate server. Set up your account in under a minute.</p>
+    <a class="btn lg" href="/signup">Get started</a>
+  </section>
+
+{% endblock %}

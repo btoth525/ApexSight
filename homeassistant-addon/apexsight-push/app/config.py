@@ -9,6 +9,8 @@ import os
 import secrets
 from pathlib import Path
 
+from cryptography.fernet import Fernet
+
 # Where the SQLite DB + generated session secret live. Mounted as a Docker
 # volume so uploaded keys and registrations survive container restarts.
 DATA_DIR = Path(os.environ.get("APEX_DATA_DIR", "/data"))
@@ -29,6 +31,39 @@ DEFAULT_TEAM_ID = os.environ.get("APEX_TEAM_ID", "3Q9ZUDN4QZ").strip()
 
 # Max /v1/notify + /v1/register calls accepted per client IP per minute.
 RATE_LIMIT_PER_MINUTE = int(os.environ.get("APEX_RATE_LIMIT", "120"))
+
+# Public origin used to build links in emails (verify / password reset). Falls back
+# to the request's host when unset; set it if you're behind a proxy that rewrites host.
+PUBLIC_URL = os.environ.get("APEX_PUBLIC_URL", "").strip().rstrip("/")
+
+# SMTP for transactional email (verification + password reset). If unset, those
+# features degrade gracefully (the rest of the relay works fine without email).
+SMTP_HOST = os.environ.get("APEX_SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("APEX_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("APEX_SMTP_USER", "").strip()
+SMTP_PASSWORD = os.environ.get("APEX_SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.environ.get("APEX_SMTP_FROM", SMTP_USER or "").strip()
+
+
+def smtp_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_FROM)
+
+
+def fernet_key() -> bytes:
+    """Symmetric key for encrypting Frigate passwords at rest. Read from
+    APEX_FERNET_KEY if provided; otherwise generated once and persisted to the data
+    volume. Rotating it makes previously stored Frigate passwords unreadable (users
+    just re-enter them)."""
+    env = os.environ.get("APEX_FERNET_KEY", "").strip()
+    if env:
+        return env.encode()
+    path = DATA_DIR / "fernet.key"
+    if path.exists():
+        return path.read_bytes().strip()
+    key = Fernet.generate_key()
+    path.write_bytes(key)
+    path.chmod(0o600)
+    return key
 
 
 def session_secret() -> str:

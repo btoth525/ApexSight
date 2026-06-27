@@ -1,0 +1,19 @@
+{% extends "site/base.html" %}
+{% block title %}Create your ApexSight account{% endblock %}
+{% block nav %}<a class="btn ghost" href="/login">Log in</a>{% endblock %}
+{% block body %}
+  <div class="card auth">
+    <h2>Create your account</h2>
+    <p class="muted" style="margin-top:-6px">One account links your Frigate to all your Apple devices.</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="post" action="/signup">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+      <div style="margin-top:22px"><button class="btn block" type="submit">Create account</button></div>
+    </form>
+    <div class="hairline"></div>
+    <p class="muted center" style="font-size:14px;margin:0">Already have one? <a href="/login">Log in</a></p>
+  </div>
+{% endblock %}

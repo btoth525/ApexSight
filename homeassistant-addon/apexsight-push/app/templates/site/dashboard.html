@@ -1,0 +1,56 @@
+{% extends "site/base.html" %}
+{% block title %}ApexSight — Dashboard{% endblock %}
+{% block nav %}
+  <span class="muted" style="font-size:14px">{{ email or "Apple ID account" }}</span>
+  <form method="post" action="/logout" style="margin:0"><button class="btn ghost" type="submit">Log out</button></form>
+{% endblock %}
+{% block body %}
+  {% if needs_verify %}
+  <div class="banner">
+    <span>📧 Verify your email to secure your account.</span>
+    <form method="post" action="/resend-verification" style="margin:0">
+      <button class="btn ghost" type="submit" style="padding:8px 14px">Resend email</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Your Frigate server {% if frigate_connected %}<span style="color:#3ad17e;font-size:14px">· connected</span>{% endif %}</h2>
+    <p class="muted">Enter your Frigate NVR details. When you sign in on the ApexSight app
+    with this same account, it connects automatically — no setup in the app.</p>
+    <form method="post" action="/frigate">
+      <label for="url">Frigate URL</label>
+      <input id="url" name="url" type="text" placeholder="https://frigate.yourdomain.com" value="{{ frigate_url }}" required>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" value="{{ frigate_username }}">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="new-password"
+             placeholder="{% if frigate_connected %}•••••••• (leave blank to keep){% endif %}">
+      <div style="margin-top:18px"><button class="btn" type="submit">Save Frigate server</button></div>
+    </form>
+    <p class="muted" style="margin-top:12px;font-size:13px">Your server must be reachable from your
+    phone (on your network or via your own secure tunnel). Your password is stored encrypted.</p>
+  </div>
+
+  <div class="card">
+    <h2>How alerts reach you</h2>
+    <p class="muted">Install the ApexSight Push add-on next to Frigate so detections get
+    forwarded to your devices. Use these settings — your ingest token is private, like a password:</p>
+    <pre>relay_url:    {{ relay_base }}
+pairing_code: {{ ingest_token }}</pre>
+    <p class="muted" style="font-size:13px"><b>{{ device_count }}</b> device(s) linked to your account.</p>
+    <form method="post" action="/rotate" style="margin-top:8px"
+          onsubmit="return confirm('Rotate your token? You must update your add-on config to the new value.');">
+      <button class="btn ghost" type="submit">Rotate token</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Danger zone</h2>
+    <p class="muted">Deleting your account removes your Frigate details, token, devices, and settings.</p>
+    <form method="post" action="/delete"
+          onsubmit="return confirm('Delete your account permanently? This cannot be undone.');">
+      <button class="btn danger" type="submit">Delete account</button>
+    </form>
+  </div>
+{% endblock %}

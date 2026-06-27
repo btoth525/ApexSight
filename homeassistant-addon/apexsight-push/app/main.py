@@ -18,23 +18,33 @@ from collections import defaultdict, deque
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import apns, config, db, recap, render
+from .accounts import frigate_router, router as auth_router
 from .admin import router as admin_router
+from .web import router as web_router
 
 # Read from the add-on env (run.sh) — used by the daily-recap scheduler.
 PAIRING_CODE = os.environ.get("PAIRING_CODE", "").upper().strip()
 
 app = FastAPI(title="ApexSight Push Relay", docs_url=None, redoc_url=None)
-app.add_middleware(SessionMiddleware, secret_key=config.session_secret(), https_only=False)
+# Secure cookie by default (the relay sits behind an HTTPS tunnel). Set
+# APEX_SESSION_HTTPS_ONLY=0 only if you must reach it over plain HTTP.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.session_secret(),
+    https_only=os.environ.get("APEX_SESSION_HTTPS_ONLY", "1") != "0",
+)
 
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+app.include_router(auth_router)
+app.include_router(frigate_router)
 app.include_router(admin_router)
+app.include_router(web_router)
 
 
 @app.on_event("startup")
@@ -187,11 +197,6 @@ class ActivityRegisterIn(BaseModel):
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True, "apns_configured": apns.is_configured(), "devices": db.device_count()}
-
-
-@app.get("/")
-def root() -> RedirectResponse:
-    return RedirectResponse(url="/admin")
 
 
 @app.post("/v1/register")

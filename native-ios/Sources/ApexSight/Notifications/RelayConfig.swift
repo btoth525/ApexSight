@@ -11,12 +11,9 @@ enum RelayConfig {
     /// The relay every copy of the app talks to. Baked in so testers need zero setup.
     static let defaultURL = "https://relay.plexserver525.com"
 
-    /// Shared household pairing code baked into the app. When set, every install
-    /// auto-registers under this one code, so users get YOUR camera alerts with
-    /// zero setup (the single Home Assistant bridge uses the same code). Leave
-    /// empty to make each install generate its own per-device code instead.
-    ///
-    /// Note: anyone who installs the app and enables push will receive these
-    /// alerts — intended for a shared/demo deployment of your own cameras.
-    static let defaultPairingCode = "APEX-PLEX-5250"
+    /// Empty on purpose for the public, account-based build: push routing now comes
+    /// from the signed-in account's private ingest token (set via AccountStore), so
+    /// each user only ever receives their own alerts. (Set a value here only for a
+    /// private single-household build where every install should auto-join one code.)
+    static let defaultPairingCode = ""
 }

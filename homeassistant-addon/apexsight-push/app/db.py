@@ -47,8 +47,28 @@ def init() -> None:
                 updated_at   INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_activity_pairing ON activity_tokens(pairing_code, kind);
+            CREATE TABLE IF NOT EXISTS accounts (
+                id               TEXT PRIMARY KEY,
+                email            TEXT UNIQUE,
+                password_hash    TEXT,
+                apple_sub        TEXT UNIQUE,
+                ingest_token     TEXT NOT NULL UNIQUE,
+                frigate_url      TEXT,
+                frigate_username TEXT,
+                frigate_secret   TEXT,
+                email_verified   INTEGER NOT NULL DEFAULT 0,
+                created_at       INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_accounts_ingest ON accounts(ingest_token);
             """
         )
+        # Migrate older accounts tables that predate these columns.
+        existing = {r[1] for r in c.execute("PRAGMA table_info(accounts)")}
+        for col in ("frigate_url", "frigate_username", "frigate_secret"):
+            if col not in existing:
+                c.execute(f"ALTER TABLE accounts ADD COLUMN {col} TEXT")
+        if "email_verified" not in existing:
+            c.execute("ALTER TABLE accounts ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager
@@ -181,3 +201,81 @@ def delete_activity_token(token: str) -> None:
 def prune_activity_tokens(before_ts: float) -> None:
     with _conn() as c:
         c.execute("DELETE FROM activity_tokens WHERE updated_at < ?", (int(before_ts),))
+
+
+# ---- accounts ---------------------------------------------------------------
+
+def create_account(
+    account_id: str,
+    ingest_token: str,
+    email: Optional[str] = None,
+    password_hash: Optional[str] = None,
+    apple_sub: Optional[str] = None,
+) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO accounts(id, email, password_hash, apple_sub, ingest_token, created_at) "
+            "VALUES(?, ?, ?, ?, ?, ?)",
+            (account_id, email, password_hash, apple_sub, ingest_token, int(time.time())),
+        )
+
+
+def account_by_email(email: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE email = ?", (email,)).fetchone()
+
+
+def account_by_apple_sub(apple_sub: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE apple_sub = ?", (apple_sub,)).fetchone()
+
+
+def set_password_hash(account_id: str, password_hash: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET password_hash = ? WHERE id = ?", (password_hash, account_id))
+
+
+def set_email_verified(account_id: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET email_verified = 1 WHERE id = ?", (account_id,))
+
+
+def set_frigate_profile(account_id: str, url: str, username: str, secret: Optional[str]) -> None:
+    """Store the account's Frigate connection. A None `secret` keeps the existing
+    encrypted password (so the user can edit the URL without re-typing it)."""
+    with _conn() as c:
+        if secret is None:
+            c.execute("UPDATE accounts SET frigate_url = ?, frigate_username = ? WHERE id = ?",
+                      (url, username, account_id))
+        else:
+            c.execute("UPDATE accounts SET frigate_url = ?, frigate_username = ?, frigate_secret = ? WHERE id = ?",
+                      (url, username, secret, account_id))
+
+
+def account_by_id(account_id: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+
+
+def set_account_email(account_id: str, email: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET email = ? WHERE id = ?", (email, account_id))
+
+
+def set_ingest_token(account_id: str, ingest_token: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE accounts SET ingest_token = ? WHERE id = ?", (ingest_token, account_id))
+
+
+def delete_account(account_id: str) -> None:
+    """Remove the account and everything routed by its ingest token."""
+    with _conn() as c:
+        row = c.execute("SELECT ingest_token FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not row:
+            return
+        token = row["ingest_token"]
+        c.execute("DELETE FROM devices WHERE pairing_code = ?", (token,))
+        c.execute("DELETE FROM activity_tokens WHERE pairing_code = ?", (token,))
+        c.execute("DELETE FROM config WHERE key IN (?, ?, ?)",
+                  (f"gate:{token}", f"style:{token}", f"recap:{token}"))
+        c.execute("DELETE FROM accounts WHERE id = ?", (account_id,))

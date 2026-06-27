@@ -8,6 +8,10 @@
 	</array>
 	<key>aps-environment</key>
 	<string>production</string>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	<key>com.apple.developer.carplay-driving-task</key>
 	<true/>
 	<!-- Lets camera alerts break through a Driving / Do Not Disturb Focus and show on

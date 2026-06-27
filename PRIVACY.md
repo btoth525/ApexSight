@@ -1,68 +1,58 @@
 # ApexSight Privacy Policy
 
-_Last updated: June 18, 2026_
+_Last updated: June 20, 2026_
 
-ApexSight is a native iOS client for your own [Frigate](https://frigate.video) NVR.
-It is **local-first**: it talks to servers **you** run and control. We — the
-developers of ApexSight — do not operate a backend that receives your data, and
-we do not collect, sell, or share any personal information.
+ApexSight is a companion app for your own [Frigate](https://frigate.video) NVR. We
+keep data collection to the minimum needed to run the service, and we never sell it
+or use it for advertising or tracking. The canonical, always-current version of this
+policy is hosted at **https://apexsight.app/privacy**.
 
-## What ApexSight does *not* do
+## What we collect
 
-- **No accounts.** There is no ApexSight sign-up or login.
-- **No analytics or telemetry.** The app contains no third-party tracking SDKs,
-  advertising, or usage analytics.
-- **No data sold or shared** with third parties for any purpose.
-- **No tracking** across apps or websites.
+- **Account:** your email address (or, with Sign in with Apple, the identifier Apple
+  provides, which may be a private-relay email).
+- **Your Frigate connection:** the server URL, username, and password you enter so the
+  app can connect. The **password is encrypted at rest**; the URL and username are
+  stored so your other devices auto-connect.
+- **Device push tokens:** the Apple Push Notification token for each device, so alerts
+  can be delivered.
+- **Alert metadata:** camera name, object/label, and timestamp are processed to deliver
+  notifications and an optional daily recap. The image in a notification is fetched by
+  your device directly from your Frigate server.
 
-## Information ApexSight handles (and where it stays)
+## How we use it
 
-- **Frigate server address & credentials.** Stored encrypted in the iOS
-  Keychain on your device so the app can connect to your NVR. They are sent only
-  to the Frigate server you configure.
-- **Camera video, snapshots, and event metadata.** Streamed and fetched directly
-  from your Frigate server for display. Cached copies (for widgets, the Live
-  Activity, CarPlay, and Apple Watch) are stored locally on your devices in a
-  shared app-group container.
-- **Push notifications.** If you enable push alerts, your device's Apple Push
-  Notification service (APNs) token and a pairing code are sent to the push
-  relay **you** point the app at (the self-hosted ApexSight relay and your Home
-  Assistant bridge). Alert text and snapshot images are delivered through APNs to
-  show rich notifications. This infrastructure is operated by you, not by us.
-- **Photos.** Used only to save camera clips you explicitly choose to download.
-  The app only requests add-to-library access and never reads your library.
-- **Face ID / Touch ID.** If you enable the optional app lock, biometric
-  authentication happens entirely on-device through Apple's LocalAuthentication
-  framework. ApexSight never receives your biometric data.
+Only to operate ApexSight: to sign you in, sync your Frigate connection across your
+devices, and deliver the camera notifications you ask for. **No analytics, no tracking,
+no ads.**
 
-## Permissions
+## Storage & security
 
-ApexSight requests only the permissions tied to a feature you use:
+Data is stored on the ApexSight relay server. Your Frigate password is encrypted at
+rest, and all traffic is over HTTPS. Notifications are delivered through Apple's Push
+Notification service (APNs). Your account's data is isolated by a private token, so no
+other user can receive your alerts.
 
-| Permission | Why |
-| --- | --- |
-| Local Network | Connect to Frigate on your LAN |
-| Notifications | Deliver camera alerts |
-| Photo Library (add only) | Save clips you download |
-| Face ID / Touch ID | Optional app lock |
+## Sharing
 
-## Data retention & deletion
+We do not sell or share your personal data. The only third party involved is Apple
+(APNs), used solely to deliver notifications to your devices.
 
-All ApexSight data lives on your devices and your servers. Removing data is fully
-in your control:
+## Your control & deletion
 
-- Sign out or delete the app to clear locally stored credentials and caches.
-- Delete recordings/events on your Frigate server to remove that footage.
+You can delete your account at any time — in the app under **Settings → Account →
+Delete Account**, or on the website from your dashboard. Deletion permanently removes
+your email, encrypted Frigate connection, device tokens, and settings.
 
-## Children's privacy
+## Children
 
-ApexSight is not directed at children and collects no personal information from
-anyone.
+ApexSight is not directed at children and does not knowingly collect personal
+information from anyone under 13.
 
 ## Changes
 
-If this policy changes, the updated version will be posted here with a new "Last
-updated" date.
+If this policy changes, the updated version will be posted at the URL above with a new
+"Last updated" date.
 
 ## Contact
 
