@@ -1,108 +1,179 @@
 # ApexSight iOS Tester MCP
 
-An MCP server that lets Claude interact directly with your iOS Simulator — take screenshots, tap, swipe, type, and generate test reports automatically.
+MCP server that gives Claude direct access to your iOS Simulator — screenshots, taps,
+swipes, text input, console logs, and an auto-generated test report.
 
-## How it works
+---
 
-Claude uses this server as a set of tools:
-- `screenshot` — see what's on screen right now
-- `tap` / `swipe` — navigate the app
-- `type_text` — enter text into fields
-- `add_finding` — record pass/fail/warn observations
-- `generate_report` — produce a full markdown report
+## Step 1 — Build the Xcode project
 
-## Requirements
-
-- macOS with Xcode installed
-- Node.js 18+
-- ApexSight built and installed on a simulator (build from Xcode first)
-
-## Setup (one time)
+The project uses [xcodegen](https://github.com/yonaskolb/XcodeGen) to generate the
+`.xcodeproj` from `project.yml`. Do this once, and again whenever `project.yml` changes.
 
 ```bash
-cd mcp/ios-tester
+# Install prerequisites (once)
+brew install xcodegen
+
+# Generate the Xcode project
+cd ~/path/to/ApexSight/native-ios
+xcodegen generate
+
+# Open in Xcode and hit Run (⌘R) — easiest first-time setup
+open ApexSightNative.xcodeproj
+```
+
+**Or build entirely from the terminal:**
+
+```bash
+cd ~/path/to/ApexSight/native-ios
+
+# List available simulators to pick a destination
+xcrun simctl list devices available
+
+# Build and install in one command (replace the simulator name as needed)
+xcodebuild \
+  -project ApexSightNative.xcodeproj \
+  -scheme ApexSightNative \
+  -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+  -configuration Debug \
+  build
+
+# Optional: prettier output (brew install xcpretty)
+xcodebuild ... | xcpretty
+```
+
+**Boot the simulator and launch the app from terminal:**
+
+```bash
+# Boot a simulator by name
+xcrun simctl boot "iPhone 16 Pro"
+
+# Open the Simulator app so you can see the screen
+open -a Simulator
+
+# Install the built app (path from xcodebuild output, usually in ~/Library/Developer/Xcode/DerivedData)
+xcrun simctl install booted /path/to/ApexSightNative.app
+
+# Launch it
+xcrun simctl launch booted com.brandontoth.apexsight.native
+```
+
+---
+
+## Step 2 — Build the MCP server
+
+```bash
+cd ~/path/to/ApexSight/mcp/ios-tester
 npm install
 npm run build
 ```
 
-## Configure Claude Code (local CLI)
+---
 
-Add to `~/.claude/claude.json` (or via `claude mcp add`):
+## Step 3 — Connect to Claude Code Desktop
 
+**Option A — command line (fastest):**
+```bash
+claude mcp add ios-tester node "$(pwd)/dist/index.js"
+```
+
+**Option B — edit `~/.claude/claude.json` manually:**
 ```json
 {
   "mcpServers": {
     "ios-tester": {
       "command": "node",
-      "args": ["/absolute/path/to/ApexSight/mcp/ios-tester/dist/index.js"]
+      "args": ["/Users/YOUR_USERNAME/path/to/ApexSight/mcp/ios-tester/dist/index.js"],
+      "env": {
+        "APEXSIGHT_REPO": "/Users/YOUR_USERNAME/path/to/ApexSight"
+      }
     }
   }
 }
 ```
 
-Or run `claude mcp add` from your terminal:
+Set `APEXSIGHT_REPO` so Claude knows where the repo is when using `build_and_install`.
 
+**Verify it's connected:**
 ```bash
-claude mcp add ios-tester node /absolute/path/to/ApexSight/mcp/ios-tester/dist/index.js
+claude mcp list
+# should show: ios-tester ✓ connected
 ```
 
-## Running a test session
+---
 
-1. Open Simulator and build/run ApexSight from Xcode
-2. Open a new terminal and start Claude Code:
-   ```bash
-   claude
-   ```
-3. Tell Claude to test the app:
-   ```
-   Run a full UI test of ApexSight. Go through every tab, check loading states,
-   test the login form, verify camera streams show a live badge, check that the
-   Review tab badge updates, and generate a report when done.
-   ```
+## Step 4 — Run a test session
 
-Claude will navigate the app autonomously, recording findings as it goes, and save a markdown report to your Desktop.
+1. Boot a simulator and run ApexSight from Xcode (or Step 1 terminal commands above)
+2. Open Claude Code Desktop or run `claude` in your terminal
+3. Tell Claude what to test:
 
-## Optional: faster text input
+```
+Test the full ApexSight app. Go through every tab:
+- Cameras: check live streams load, badge shows when live
+- Review: verify unread count badge in tab bar, pull-to-refresh works
+- Activity: check event rows render correctly
+- Explore: search for "person", verify results appear
+- Settings: open Notifications settings, check background is correct
 
-Install Facebook's `idb` for more reliable text entry:
-
-```bash
-brew install facebook/fb/idb-companion
-pip install fb-idb
+Record a finding for each screen (pass/fail/warn) and generate
+a report at the end saved to ~/Desktop/apexsight-test-report.md
 ```
 
-Without `idb`, text input uses clipboard paste (works fine, just requires
-Simulator.app to be the active window when typing).
+Claude will autonomously navigate, take screenshots, record findings, and produce the report.
+
+---
 
 ## Tools reference
 
-| Tool | Description |
+| Tool | What it does |
 |------|-------------|
-| `screenshot` | Capture current simulator screen |
+| `screenshot` | Capture current screen (image returned) |
 | `tap x y` | Tap at coordinates |
 | `swipe x1 y1 x2 y2 [duration]` | Swipe gesture |
 | `type_text text` | Type into focused field |
-| `press_button home\|lock` | Hardware buttons |
+| `press_button home\|lock\|sideButton` | Hardware buttons |
 | `launch_app [bundle_id]` | Launch ApexSight |
 | `terminate_app [bundle_id]` | Force quit |
-| `open_deep_link url` | Open apex:// deep link |
-| `list_simulators` | Show available devices |
-| `get_console_logs [lines]` | Get app log output |
-| `add_finding screen status description` | Record a test finding |
+| `open_deep_link url` | Open `apex://` deep link |
+| `list_simulators` | Show all available devices |
+| `boot_simulator udid` | Boot a specific device |
+| `get_console_logs [lines]` | Fetch app log output |
+| `build_and_install [repo_path]` | Build from source, install on simulator |
+| `add_finding screen status description` | Record pass/fail/warn |
 | `generate_report [output_path] [summary]` | Save markdown report |
-| `clear_findings` | Reset for new session |
+| `clear_findings` | Reset for a new session |
 
-## iPhone coordinates reference
+---
 
-iPhone 15 Pro logical resolution: **393 × 852 points**
+## iPhone coordinates cheat sheet
 
-Key areas:
-- Tab bar: y ≈ 810
-  - Cameras tab: x ≈ 39
-  - Review tab: x ≈ 118
-  - Activity tab: x ≈ 196
-  - Explore tab: x ≈ 275
-  - Settings tab: x ≈ 354
-- Navigation bar: y ≈ 60–90
-- Content area: y ≈ 100–790
-- Pull-to-refresh: swipe from y=200 to y=400
+iPhone 16 Pro logical resolution: **393 × 852 points**
+
+| Area | X | Y |
+|------|---|---|
+| Status bar | — | ~28 |
+| Navigation bar title | ~196 | ~60 |
+| Tab bar — Cameras | ~39 | ~815 |
+| Tab bar — Review | ~118 | ~815 |
+| Tab bar — Activity | ~196 | ~815 |
+| Tab bar — Explore | ~275 | ~815 |
+| Tab bar — Settings | ~354 | ~815 |
+| Content area (top) | — | ~100 |
+| Content area (center) | — | ~426 |
+| Pull-to-refresh | ~196 | swipe 150→380 |
+| Back gesture | swipe 10,400→200,400 | — |
+
+---
+
+## Optional: faster text input
+
+Install Facebook's `idb` for reliable text entry without clipboard:
+
+```bash
+brew install facebook/fb/idb-companion
+pip3 install fb-idb
+```
+
+Without idb, the server uses clipboard paste (writes text → `pbcopy`, then Cmd+V into
+Simulator). This works fine as long as the Simulator window is accessible.

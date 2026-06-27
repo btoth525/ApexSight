@@ -12,6 +12,7 @@ import * as os from "os";
 import * as path from "path";
 
 const BUNDLE_ID = "com.brandontoth.apexsight.native";
+const APP_NAME  = "ApexSightNative";
 
 // ── Simulator helpers ──────────────────────────────────────────────────────
 
@@ -20,7 +21,9 @@ function getBootedUDID(): string {
     const raw = execFileSync("xcrun", ["simctl", "list", "devices", "--json"], {
       encoding: "utf8",
     });
-    const data = JSON.parse(raw) as { devices: Record<string, Array<{ state: string; udid: string }>> };
+    const data = JSON.parse(raw) as {
+      devices: Record<string, Array<{ state: string; udid: string }>>;
+    };
     for (const runtime of Object.values(data.devices)) {
       for (const device of runtime) {
         if (device.state === "Booted") return device.udid;
@@ -31,7 +34,7 @@ function getBootedUDID(): string {
 }
 
 function sim(...args: string[]): string {
-  return execFileSync("xcrun", ["simctl", ...args], { encoding: "utf8" });
+  return execFileSync("xcrun", ["simctl", ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
 }
 
 function hasIdb(): boolean {
@@ -43,22 +46,38 @@ function hasIdb(): boolean {
   }
 }
 
-// Type text: try idb first, fall back to clipboard + Cmd+V via AppleScript
+// Type text safely: idb if available, otherwise clipboard paste via AppleScript.
+// No shell string interpolation of user text (avoids injection).
 function typeText(text: string, udid: string): string {
   if (hasIdb()) {
-    execFileSync("idb", ["type", "--udid", udid, text], { encoding: "utf8" });
+    execFileSync("idb", ["type", "--udid", udid, text], { stdio: "pipe" });
     return `Typed via idb: "${text}"`;
   }
-  // Clipboard approach — requires Simulator.app to be the frontmost window
-  execSync(`printf %s ${JSON.stringify(text)} | pbcopy`);
-  execSync(`osascript -e 'tell application "Simulator" to activate'`);
-  execSync(
-    `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`
-  );
+  // Write to clipboard via stdin — safe, handles any characters
+  execFileSync("pbcopy", [], { input: text, encoding: "utf8" });
+  // Bring Simulator to front, then paste
+  execFileSync("osascript", [
+    "-e", "tell application \"Simulator\" to activate",
+    "-e", "tell application \"System Events\" to keystroke \"v\" using {command down}",
+  ]);
   return `Typed via clipboard paste: "${text}"`;
 }
 
-// ── Findings accumulator (in-memory for this session) ────────────────────
+// Find the built .app in a DerivedData directory
+function findBuiltApp(derivedData: string): string | null {
+  try {
+    const result = execSync(
+      `find ${JSON.stringify(derivedData)} -name "${APP_NAME}.app" ` +
+      `-not -path "*/PackageFrameworks/*" 2>/dev/null | head -1`,
+      { encoding: "utf8" }
+    ).trim();
+    return result || null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Findings accumulator (persists for the lifetime of the server process) ─
 
 interface Finding {
   screen: string;
@@ -82,15 +101,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "screenshot",
       description:
         "Capture a screenshot of the booted iOS Simulator and return it as an image. " +
-        "Always call this after any tap/swipe/navigation to see the current state.",
+        "Call this after every tap/swipe/navigation to see the current state.",
       inputSchema: { type: "object", properties: {}, required: [] },
     },
     {
       name: "tap",
       description:
         "Tap at (x, y) on the simulator screen. " +
-        "iPhone 15 Pro screen is 393×852 logical points. " +
-        "Call screenshot first to determine the right coordinates.",
+        "iPhone 16 Pro screen is 393×852 logical points. " +
+        "Always call screenshot first to identify the right coordinates.",
       inputSchema: {
         type: "object",
         properties: {
@@ -102,7 +121,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "swipe",
-      description: "Swipe from (x1,y1) to (x2,y2). Use for scroll, pull-to-refresh, or tab switching.",
+      description:
+        "Swipe from (x1,y1) to (x2,y2). Use for scrolling, pull-to-refresh, or back gestures.",
       inputSchema: {
         type: "object",
         properties: {
@@ -112,8 +132,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           y2: { type: "number" },
           duration: {
             type: "number",
-            description: "Duration in seconds. Use 0.3 for fast scroll, 1.0 for slow drag.",
-            default: 0.5,
+            description: "Seconds. 0.3 = fast scroll, 1.0 = slow drag. Default 0.5.",
           },
         },
         required: ["x1", "y1", "x2", "y2"],
@@ -123,7 +142,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "type_text",
       description:
         "Type text into the currently focused input field. " +
-        "Tap the field first, wait for keyboard to appear, then call this.",
+        "Tap the field first so the keyboard appears, then call this.",
       inputSchema: {
         type: "object",
         properties: {
@@ -141,7 +160,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           button: {
             type: "string",
             enum: ["home", "lock", "sideButton", "apple"],
-            description: "'home' to go to springboard, 'lock' to lock screen",
+            description: "'home' returns to springboard, 'lock' locks the screen",
           },
         },
         required: ["button"],
@@ -149,13 +168,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "launch_app",
-      description: "Launch ApexSight (or another app by bundle ID) on the booted simulator.",
+      description: "Launch ApexSight on the booted simulator.",
       inputSchema: {
         type: "object",
         properties: {
           bundle_id: {
             type: "string",
-            description: `Bundle ID to launch. Defaults to ${BUNDLE_ID}`,
+            description: `Optional override. Defaults to ${BUNDLE_ID}`,
           },
         },
         required: [],
@@ -163,11 +182,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "terminate_app",
-      description: "Terminate (force-quit) ApexSight on the simulator.",
+      description: "Force-quit ApexSight on the simulator.",
       inputSchema: {
         type: "object",
         properties: {
-          bundle_id: { type: "string", description: `Defaults to ${BUNDLE_ID}` },
+          bundle_id: {
+            type: "string",
+            description: `Optional override. Defaults to ${BUNDLE_ID}`,
+          },
         },
         required: [],
       },
@@ -175,7 +197,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "open_deep_link",
       description:
-        "Open an 'apex://' deep link in the simulator. " +
+        "Open an apex:// deep link in the simulator. " +
         "Examples: 'apex://review?id=abc', 'apex://camera?name=front_door'",
       inputSchema: {
         type: "object",
@@ -187,18 +209,48 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "list_simulators",
-      description: "List all available iOS simulators and their current state.",
+      description: "List all available iOS simulators with their UDID and state.",
       inputSchema: { type: "object", properties: {}, required: [] },
+    },
+    {
+      name: "boot_simulator",
+      description: "Boot a specific simulator by UDID (from list_simulators).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          udid: { type: "string", description: "Device UDID" },
+        },
+        required: ["udid"],
+      },
     },
     {
       name: "get_console_logs",
       description:
-        "Fetch recent console output from ApexSight running in the simulator. " +
-        "Use this when you see an error or unexpected behavior to get the stack trace.",
+        "Fetch recent console output from ApexSight in the simulator. " +
+        "Call this when you see unexpected behavior or want to check for errors.",
       inputSchema: {
         type: "object",
         properties: {
-          lines: { type: "number", description: "How many recent lines to return (default 60)", default: 60 },
+          lines: {
+            type: "number",
+            description: "Number of recent lines to return (default 80)",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "build_and_install",
+      description:
+        "Build ApexSight from source and install it on the booted simulator. " +
+        "Runs xcodegen then xcodebuild. Use after pulling code changes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo_path: {
+            type: "string",
+            description: "Absolute path to the ApexSight repo root. Auto-detected if omitted.",
+          },
         },
         required: [],
       },
@@ -206,20 +258,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "add_finding",
       description:
-        "Record a test finding. Call this whenever you observe a pass, fail, or warning " +
-        "while testing a screen or feature. These are collected and included in the final report.",
+        "Record a test result observation. Call this for every screen/feature you test. " +
+        "Findings are accumulated and written to the final report.",
       inputSchema: {
         type: "object",
         properties: {
-          screen: { type: "string", description: "Which screen or feature you tested (e.g. 'Cameras Tab', 'Login Form')" },
+          screen: {
+            type: "string",
+            description: "Screen or feature name (e.g. 'Cameras Tab', 'Login Form', 'Live Stream')",
+          },
           status: {
             type: "string",
             enum: ["pass", "fail", "warn"],
-            description: "'pass' = works correctly, 'fail' = broken, 'warn' = works but has a UX issue",
+            description: "pass = works as expected, fail = broken, warn = functional but UX issue",
           },
           description: {
             type: "string",
-            description: "Concise description of what you observed. For fails, include what should happen vs what did.",
+            description:
+              "What you observed. For fails: what should happen vs what actually did.",
           },
         },
         required: ["screen", "status", "description"],
@@ -228,18 +284,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "generate_report",
       description:
-        "Generate a full markdown test report from all findings recorded this session " +
-        "and save it to a file. Call this at the end of a testing run.",
+        "Generate a markdown test report from all findings and save it to a file. " +
+        "Call this at the end of the testing session.",
       inputSchema: {
         type: "object",
         properties: {
           output_path: {
             type: "string",
-            description: "Where to save the report (e.g. ~/Desktop/apexsight-test-report.md). Defaults to ~/Desktop.",
+            description: "Save path. Defaults to ~/Desktop/apexsight-test-report.md",
           },
           summary: {
             type: "string",
-            description: "Optional paragraph summarizing the overall test session.",
+            description: "Optional paragraph summarizing the overall session.",
           },
         },
         required: [],
@@ -253,35 +309,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }));
 
+// ── Tool handlers ──────────────────────────────────────────────────────────
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const udid = getBootedUDID();
 
   try {
     switch (name) {
-      // ── Screenshot ──────────────────────────────────────────────────────
+
+      // ── Screenshot ────────────────────────────────────────────────────────
       case "screenshot": {
-        const tmp = path.join(os.tmpdir(), `apexsight-sim-${Date.now()}.png`);
+        const tmp = path.join(os.tmpdir(), `apexsight-${Date.now()}.png`);
         sim("io", udid, "screenshot", tmp);
         const data = fs.readFileSync(tmp);
         fs.unlinkSync(tmp);
         return {
-          content: [
-            { type: "image", data: data.toString("base64"), mimeType: "image/png" },
-          ],
+          content: [{ type: "image", data: data.toString("base64"), mimeType: "image/png" }],
         };
       }
 
-      // ── Tap ─────────────────────────────────────────────────────────────
+      // ── Tap ───────────────────────────────────────────────────────────────
       case "tap": {
         const { x, y } = args as { x: number; y: number };
         sim("io", udid, "tap", String(Math.round(x)), String(Math.round(y)));
-        // Small pause so the UI settles before next action
         await new Promise((r) => setTimeout(r, 350));
         return { content: [{ type: "text", text: `Tapped (${x}, ${y})` }] };
       }
 
-      // ── Swipe ───────────────────────────────────────────────────────────
+      // ── Swipe ─────────────────────────────────────────────────────────────
       case "swipe": {
         const { x1, y1, x2, y2, duration = 0.5 } = args as {
           x1: number; y1: number; x2: number; y2: number; duration?: number;
@@ -296,7 +352,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: `Swiped (${x1},${y1}) → (${x2},${y2})` }] };
       }
 
-      // ── Type text ───────────────────────────────────────────────────────
+      // ── Type text ─────────────────────────────────────────────────────────
       case "type_text": {
         const { text } = args as { text: string };
         const result = typeText(text, udid);
@@ -304,7 +360,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: result }] };
       }
 
-      // ── Hardware button ─────────────────────────────────────────────────
+      // ── Hardware button ───────────────────────────────────────────────────
       case "press_button": {
         const { button } = args as { button: string };
         sim("io", udid, "button", button);
@@ -312,172 +368,248 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: `Pressed ${button}` }] };
       }
 
-      // ── Launch ──────────────────────────────────────────────────────────
+      // ── Launch ────────────────────────────────────────────────────────────
       case "launch_app": {
         const bundleId = (args as Record<string, string>)?.bundle_id ?? BUNDLE_ID;
         sim("launch", udid, bundleId);
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 1800));
         return { content: [{ type: "text", text: `Launched ${bundleId}` }] };
       }
 
-      // ── Terminate ───────────────────────────────────────────────────────
+      // ── Terminate ─────────────────────────────────────────────────────────
       case "terminate_app": {
         const bundleId = (args as Record<string, string>)?.bundle_id ?? BUNDLE_ID;
         try { sim("terminate", udid, bundleId); } catch {}
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 600));
         return { content: [{ type: "text", text: `Terminated ${bundleId}` }] };
       }
 
-      // ── Deep link ───────────────────────────────────────────────────────
+      // ── Deep link ─────────────────────────────────────────────────────────
       case "open_deep_link": {
         const { url } = args as { url: string };
         sim("openurl", udid, url);
-        await new Promise((r) => setTimeout(r, 800));
-        return { content: [{ type: "text", text: `Opened ${url}` }] };
+        await new Promise((r) => setTimeout(r, 900));
+        return { content: [{ type: "text", text: `Opened: ${url}` }] };
       }
 
-      // ── List simulators ─────────────────────────────────────────────────
+      // ── List simulators ───────────────────────────────────────────────────
       case "list_simulators": {
         const raw = sim("list", "devices", "--json");
         const data = JSON.parse(raw) as {
-          devices: Record<string, Array<{ name: string; udid: string; state: string; isAvailable: boolean }>>;
+          devices: Record<
+            string,
+            Array<{ name: string; udid: string; state: string; isAvailable: boolean }>
+          >;
         };
         const lines: string[] = [];
         for (const [runtime, devices] of Object.entries(data.devices)) {
-          const runtimeName = runtime.replace("com.apple.CoreSimulator.SimRuntime.", "").replace(/-/g, " ");
+          const runtimeLabel = runtime
+            .replace("com.apple.CoreSimulator.SimRuntime.", "")
+            .replace(/-/g, " ");
           const available = devices.filter((d) => d.isAvailable);
-          if (available.length === 0) continue;
-          lines.push(`\n**${runtimeName}**`);
+          if (!available.length) continue;
+          lines.push(`\n**${runtimeLabel}**`);
           for (const d of available) {
-            const state = d.state === "Booted" ? " [BOOTED ✓]" : "";
-            lines.push(`  ${d.name}${state}\n  ${d.udid}`);
+            const tag = d.state === "Booted" ? " ← BOOTED" : "";
+            lines.push(`  ${d.name}${tag}  [${d.udid}]`);
           }
         }
-        return { content: [{ type: "text", text: lines.join("\n") }] };
+        return { content: [{ type: "text", text: lines.join("\n") || "No simulators found" }] };
       }
 
-      // ── Console logs ────────────────────────────────────────────────────
+      // ── Boot simulator ────────────────────────────────────────────────────
+      case "boot_simulator": {
+        const { udid: targetUdid } = args as { udid: string };
+        sim("boot", targetUdid);
+        await new Promise((r) => setTimeout(r, 3000));
+        return { content: [{ type: "text", text: `Booted ${targetUdid}` }] };
+      }
+
+      // ── Console logs ──────────────────────────────────────────────────────
       case "get_console_logs": {
-        const lines = ((args as Record<string, number>)?.lines) ?? 60;
+        const maxLines = ((args as Record<string, number>)?.lines) ?? 80;
         let output = "";
         try {
-          output = execSync(
-            `xcrun simctl spawn ${udid} log show --predicate 'process == "ApexSightNative" OR process == "ApexSight"' --last 2m --style compact 2>/dev/null | tail -${lines}`,
-            { encoding: "utf8" }
+          // Use simctl spawn to run 'log show' inside the simulator container
+          const raw = execFileSync(
+            "xcrun",
+            [
+              "simctl", "spawn", udid,
+              "log", "show",
+              "--predicate", `process == "${APP_NAME}"`,
+              "--last", "3m",
+              "--style", "compact",
+            ],
+            { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }
           );
+          const allLines = raw.trim().split("\n");
+          output = allLines.slice(-maxLines).join("\n");
         } catch {
-          output = "(no logs available — ensure the app is running)";
+          output = "(no logs — ensure the app is running and the simulator is booted)";
         }
         return { content: [{ type: "text", text: output || "(no recent log output)" }] };
       }
 
-      // ── Add finding ─────────────────────────────────────────────────────
+      // ── Build and install ─────────────────────────────────────────────────
+      case "build_and_install": {
+        // Resolve repo root: explicit arg → APEXSIGHT_REPO env → ~/ApexSight
+        const repoRoot = (args as Record<string, string>)?.repo_path
+          ?? process.env["APEXSIGHT_REPO"]
+          ?? path.join(os.homedir(), "ApexSight");
+        const nativeDir   = path.join(repoRoot, "native-ios");
+        const projectFile = path.join(nativeDir, `${APP_NAME}.xcodeproj`);
+        const buildDir    = path.join(os.tmpdir(), "apexsight-build");
+
+        // Generate Xcode project from project.yml if it doesn't exist
+        if (!fs.existsSync(projectFile)) {
+          try {
+            execFileSync("xcodegen", ["generate"], { cwd: nativeDir, encoding: "utf8" });
+          } catch {
+            return {
+              content: [{
+                type: "text",
+                text: `xcodegen not found or failed. Install with: brew install xcodegen\n` +
+                      `Then re-run from: ${nativeDir}`,
+              }],
+              isError: true,
+            };
+          }
+        }
+
+        // Build
+        let buildLog = "";
+        try {
+          buildLog = execSync(
+            `xcodebuild ` +
+            `-project ${JSON.stringify(projectFile)} ` +
+            `-scheme ${APP_NAME} ` +
+            `-destination "platform=iOS Simulator,id=${udid}" ` +
+            `-configuration Debug ` +
+            `-derivedDataPath ${JSON.stringify(buildDir)} ` +
+            `build 2>&1 | tail -30`,
+            { encoding: "utf8", cwd: nativeDir }
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { content: [{ type: "text", text: `Build failed:\n${msg}` }], isError: true };
+        }
+
+        // Find and install .app
+        const appPath = findBuiltApp(buildDir);
+        if (!appPath) {
+          return {
+            content: [{ type: "text", text: `Build succeeded but .app not found in ${buildDir}` }],
+            isError: true,
+          };
+        }
+
+        sim("install", udid, appPath);
+        return {
+          content: [{
+            type: "text",
+            text: `Built and installed successfully.\n\nBuild log (last 30 lines):\n${buildLog}`,
+          }],
+        };
+      }
+
+      // ── Add finding ───────────────────────────────────────────────────────
       case "add_finding": {
         const { screen, status, description } = args as Finding;
-        const finding: Finding = {
-          screen,
-          status,
-          description,
-          timestamp: new Date().toISOString(),
-        };
-        findings.push(finding);
+        findings.push({ screen, status, description, timestamp: new Date().toISOString() });
         const icon = status === "pass" ? "✅" : status === "fail" ? "❌" : "⚠️";
         return {
           content: [{
             type: "text",
-            text: `${icon} Recorded [${status.toUpperCase()}] for "${screen}"\nTotal findings: ${findings.length}`,
+            text: `${icon} [${status.toUpperCase()}] "${screen}": ${description}\nSession total: ${findings.length} findings`,
           }],
         };
       }
 
-      // ── Generate report ─────────────────────────────────────────────────
+      // ── Generate report ───────────────────────────────────────────────────
       case "generate_report": {
         const { output_path, summary } = args as { output_path?: string; summary?: string };
 
-        const pass = findings.filter((f) => f.status === "pass").length;
-        const fail = findings.filter((f) => f.status === "fail").length;
-        const warn = findings.filter((f) => f.status === "warn").length;
+        const pass  = findings.filter((f) => f.status === "pass").length;
+        const fail  = findings.filter((f) => f.status === "fail").length;
+        const warn  = findings.filter((f) => f.status === "warn").length;
+        const total = findings.length;
         const overall = fail === 0 ? "✅ PASS" : "❌ FAIL";
-        const date = new Date().toLocaleDateString("en-US", {
+        const date = new Date().toLocaleString("en-US", {
           year: "numeric", month: "long", day: "numeric",
           hour: "2-digit", minute: "2-digit",
         });
 
-        const sections: string[] = [
+        const lines: string[] = [
           `# ApexSight UI Test Report`,
           ``,
-          `**Date:** ${date}  `,
-          `**Overall:** ${overall}  `,
-          `**Results:** ${pass} passed · ${fail} failed · ${warn} warnings`,
+          `**Date:** ${date}`,
+          `**Overall:** ${overall}`,
+          `**Results:** ${pass}/${total} passed · ${fail} failed · ${warn} warnings`,
           ``,
         ];
 
         if (summary) {
-          sections.push(`## Summary`, ``, summary, ``);
+          lines.push(`## Summary`, ``, summary, ``);
         }
 
-        sections.push(`## Test Findings`, ``);
+        lines.push(`## Findings by Screen`, ``);
 
+        // Group by screen
         const byScreen = new Map<string, Finding[]>();
         for (const f of findings) {
-          const group = byScreen.get(f.screen) ?? [];
-          group.push(f);
-          byScreen.set(f.screen, group);
+          const g = byScreen.get(f.screen) ?? [];
+          g.push(f);
+          byScreen.set(f.screen, g);
         }
 
-        for (const [screen, screenFindings] of byScreen) {
-          const worstStatus = screenFindings.some((f) => f.status === "fail")
-            ? "❌"
-            : screenFindings.some((f) => f.status === "warn")
-            ? "⚠️"
-            : "✅";
-          sections.push(`### ${worstStatus} ${screen}`, ``);
-          for (const f of screenFindings) {
-            const icon = f.status === "pass" ? "✅" : f.status === "fail" ? "❌" : "⚠️";
-            sections.push(`- ${icon} **[${f.status.toUpperCase()}]** ${f.description}`);
+        for (const [screen, items] of byScreen) {
+          const screenIcon = items.some((i) => i.status === "fail")
+            ? "❌" : items.some((i) => i.status === "warn") ? "⚠️" : "✅";
+          lines.push(`### ${screenIcon} ${screen}`, ``);
+          for (const item of items) {
+            const icon = item.status === "pass" ? "✅" : item.status === "fail" ? "❌" : "⚠️";
+            lines.push(`- ${icon} **[${item.status.toUpperCase()}]** ${item.description}`);
           }
-          sections.push(``);
+          lines.push(``);
         }
 
         if (fail > 0) {
-          sections.push(`## Issues to Fix`, ``);
+          lines.push(`## Action Items`, ``);
           for (const f of findings.filter((f) => f.status === "fail")) {
-            sections.push(`- [ ] **${f.screen}:** ${f.description}`);
+            lines.push(`- [ ] **${f.screen}:** ${f.description}`);
           }
-          sections.push(``);
+          lines.push(``);
         }
 
         if (warn > 0) {
-          sections.push(`## UX Warnings`, ``);
+          lines.push(`## UX Warnings`, ``);
           for (const f of findings.filter((f) => f.status === "warn")) {
-            sections.push(`- **${f.screen}:** ${f.description}`);
+            lines.push(`- **${f.screen}:** ${f.description}`);
           }
-          sections.push(``);
+          lines.push(``);
         }
 
-        const report = sections.join("\n");
+        const report = lines.join("\n");
 
+        // Resolve save path
         const defaultPath = path.join(os.homedir(), "Desktop", "apexsight-test-report.md");
-        const savePath = output_path ?? defaultPath;
-        const expanded = savePath.startsWith("~/")
-          ? path.join(os.homedir(), savePath.slice(2))
-          : savePath;
-
-        fs.writeFileSync(expanded, report, "utf8");
+        let savePath = output_path ?? defaultPath;
+        if (savePath.startsWith("~/")) savePath = path.join(os.homedir(), savePath.slice(2));
+        fs.writeFileSync(savePath, report, "utf8");
 
         return {
           content: [{
             type: "text",
-            text: `Report saved to: ${expanded}\n\n${report}`,
+            text: `Saved to: ${savePath}\n\n---\n\n${report}`,
           }],
         };
       }
 
-      // ── Clear findings ──────────────────────────────────────────────────
+      // ── Clear findings ────────────────────────────────────────────────────
       case "clear_findings": {
         const count = findings.length;
         findings.length = 0;
-        return { content: [{ type: "text", text: `Cleared ${count} findings. Ready for a fresh test run.` }] };
+        return { content: [{ type: "text", text: `Cleared ${count} findings. Ready for new session.` }] };
       }
 
       default:
@@ -488,6 +620,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
   }
 });
+
+// ── Start ──────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
