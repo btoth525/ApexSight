@@ -29,16 +29,22 @@ struct RecordingContextPlayerView: View {
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
                 .cardStroke(GlassTheme.Radius.card)
-                .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-                    guard !isSliding, let player = model.player else { return }
-                    // Update duration FIRST so the clamp below uses the real range. Both
-                    // values are NaN until the HLS item is ready — feeding NaN into the
-                    // Slider or CMTime(seconds:) triggers a CoreGraphics NaN crash.
-                    if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
-                        duration = dur
+                .task {
+                    // Drive the scrub bar from the player clock. A Task loop (vs a
+                    // Timer) is cancelled automatically when the view disappears.
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        if Task.isCancelled { break }
+                        guard !isSliding, let player = model.player else { continue }
+                        // Update duration FIRST so the clamp below uses the real range. Both
+                        // values are NaN until the HLS item is ready — feeding NaN into the
+                        // Slider or CMTime(seconds:) triggers a CoreGraphics NaN crash.
+                        if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
+                            duration = dur
+                        }
+                        let t = player.currentTime().seconds
+                        if t.isFinite { currentTime = min(max(t, 0), max(duration, 1)) }
                     }
-                    let t = player.currentTime().seconds
-                    if t.isFinite { currentTime = min(max(t, 0), max(duration, 1)) }
                 }
 
             // Scrub bar with event marker

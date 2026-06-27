@@ -16,7 +16,7 @@ struct MultiCameraGridView: View {
     @AppStorage("multiview.smartFocus") private var smartFocus = true
     @State private var activeCameraName: String?
     @State private var lastEventID: String?
-    @State private var clearWork: DispatchWorkItem?
+    @State private var clearWork: Task<Void, Never>?
 
     init(group: CameraGroup? = nil) {
         self.group = group
@@ -174,13 +174,13 @@ struct MultiCameraGridView: View {
         clearWork?.cancel()
         Haptics.tap()
         withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8)) { activeCameraName = name }
-        let work = DispatchWorkItem {
+        clearWork = Task {
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
                 if activeCameraName == name { activeCameraName = nil }
             }
         }
-        clearWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
     }
 
     private var cameraRows: [[Int]] {
@@ -259,7 +259,7 @@ private struct MultiCameraCell: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.black
-            // WebRTC-first (instant, Metal); falls back to HLS/MJPEG per camera internally.
+            // Live HLS with an MJPEG fallback per camera internally.
             // Always the full-resolution MAIN stream — every camera, every layout, full quality.
             // The connection limiter staggers how many spin up at once so the wall stays smooth.
             HLSLivePlayerView(

@@ -10,7 +10,7 @@ struct OnboardingView: View {
             icon: "video.fill",
             tint: GlassTheme.blue,
             title: "Every Camera, Instantly",
-            subtitle: "Auto-playing live streams, WebRTC HD, PTZ control, and a frosted-glass wall of every Frigate camera on your network."
+            subtitle: "Auto-playing live HD streams, PTZ control, and a frosted-glass wall of every Frigate camera on your network."
         ),
         OnboardingPage(
             icon: "magnifyingglass",

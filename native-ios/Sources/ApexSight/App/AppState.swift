@@ -531,7 +531,10 @@ final class AppState: ObservableObject {
             await refreshTask.value
             return
         }
-        let task = Task { @MainActor in await refresh(retryOnAuthFailure: true) }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.refresh(retryOnAuthFailure: true)
+        }
         refreshTask = task
         await task.value
         refreshTask = nil

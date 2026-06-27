@@ -75,10 +75,10 @@ final class AppLockController: ObservableObject {
         guard isLocked, !authenticating else { return }
         guard BiometricLock.isAvailable else { isLocked = false; return }
         authenticating = true
-        Task {
+        Task { [weak self] in
             let ok = await BiometricLock.authenticate(reason: "Unlock ApexSight to view your cameras")
-            authenticating = false
-            if ok { isLocked = false }
+            self?.authenticating = false
+            if ok { self?.isLocked = false }
         }
     }
 }

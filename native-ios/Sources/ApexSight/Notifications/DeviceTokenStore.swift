@@ -112,7 +112,7 @@ enum DeviceTokenStore {
 
         if let existing = pairingCode, !existing.isEmpty { return existing }
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        func block() -> String { String((0..<4).map { _ in alphabet.randomElement()! }) }
+        func block() -> String { String((0..<4).map { _ in alphabet.randomElement() ?? "A" }) }
         let code = "APEX-\(block())-\(block())"
         pairingCode = code
         return code

@@ -113,13 +113,16 @@ struct LoginView: View {
         .sensoryFeedback(.error, trigger: appState.errorMessage) { old, new in
             old == nil && new != nil
         }
-        .onAppear {
-            appeared = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                if baseURL.isEmpty { focus = .url }
-                else if username.isEmpty { focus = .username }
-                else { focus = .password }
-            }
+        .onAppear { appeared = true }
+        .task {
+            // Let the entrance animation settle before raising the keyboard. A Task
+            // (vs asyncAfter) cancels if the view leaves, so focus never lands on a
+            // dismissed form.
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            if baseURL.isEmpty { focus = .url }
+            else if username.isEmpty { focus = .username }
+            else { focus = .password }
         }
     }
 

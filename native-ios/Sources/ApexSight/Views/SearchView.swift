@@ -687,12 +687,12 @@ struct SearchView: View {
             } else if isQuestion(q) {
                 // A question ("how many packages today", "when was the dog out") — parse it
                 // into structured filters so counts/times are precise, then answer.
-                let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, style: .default)
+                let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames)
                 found = (try await client.events(
                     camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
                     subLabel: subLabel, zone: zone,
                     after: afterDate ?? plan.after, before: plan.before, limit: 200
-                )).filter { plan.matches($0, style: .default) }
+                )).filter { plan.matches($0) }
                 answer = AskParser.answer(for: plan, results: found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) })
             } else {
                 // A description ("kid on a bike", "blue car", "Amazon"). Run ALL three

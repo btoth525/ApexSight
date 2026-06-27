@@ -20,6 +20,7 @@ struct LiveAlertBanner: View {
                 bannerCard(banner)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     .onAppear { scheduleDismiss(banner) }
+                    .onDisappear { dismissTask?.cancel(); dismissTask = nil }
             }
             Spacer()
         }

@@ -5,6 +5,7 @@ import SwiftUI
 struct SkeletonBlock: View {
     var cornerRadius: CGFloat = 12
     @State private var shimmer = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -23,6 +24,8 @@ struct SkeletonBlock: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onAppear {
+                // Reduce Motion: keep the static placeholder, skip the looping sweep.
+                guard !reduceMotion else { return }
                 withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
                     shimmer = true
                 }

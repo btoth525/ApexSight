@@ -16,7 +16,7 @@ struct ReviewTab: View {
     // window so a mis-tap is one tap to undo.
     @State private var hiddenIDs: Set<String> = []
     @State private var pendingReview: FrigateReviewItem?
-    @State private var pendingWork: DispatchWorkItem?
+    @State private var pendingWork: Task<Void, Never>?
 
     private var filtered: [FrigateReviewItem] {
         let base: [FrigateReviewItem]
@@ -50,9 +50,11 @@ struct ReviewTab: View {
             hiddenIDs.insert(review.id)
             pendingReview = review
         }
-        let work = DispatchWorkItem { commitPending() }
-        pendingWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5, execute: work)
+        pendingWork = Task {
+            try? await Task.sleep(nanoseconds: 4_500_000_000)
+            guard !Task.isCancelled else { return }
+            commitPending()
+        }
     }
 
     private func commitPending() {
@@ -275,6 +277,11 @@ struct ReviewTab: View {
                     if Task.isCancelled { break }
                     await loadDetections(silent: true)
                 }
+            }
+            .onDisappear {
+                // Leaving the tab finalizes any pending dismissal immediately so the
+                // grace-period Task never outlives the view.
+                if pendingReview != nil { commitPending() }
             }
         }
     }

@@ -39,7 +39,7 @@ final class FrigateEventStream {
     /// or cache state with bulk REST/image traffic. `waitsForConnectivity` lets a connect
     /// that races device wake/network-up succeed instead of failing straight into backoff,
     /// and the shared cookie jar carries the same `frigate_token` auth as REST/AVFoundation.
-    private static let streamSession: URLSession = {
+    nonisolated private static let streamSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         config.waitsForConnectivity = true
@@ -157,7 +157,7 @@ final class FrigateEventStream {
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await self?.openSocket()
+            self?.openSocket()
         }
     }
 

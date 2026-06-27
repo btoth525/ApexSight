@@ -46,9 +46,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(
         _ application: UIApplication,
-        didReceiveRemoteNotification userInfo: [AnyHashable: Any]
-    ) async -> UIBackgroundFetchResult {
-        await BackgroundRefreshManager.performRefresh()
-        return .newData
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        // Synchronous, main-actor witness for a @MainActor protocol requirement — UIKit
+        // delivers on the main actor, so the non-Sendable userInfo never crosses an
+        // isolation boundary (the async variant warns under Swift 6 strict concurrency).
+        Task {
+            await BackgroundRefreshManager.performRefresh()
+            completionHandler(.newData)
+        }
     }
 }

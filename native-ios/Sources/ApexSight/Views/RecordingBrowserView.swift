@@ -68,6 +68,7 @@ struct RecordingBrowserView: View {
         .onChange(of: selectedDate) { _, date in
             Task { await loadDay(date) }
         }
+        .onDisappear { clipModel.stop() }
     }
 
     // MARK: - Header
@@ -485,9 +486,9 @@ struct RecordingBrowserView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 SectionHeader(
-                    playingTime != nil
-                        ? "Playing from \(Date(timeIntervalSince1970: playingTime!).formatted(date: .omitted, time: .shortened))"
-                        : "Playing Clip"
+                    playingTime.map {
+                        "Playing from \(Date(timeIntervalSince1970: $0).formatted(date: .omitted, time: .shortened))"
+                    } ?? "Playing Clip"
                 )
 
                 ZStack {

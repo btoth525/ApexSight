@@ -18,6 +18,7 @@ struct ActivityTab: View {
     // A 24h window powering the summary chips, independent of the active filter.
     @State private var last24h: [FrigateEvent] = []
     @State private var toast: String?
+    @State private var toastTask: Task<Void, Never>?
 
     private static let carriers: Set<String> = [
         "amazon", "ups", "usps", "fedex", "dhl", "an_post", "purolator",
@@ -134,6 +135,7 @@ struct ActivityTab: View {
             .navigationBarTitleDisplayMode(.large)
             .glassNavBar()
             .overlay(alignment: .bottom) { activityToast }
+            .onDisappear { toastTask?.cancel(); toastTask = nil }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.m) {
@@ -366,7 +368,10 @@ struct ActivityTab: View {
 
     private func showToast(_ message: String) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { toast = message }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+        toastTask?.cancel()
+        toastTask = Task {
+            try? await Task.sleep(nanoseconds: 2_600_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { if toast == message { toast = nil } }
         }
     }

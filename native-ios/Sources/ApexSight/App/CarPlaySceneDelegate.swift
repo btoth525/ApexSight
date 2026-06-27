@@ -30,7 +30,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let tabBar = CPTabBarTemplate(templates: [alertsTemplate, camerasTemplate])
         interfaceController.setRootTemplate(tabBar, animated: false, completion: nil)
 
-        Task { await refresh() }
+        Task { [weak self] in await self?.refresh() }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
         }

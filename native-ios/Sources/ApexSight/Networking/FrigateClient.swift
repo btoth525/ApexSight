@@ -232,41 +232,6 @@ struct FrigateClient {
         return components?.url ?? endpoint
     }
 
-    /// WebRTC instant-live signaling: a SINGLE non-trickle HTTP POST to go2rtc through
-    /// Frigate's proxy (same `/api/go2rtc/` prefix as HLS). Sends the SDP offer as JSON and
-    /// returns the SDP answer string — the answer already carries every server ICE candidate
-    /// (go2rtc embeds them), so no candidate exchange is needed. Reuses the same auth as HLS.
-    ///
-    /// - Parameter sub: request the `<camera>_sub` H.264 substream — safer for cameras whose
-    ///   main stream is H.265/HEVC, which iOS WebRTC can't decode.
-    func webRTCAnswerSDP(camera: String, sub: Bool = false, offerSDP: String) async throws -> String {
-        let streamName = sub ? "\(camera)_sub" : camera
-        let endpoint = baseURL.appending(path: "api/go2rtc/api/webrtc")
-        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "src", value: streamName)]
-        guard let url = components?.url else { throw FrigateError.invalidURL }
-
-        seedCookie(for: url)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        applyAuth(to: &request)
-        // Tight timeout: on LAN this round-trips in <100ms; if it takes >2s something is wrong
-        // and we want the HLS fallback to start as soon as possible.
-        request.timeoutInterval = 2
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["type": "offer", "sdp": offerSDP])
-
-        let (data, response) = try await session.data(for: request)
-        try validate(response)
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sdp = json["sdp"] as? String, !sdp.isEmpty else {
-            throw FrigateError.message("Malformed WebRTC answer")
-        }
-        return sdp
-    }
-
     func latestFrameURL(camera: String) -> URL {
         baseURL.appending(path: "api/\(camera)/latest.jpg")
     }
