@@ -79,6 +79,8 @@ struct TriggerEditorView: View {
                                 Slider(value: $minConfidence, in: 0...1, step: 0.05)
                                     .tint(GlassTheme.accent)
                                     .sensoryFeedback(.selection, trigger: minConfidence)
+                                    .accessibilityLabel("Minimum confidence")
+                                    .accessibilityValue(minConfidence > 0 ? "\(Int(minConfidence * 100)) percent" : "Any")
                                 Text("Only notify when detection confidence is at least this high.")
                                     .font(.footnote)
                                     .foregroundStyle(GlassTheme.secondary)

@@ -25,6 +25,8 @@ struct PTZControlView: View {
                 dpad
                 zoomStack
             }
+            // Let the d-pad + zoom glass buttons morph/blend as one system on iOS 26.
+            .glassGroup(spacing: GlassTheme.Space.s)
 
             if !presets.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -84,17 +86,14 @@ struct PTZControlView: View {
             // the feedback label) so stop doesn't double-buzz.
             send(action: "stop")
         } label: {
-            RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                .fill(.ultraThinMaterial)
+            Image(systemName: "stop.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(GlassTheme.secondary)
                 .frame(width: 48, height: 48)
-                .overlay {
-                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
-                }
-                .overlay(
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(GlassTheme.secondary)
+                .liquidGlass(
+                    in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous),
+                    interactive: true,
+                    fallbackMaterial: .ultraThinMaterial
                 )
         }
         .accessibilityLabel("Stop movement")
@@ -108,17 +107,14 @@ struct PTZControlView: View {
             // lands, and the on-screen label confirms it visually.
             send(action: action)
         } label: {
-            RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                .fill(.ultraThinMaterial)
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(GlassTheme.accent)
                 .frame(width: 48, height: 48)
-                .overlay {
-                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
-                }
-                .overlay(
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(GlassTheme.accent)
+                .liquidGlass(
+                    in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous),
+                    interactive: true,
+                    fallbackMaterial: .ultraThinMaterial
                 )
         }
         .buttonRepeatBehavior(.enabled)

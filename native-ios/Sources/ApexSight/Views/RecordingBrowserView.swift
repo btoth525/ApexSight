@@ -323,7 +323,31 @@ struct RecordingBrowserView: View {
             // Smoothly settle the playhead when the position is set programmatically
             // (e.g. parked on the latest detection), but follow the finger 1:1 while dragging.
             .animation(isScrubbing ? nil : .easeOut(duration: 0.2), value: scrubFraction)
+            // VoiceOver: expose the gesture-only scrubber as one adjustable control so it can
+            // be moved with the rotor's increment/decrement instead of a drag it can't perform.
+            .accessibilityElement()
+            .accessibilityLabel("Recording timeline")
+            .accessibilityValue(scrubAccessibilityValue)
+            .accessibilityHint("Swipe up or down to scrub through the day")
+            .accessibilityAdjustableAction { direction in
+                let step = 0.02
+                switch direction {
+                case .increment: scrubFraction = min(1, scrubFraction + step)
+                case .decrement: scrubFraction = max(0, scrubFraction - step)
+                @unknown default: break
+                }
+                playFromScrub()
+            }
         }
+    }
+
+    /// Time-of-day the playhead currently sits on, spoken by VoiceOver for the scrubber.
+    private var scrubAccessibilityValue: String {
+        let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
+        let rangeStartSec = dayStart + Double(rangeStartHour) * 3600
+        let rangeEndSec = dayStart + Double(rangeEndHour + 1) * 3600
+        let t = rangeStartSec + scrubFraction * (rangeEndSec - rangeStartSec)
+        return Date(timeIntervalSince1970: t).formatted(date: .omitted, time: .shortened)
     }
 
     private var legend: some View {

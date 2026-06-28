@@ -157,7 +157,9 @@ struct CameraQuickControlsSheet: View {
 
             Spacer()
 
-            Toggle("", isOn: Binding(
+            // Title as the (visually hidden) toggle label so VoiceOver announces e.g.
+            // "Detection, switch, on" instead of a bare "switch"; subtitle becomes the hint.
+            Toggle(title, isOn: Binding(
                 get: { isOn.wrappedValue },
                 set: { newVal in
                     isOn.wrappedValue = newVal
@@ -167,6 +169,7 @@ struct CameraQuickControlsSheet: View {
             ))
             .labelsHidden()
             .tint(tint)
+            .accessibilityHint(subtitle)
         }
         .listRowBackground(Color.white.opacity(0.04))
     }
