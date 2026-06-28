@@ -90,10 +90,10 @@ struct GlassCard<Content: View>: View {
         let shape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
         content
             .padding(GlassTheme.Space.l)
+            // Content cards stay a calm dark frosted surface (HIG: Liquid Glass is for the
+            // control layer, not large content backgrounds), with a top-lit edge for depth.
             .background(material, in: shape)
-            // Faint top sheen → the surface reads as a lit pane of glass, not a flat fill.
             .overlay { shape.fill(GlassTheme.glassSheen).allowsHitTesting(false) }
-            // Top-lit hairline edge for depth (replaces the flat separator stroke).
             .overlay { shape.strokeBorder(GlassTheme.glassEdge, lineWidth: 1) }
     }
 }
@@ -145,11 +145,9 @@ struct GlassButtonStyle: ButtonStyle {
         configuration.label
             .padding(.horizontal, GlassTheme.Space.m)
             .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(GlassTheme.glassEdge, lineWidth: 1)
-            }
+            // Interactive Liquid Glass on iOS 26+ (scales/shimmers on press); frosted below.
+            .liquidGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                         interactive: true, fallbackMaterial: .ultraThinMaterial)
             .opacity(configuration.isPressed ? 0.72 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
@@ -255,6 +253,38 @@ struct EmptyStateView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(GlassTheme.Space.xl)
+    }
+}
+
+// MARK: - Liquid Glass (iOS 26+)
+
+extension View {
+    /// Apple's Liquid Glass material on iOS 26+, with a graceful fall-back to the app's
+    /// dark frosted material + top-lit edge on earlier systems. One call site, so the whole
+    /// app picks up real Liquid Glass on modern devices.
+    @ViewBuilder
+    func liquidGlass(
+        in shape: some InsettableShape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous),
+        tint: Color? = nil,
+        interactive: Bool = false,
+        fallbackMaterial: Material = .regularMaterial
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(
+                {
+                    var glass: Glass = .regular
+                    if let tint { glass = glass.tint(tint) }
+                    if interactive { glass = glass.interactive() }
+                    return glass
+                }(),
+                in: shape
+            )
+        } else {
+            self
+                .background(fallbackMaterial, in: shape)
+                .overlay { shape.fill(GlassTheme.glassSheen).allowsHitTesting(false) }
+                .overlay { shape.strokeBorder(GlassTheme.glassEdge, lineWidth: 1) }
+        }
     }
 }
 
