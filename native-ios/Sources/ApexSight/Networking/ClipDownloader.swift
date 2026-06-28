@@ -46,6 +46,25 @@ enum ClipDownloader {
         }
     }
 
+    /// Download an authenticated Frigate MP4 to a temp file and return its URL for sharing
+    /// (AirDrop / Messages / Files). Unlike `downloadToPhotos` it needs no photo permission and
+    /// does NOT delete the file — the share sheet reads it after this returns. The OS clears the
+    /// temp directory later.
+    static func downloadToTempFile(url: URL, client: FrigateClient, fileName: String) async throws -> URL {
+        let data = try await client.imageData(from: url)
+        let safeName = fileName.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(safeName)
+            .appendingPathExtension("mp4")
+        do {
+            try data.write(to: tempURL, options: .atomic)
+        } catch {
+            throw ClipDownloadError.writeFailed
+        }
+        return tempURL
+    }
+
     private static func requestAddPermission() async -> PHAuthorizationStatus {
         let current = PHPhotoLibrary.authorizationStatus(for: .addOnly)
         if current == .notDetermined {

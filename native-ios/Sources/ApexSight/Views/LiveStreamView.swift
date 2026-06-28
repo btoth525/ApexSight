@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LiveStreamView: View {
     let camera: FrigateCamera
@@ -14,6 +15,8 @@ struct LiveStreamView: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var showCameraControls = false
     @State private var showDetectionOverlay = true
+    @State private var isPreparingShare = false
+    @State private var sharePayload: SharePayload?
     @StateObject private var talk = TwoWayTalkController()
 
     enum StreamMode: String, CaseIterable {
@@ -65,6 +68,19 @@ struct LiveStreamView: View {
             CameraQuickControlsSheet(camera: camera)
                 .environmentObject(appState)
         }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(items: payload.items)
+        }
+    }
+
+    /// Grab the camera's current still and hand it to the share sheet (AirDrop / Messages / …).
+    private func shareSnapshot() async {
+        guard let client = appState.client else { return }
+        isPreparingShare = true
+        defer { isPreparingShare = false }
+        guard let data = try? await client.imageData(from: client.latestFrameURL(camera: camera.name)),
+              let image = UIImage(data: data) else { return }
+        sharePayload = SharePayload(image: image)
     }
 
     // MARK: - Immersive chrome (auto-hide, tap to toggle)
@@ -272,6 +288,9 @@ struct LiveStreamView: View {
                     .accessibilityLabel("Open recording timeline")
                     actionButton(icon: "slider.horizontal.3", label: "Controls") {
                         showCameraControls = true
+                    }
+                    actionButton(icon: "square.and.arrow.up", label: "Share") {
+                        Task { await shareSnapshot() }
                     }
                     if appState.twoWayCameras.contains(camera.name) {
                         talkButton

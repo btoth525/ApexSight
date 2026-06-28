@@ -19,6 +19,7 @@ struct ActivityTab: View {
     @State private var last24h: [FrigateEvent] = []
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
+    @State private var sharePayload: SharePayload?
 
     private static let carriers: Set<String> = [
         "amazon", "ups", "usps", "fedex", "dhl", "an_post", "purolator",
@@ -108,6 +109,9 @@ struct ActivityTab: View {
                                                 Label("Open", systemImage: "arrow.up.forward.app")
                                             }
                                             if event.hasClip == true {
+                                                Button { Task { await shareClip(event) } } label: {
+                                                    Label("Share Clip", systemImage: "square.and.arrow.up")
+                                                }
                                                 Button { saveClip(event) } label: {
                                                     Label("Save Clip to Photos", systemImage: "square.and.arrow.down")
                                                 }
@@ -136,6 +140,9 @@ struct ActivityTab: View {
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .overlay(alignment: .bottom) { activityToast }
+            .sheet(item: $sharePayload) { payload in
+                ShareSheet(items: payload.items)
+            }
             .onDisappear { toastTask?.cancel(); toastTask = nil }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -365,6 +372,22 @@ struct ActivityTab: View {
             } catch {
                 showToast(error.localizedDescription)
             }
+        }
+    }
+
+    private func shareClip(_ event: FrigateEvent) async {
+        guard let client = appState.client else { return }
+        Haptics.tap()
+        showToast("Preparing clip…")
+        do {
+            let url = try await ClipDownloader.downloadToTempFile(
+                url: client.eventClipURL(id: event.id),
+                client: client,
+                fileName: "Apex-\(event.camera)-\(event.id)"
+            )
+            sharePayload = SharePayload(url: url)
+        } catch {
+            showToast(error.localizedDescription)
         }
     }
 

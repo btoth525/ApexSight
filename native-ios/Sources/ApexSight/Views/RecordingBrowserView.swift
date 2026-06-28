@@ -13,6 +13,8 @@ struct RecordingBrowserView: View {
     @State private var errorMessage: String?
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
+    @State private var isPreparingShare = false
+    @State private var sharePayload: SharePayload?
 
     // Scrubber state
     @State private var scrubFraction: Double = 0      // 0…1 across the selected day
@@ -69,6 +71,26 @@ struct RecordingBrowserView: View {
             Task { await loadDay(date) }
         }
         .onDisappear { clipModel.stop() }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(items: payload.items)
+        }
+    }
+
+    private func shareCurrent() async {
+        guard let client = appState.client, let start = playingTime else { return }
+        Haptics.tap()
+        isPreparingShare = true
+        downloadFeedback = nil
+        defer { isPreparingShare = false }
+        do {
+            let url = try await ClipDownloader.downloadToTempFile(
+                url: client.recordingClipURL(camera: camera.name, start: start, end: start + windowSeconds),
+                client: client, fileName: "Apex-\(camera.name)-\(Int(start))"
+            )
+            sharePayload = SharePayload(url: url)
+        } catch {
+            downloadFeedback = error.localizedDescription
+        }
     }
 
     // MARK: - Header
@@ -505,22 +527,41 @@ struct RecordingBrowserView: View {
                 .cardStroke(GlassTheme.Radius.tile)
                 .expandableMedia(.player(player))
 
-                Button {
-                    Task { await downloadCurrent() }
-                } label: {
-                    HStack(spacing: GlassTheme.Space.s) {
-                        if isDownloading {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(.subheadline.weight(.semibold))
+                HStack(spacing: GlassTheme.Space.s) {
+                    Button {
+                        Task { await shareCurrent() }
+                    } label: {
+                        HStack(spacing: GlassTheme.Space.s) {
+                            if isPreparingShare {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            Text(isPreparingShare ? "Preparing…" : "Share")
                         }
-                        Text(isDownloading ? "Saving…" : "Save to Photos")
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                    .disabled(isPreparingShare || playingTime == nil)
+
+                    Button {
+                        Task { await downloadCurrent() }
+                    } label: {
+                        HStack(spacing: GlassTheme.Space.s) {
+                            if isDownloading {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            Text(isDownloading ? "Saving…" : "Save")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                    .disabled(isDownloading || playingTime == nil)
                 }
-                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
-                .disabled(isDownloading || playingTime == nil)
                 .opacity(playingTime == nil ? 0.5 : 1)
 
                 if let downloadFeedback {

@@ -11,6 +11,8 @@ struct EventDetailView: View {
     @StateObject private var clipModel = ClipPlayerModel()
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
+    @State private var isPreparingShare = false
+    @State private var sharePayload: SharePayload?
     @State private var mediaMode: MediaMode = .video
     @State private var genAIDescription: String?
     @State private var isEditingAIDescription = false
@@ -92,6 +94,24 @@ struct EventDetailView: View {
         .sheet(item: $createTrigger) { trigger in
             TriggerEditorView(store: appState.triggerStore, existing: trigger)
                 .environmentObject(appState)
+        }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(items: payload.items)
+        }
+    }
+
+    private func shareClip() async {
+        guard let client = appState.client else { return }
+        Haptics.tap()
+        isPreparingShare = true
+        defer { isPreparingShare = false }
+        do {
+            let url = try await ClipDownloader.downloadToTempFile(
+                url: client.eventClipURL(id: event.id), client: client, fileName: "Apex-\(event.id)"
+            )
+            sharePayload = SharePayload(url: url)
+        } catch {
+            withAnimation { downloadFeedback = (error as? ClipDownloadError)?.errorDescription ?? "Could not prepare the clip." }
         }
     }
 
@@ -255,6 +275,18 @@ struct EventDetailView: View {
                     }
                     Spacer()
                     if hasClip {
+                        Button {
+                            Task { await shareClip() }
+                        } label: {
+                            Image(systemName: "square.and.arrow.up.circle.fill")
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(GlassTheme.accent)
+                                .symbolEffect(.pulse, isActive: isPreparingShare)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isPreparingShare)
+                        .accessibilityLabel(isPreparingShare ? "Preparing clip to share" : "Share clip")
+
                         Button {
                             Task { await downloadClip() }
                         } label: {
