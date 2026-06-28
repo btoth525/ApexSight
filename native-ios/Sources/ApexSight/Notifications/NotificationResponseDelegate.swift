@@ -63,7 +63,7 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
             // that gate to the relay so the button actually quiets alerts.
             let until = Date().addingTimeInterval(60 * 60)
             GlobalSnooze.snooze(until: until)
-            await syncGateToRelay(snoozedUntil: until.timeIntervalSince1970)
+            await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970)
 
         case NativeNotificationManager.markReviewedAction:
             guard let reviewID = userInfo["review_id"] as? String,
@@ -78,19 +78,6 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
         default:
             break
         }
-    }
-
-    /// Push the current arm/snooze gate to the relay (mirrors AppState.syncRelayGateIfChanged,
-    /// but standalone so it runs without an AppState in a background-launched action).
-    private static func syncGateToRelay(snoozedUntil: TimeInterval) async {
-        let relayURL = DeviceTokenStore.relayURL
-        let pairing = DeviceTokenStore.ensurePairingCode()
-        guard !relayURL.isEmpty, !pairing.isEmpty else { return }
-        let disarmed = !ArmStateStore.notificationsActive
-        try? await RelayClient.syncGate(
-            relayURL: relayURL, pairingCode: pairing,
-            disarmed: disarmed, snoozedUntil: snoozedUntil
-        )
     }
 
     // Show banners/sounds even when the app is foregrounded.

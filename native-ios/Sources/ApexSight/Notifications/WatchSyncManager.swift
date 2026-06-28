@@ -57,9 +57,15 @@ final class WatchSyncManager: NSObject, WCSessionDelegate {
         switch message["action"] as? String {
         case "snooze":
             let minutes = message["minutes"] as? Int ?? 60
-            GlobalSnooze.snooze(until: Date().addingTimeInterval(TimeInterval(minutes * 60)))
+            let until = Date().addingTimeInterval(TimeInterval(minutes * 60))
+            GlobalSnooze.snooze(until: until)
+            // The phone may be woken in the background just to receive this message, so the
+            // 15s foreground poll that normally mirrors the gate isn't running. Push it to
+            // the relay now, else app-closed pushes keep firing despite the watch snooze.
+            Task { await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970) }
         case "resume":
             GlobalSnooze.clear()
+            Task { await RelayGate.sync(snoozedUntil: 0) }
         default:
             break
         }

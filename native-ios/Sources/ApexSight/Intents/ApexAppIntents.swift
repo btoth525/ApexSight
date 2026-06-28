@@ -374,6 +374,9 @@ struct SnoozeAlertsIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let until = Date().addingTimeInterval(duration.seconds)
         GlobalSnooze.snooze(until: until)
+        // App-closed Siri snooze: push the gate to the relay now (the foreground poll that
+        // normally mirrors it isn't running), else app-closed pushes keep firing.
+        await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970)
         let time = until.formatted(date: .omitted, time: .shortened)
         return .result(dialog: IntentDialog(stringLiteral: "Okay, camera alerts are snoozed until \(time)."))
     }
@@ -386,6 +389,7 @@ struct ResumeAlertsIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         GlobalSnooze.clear()
+        await RelayGate.sync(snoozedUntil: 0)
         return .result(dialog: "Camera alerts are back on.")
     }
 }
