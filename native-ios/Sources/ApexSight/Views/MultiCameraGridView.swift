@@ -12,6 +12,7 @@ struct MultiCameraGridView: View {
     @State private var columns: Int
     @State private var selectedCamera: FrigateCamera?
     @State private var showBirdseye = false
+    @State private var showSyncPlayback = false
     // Smart Focus: spotlight + scroll to the camera where Frigate just detected something.
     @AppStorage("multiview.smartFocus") private var smartFocus = true
     @State private var activeCameraName: String?
@@ -74,6 +75,19 @@ struct MultiCameraGridView: View {
                             }
                             .accessibilityLabel("Birdseye view")
                         }
+                        if !displayedCameras.isEmpty {
+                            Button {
+                                Haptics.tap()
+                                showSyncPlayback = true
+                            } label: {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(GlassTheme.accent)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("Synced playback — replay all cameras at a moment")
+                        }
                         Button {
                             Haptics.select()
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { smartFocus.toggle() }
@@ -106,6 +120,11 @@ struct MultiCameraGridView: View {
                 }
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
+            }
+            .fullScreenCover(isPresented: $showSyncPlayback) {
+                SyncPlaybackView(cameras: displayedCameras, anchorEpoch: Date().timeIntervalSince1970)
+                    .environmentObject(appState)
+                    .preferredColorScheme(.dark)
             }
             // Cancel the pending spotlight-clear so it can't mutate state after the wall closes.
             .onDisappear { clearWork?.cancel(); clearWork = nil }
