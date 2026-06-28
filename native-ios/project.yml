@@ -32,6 +32,9 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleIconName: AppIcon
+        # App uses only standard HTTPS/TLS — exempt from export compliance, so
+        # TestFlight stops prompting on every upload.
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: ApexSight
             CFBundleURLSchemes:
