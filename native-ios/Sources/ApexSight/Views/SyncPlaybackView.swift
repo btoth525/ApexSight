@@ -9,12 +9,22 @@ import SwiftUI
 // same offset lines them up on one wall clock. A master clock drives a shared
 // scrubber + play/pause, and a light drift corrector nudges stragglers back.
 
+/// An event on the shared timeline (position 0…1 across the window + a color by object).
+struct SyncMarker: Identifiable {
+    let id: String
+    let fraction: Double
+    let color: Color
+}
+
 @MainActor
 final class SyncPlaybackModel: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published var fraction: Double          // 0 = windowStart, 1 = windowEnd
     @Published private(set) var readyCount = 0
     @Published private(set) var failed: Set<String> = []
+    /// Event ticks across all visible cameras in the window — so the scrubber shows where
+    /// the action is and you can jump straight to it.
+    @Published private(set) var markers: [SyncMarker] = []
 
     let windowStart: Double
     let windowEnd: Double
@@ -64,6 +74,34 @@ final class SyncPlaybackModel: ObservableObject {
             })
         }
         seekAll(toFraction: fraction)
+        loadMarkers(cameras: Set(order), client: client)
+    }
+
+    /// Fetch detections in the window for the visible cameras and place them on the timeline.
+    private func loadMarkers(cameras: Set<String>, client: FrigateClient) {
+        let after = Date(timeIntervalSince1970: windowStart)
+        let before = Date(timeIntervalSince1970: windowEnd)
+        Task { [weak self] in
+            let events = (try? await client.events(after: after, before: before, limit: 300)) ?? []
+            guard let self else { return }
+            let ticks: [SyncMarker] = events.compactMap { e in
+                guard cameras.contains(e.camera), let t = e.startTime else { return nil }
+                let f = (t - self.windowStart) / self.duration
+                guard f >= 0, f <= 1 else { return nil }
+                return SyncMarker(id: e.id, fraction: f, color: Self.color(for: e.label))
+            }
+            self.markers = ticks
+        }
+    }
+
+    static func color(for label: String) -> Color {
+        switch label.lowercased() {
+        case "person": return GlassTheme.accent
+        case "car", "vehicle", "truck", "motorcycle", "bus": return GlassTheme.green
+        case "dog", "cat", "animal", "bird": return GlassTheme.orange
+        case "package": return GlassTheme.purple
+        default: return GlassTheme.secondary
+        }
     }
 
     func togglePlay() { isPlaying ? pause() : play() }
@@ -248,6 +286,34 @@ struct SyncPlaybackView: View {
 
     private var controls: some View {
         VStack(spacing: GlassTheme.Space.s) {
+            // Activity strip: a colored tick for every detection across all cameras in the
+            // window, so you can see where the action is at a glance.
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(GlassTheme.surfaceHigh)
+                        .frame(height: 3)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                    ForEach(model.markers) { m in
+                        Capsule()
+                            .fill(m.color)
+                            .frame(width: 2.5, height: 16)
+                            .offset(x: m.fraction * max(0, geo.size.width - 2.5))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                // Tap or drag the activity strip to jump straight to that moment.
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { v in
+                            model.scrub(toFraction: min(1, max(0, v.location.x / geo.size.width)))
+                        }
+                        .onEnded { _ in Haptics.tap(); model.endScrub() }
+                )
+            }
+            .frame(height: 16)
+
             // Shared timeline scrubber across all cameras.
             Slider(
                 value: Binding(
