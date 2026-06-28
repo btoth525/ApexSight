@@ -40,7 +40,7 @@ struct SettingsTab: View {
                 }
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .navigationDestination(for: String.self) { value in
                 if value == "system" { SystemHealthView() }

@@ -214,7 +214,7 @@ struct ReviewTab: View {
                 }
             }
             .navigationTitle("Review")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .overlay(alignment: .bottom) { undoToast }
             .toolbar {

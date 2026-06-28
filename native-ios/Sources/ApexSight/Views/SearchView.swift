@@ -81,7 +81,7 @@ struct SearchView: View {
                 .refreshable { await loadBrowse() }
             }
             .navigationTitle("Explore")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)

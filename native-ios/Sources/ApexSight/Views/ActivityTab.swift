@@ -132,7 +132,7 @@ struct ActivityTab: View {
                 .task(id: "\(selectedCamera)|\(selectedLabel)|\(selectedSubLabel)") { await loadFiltered() }
             }
             .navigationTitle("Activity")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .overlay(alignment: .bottom) { activityToast }
             .onDisappear { toastTask?.cancel(); toastTask = nil }
