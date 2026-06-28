@@ -10,7 +10,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         BackgroundRefreshManager.register()
+        // Show the base Home Screen quick actions from the first long-press; AppState adds
+        // per-camera actions once the camera list loads.
+        UIApplication.shared.shortcutItems = QuickActions.baseItems()
         return true
+    }
+
+    /// Attach a window-scene delegate so Home Screen quick actions are delivered (SwiftUI's
+    /// App lifecycle doesn't surface them otherwise). The delegate only forwards shortcuts —
+    /// it never builds a window — so SwiftUI's WindowGroup still owns the UI.
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        if connectingSceneSession.role == .windowApplication {
+            config.delegateClass = ApexSceneDelegate.self
+            // Cold launch from a quick action: the tapped shortcut is delivered here (the
+            // scene delegate must NOT implement willConnectTo, which would blank SwiftUI), so
+            // stash it now for the pendingIntentLink pipeline to consume on launch.
+            if let shortcut = options.shortcutItem {
+                QuickActions.handle(shortcut)
+            }
+        }
+        return config
     }
 
     func application(

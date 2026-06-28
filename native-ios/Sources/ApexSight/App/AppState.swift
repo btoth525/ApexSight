@@ -91,12 +91,26 @@ final class AppState: ObservableObject {
         return FrigateClient(session: session)
     }
 
+    // Removed in the nonisolated deinit; removeObserver is thread-safe.
+    private nonisolated(unsafe) var quickActionObserver: NSObjectProtocol?
+
     init() {
         session = keychain.loadSession()
         eventStream.onEvent = { [weak self] event in
             self?.handleStreamEvent(event)
         }
         WatchSyncManager.shared.activate()
+        // A Home Screen quick action stashes a pending deep link and posts this; consume it
+        // now (a warm tap doesn't change scenePhase, so the .active path wouldn't fire).
+        quickActionObserver = NotificationCenter.default.addObserver(
+            forName: QuickActions.didTrigger, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.consumePendingIntentLink() }
+        }
+    }
+
+    deinit {
+        if let quickActionObserver { NotificationCenter.default.removeObserver(quickActionObserver) }
     }
 
     /// Mirrors the active Frigate base URL + token into the app group so the
@@ -571,6 +585,7 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
+            QuickActions.update(cameras: loadedCameras)
             prewarmSnapshots()
             // refresh() runs on every foreground / pull / poll, so only re-publish the camera
             // list to the system when it actually changed — donating App Intents parameters and
@@ -828,6 +843,20 @@ final class AppState: ObservableObject {
             }
         case "cameras":
             deepLink = .cameras
+        case "latest":
+            // Home Screen quick action / Control Center: jump to the most recent alert,
+            // else just open the camera wall.
+            if let newest = reviews.first {
+                deepLink = .review(newest.id)
+            } else {
+                deepLink = .cameras
+            }
+        case "snooze":
+            // Silence all alerts for an hour and mirror the gate to the relay so app-closed
+            // pushes are quieted too (see [[relay-gate-must-sync-on-app-closed-snooze]]).
+            let until = Date().addingTimeInterval(60 * 60)
+            GlobalSnooze.snooze(until: until)
+            Task { await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970) }
         #if DEBUG
         case "debug":
             // Deterministic triggers for surfaces that need a real alert to fire, reachable
