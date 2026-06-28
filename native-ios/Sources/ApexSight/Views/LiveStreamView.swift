@@ -44,9 +44,10 @@ struct LiveStreamView: View {
         }
         .navigationBarHidden(true)
         .statusBarHidden(!showChrome)
-        // The bottom tab pill bar rides with the chrome: it's there when you tap (so you can
-        // jump tabs), and slides away with the rest for a clean immersive feed when idle.
-        .toolbar(showChrome ? .visible : .hidden, for: .tabBar)
+        // Leave the bottom tab pill bar to the system instead of force-hiding it: it stays put
+        // and keeps the minimized/expanded state it had on the wall (scroll down there → it's
+        // the small pill, and it stays minimized here too). Force-toggling it with the chrome
+        // looked janky and fought the global scroll-to-minimize behavior.
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showChrome)
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
         .task {
@@ -159,8 +160,8 @@ struct LiveStreamView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 21, weight: .semibold))
+                    .frame(width: 54, height: 54)
                     .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                     .foregroundStyle(GlassTheme.primary)
                     .contentShape(Circle())
@@ -202,7 +203,7 @@ struct LiveStreamView: View {
                     }
                     .foregroundStyle(GlassTheme.primary)
                     .padding(.horizontal, GlassTheme.Space.m)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: 54)
                     .liquidGlass(in: Capsule(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                 }
                 .accessibilityLabel("Stream source, currently \(streamMode.rawValue)")
@@ -214,8 +215,8 @@ struct LiveStreamView: View {
                     showPTZ.toggle()
                 } label: {
                     Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 44, height: 44)
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(width: 54, height: 54)
                         .liquidGlass(in: Circle(), tint: showPTZ ? GlassTheme.accent : nil, interactive: true, fallbackMaterial: .ultraThinMaterial)
                         .foregroundStyle(showPTZ ? GlassTheme.accent : GlassTheme.primary)
                         .contentShape(Circle())
