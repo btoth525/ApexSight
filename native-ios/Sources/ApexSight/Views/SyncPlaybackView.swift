@@ -139,7 +139,7 @@ final class SyncPlaybackModel: ObservableObject {
     /// camera that has drifted >1s back into line.
     private func startDriftCorrection() {
         driftTask?.cancel()
-        driftTask = Task { [weak self] in
+        driftTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self, self.isPlaying, !self.isScrubbing else { continue }

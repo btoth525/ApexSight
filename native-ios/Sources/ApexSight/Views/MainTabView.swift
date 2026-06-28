@@ -5,6 +5,7 @@ struct MainTabView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTab: Tab? = .cameras
     @State private var detailSheet: DetailSheet?
+    @State private var deepLinkTask: Task<Void, Never>?
 
     enum Tab: Int, Hashable, CaseIterable, Identifiable {
         case cameras, review, activity, explore, settings
@@ -173,8 +174,10 @@ struct MainTabView: View {
     /// often lands while the network is still coming up (phone just woke), so a single
     /// attempt can silently fail and the alert never opens — retry a few times instead.
     private func resolveDeepLink(_ fetch: @escaping () async -> DetailSheet?) {
-        Task {
+        deepLinkTask?.cancel()
+        deepLinkTask = Task {
             for attempt in 0..<4 where detailSheet == nil {
+                if Task.isCancelled { return }
                 if let sheet = await fetch() {
                     detailSheet = sheet
                     return
