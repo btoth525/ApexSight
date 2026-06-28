@@ -96,6 +96,9 @@ struct MainTabView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
+        // iOS 26: the Liquid Glass tab bar shrinks away as you scroll the cameras,
+        // giving the content even more room — then returns on scroll-up.
+        .modifier(TabBarMinimizeOnScroll())
     }
 
     private var sidebarLayout: some View {
@@ -178,6 +181,18 @@ struct MainTabView: View {
                 }
                 try? await Task.sleep(nanoseconds: UInt64(800_000_000 * (attempt + 1)))
             }
+        }
+    }
+}
+
+/// iOS 26: shrink the Liquid Glass tab bar as the user scrolls down (more content room),
+/// restoring it on scroll-up. No-op on earlier systems.
+private struct TabBarMinimizeOnScroll: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
         }
     }
 }
