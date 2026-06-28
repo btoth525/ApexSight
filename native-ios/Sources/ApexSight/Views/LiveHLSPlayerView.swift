@@ -329,6 +329,7 @@ final class HLSLiveModel: ObservableObject {
 
 struct HLSLivePlayerView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
     var showControls: Bool = false
     /// Start on the lighter `_sub` stream — set for the multi-camera wall/grid so many
@@ -584,7 +585,7 @@ struct HLSLivePlayerView: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 40, weight: .bold))
                 .foregroundStyle(.orange)
-                .symbolEffect(.pulse, options: .repeating)
+                .symbolEffect(.pulse, options: reduceMotion ? .nonRepeating : .repeating)
             Text(message)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white.opacity(0.85))
