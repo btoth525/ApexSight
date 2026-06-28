@@ -39,13 +39,20 @@ final class HLSLiveModel: ObservableObject {
     /// full-screen viewer leaves this false so a single focused camera plays full quality.
     private var preferSub = false
 
-    private var statusObs: NSKeyValueObservation?
-    private var timeControlObs: NSKeyValueObservation?
-    private var sizeObs: NSKeyValueObservation?
-    private var timeObserver: Any?
-    private var stallObs: NSObjectProtocol?
-    private var failObs: NSObjectProtocol?
-    private var reconnectTask: Task<Void, Never>?
+    // These observer tokens are mutated only on the main actor, but `deinit` (which is
+    // nonisolated) must remove them — and their teardown APIs (KVO invalidate,
+    // removeTimeObserver, NotificationCenter.removeObserver, Task.cancel) are all
+    // thread-safe — so they're `nonisolated(unsafe)`. `timeObserverPlayer` mirrors the player
+    // the periodic observer was added to, so deinit can balance removeTimeObserver without
+    // touching the MainActor-isolated `@Published player`.
+    private nonisolated(unsafe) var statusObs: NSKeyValueObservation?
+    private nonisolated(unsafe) var timeControlObs: NSKeyValueObservation?
+    private nonisolated(unsafe) var sizeObs: NSKeyValueObservation?
+    private nonisolated(unsafe) var timeObserver: Any?
+    private nonisolated(unsafe) var timeObserverPlayer: AVPlayer?
+    private nonisolated(unsafe) var stallObs: NSObjectProtocol?
+    private nonisolated(unsafe) var failObs: NSObjectProtocol?
+    private nonisolated(unsafe) var reconnectTask: Task<Void, Never>?
     /// Playback-progress watchdog: a stream only counts as live once its time actually
     /// advances (real frames presented). A frozen/black "playing" stream never does.
     private var lastProgressTime: Double?
@@ -61,7 +68,7 @@ final class HLSLiveModel: ObservableObject {
     private var connectedPatient = false
     /// Identifies the camera for the slow-start memory below.
     private var cameraName = ""
-    private var lifecycleObservers: [NSObjectProtocol] = []
+    private nonisolated(unsafe) var lifecycleObservers: [NSObjectProtocol] = []
 
     /// Cameras observed this session to need patient buffering (e.g. a doorbell with a
     /// long ~4s keyframe interval). Lets a reopen start patient instead of stalling once.
@@ -215,6 +222,7 @@ final class HLSLiveModel: ObservableObject {
         // stream that reports "playing" but is frozen/black never advances, so it never
         // counts as live and the fallback to MJPEG fires.
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+        timeObserverPlayer = newPlayer
         timeObserver = newPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self, !self.isStopped else { return }
@@ -320,8 +328,26 @@ final class HLSLiveModel: ObservableObject {
         sizeObs?.invalidate(); sizeObs = nil
         let p = explicitPlayer ?? player
         if let timeObserver { p?.removeTimeObserver(timeObserver) }; timeObserver = nil
+        timeObserverPlayer = nil
         if let stallObs { NotificationCenter.default.removeObserver(stallObs) }; stallObs = nil
         if let failObs { NotificationCenter.default.removeObserver(failObs) }; failObs = nil
+    }
+
+    /// Persistent tiles (the Cameras wall) only `pause()` on disappear, never `stop()`, so
+    /// when their `@StateObject` deallocates on sign-out / server-switch (cameras = []),
+    /// `stop()` may never have run. Mirror its teardown here so we never leave a periodic
+    /// time observer registered on a deallocating AVPlayer (an AVFoundation crash) or leak
+    /// the KVO / NotificationCenter observers. All these APIs are thread-safe, so a
+    /// nonisolated deinit is fine. Idempotent with `stop()` (everything is already nil then).
+    deinit {
+        statusObs?.invalidate()
+        timeControlObs?.invalidate()
+        sizeObs?.invalidate()
+        if let timeObserver, let timeObserverPlayer { timeObserverPlayer.removeTimeObserver(timeObserver) }
+        if let stallObs { NotificationCenter.default.removeObserver(stallObs) }
+        if let failObs { NotificationCenter.default.removeObserver(failObs) }
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        reconnectTask?.cancel()
     }
 }
 
@@ -541,9 +567,18 @@ struct HLSLivePlayerView: View {
             startTask?.cancel(); startTask = nil
             releaseGate()
             if persistent {
-                // Keep it loaded across tab switches — just pause decoding. The last
-                // frame stays on screen, so returning is instant with no black flash.
-                model.player?.pause()
+                if model.player == nil {
+                    // Disappeared before the gate handed us a slot (player never built), so
+                    // there's nothing to keep alive — reset so reappear re-runs the full
+                    // setup instead of short-circuiting on `started` and stranding the tile
+                    // on its snapshot forever.
+                    started = false
+                    fallbackTask?.cancel(); fallbackTask = nil
+                } else {
+                    // Keep it loaded across tab switches — just pause decoding. The last
+                    // frame stays on screen, so returning is instant with no black flash.
+                    model.player?.pause()
+                }
             } else {
                 model.stop()
                 fallbackTask?.cancel(); fallbackTask = nil

@@ -19,6 +19,15 @@ actor StreamGate {
     }
 
     /// Suspend until a startup slot is free.
+    ///
+    /// INVARIANT — every `acquire()` MUST be paired with exactly one later `release()`, even
+    /// when the caller's Task is cancelled while suspended here. A cancelled waiter is not
+    /// dropped from `waiters`: it stays queued, is eventually resumed by some `release()`
+    /// (which transfers it a slot — `active` unchanged), and the caller's own
+    /// `guard !Task.isCancelled … else { releaseGate(); return }` then returns that slot. This
+    /// keeps `active` balanced. Resuming a cancelled waiter early *without* a matching slot
+    /// transfer would let its paired `release()` free a permit it never held — over-admitting
+    /// past `limit` — so deliberately DON'T add a cancellation handler that pops the waiter.
     func acquire() async {
         if active < limit {
             active += 1
