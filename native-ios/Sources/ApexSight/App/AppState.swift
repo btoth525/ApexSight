@@ -828,6 +828,19 @@ final class AppState: ObservableObject {
             }
         case "cameras":
             deepLink = .cameras
+        #if DEBUG
+        case "debug":
+            // Deterministic triggers for surfaces that need a real alert to fire, reachable
+            // via `apex://debug?action=…` stashed in the app group + consumed on cold launch
+            // (handy when synthetic taps aren't available). DEBUG-only.
+            let camera = items.first(where: { $0.name == "camera" })?.value
+                ?? cameras.first?.name ?? "front_door"
+            switch items.first(where: { $0.name == "action" })?.value {
+            case "liveactivity": DebugTriggers.fireLiveActivity(camera: camera)
+            case "watchpush": DebugTriggers.fireWatchPush(camera: camera)
+            default: break
+            }
+        #endif
         default:
             break
         }

@@ -35,6 +35,10 @@ struct SettingsTab: View {
 
                         configurationSection
                         aboutCard
+
+                        #if DEBUG
+                        debugCard
+                        #endif
                     }
                     .padding(GlassTheme.Space.l)
                 }
@@ -317,4 +321,44 @@ struct SettingsTab: View {
         .accessibilityHint(subtitle)
         .accessibilityAddTraits(.isButton)
     }
+
+    #if DEBUG
+    // MARK: - Developer (DEBUG builds only)
+
+    /// Deterministic triggers for surfaces that otherwise need a real Frigate alert to fire:
+    /// the Live Activity / Dynamic Island path and the Apple Watch push. Never compiled into
+    /// Release — the whole card is behind `#if DEBUG`.
+    private var debugCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Developer")
+                Text("Debug builds only — fires the real Live Activity and watch-sync code paths with a synthetic alert.")
+                    .font(.footnote)
+                    .foregroundStyle(GlassTheme.secondary)
+
+                Button {
+                    Haptics.tap()
+                    DebugTriggers.fireLiveActivity(camera: debugCamera)
+                } label: {
+                    Label("Test Live Activity", systemImage: "bell.badge.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+
+                Button {
+                    Haptics.tap()
+                    DebugTriggers.fireWatchPush(camera: debugCamera)
+                } label: {
+                    Label("Test Watch Push", systemImage: "applewatch.radiowaves.left.and.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+            }
+        }
+    }
+
+    private var debugCamera: String {
+        appState.cameras.first?.name ?? "front_door"
+    }
+    #endif
 }
