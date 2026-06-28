@@ -23,10 +23,7 @@ struct OfflineBanner: View {
                 }
                 .padding(.horizontal, GlassTheme.Space.m)
                 .padding(.vertical, GlassTheme.Space.s)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay {
-                    Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1)
-                }
+                .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
                 .padding(.top, GlassTheme.Space.xs)
                 .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .accessibilityElement(children: .combine)

@@ -57,8 +57,7 @@ struct LiveAlertBanner: View {
                     .foregroundStyle(GlassTheme.tertiary)
             }
             .padding(GlassTheme.Space.m)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
-            .cardStroke(GlassTheme.Radius.card)
+            .liquidGlass(in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous), fallbackMaterial: .ultraThinMaterial)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)

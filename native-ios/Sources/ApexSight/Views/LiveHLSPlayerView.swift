@@ -542,7 +542,7 @@ struct HLSLivePlayerView: View {
                     Image(systemName: fillMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 14, weight: .black))
                         .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                         .foregroundStyle(.white)
                 }
                 .accessibilityLabel(fillMode ? "Fit to screen" : "Fill screen")
@@ -566,11 +566,12 @@ struct HLSLivePlayerView: View {
                     Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 14, weight: .black))
                         .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                         .foregroundStyle(.white)
                 }
                 .accessibilityLabel(model.isMuted ? "Unmute" : "Mute")
             }
+            .glassGroup(spacing: 10)
             .padding(.trailing, 14)
             .padding(.bottom, 8)
         }

@@ -193,6 +193,7 @@ struct LiveStreamView: View {
             }
         }
         .padding(.horizontal, GlassTheme.Space.l)
+        .glassGroup(spacing: GlassTheme.Space.s)
         .padding(.top, 54)
     }
 
@@ -261,6 +262,8 @@ struct LiveStreamView: View {
                     }
                 }
             }
+            // Morph the action-button glass as a single system (so PTZ/Talk fluidly join in).
+            .glassGroup(spacing: GlassTheme.Space.xl)
             .padding(.horizontal, GlassTheme.Space.l)
             .padding(.bottom, 40)
         }

@@ -45,8 +45,7 @@ struct FullscreenMediaView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 42, height: 42)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
                     }
                 }
@@ -84,8 +83,7 @@ struct ExpandableMediaModifier: ViewModifier {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(width: 34, height: 34)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
                     }
                     .padding(GlassTheme.Space.s)

@@ -291,6 +291,17 @@ extension View {
 // MARK: - View Helpers
 
 extension View {
+    /// Group adjacent Liquid Glass elements so they morph and blend as one system on iOS 26
+    /// (e.g. control clusters that appear/disappear together). No-op on earlier systems.
+    @ViewBuilder
+    func glassGroup(spacing: CGFloat? = nil) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { self }
+        } else {
+            self
+        }
+    }
+
     func glassBackground() -> some View {
         self.background(GlassBackground())
     }

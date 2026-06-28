@@ -154,8 +154,7 @@ struct RecordingBrowserView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(enabled ? GlassTheme.accent : GlassTheme.tertiary)
                 .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
         }
         .buttonStyle(.plain)
     }
