@@ -6,6 +6,7 @@ struct MainTabView: View {
     @State private var selectedTab: Tab? = .cameras
     @State private var detailSheet: DetailSheet?
     @State private var deepLinkTask: Task<Void, Never>?
+    @State private var showSyncPlayback = false
 
     enum Tab: Int, Hashable, CaseIterable, Identifiable {
         case cameras, review, activity, explore, settings
@@ -71,6 +72,11 @@ struct MainTabView: View {
             .preferredColorScheme(.dark)
             // Native grabber on the detail sheets; the live player is immersive, so no grabber.
             .presentationDragIndicator({ if case .camera = sheet { return .hidden } else { return .visible } }())
+        }
+        .fullScreenCover(isPresented: $showSyncPlayback) {
+            SyncPlaybackView(cameras: appState.cameras, anchorEpoch: Date().timeIntervalSince1970)
+                .environmentObject(appState)
+                .preferredColorScheme(.dark)
         }
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)
@@ -166,6 +172,9 @@ struct MainTabView: View {
                     (try? await appState.client?.event(id: id)).map { .event($0) }
                 }
             }
+        case .syncPlayback:
+            selectedTab = .cameras
+            showSyncPlayback = true
         }
         appState.deepLink = nil
     }

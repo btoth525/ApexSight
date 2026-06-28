@@ -337,6 +337,12 @@ struct CamerasTab: View {
             } label: {
                 Label("All Cameras Wall", systemImage: "rectangle.grid.2x2.fill")
             }
+            Button {
+                Haptics.select()
+                appState.deepLink = .syncPlayback
+            } label: {
+                Label("Sync Playback", systemImage: "clock.arrow.circlepath")
+            }
             if !groupStore.groups.isEmpty {
                 Section("Saved Grids") {
                     ForEach(groupStore.groups) { group in

@@ -208,17 +208,24 @@ struct SyncPlaybackView: View {
 
     @StateObject private var model: SyncPlaybackModel
     @State private var dragging = false
+    /// The cameras actually used — falls back to a fetch when none were passed in (e.g. a
+    /// cold-launch deep link before the camera list loaded).
+    @State private var resolvedCameras: [FrigateCamera] = []
+    @State private var loadedOnce = false
 
     init(cameras: [FrigateCamera], anchorEpoch: Double) {
         self.cameras = cameras
-        // A one-hour window ending at the anchor; open parked at the live edge.
+        let windowSeconds: Double = 3600
         let end = anchorEpoch
-        let start = end - 3600
-        _model = StateObject(wrappedValue: SyncPlaybackModel(windowStart: start, windowEnd: end, startAtFraction: 1.0))
+        let start = end - windowSeconds
+        // Open ~90s before the live edge so a real recorded frame is on screen immediately —
+        // the exact live edge usually has no decodable frame yet (shows black).
+        let startFraction = (windowSeconds - 90) / windowSeconds
+        _model = StateObject(wrappedValue: SyncPlaybackModel(windowStart: start, windowEnd: end, startAtFraction: startFraction))
     }
 
     private var columns: [GridItem] {
-        let count = cameras.count <= 2 ? 1 : 2
+        let count = resolvedCameras.count <= 2 ? 1 : 2
         return Array(repeating: GridItem(.flexible(), spacing: GlassTheme.Space.s), count: count)
     }
 
@@ -241,16 +248,38 @@ struct SyncPlaybackView: View {
                 }
             }
             .task {
-                if let client = appState.client { model.load(cameras: cameras, client: client) }
+                guard !loadedOnce, let client = appState.client else { return }
+                loadedOnce = true
+                // Use the cameras passed in; if none (cold-launch deep link), fetch the list.
+                let cams = cameras.isEmpty ? ((try? await client.cameras()) ?? []) : cameras
+                resolvedCameras = cams
+                model.load(cameras: cams, client: client)
             }
             .onDisappear { model.teardown() }
         }
     }
 
+    @ViewBuilder
     private var grid: some View {
+        if resolvedCameras.isEmpty {
+            if loadedOnce {
+                EmptyStateView(icon: "clock.badge.questionmark",
+                               title: "No Cameras",
+                               message: "Couldn't load cameras for synced playback.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ProgressView().tint(GlassTheme.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            cameraGrid
+        }
+    }
+
+    private var cameraGrid: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: GlassTheme.Space.s) {
-                ForEach(cameras) { camera in
+                ForEach(resolvedCameras) { camera in
                     ZStack {
                         RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
                             .fill(Color.black)
