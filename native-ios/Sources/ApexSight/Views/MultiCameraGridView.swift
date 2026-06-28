@@ -295,7 +295,7 @@ private struct MultiCameraCell: View {
                 .padding(.horizontal, GlassTheme.Space.s)
                 .padding(.vertical, GlassTheme.Space.xs)
         }
-        .aspectRatio(16 / 9, contentMode: .fit)
+        .aspectRatio(camera.aspectRatio, contentMode: .fit)
         .clipped()
         // Hairline tile edge so cells read as crisp panels, not a seamless blob.
         .cardStroke(0)

@@ -147,6 +147,9 @@ struct SystemHealthView: View {
         .navigationTitle("System")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        // Stats + logs are fetched here, on demand, instead of on every app refresh.
+        .task { await appState.loadSystemHealth() }
+        .refreshable { await appState.loadSystemHealth() }
     }
 
     // MARK: - Loading & Error states

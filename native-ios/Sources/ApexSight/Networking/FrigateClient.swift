@@ -80,7 +80,9 @@ struct FrigateClient {
                 FrigateCamera(
                     name: name,
                     zones: camera.zones?.keys.sorted() ?? [],
-                    objects: camera.objects?.track ?? []
+                    objects: camera.objects?.track ?? [],
+                    width: camera.detect?.width,
+                    height: camera.detect?.height
                 )
             }
             .sorted { $0.name < $1.name }

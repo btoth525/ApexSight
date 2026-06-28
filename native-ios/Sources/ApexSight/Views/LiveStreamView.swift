@@ -41,8 +41,10 @@ struct LiveStreamView: View {
         }
         .navigationBarHidden(true)
         .statusBarHidden(!showChrome)
-        // Keep the bottom tab pill bar present in the full-screen view (the user wants it there,
-        // like the home screen). Only our own top/bottom camera chrome auto-hides for immersion.
+        // The bottom tab pill bar rides with the chrome: it's there when you tap (so you can
+        // jump tabs), and slides away with the rest for a clean immersive feed when idle.
+        .toolbar(showChrome ? .visible : .hidden, for: .tabBar)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showChrome)
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })

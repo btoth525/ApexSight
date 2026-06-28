@@ -15,8 +15,6 @@ struct CamerasTab: View {
     @State private var isEditing = false
     @State private var draft: [FrigateCamera] = []
     @State private var draftHidden: Set<String> = []
-    @State private var dragging: FrigateCamera?
-    @State private var wobble = false
 
     private enum LiveWallTarget: Identifiable {
         case all
@@ -39,7 +37,7 @@ struct CamerasTab: View {
             ZStack {
                 GlassBackground()
                 if isEditing {
-                    editGrid
+                    editList
                 } else {
                     liveScroll
                 }
@@ -164,102 +162,77 @@ struct CamerasTab: View {
 
     // MARK: - Arrange / reorder mode
 
-    private var editGrid: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Drag to reorder · tap a camera to show or hide it on your wall.")
+    // A List with .onMove gives rock-solid, oscillation-free reordering (the system owns the
+    // index math and drag handles), unlike the hand-rolled LazyVGrid DropDelegate it replaces.
+    private var editList: some View {
+        List {
+            Section {
+                ForEach(draft) { camera in
+                    editRow(camera)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                }
+                .onMove { from, to in
+                    Haptics.tap()
+                    draft.move(fromOffsets: from, toOffset: to)
+                }
+            } header: {
+                Text("Drag the handle to reorder · tap a camera to show or hide it on your wall.")
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(GlassTheme.secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.top, 4)
-
-                LazyVGrid(columns: editColumns, spacing: 12) {
-                    ForEach(draft) { camera in
-                        editTile(camera)
-                            .onDrag {
-                                dragging = camera
-                                return NSItemProvider(object: camera.name as NSString)
-                            }
-                            .onDrop(
-                                of: [.text],
-                                delegate: CameraReorderDropDelegate(item: camera, draft: $draft, dragging: $dragging)
-                            )
-                    }
-                }
+                    .textCase(nil)
             }
-            .padding(16)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        // editMode active so List shows the reorder handles and enables .onMove immediately.
+        .environment(\.editMode, .constant(.active))
     }
 
-    private var editColumns: [GridItem] {
-        let n = horizontalSizeClass == .regular ? 3 : 2
-        return Array(repeating: GridItem(.flexible(), spacing: 12), count: n)
-    }
-
-    private func editTile(_ camera: FrigateCamera) -> some View {
+    private func editRow(_ camera: FrigateCamera) -> some View {
         let isHidden = draftHidden.contains(camera.name)
-        return ZStack(alignment: .topTrailing) {
-            ZStack(alignment: .bottomLeading) {
+        return HStack(spacing: 12) {
+            ZStack {
                 if let url = appState.client?.latestFrameURL(camera: camera.name) {
                     RemoteImage(url: url, contentMode: .fill)
                 } else {
                     Color.black
                 }
-
-                Text(titleize(camera.name))
-                    .font(.system(size: 11, weight: .black))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .padding(6)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 96)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .opacity(isHidden ? 0.35 : 1)
+            .frame(width: 92, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isHidden ? GlassTheme.secondary.opacity(0.4) : GlassTheme.cyan.opacity(0.5), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isHidden ? GlassTheme.secondary.opacity(0.4) : GlassTheme.cyan.opacity(0.5), lineWidth: 1)
             }
+            .opacity(isHidden ? 0.4 : 1)
 
-            Image(systemName: isHidden ? "circle" : "checkmark.circle.fill")
-                .font(.system(size: 20, weight: .black))
-                .foregroundStyle(isHidden ? Color.white.opacity(0.75) : GlassTheme.green)
-                .background { Circle().fill(.black.opacity(0.55)) }
-                .padding(6)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onTapGesture {
-            Haptics.select()
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
-                if draftHidden.contains(camera.name) { draftHidden.remove(camera.name) }
-                else { draftHidden.insert(camera.name) }
+            Text(titleize(camera.name))
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(isHidden ? GlassTheme.secondary : GlassTheme.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            // Explicit show/hide toggle — reliable in edit mode (row taps are reserved for drag).
+            Button {
+                Haptics.select()
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                    if draftHidden.contains(camera.name) { draftHidden.remove(camera.name) }
+                    else { draftHidden.insert(camera.name) }
+                }
+            } label: {
+                Image(systemName: isHidden ? "eye.slash.fill" : "eye.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(isHidden ? GlassTheme.secondary : GlassTheme.green)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isHidden ? "Show \(titleize(camera.name)) on wall" : "Hide \(titleize(camera.name)) from wall")
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(titleize(camera.name)) camera")
-        .accessibilityValue(isHidden ? "Hidden" : "Shown on wall")
-        .accessibilityHint("Double tap to show or hide on your wall")
-        .accessibilityAddTraits(.isButton)
-        // Home-screen-style jiggle, but respect Reduce Motion (no continuous animation).
-        .rotationEffect(.degrees(reduceMotion ? 0 : (wobble ? wobbleAmount(for: camera) : -wobbleAmount(for: camera))))
-        .animation(
-            reduceMotion ? nil : .easeInOut(duration: wobbleDuration(for: camera)).repeatForever(autoreverses: true),
-            value: wobble
-        )
-    }
-
-    /// A small per-camera wobble so arrange mode reads like the iOS Home Screen jiggle,
-    /// slightly desynced per tile so they don't all move in lockstep.
-    private func wobbleAmount(for camera: FrigateCamera) -> Double {
-        // Mask the sign bit instead of abs() — abs(Int.min) would trap.
-        1.0 + Double((camera.name.hashValue & Int.max) % 6) * 0.08   // 1.0°…~1.4°
-    }
-
-    private func wobbleDuration(for camera: FrigateCamera) -> Double {
-        0.15 + Double((camera.name.hashValue & Int.max) % 5) * 0.012  // 0.15s…~0.20s
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Toolbar
@@ -306,19 +279,16 @@ struct CamerasTab: View {
         draft = layout.arranged(appState.cameras)
         draftHidden = layout.hidden
         withAnimation { isEditing = true }
-        wobble = true
     }
 
     private func cancelEditing() {
         Haptics.tap()
-        wobble = false
         withAnimation { isEditing = false }
     }
 
     private func commitEditing() {
         Haptics.select()
         layout.commit(order: draft.map(\.name), hidden: draftHidden)
-        wobble = false
         withAnimation { isEditing = false }
     }
 
@@ -377,31 +347,3 @@ struct CamerasTab: View {
     }
 }
 
-// MARK: - Drag-to-reorder
-
-private struct CameraReorderDropDelegate: DropDelegate {
-    let item: FrigateCamera
-    @Binding var draft: [FrigateCamera]
-    @Binding var dragging: FrigateCamera?
-
-    func dropEntered(info: DropInfo) {
-        guard let dragging, dragging != item,
-              let from = draft.firstIndex(of: dragging),
-              let to = draft.firstIndex(of: item)
-        else { return }
-        if draft[to] != dragging {
-            withAnimation {
-                draft.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-            }
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        dragging = nil
-        return true
-    }
-}

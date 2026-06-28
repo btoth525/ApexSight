@@ -50,6 +50,16 @@ struct FrigateCamera: Identifiable, Hashable {
     let name: String
     let zones: [String]
     let objects: [String]
+    /// Native detect resolution from Frigate config — drives per-camera tile aspect so
+    /// fisheye / ultra-wide feeds aren't letterboxed into a forced 16:9 box.
+    var width: Int? = nil
+    var height: Int? = nil
+
+    /// The camera's true aspect, falling back to 16:9 when Frigate didn't report dimensions.
+    var aspectRatio: CGFloat {
+        guard let width, let height, width > 0, height > 0 else { return 16.0 / 9.0 }
+        return CGFloat(width) / CGFloat(height)
+    }
 }
 
 struct FrigateEvent: Identifiable, Codable, Hashable {
@@ -282,6 +292,13 @@ struct FrigateConfig: Codable, Hashable {
 struct CameraConfig: Codable, Hashable {
     let zones: [String: ZoneConfig]?
     let objects: ObjectConfig?
+    let detect: DetectConfig?
+}
+
+/// Frigate's per-camera detect resolution (`cameras.<name>.detect.{width,height}`).
+struct DetectConfig: Codable, Hashable {
+    let width: Int?
+    let height: Int?
 }
 
 struct ZoneConfig: Codable, Hashable {}

@@ -26,7 +26,7 @@ enum NativeNotificationManager {
         )
         let silence = UNNotificationAction(
             identifier: snoozeCameraAction,
-            title: "Silence 1 hr",
+            title: "Silence All · 1 hr",
             options: []
         )
         let markReviewed = UNNotificationAction(

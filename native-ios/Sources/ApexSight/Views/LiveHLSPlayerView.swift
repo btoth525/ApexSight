@@ -363,6 +363,10 @@ struct HLSLivePlayerView: View {
     /// which Frigate serves itself, not go2rtc — so the view is never stuck on black.
     @State private var mjpegFallback = false
     @State private var fallbackTask: Task<Void, Never>?
+    /// Drives the staggered startup through StreamGate so a wall of cameras doesn't all begin
+    /// negotiating + decoding at once on launch.
+    @State private var startTask: Task<Void, Never>?
+    @State private var gateHeld = false
 
     /// Cameras whose HLS proved unavailable this session — reopened straight on MJPEG so
     /// they don't sit black waiting for HLS to fail every single time.
@@ -423,6 +427,13 @@ struct HLSLivePlayerView: View {
     }
 
     /// Give HLS a short window to start; if it never does (or it gives up), switch to MJPEG.
+    /// Release this view's startup slot back to the gate exactly once (idempotent).
+    private func releaseGate() {
+        guard gateHeld else { return }
+        gateHeld = false
+        Task { await StreamGate.shared.release() }
+    }
+
     private func startFallbackTimer() {
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
@@ -514,10 +525,21 @@ struct HLSLivePlayerView: View {
                 makeItem: { url in appState.client?.playerItem(for: url) },
                 reauth: { await appState.reauthenticate() }
             )
-            model.start()
-            startFallbackTimer()
+            // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
+            startTask = Task { @MainActor in
+                await StreamGate.shared.acquire()
+                gateHeld = true
+                guard !Task.isCancelled, started else { releaseGate(); return }
+                model.start()
+                startFallbackTimer()
+                // Safety release if the stream never reports playing/failed (don't wedge the gate).
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                releaseGate()
+            }
         }
         .onDisappear {
+            startTask?.cancel(); startTask = nil
+            releaseGate()
             if persistent {
                 // Keep it loaded across tab switches — just pause decoding. The last
                 // frame stays on screen, so returning is instant with no black flash.
@@ -531,8 +553,8 @@ struct HLSLivePlayerView: View {
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
             switch newState {
-            case .playing: fallbackTask?.cancel(); fallbackTask = nil   // HLS works — no fallback
-            case .failed: fallToMJPEG()                                 // HLS gave up — go MJPEG
+            case .playing: fallbackTask?.cancel(); fallbackTask = nil; releaseGate()  // up — free the slot
+            case .failed: releaseGate(); fallToMJPEG()                                 // gave up — free + MJPEG
             default: break
             }
         }

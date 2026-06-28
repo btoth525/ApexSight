@@ -467,7 +467,9 @@ final class AppState: ObservableObject {
             await refresh()
             startRealtime()
             startForegroundPolling()
-            Task { _ = try? await NativeNotificationManager.requestPermission() }
+            // Request permission AND register for remote push now — a fresh sign-in must get an
+            // APNs token immediately, not wait for the next background→foreground cycle.
+            PushRegistrar.ensureRegistered()
         } catch {
             errorMessage = Self.signInErrorMessage(for: error)
         }
@@ -561,9 +563,11 @@ final class AppState: ObservableObject {
             async let nextReviews = client.reviews(limit: 30, reviewed: false)
             async let nextLabels = client.labels()
             async let nextSubLabels = client.subLabels()
-            async let nextStats = client.stats()
-            async let nextLogs = client.logs()
             async let nextStreams = client.go2rtcStreams()
+            // NOTE: stats + logs are intentionally NOT fetched here. /api/logs/frigate is a heavy
+            // text blob and both are read only by SystemHealthView (Settings), so refresh() — which
+            // runs on every launch / foreground / poll — must not pay for them. Stats stay fresh via
+            // the live WebSocket; SystemHealthView fetches both itself via loadSystemHealth().
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
@@ -591,14 +595,14 @@ final class AppState: ObservableObject {
             }
             labels = (try? await nextLabels) ?? labels
             subLabels = (try? await nextSubLabels) ?? subLabels
-            if let s = try? await nextStats { stats = s }
-            recentLogs = (try? await nextLogs) ?? recentLogs
 
             let streams = (try? await nextStreams) ?? [:]
             hasBirdseye = streams["birdseye"] != nil
             twoWayCameras = Set(streams.keys.filter { $0.hasSuffix("_twoway") }
                 .map { String($0.dropLast("_twoway".count)) })
-            await cacheWidgetSnapshot(from: loadedCameras)
+            // Fire-and-forget so refresh() (and the launch spinner) doesn't block on an extra
+            // image round-trip for the widget snapshot.
+            Task { await cacheWidgetSnapshot(from: loadedCameras) }
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
             isReachable = true
         } catch {
@@ -616,6 +620,14 @@ final class AppState: ObservableObject {
             }
         }
         isLoading = false
+    }
+
+    /// Fetch the heavy stats + logs only when SystemHealthView (Settings) is actually open —
+    /// keeps them off the launch/refresh hot path.
+    func loadSystemHealth() async {
+        guard let client else { return }
+        if let s = try? await client.stats() { stats = s }
+        recentLogs = (try? await client.logs()) ?? recentLogs
     }
 
     /// Cameras whose snapshot prewarm is in flight, so repeated calls don't re-download.

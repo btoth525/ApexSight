@@ -47,7 +47,9 @@ struct CameraCard: View {
 
                 bottomBar
             }
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            // Size the tile to the camera's true aspect (fisheye/ultra-wide included) so the
+            // feed fills its box with no letterbox bars, instead of a forced 16:9.
+            .aspectRatio(camera.aspectRatio, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
