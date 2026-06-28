@@ -40,6 +40,7 @@ struct LiveStreamView: View {
         }
         .navigationBarHidden(true)
         .statusBarHidden(!showChrome)
+        .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
             scheduleHideChrome()

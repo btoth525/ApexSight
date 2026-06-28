@@ -68,6 +68,8 @@ struct MainTabView: View {
             }
             .environmentObject(appState)
             .preferredColorScheme(.dark)
+            // Native grabber on the detail sheets; the live player is immersive, so no grabber.
+            .presentationDragIndicator({ if case .camera = sheet { return .hidden } else { return .visible } }())
         }
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)
