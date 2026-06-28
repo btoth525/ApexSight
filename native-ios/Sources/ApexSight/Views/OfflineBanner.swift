@@ -17,6 +17,7 @@ struct OfflineBanner: View {
                     Image(systemName: "wifi.slash")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(GlassTheme.orange)
+                        .symbolEffect(.pulse, options: reduceMotion ? .nonRepeating : .repeating)
                     Text("Can't reach your server — showing last data")
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(GlassTheme.primary)

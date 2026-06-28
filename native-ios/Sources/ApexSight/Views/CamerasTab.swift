@@ -113,6 +113,7 @@ struct CamerasTab: View {
             }
             .padding(16)
         }
+        .softScrollEdges()
         .refreshable { await appState.refresh() }
         .task {
             if appState.cameras.isEmpty { await appState.refresh() }

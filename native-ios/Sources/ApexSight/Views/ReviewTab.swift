@@ -205,6 +205,7 @@ struct ReviewTab: View {
                             }
                             .listStyle(.plain)
                             .scrollContentBackground(.hidden)
+                            .softScrollEdges()
                             .refreshable {
                                 await appState.refresh()
                                 if selectedSeverity == "detection" { await loadDetections() }

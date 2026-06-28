@@ -584,6 +584,7 @@ struct HLSLivePlayerView: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 40, weight: .bold))
                 .foregroundStyle(.orange)
+                .symbolEffect(.pulse, options: .repeating)
             Text(message)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white.opacity(0.85))

@@ -120,6 +120,7 @@ struct ActivityTab: View {
                     .padding(.horizontal, GlassTheme.Space.l)
                     .padding(.bottom, GlassTheme.Space.xl)
                 }
+                .softScrollEdges()
                 .refreshable {
                     await appState.refresh()
                     await loadSummary()

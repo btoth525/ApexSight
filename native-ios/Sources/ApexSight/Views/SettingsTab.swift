@@ -38,6 +38,7 @@ struct SettingsTab: View {
                     }
                     .padding(GlassTheme.Space.l)
                 }
+                .softScrollEdges()
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

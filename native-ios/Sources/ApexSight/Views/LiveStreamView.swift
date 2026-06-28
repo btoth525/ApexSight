@@ -299,6 +299,7 @@ struct LiveStreamView: View {
         return VStack(spacing: GlassTheme.Space.s) {
             Image(systemName: active ? "mic.fill" : "mic")
                 .font(.system(size: 21, weight: .semibold))
+                .symbolEffect(.variableColor, options: .repeating, isActive: connecting)
                 .frame(width: 54, height: 54)
                 .liquidGlass(in: Circle(), tint: active ? GlassTheme.red : nil, interactive: true, fallbackMaterial: .ultraThinMaterial)
                 .foregroundStyle(active ? .white : GlassTheme.primary)

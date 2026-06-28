@@ -302,6 +302,17 @@ extension View {
         }
     }
 
+    /// iOS 26 soft scroll-edge effect — a gentle glass blur where content meets the top/bottom
+    /// bars, so feeds and lists dissolve under the chrome instead of cutting off hard. No-op below 26.
+    @ViewBuilder
+    func softScrollEdges() -> some View {
+        if #available(iOS 26.0, *) {
+            self.scrollEdgeEffectStyle(.soft, for: .all)
+        } else {
+            self
+        }
+    }
+
     func glassBackground() -> some View {
         self.background(GlassBackground())
     }
