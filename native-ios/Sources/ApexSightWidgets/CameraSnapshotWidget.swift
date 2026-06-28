@@ -1,6 +1,7 @@
 import SwiftUI
 import WidgetKit
 import UIKit
+import ImageIO
 
 // MARK: - Local theme (widget target has no access to the app's GlassTheme)
 
@@ -97,6 +98,9 @@ struct CameraSnapshotWidgetView: View {
             case .systemLarge:
                 LargeWidgetView(entry: entry)
                     .containerBackground(WidgetTheme.panelGradient, for: .widget)
+            case .systemExtraLarge:
+                LargeWidgetView(entry: entry)
+                    .containerBackground(WidgetTheme.panelGradient, for: .widget)
             default:
                 SmallWidgetView(entry: entry)
                     .containerBackground(WidgetTheme.panelGradient, for: .widget)
@@ -129,7 +133,10 @@ private struct HeroSnapshotImage: View {
     let imageURL: URL?
 
     var body: some View {
-        if let imageURL, let image = UIImage(contentsOfFile: imageURL.path) {
+        // Downsample off the full-res file (the fallback `latest.jpg` can be multi-MP) so the
+        // widget extension stays under its ~30 MB render budget — a raw UIImage(contentsOfFile:)
+        // of a full-frame JPEG can blank the tile. Capped at 800px, which covers every family.
+        if let imageURL, let image = downsampledImage(at: imageURL, maxPixel: 800) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
@@ -137,6 +144,21 @@ private struct HeroSnapshotImage: View {
             PlaceholderHero()
         }
     }
+}
+
+/// ImageIO thumbnail decode — never inflates the full bitmap into memory, unlike
+/// `UIImage(contentsOfFile:)`. Returns nil on any failure so the caller shows the placeholder.
+private func downsampledImage(at url: URL, maxPixel: CGFloat) -> UIImage? {
+    let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else { return nil }
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixel
+    ]
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+    return UIImage(cgImage: cg)
 }
 
 private struct PlaceholderHero: View {
@@ -464,6 +486,7 @@ private struct AccessoryRectangularView: View {
                     .font(.system(size: 14, weight: .black))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
+                    .widgetAccentable()
                 Text(titleizeWidget(alert.camera))
                     .font(.system(size: 12, weight: .heavy))
                     .lineLimit(1)
@@ -520,14 +543,17 @@ private struct AccessoryCircularView: View {
                 VStack(spacing: 0) {
                     Text(alertEmoji(alert.label))
                         .font(.system(size: 19))
-                    Text(relativeShort(alert.when))
-                        .font(.system(size: 9, weight: .black, design: .rounded))
+                    // Self-updating so the circular tile never reads a stale "3m" between
+                    // WidgetKit's 15-min timeline reloads.
+                    Text(alert.when, style: .relative)
+                        .font(.system(size: 8, weight: .black, design: .rounded))
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                 }
             } else {
                 Image(systemName: "checkmark.shield.fill")
                     .font(.system(size: 20, weight: .black))
+                    .widgetAccentable()
             }
         }
     }
@@ -544,14 +570,22 @@ struct CameraSnapshotWidget: Widget {
         }
         .configurationDisplayName("ApexSight Activity")
         .description("A snapshot of your latest detection plus a recent-activity feed from your cameras.")
-        .supportedFamilies([
-            .systemSmall,
-            .systemMedium,
-            .systemLarge,
-            .accessoryRectangular,
-            .accessoryInline,
-            .accessoryCircular
-        ])
+        .supportedFamilies(supportedFamilies)
+        // Let the hero snapshot bleed edge-to-edge instead of sitting inside WidgetKit's
+        // default ~16pt content inset (the text overlays pad themselves).
+        .contentMarginsDisabled()
+    }
+
+    // systemExtraLarge only exists on iPad — gating it keeps the iPhone picker clean.
+    private var supportedFamilies: [WidgetFamily] {
+        var families: [WidgetFamily] = [
+            .systemSmall, .systemMedium, .systemLarge,
+            .accessoryRectangular, .accessoryInline, .accessoryCircular
+        ]
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            families.append(.systemExtraLarge)
+        }
+        return families
     }
 }
 

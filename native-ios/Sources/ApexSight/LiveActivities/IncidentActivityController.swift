@@ -17,13 +17,11 @@ enum IncidentActivityController {
             severity: review.severity ?? "alert"
         )
 
-        // Restore the existing activity from a previous app session if we lost our handle.
-        if current == nil {
-            current = Activity<IncidentActivityAttributes>.activities.first
-        }
-        // Drop a stale handle (e.g. the user tapped "Dismiss") so a new alert starts fresh.
-        if let existing = current, existing.activityState != .active {
-            current = nil
+        // Adopt any live activity already on screen — whether we lost our handle across an app
+        // session OR the relay push-started one for this same incident — so we update it in place
+        // instead of stacking a second banner for the same event.
+        if current == nil || current?.activityState != .active {
+            current = Activity<IncidentActivityAttributes>.activities.first { $0.activityState == .active }
         }
 
         if let current {
@@ -33,9 +31,11 @@ enum IncidentActivityController {
                 camera: review.camera,
                 startedAt: review.startTime ?? Date().timeIntervalSince1970
             )
+            // No staleDate: this locally-started activity is owned by our 45s auto-end timer
+            // below, so a stale window would be dead code (it never outlives the timer).
             current = try? Activity.request(
                 attributes: attributes,
-                content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(300)),
+                content: ActivityContent(state: state, staleDate: nil),
                 pushType: nil
             )
         }

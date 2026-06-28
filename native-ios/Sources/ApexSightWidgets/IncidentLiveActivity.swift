@@ -52,6 +52,8 @@ struct IncidentLiveActivity: Widget {
                 Image(systemName: severityIcon(context.state.severity))
                     .foregroundStyle(severityColor(context.state.severity))
             }
+            // Severity-colored hairline around the expanded island (orange alert / cyan detection).
+            .keylineTint(severityColor(context.state.severity))
         }
     }
 
@@ -82,6 +84,9 @@ struct IncidentLiveActivity: Widget {
             }
             .padding(14)
         }
+        // Dim once the activity has gone stale (e.g. a relay push stopped arriving) so the
+        // Lock Screen signals "this is no longer live" instead of showing frozen-fresh data.
+        .opacity(context.isStale ? 0.55 : 1)
         .widgetURL(cameraDeepLink(context.attributes.camera))
     }
 
@@ -160,8 +165,13 @@ struct IncidentLiveActivity: Widget {
             ?? URL(fileURLWithPath: "/")
     }
 
-    /// The object emoji — the title already starts with it (e.g. "🚗 Car", "🧍 Person").
-    private func glyph(_ title: String) -> String { String(title.first ?? "🔔") }
+    /// The object emoji — the title usually starts with it (e.g. "🚗 Car", "🧍 Person"). If a
+    /// push-started state arrives with a plain title (no emoji prefix), fall back to a bell
+    /// rather than slicing a bare letter like "P".
+    private func glyph(_ title: String) -> String {
+        guard let first = title.unicodeScalars.first, first.properties.isEmoji else { return "🔔" }
+        return String(title.first ?? "🔔")
+    }
 
     private func severityColor(_ severity: String) -> Color {
         severity == "alert" ? .orange : .cyan

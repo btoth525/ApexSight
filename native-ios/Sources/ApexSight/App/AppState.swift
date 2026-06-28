@@ -9,6 +9,7 @@ enum AppDeepLink: Hashable {
     case review(String)
     case event(String)
     case camera(String)
+    case cameras   // jump to the Cameras tab (e.g. Siri "Show my cameras")
 }
 
 extension Error {
@@ -569,6 +570,9 @@ final class AppState: ObservableObject {
             prewarmSnapshots()
             // Mirror camera names to the app group so Siri/Watch/CarPlay can list them.
             SharedSnapshotStore.saveCameraNames(loadedCameras.map(\.name))
+            // Tell App Intents the camera parameter options changed so Siri/Shortcuts refresh
+            // their predicted "Check the <camera>" suggestions instead of going stale.
+            ApexShortcuts.updateAppShortcutParameters()
             // Index cameras into Spotlight so typing "front door" opens that camera.
             if #available(iOS 18.0, *) {
                 let entities = loadedCameras.map { CameraEntity(id: $0.name) }
@@ -803,6 +807,8 @@ final class AppState: ObservableObject {
             if let name = items.first(where: { $0.name == "name" })?.value {
                 deepLink = .camera(name)
             }
+        case "cameras":
+            deepLink = .cameras
         default:
             break
         }

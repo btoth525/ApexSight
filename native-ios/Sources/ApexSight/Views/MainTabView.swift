@@ -137,6 +137,10 @@ struct MainTabView: View {
     private func handleDeepLink(_ route: AppDeepLink?) {
         guard let route else { return }
         switch route {
+        case .cameras:
+            // Plain "show my cameras" — just land on the wall, no detail sheet.
+            detailSheet = nil
+            selectedTab = .cameras
         case .camera(let name):
             selectedTab = .cameras
             if let camera = appState.cameras.first(where: { $0.name == name }) {

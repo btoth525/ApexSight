@@ -73,6 +73,30 @@ private struct AlertSnippetView: View {
     }
 }
 
+/// A compact recent-activity list shown inline by Siri / Shortcuts for "what's happening".
+private struct RecentActivitySnippetView: View {
+    let alerts: [SharedAlert]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(alerts.prefix(4).enumerated()), id: \.offset) { _, alert in
+                HStack(spacing: 10) {
+                    Text(AlertPhrasing.subject(for: alert))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Text(AlertPhrasing.titleize(alert.camera))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(alert.when, style: .relative)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(12)
+    }
+}
+
 // MARK: - Latest alert ("Hey Siri, anyone at the front door?")
 
 struct LatestAlertIntent: AppIntent {
@@ -106,17 +130,23 @@ struct RecentActivityIntent: AppIntent {
     static var description = IntentDescription("Summarizes the most recent camera alerts.")
     static var openAppWhenRun = false
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
         let recent = SharedSnapshotStore.loadRecentAlerts().alerts
         guard !recent.isEmpty else {
-            return .result(dialog: "No recent camera activity.")
+            return .result(
+                dialog: "No recent camera activity.",
+                view: AlertSnippetView(title: "All quiet", subtitle: "No recent activity", imagePath: nil)
+            )
         }
         let top = recent.prefix(3).map { alert in
             "\(AlertPhrasing.subject(for: alert)) at \(AlertPhrasing.titleize(alert.camera))"
         }
         let summary = top.joined(separator: ", ")
         let count = recent.count
-        return .result(dialog: IntentDialog(stringLiteral: "\(count) recent alerts. Most recent: \(summary)."))
+        return .result(
+            dialog: IntentDialog(stringLiteral: "\(count) recent alerts. Most recent: \(summary)."),
+            view: RecentActivitySnippetView(alerts: recent)
+        )
     }
 }
 
@@ -128,7 +158,10 @@ struct ShowLiveCamerasIntent: AppIntent {
     static var openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
-        // Opening the app lands on the Cameras tab; no deep link needed.
+        // Stash a deep link so the app jumps to the Cameras tab even on a warm launch where it
+        // was last left on another tab — not just on a cold launch that defaults to Cameras.
+        UserDefaults(suiteName: ApexAppGroup.identifier)?
+            .set("apex://cameras", forKey: "apex.pendingIntentLink")
         return .result()
     }
 }
@@ -146,6 +179,10 @@ struct OpenCameraIntent: OpenIntent {
 
     init() {}
     init(target: CameraEntity) { self.target = target }
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Show \(\.$target)")
+    }
 
     func perform() async throws -> some IntentResult {
         if let encoded = target.id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
@@ -196,17 +233,25 @@ struct CameraQuery: EntityQuery {
 
 struct CheckCameraIntent: AppIntent {
     static var title: LocalizedStringResource = "Check Camera"
-    static var description = IntentDescription("Checks a camera for recent activity, and answers with a snapshot.")
+    static var description = IntentDescription("Checks a camera for recent activity in the last 15 minutes.")
     static var openAppWhenRun = false
 
     @Parameter(title: "Camera")
     var camera: CameraEntity
 
-    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<Bool> {
+    static var parameterSummary: some ParameterSummary {
+        Summary("Check the \(\.$camera)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView & ReturnsValue<Bool> {
         let name = camera.id
         let display = AlertPhrasing.titleize(name)
         guard let session = KeychainStore().loadSession() else {
-            return .result(value: false, dialog: "I couldn't reach your cameras.")
+            return .result(
+                value: false,
+                dialog: "I couldn't reach your cameras.",
+                view: AlertSnippetView(title: display, subtitle: "Couldn't reach your cameras", imagePath: nil)
+            )
         }
         let client = FrigateClient(session: session)
         let since = Date().addingTimeInterval(-15 * 60)
@@ -214,14 +259,22 @@ struct CheckCameraIntent: AppIntent {
         let active = !events.isEmpty
 
         let dialog: String
+        let subtitle: String
         if active, let first = events.first {
             let subject = AlertPhrasing.titleize(first.subLabel ?? first.label)
             dialog = "Yes — \(subject) at \(display) recently."
+            subtitle = "\(subject) · seen recently"
         } else {
             dialog = "Nothing at \(display) in the last 15 minutes."
+            subtitle = "All quiet · last 15 min"
         }
-        // Returns a Bool so the new Siri can branch: "if true, turn on the porch light…"
-        return .result(value: active, dialog: IntentDialog(stringLiteral: dialog))
+        // Returns a Bool so the new Siri can branch: "if true, turn on the porch light…",
+        // plus an inline snippet with View Live / Snooze actions.
+        return .result(
+            value: active,
+            dialog: IntentDialog(stringLiteral: dialog),
+            view: AlertSnippetView(title: display, subtitle: subtitle, imagePath: nil, camera: name)
+        )
     }
 }
 
@@ -314,6 +367,10 @@ struct SnoozeAlertsIntent: AppIntent {
     @Parameter(title: "For how long", default: .oneHour)
     var duration: SnoozeDuration
 
+    static var parameterSummary: some ParameterSummary {
+        Summary("Snooze camera alerts for \(\.$duration)")
+    }
+
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let until = Date().addingTimeInterval(duration.seconds)
         GlobalSnooze.snooze(until: until)
@@ -336,6 +393,9 @@ struct ResumeAlertsIntent: AppIntent {
 // MARK: - Shortcuts (the Siri phrases)
 
 struct ApexShortcuts: AppShortcutsProvider {
+    // Brand the Shortcuts / Spotlight tiles to the app's cyan-blue accent.
+    static var shortcutTileColor: ShortcutTileColor { .teal }
+
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: LatestAlertIntent(),

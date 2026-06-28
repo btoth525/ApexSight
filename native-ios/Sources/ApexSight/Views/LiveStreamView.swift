@@ -129,8 +129,7 @@ struct LiveStreamView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                    .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                     .foregroundStyle(GlassTheme.primary)
                     .contentShape(Circle())
             }
@@ -172,8 +171,7 @@ struct LiveStreamView: View {
                     .foregroundStyle(GlassTheme.primary)
                     .padding(.horizontal, GlassTheme.Space.m)
                     .frame(minHeight: 44)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                    .liquidGlass(in: Capsule(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                 }
                 .accessibilityLabel("Stream source, currently \(streamMode.rawValue)")
             }
@@ -186,8 +184,7 @@ struct LiveStreamView: View {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 15, weight: .semibold))
                         .frame(width: 44, height: 44)
-                        .background(showPTZ ? AnyShapeStyle(GlassTheme.accent.opacity(0.30)) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                        .overlay { Circle().strokeBorder(showPTZ ? GlassTheme.accent.opacity(0.55) : GlassTheme.separator, lineWidth: 1) }
+                        .liquidGlass(in: Circle(), tint: showPTZ ? GlassTheme.accent : nil, interactive: true, fallbackMaterial: .ultraThinMaterial)
                         .foregroundStyle(showPTZ ? GlassTheme.accent : GlassTheme.primary)
                         .contentShape(Circle())
                 }
@@ -284,8 +281,7 @@ struct LiveStreamView: View {
             Image(systemName: icon)
                 .font(.system(size: 21, weight: .semibold))
                 .frame(width: 54, height: 54)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                 .foregroundStyle(GlassTheme.primary)
             Text(label)
                 .font(.caption.weight(.medium))
@@ -301,8 +297,7 @@ struct LiveStreamView: View {
             Image(systemName: active ? "mic.fill" : "mic")
                 .font(.system(size: 21, weight: .semibold))
                 .frame(width: 54, height: 54)
-                .background(active ? AnyShapeStyle(GlassTheme.red) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                .overlay { Circle().strokeBorder(active ? Color.white.opacity(0.4) : GlassTheme.separator, lineWidth: 1) }
+                .liquidGlass(in: Circle(), tint: active ? GlassTheme.red : nil, interactive: true, fallbackMaterial: .ultraThinMaterial)
                 .foregroundStyle(active ? .white : GlassTheme.primary)
                 .scaleEffect(active ? 1.08 : 1)
                 .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: active)
