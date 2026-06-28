@@ -29,6 +29,22 @@ enum GlassTheme {
     static let separator = Color.white.opacity(0.08)
     static let hairline  = Color.white.opacity(0.10)
 
+    // MARK: - Glass depth
+    /// A hairline that catches light at the top and fades down the edge — the premium
+    /// "pane of dark glass" cue. Replaces the flat separator stroke on cards/buttons.
+    static let glassEdge = LinearGradient(
+        colors: [Color.white.opacity(0.24), Color.white.opacity(0.08), Color.white.opacity(0.04)],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+    /// A barely-there vertical sheen laid over a card's fill for dimensionality (kept very
+    /// low so surfaces still read as dark, never white).
+    static let glassSheen = LinearGradient(
+        colors: [Color.white.opacity(0.06), Color.clear, Color.clear],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
     // MARK: - Accent + semantic palette
     /// The single brand accent. Restraint here is the premium cue — don't tint everything.
     static let accent = Color(red: 0.30, green: 0.74, blue: 1.00)
@@ -71,13 +87,14 @@ struct GlassCard<Content: View>: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
         content
             .padding(GlassTheme.Space.l)
-            .background(material, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
-                    .strokeBorder(GlassTheme.separator, lineWidth: 1)
-            }
+            .background(material, in: shape)
+            // Faint top sheen → the surface reads as a lit pane of glass, not a flat fill.
+            .overlay { shape.fill(GlassTheme.glassSheen).allowsHitTesting(false) }
+            // Top-lit hairline edge for depth (replaces the flat separator stroke).
+            .overlay { shape.strokeBorder(GlassTheme.glassEdge, lineWidth: 1) }
     }
 }
 
@@ -131,7 +148,7 @@ struct GlassButtonStyle: ButtonStyle {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                    .strokeBorder(GlassTheme.glassEdge, lineWidth: 1)
             }
             .opacity(configuration.isPressed ? 0.72 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
@@ -257,11 +274,11 @@ extension View {
             .toolbarColorScheme(.dark, for: .navigationBar)
     }
 
-    /// Standard content-card chrome (radius + hairline) for views that don't use GlassCard.
+    /// Standard content-card chrome (radius + top-lit glass edge) for views that don't use GlassCard.
     func cardStroke(_ radius: CGFloat = GlassTheme.Radius.card) -> some View {
         self.overlay {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                .strokeBorder(GlassTheme.glassEdge, lineWidth: 1)
         }
     }
 }
