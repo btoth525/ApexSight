@@ -332,6 +332,10 @@ struct HLSLivePlayerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
     var showControls: Bool = false
+    /// Fades the on-video overlay controls (fill / PiP / mute) in and out with the host's
+    /// chrome, so they auto-hide together for a fully immersive full-screen view. Structural
+    /// `showControls` (zoom wrapping) stays put so zoom state survives the chrome toggle.
+    var overlayControlsVisible: Bool = true
     /// Start on the lighter `_sub` stream — set for the multi-camera wall/grid so many
     /// feeds stay smooth on real hardware. The full-screen viewer leaves this false for
     /// full-quality main-stream playback.
@@ -485,6 +489,9 @@ struct HLSLivePlayerView: View {
 
             if showControls {
                 liveControls
+                    .opacity(overlayControlsVisible ? 1 : 0)
+                    .allowsHitTesting(overlayControlsVisible)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: overlayControlsVisible)
             }
         }
         .onAppear {

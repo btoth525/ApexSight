@@ -41,6 +41,8 @@ struct LiveStreamView: View {
         }
         .navigationBarHidden(true)
         .statusBarHidden(!showChrome)
+        // Keep the bottom tab pill bar present in the full-screen view (the user wants it there,
+        // like the home screen). Only our own top/bottom camera chrome auto-hides for immersion.
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })
@@ -51,6 +53,11 @@ struct LiveStreamView: View {
             reloadToken = UUID()
             revealChrome()
         }
+        // Keep the chrome pinned up while a control is active; re-arm the auto-hide once the
+        // user finishes (closes PTZ, releases Talk, dismisses the controls sheet).
+        .onChange(of: showPTZ) { _, on in on ? revealChrome() : scheduleHideChrome() }
+        .onChange(of: talk.isActive) { _, active in active ? revealChrome() : scheduleHideChrome() }
+        .onChange(of: showCameraControls) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
         .onDisappear { hideTask?.cancel(); talk.stop() }
         .sheet(isPresented: $showCameraControls) {
             CameraQuickControlsSheet(camera: camera)
@@ -60,11 +67,17 @@ struct LiveStreamView: View {
 
     // MARK: - Immersive chrome (auto-hide, tap to toggle)
 
+    /// Keep the chrome up while the user is actively using a control — auto-hiding the bars
+    /// mid-gesture would yank the PTZ joystick, the push-to-talk button, or an open sheet away.
+    private var interactionActive: Bool { showPTZ || talk.isActive || showCameraControls }
+
     private func scheduleHideChrome() {
         hideTask?.cancel()
+        // Don't arm the hide timer while a control is in use; it re-arms when interaction ends.
+        guard !interactionActive else { return }
         hideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !interactionActive else { return }
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { showChrome = false }
         }
     }
@@ -99,6 +112,7 @@ struct LiveStreamView: View {
             HLSLivePlayerView(
                 camera: camera,
                 showControls: true,
+                overlayControlsVisible: showChrome,
                 onSingleTap: { toggleChrome() },
                 onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } }
             )
