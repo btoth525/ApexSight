@@ -29,18 +29,20 @@ struct CameraSnapshotEntry: TimelineEntry {
     let snapshotImageURL: URL?      // cached live frame (fallback hero only)
     let alerts: [SharedAlert]       // recent activity feed, newest first
     let heroImageURL: URL?          // snapshot of the most recent event
+    /// Hero decoded ONCE per timeline entry (in the provider), so SwiftUI re-evaluating the
+    /// widget body several times per render doesn't re-decode from disk on every pass —
+    /// important inside the widget extension's tight memory/CPU budget.
+    let heroImage: UIImage?
 
     /// The most recent event, if any.
     var latest: SharedAlert? { alerts.first }
-    /// The image to show as the widget hero: the latest event snapshot, else a camera frame.
-    var heroURL: URL? { heroImageURL ?? snapshotImageURL }
 }
 
 // MARK: - Provider
 
 struct CameraSnapshotProvider: TimelineProvider {
     func placeholder(in context: Context) -> CameraSnapshotEntry {
-        CameraSnapshotEntry(date: Date(), snapshot: nil, snapshotImageURL: nil, alerts: [], heroImageURL: nil)
+        CameraSnapshotEntry(date: Date(), snapshot: nil, snapshotImageURL: nil, alerts: [], heroImageURL: nil, heroImage: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (CameraSnapshotEntry) -> Void) {
@@ -61,12 +63,17 @@ struct CameraSnapshotProvider: TimelineProvider {
     private func entry() -> CameraSnapshotEntry {
         let cached = SharedSnapshotStore.load()
         let recent = SharedSnapshotStore.loadRecentAlerts()
+        // Decode the hero once here (the latest event snapshot, else a cached camera frame),
+        // downsampled to stay under the widget memory budget.
+        let heroURL = recent.heroImageURL ?? cached?.imageURL
+        let heroImage = heroURL.flatMap { downsampledImage(at: $0, maxPixel: 800) }
         return CameraSnapshotEntry(
             date: Date(),
             snapshot: cached?.snapshot,
             snapshotImageURL: cached?.imageURL,
             alerts: recent.alerts,
-            heroImageURL: recent.heroImageURL
+            heroImageURL: recent.heroImageURL,
+            heroImage: heroImage
         )
     }
 }
@@ -130,13 +137,11 @@ struct CameraSnapshotWidgetView: View {
 // MARK: - Hero snapshot image
 
 private struct HeroSnapshotImage: View {
-    let imageURL: URL?
+    /// Pre-decoded by the provider (once per timeline entry) — see CameraSnapshotEntry.heroImage.
+    let image: UIImage?
 
     var body: some View {
-        // Downsample off the full-res file (the fallback `latest.jpg` can be multi-MP) so the
-        // widget extension stays under its ~30 MB render budget — a raw UIImage(contentsOfFile:)
-        // of a full-frame JPEG can blank the tile. Capped at 800px, which covers every family.
-        if let imageURL, let image = downsampledImage(at: imageURL, maxPixel: 800) {
+        if let image {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
@@ -192,7 +197,7 @@ private struct SmallWidgetView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            HeroSnapshotImage(imageURL: entry.heroURL)
+            HeroSnapshotImage(image: entry.heroImage)
 
             LinearGradient(
                 colors: [.clear, .black.opacity(0.82)],
@@ -247,7 +252,7 @@ private struct MediumWidgetView: View {
         HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
                 Color.black
-                HeroSnapshotImage(imageURL: entry.heroURL)
+                HeroSnapshotImage(image: entry.heroImage)
 
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.78)],
@@ -298,7 +303,7 @@ private struct LargeWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-                HeroSnapshotImage(imageURL: entry.heroURL)
+                HeroSnapshotImage(image: entry.heroImage)
                     .frame(maxWidth: .infinity)
                     .frame(height: 150)
                     .clipped()
@@ -543,10 +548,10 @@ private struct AccessoryCircularView: View {
                 VStack(spacing: 0) {
                     Text(alertEmoji(alert.label))
                         .font(.system(size: 19))
-                    // Self-updating so the circular tile never reads a stale "3m" between
-                    // WidgetKit's 15-min timeline reloads.
-                    Text(alert.when, style: .relative)
-                        .font(.system(size: 8, weight: .black, design: .rounded))
+                    // Compact static form ("3m") — `.relative` renders longer phrasing that
+                    // truncates/illegibly shrinks in this tiny circular tile.
+                    Text(relativeShort(alert.when))
+                        .font(.system(size: 9, weight: .black, design: .rounded))
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                 }

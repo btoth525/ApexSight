@@ -568,15 +568,22 @@ final class AppState: ObservableObject {
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
             prewarmSnapshots()
+            // refresh() runs on every foreground / pull / poll, so only re-publish the camera
+            // list to the system when it actually changed — donating App Intents parameters and
+            // re-indexing Spotlight on every poll is wasted work on a hot path.
+            let cameraNames = loadedCameras.map(\.name)
+            let cameraNamesChanged = cameraNames != SharedSnapshotStore.loadCameraNames()
             // Mirror camera names to the app group so Siri/Watch/CarPlay can list them.
-            SharedSnapshotStore.saveCameraNames(loadedCameras.map(\.name))
-            // Tell App Intents the camera parameter options changed so Siri/Shortcuts refresh
-            // their predicted "Check the <camera>" suggestions instead of going stale.
-            ApexShortcuts.updateAppShortcutParameters()
-            // Index cameras into Spotlight so typing "front door" opens that camera.
-            if #available(iOS 18.0, *) {
-                let entities = loadedCameras.map { CameraEntity(id: $0.name) }
-                Task { try? await CSSearchableIndex.default().indexAppEntities(entities) }
+            SharedSnapshotStore.saveCameraNames(cameraNames)
+            if cameraNamesChanged {
+                // Tell App Intents the camera parameter options changed so Siri/Shortcuts refresh
+                // their predicted "Check the <camera>" suggestions instead of going stale.
+                ApexShortcuts.updateAppShortcutParameters()
+                // Index cameras into Spotlight so typing "front door" opens that camera.
+                if #available(iOS 18.0, *) {
+                    let entities = loadedCameras.map { CameraEntity(id: $0.name) }
+                    Task { try? await CSSearchableIndex.default().indexAppEntities(entities) }
+                }
             }
             events = (try? await nextEvents) ?? events
             if let r = try? await nextReviews {

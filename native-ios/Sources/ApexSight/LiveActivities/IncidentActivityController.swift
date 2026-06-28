@@ -17,25 +17,36 @@ enum IncidentActivityController {
             severity: review.severity ?? "alert"
         )
 
-        // Adopt any live activity already on screen — whether we lost our handle across an app
-        // session OR the relay push-started one for this same incident — so we update it in place
-        // instead of stacking a second banner for the same event.
-        if current == nil || current?.activityState != .active {
-            current = Activity<IncidentActivityAttributes>.activities.first { $0.activityState == .active }
+        // Reconnect to our own activity if we lost the handle across an app session — but ONLY
+        // one for THIS camera. The camera lives in the immutable attributes and can't be updated
+        // in place, so adopting a different camera's banner would show this alert's text while
+        // its "View Live" link and tap target still point at the wrong camera.
+        if current?.activityState != .active {
+            current = Activity<IncidentActivityAttributes>.activities.first {
+                $0.activityState == .active && $0.attributes.camera == review.camera
+            }
         }
 
-        if let current {
-            Task { await current.update(ActivityContent(state: state, staleDate: nil)) }
+        // Backstop: if the app is suspended before the 45s auto-end fires (Task.sleep doesn't
+        // advance while suspended), this lets WidgetKit mark the activity stale so it dims and
+        // the system reclaims it, instead of lingering frozen-fresh on the Lock Screen.
+        let staleDate = Date().addingTimeInterval(300)
+
+        if let current, current.attributes.camera == review.camera {
+            Task { await current.update(ActivityContent(state: state, staleDate: staleDate)) }
         } else {
+            // A different camera (or nothing) is showing — retire that activity and start a
+            // fresh one whose attributes.camera matches what we display.
+            if let stale = current {
+                Task { await stale.end(nil, dismissalPolicy: .immediate) }
+            }
             let attributes = IncidentActivityAttributes(
                 camera: review.camera,
                 startedAt: review.startTime ?? Date().timeIntervalSince1970
             )
-            // No staleDate: this locally-started activity is owned by our 45s auto-end timer
-            // below, so a stale window would be dead code (it never outlives the timer).
             current = try? Activity.request(
                 attributes: attributes,
-                content: ActivityContent(state: state, staleDate: nil),
+                content: ActivityContent(state: state, staleDate: staleDate),
                 pushType: nil
             )
         }
@@ -58,10 +69,14 @@ enum IncidentActivityController {
 
     private static func scheduleAutoEnd() {
         endTask?.cancel()
+        // Capture the activity this timer owns, so a stale 45s timer ends only the banner it was
+        // scheduled for — never a different camera's banner or one the relay push-started later.
+        let target = current
         endTask = Task {
             try? await Task.sleep(nanoseconds: 45_000_000_000) // 45s — don't linger
-            guard !Task.isCancelled else { return }
-            end()
+            guard !Task.isCancelled, let target else { return }
+            await target.end(nil, dismissalPolicy: .immediate)
+            if current?.id == target.id { current = nil }
         }
     }
 }
