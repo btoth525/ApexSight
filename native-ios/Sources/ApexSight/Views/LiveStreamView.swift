@@ -44,11 +44,12 @@ struct LiveStreamView: View {
         }
         .navigationBarHidden(true)
         .statusBarHidden(!showChrome)
-        // Leave the bottom tab pill bar to the system instead of force-hiding it: it stays put
-        // and keeps the minimized/expanded state it had on the wall (scroll down there → it's
-        // the small pill, and it stays minimized here too). Force-toggling it with the chrome
-        // looked janky and fought the global scroll-to-minimize behavior.
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showChrome)
+        // Hide the bottom tab pill bar entirely in the full-screen viewer for a clean immersive
+        // feed. (iOS only shows the small "minimized" pill as a scroll effect — there's no API
+        // to force that compact state in a non-scrolling player, and a full-size bar over the
+        // video is intrusive — so hiding it is the clean choice. Always hidden, not toggled with
+        // the chrome, so there's no jarring slide-in/out.)
+        .toolbar(.hidden, for: .tabBar)
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
         .task {
             capability = appState.capabilities.first(where: { $0.camera == camera.name })

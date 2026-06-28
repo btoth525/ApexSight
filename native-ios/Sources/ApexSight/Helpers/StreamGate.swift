@@ -8,7 +8,10 @@ import Foundation
 /// starting and `release()`s it once it's playing (or after a short safety timeout), so starts
 /// roll out a few at a time and the wall comes up fast and smooth.
 actor StreamGate {
-    static let shared = StreamGate(limit: 3)
+    // Concurrent stream *startups* (negotiate + begin decoding). The wall plays the light _sub
+    // streams, so 4 at once comes online noticeably faster than 3 without stampeding the decoders;
+    // all feeds still run simultaneously once started — this only paces the cold-start burst.
+    static let shared = StreamGate(limit: 4)
 
     private let limit: Int
     private var active = 0

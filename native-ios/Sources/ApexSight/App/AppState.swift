@@ -585,7 +585,6 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
-            QuickActions.update(cameras: loadedCameras)
             prewarmSnapshots()
             // refresh() runs on every foreground / pull / poll, so only re-publish the camera
             // list to the system when it actually changed — donating App Intents parameters and
@@ -595,6 +594,9 @@ final class AppState: ObservableObject {
             // Mirror camera names to the app group so Siri/Watch/CarPlay can list them.
             SharedSnapshotStore.saveCameraNames(cameraNames)
             if cameraNamesChanged {
+                // Refresh the Home Screen quick actions (per-camera "Open <camera>") only when the
+                // set actually changes — not on every 15s poll, which needlessly hit UIKit.
+                QuickActions.update(cameras: loadedCameras)
                 // Tell App Intents the camera parameter options changed so Siri/Shortcuts refresh
                 // their predicted "Check the <camera>" suggestions instead of going stale.
                 ApexShortcuts.updateAppShortcutParameters()
