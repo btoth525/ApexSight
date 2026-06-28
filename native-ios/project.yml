@@ -10,7 +10,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 78
+    CURRENT_PROJECT_VERSION: 79
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -65,7 +65,7 @@ targets:
         NSLocalNetworkUsageDescription: ApexSight connects to Frigate on your local network.
         NSPhotoLibraryAddUsageDescription: ApexSight saves camera clips you download to your photo library.
         NSCameraUsageDescription: ApexSight uses real-time video components to play your live camera feeds instantly. It does not capture or record from this device's camera.
-        NSMicrophoneUsageDescription: ApexSight's real-time video components require this permission. ApexSight does not record audio from this device's microphone.
+        NSMicrophoneUsageDescription: ApexSight uses your microphone for two-way talk — speaking through cameras that support it. Audio is streamed live to the camera and never stored.
         NSSupportsLiveActivities: true
         UIBackgroundModes:
           - audio

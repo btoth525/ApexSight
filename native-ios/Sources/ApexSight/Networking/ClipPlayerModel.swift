@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 /// Plays a recorded clip via Frigate's VOD HLS playlist (`master.m3u8`).
 ///
@@ -21,6 +22,32 @@ final class ClipPlayerModel: ObservableObject {
     private var lastClient: FrigateClient?
     private var endObs: NSObjectProtocol?
     private var statusObs: NSKeyValueObservation?
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var wasPlayingBeforeBackground = false
+
+    init() {
+        // Pause recording playback when the app backgrounds so AVPlayer stops decoding
+        // (battery/data) — SwiftUI's onDisappear does NOT fire on backgrounding — then
+        // resume on return if it was playing.
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let player = self.player else { return }
+                self.wasPlayingBeforeBackground = player.timeControlStatus != .paused
+                player.pause()
+            }
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.wasPlayingBeforeBackground else { return }
+                self.player?.play()
+            }
+        })
+    }
 
     deinit {
         // Defensive cleanup if the owning view never called stop(): the block-based
@@ -28,6 +55,7 @@ final class ClipPlayerModel: ObservableObject {
         // thread-safe, so this is safe from the nonisolated deinit.
         if let endObs { NotificationCenter.default.removeObserver(endObs) }
         statusObs?.invalidate()
+        lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     /// Load only if nothing is playing yet (idempotent — safe to call from `.task`).

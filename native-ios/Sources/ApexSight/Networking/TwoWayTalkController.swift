@@ -1,4 +1,5 @@
 import AVFoundation
+import UIKit
 import WebRTC
 
 /// Push-to-talk over Frigate/go2rtc's WebRTC backchannel: captures the mic and sends it to a
@@ -25,6 +26,22 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     private var pc: RTCPeerConnection?
     private var micTrack: RTCAudioTrack?
     private var gatheringContinuation: CheckedContinuation<Void, Never>?
+    private var bgObserver: NSObjectProtocol?
+
+    override init() {
+        super.init()
+        // Stop talking + free the mic/connection if the app backgrounds (don't hold the
+        // recording session open behind the user's back).
+        bgObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stop() }
+        }
+    }
+
+    deinit {
+        if let bgObserver { NotificationCenter.default.removeObserver(bgObserver) }
+    }
 
     var isActive: Bool { status == .connecting || status == .talking }
 
@@ -91,6 +108,7 @@ final class TwoWayTalkController: NSObject, ObservableObject {
 
     private func teardown() {
         micTrack = nil
+        pc?.delegate = nil       // stop delegate callbacks from firing after close
         pc?.close()
         pc = nil
         gatheringContinuation?.resume()
@@ -141,9 +159,12 @@ final class TwoWayTalkController: NSObject, ObservableObject {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
             }
             await group.next()       // whichever finishes first (gather-complete or 2.5s cap)
+            // If the timeout won, the gather-wait child is still suspended on its
+            // continuation — resume it so the group can finish (else this hangs forever).
+            gatheringContinuation?.resume()
+            gatheringContinuation = nil
             group.cancelAll()
         }
-        gatheringContinuation = nil
     }
 
     enum TalkError: Error { case noOffer }
@@ -154,16 +175,17 @@ final class TwoWayTalkController: NSObject, ObservableObject {
 extension TwoWayTalkController: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         guard newState == .complete else { return }
-        Task { @MainActor in
-            self.gatheringContinuation?.resume()
-            self.gatheringContinuation = nil
+        Task { @MainActor [weak self] in
+            self?.gatheringContinuation?.resume()
+            self?.gatheringContinuation = nil
         }
     }
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         if newState == .failed || newState == .disconnected || newState == .closed {
-            Task { @MainActor in
-                if self.status == .talking { self.status = .failed("Connection lost") }
+            Task { @MainActor [weak self] in
+                guard let self, self.status == .talking else { return }
+                self.status = .failed("Connection lost")
             }
         }
     }

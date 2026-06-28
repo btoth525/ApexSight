@@ -92,8 +92,7 @@ tile never looks empty. The live stream fades in over it when AVPlayer reports `
 stream** (`preferSub: true`) so many feeds stay smooth — an iPhone can't sustain ~8
 simultaneous full-res HEVC decodes. The **full-screen viewer plays the full-res `main`
 stream** for quality. `recordingHLSURL(camera,start,end)` is VOD for any time window; this
-powers `RecordingBrowserView` (timeline scrubber) and `SyncPlaybackView` (multi-cam synced
-"time-travel" replay — one VOD window per camera, all seeked to the same offset, drift-corrected).
+powers `RecordingBrowserView` (the recording timeline scrubber).
 
 ---
 

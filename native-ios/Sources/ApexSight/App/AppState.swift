@@ -9,7 +9,6 @@ enum AppDeepLink: Hashable {
     case review(String)
     case event(String)
     case camera(String)
-    case syncPlayback
 }
 
 extension Error {
@@ -804,8 +803,6 @@ final class AppState: ObservableObject {
             if let name = items.first(where: { $0.name == "name" })?.value {
                 deepLink = .camera(name)
             }
-        case "sync":
-            deepLink = .syncPlayback
         default:
             break
         }
