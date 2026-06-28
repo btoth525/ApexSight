@@ -492,6 +492,42 @@ struct FrigateClient {
         return streams["birdseye"] != nil
     }
 
+    /// Camera names that have a `<name>_twoway` go2rtc stream — i.e. set up for two-way audio.
+    func twoWayCapableCameras() async -> Set<String> {
+        let streams = (try? await go2rtcStreams()) ?? [:]
+        var out: Set<String> = []
+        let suffix = "_twoway"
+        for key in streams.keys where key.hasSuffix(suffix) {
+            out.insert(String(key.dropLast(suffix.count)))
+        }
+        return out
+    }
+
+    /// Exchange a WebRTC offer with go2rtc for a two-way audio source and return the answer SDP.
+    /// Non-trickle: the offer already carries our ICE candidates; go2rtc's answer carries its own.
+    func webRTCAnswer(source: String, offerSDP: String) async throws -> String {
+        let endpoint = baseURL.appending(path: "api/go2rtc/api/webrtc")
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "src", value: source)]
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        seedCookie(for: url)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyAuth(to: &request)
+        request.timeoutInterval = 12
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["type": "offer", "sdp": offerSDP])
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sdp = json["sdp"] as? String, !sdp.isEmpty else {
+            throw FrigateError.message("Malformed WebRTC answer from go2rtc")
+        }
+        return sdp
+    }
+
     func ptzMove(camera: String, action: String, extra: [String: String] = [:]) async throws {
         var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/ptz"), resolvingAgainstBaseURL: false)
         var queryItems = [URLQueryItem(name: "action", value: action)]

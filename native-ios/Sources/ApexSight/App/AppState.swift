@@ -65,6 +65,8 @@ final class AppState: ObservableObject {
     @Published var liveDetections: [String: [LiveDetection]] = [:]
     /// True when the birdseye composite stream is available in go2rtc.
     @Published var hasBirdseye = false
+    /// Camera names with a `<name>_twoway` go2rtc stream — eligible for push-to-talk.
+    @Published var twoWayCameras: Set<String> = []
     /// Whether the user is signed into their ApexSight cloud account.
     @Published var accountSignedIn: Bool = false
 
@@ -584,6 +586,8 @@ final class AppState: ObservableObject {
 
             let streams = (try? await nextStreams) ?? [:]
             hasBirdseye = streams["birdseye"] != nil
+            twoWayCameras = Set(streams.keys.filter { $0.hasSuffix("_twoway") }
+                .map { String($0.dropLast("_twoway".count)) })
             await cacheWidgetSnapshot(from: loadedCameras)
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
             isReachable = true

@@ -14,6 +14,7 @@ struct LiveStreamView: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var showCameraControls = false
     @State private var showDetectionOverlay = true
+    @StateObject private var talk = TwoWayTalkController()
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
@@ -50,7 +51,7 @@ struct LiveStreamView: View {
             reloadToken = UUID()
             revealChrome()
         }
-        .onDisappear { hideTask?.cancel() }
+        .onDisappear { hideTask?.cancel(); talk.stop() }
         .sheet(isPresented: $showCameraControls) {
             CameraQuickControlsSheet(camera: camera)
                 .environmentObject(appState)
@@ -258,6 +259,9 @@ struct LiveStreamView: View {
                     actionButton(icon: "slider.horizontal.3", label: "Controls") {
                         showCameraControls = true
                     }
+                    if appState.twoWayCameras.contains(camera.name) {
+                        talkButton
+                    }
                 }
             }
             .padding(.horizontal, GlassTheme.Space.l)
@@ -287,5 +291,36 @@ struct LiveStreamView: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(GlassTheme.secondary)
         }
+    }
+
+    /// Push-to-talk: press and hold to stream the mic to the camera's speaker; release to stop.
+    private var talkButton: some View {
+        let active = talk.isActive
+        let connecting = talk.status == .connecting
+        return VStack(spacing: GlassTheme.Space.s) {
+            Image(systemName: active ? "mic.fill" : "mic")
+                .font(.system(size: 21, weight: .semibold))
+                .frame(width: 54, height: 54)
+                .background(active ? AnyShapeStyle(GlassTheme.red) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
+                .overlay { Circle().strokeBorder(active ? Color.white.opacity(0.4) : GlassTheme.separator, lineWidth: 1) }
+                .foregroundStyle(active ? .white : GlassTheme.primary)
+                .scaleEffect(active ? 1.08 : 1)
+                .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: active)
+            Text(connecting ? "Connecting…" : (active ? "Talking…" : "Hold to Talk"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(active ? GlassTheme.red : GlassTheme.secondary)
+        }
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard talk.status == .idle, let client = appState.client else { return }
+                    Haptics.tap()
+                    Task { await talk.start(cameraTwoWaySource: "\(camera.name)_twoway", client: client) }
+                }
+                .onEnded { _ in talk.stop() }
+        )
+        .accessibilityLabel("Push to talk")
+        .accessibilityHint("Press and hold to speak through the camera")
     }
 }
