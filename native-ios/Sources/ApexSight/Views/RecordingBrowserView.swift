@@ -293,7 +293,7 @@ struct RecordingBrowserView: View {
                     .overlay { Circle().strokeBorder(GlassTheme.accent, lineWidth: 4) }
                     .scaleEffect(isScrubbing ? 1.18 : 1)
                     .offset(x: px - 11, y: h / 2 - 11)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isScrubbing)
+                    .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isScrubbing)
 
                 // Floating scrub-preview bubble above the playhead while dragging.
                 if isScrubbing {
@@ -539,7 +539,7 @@ struct RecordingBrowserView: View {
                 ZStack {
                     PiPPlayerView(player: player)
                         .opacity(clipModel.isReady ? 1 : 0)
-                        .animation(.easeIn(duration: 0.25), value: clipModel.isReady)
+                        .animation(reduceMotion ? nil : .easeIn(duration: 0.25), value: clipModel.isReady)
                     // Each scrub loads a fresh VOD window; hold a skeleton over it until the
                     // new moment is ready instead of flashing black.
                     if !clipModel.isReady { ClipSkeleton() }

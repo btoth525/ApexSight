@@ -241,8 +241,10 @@ final class AppState: ObservableObject {
             // live lists keep updating instead of quietly going stale.
             if error.isUnauthorized, retryOnAuthFailure, await reauthenticate() {
                 await refreshAlerts(retryOnAuthFailure: false)
-            } else if !error.isCancellation {
-                // Network/server down: keep the last-known lists, flag offline.
+            } else if !error.isCancellation && !(error is DecodingError) {
+                // Network/server down: keep the last-known lists, flag offline. A DecodingError
+                // means the server IS up but returned unexpected data — don't lie "offline";
+                // keep the last lists and let the next poll recover.
                 isReachable = false
             }
         }

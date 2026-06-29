@@ -132,10 +132,15 @@ final class FrigateEventStream {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
                 guard let self, self.isActive else { return }
-                // Weak capture so a hung ping doesn't pin the stream alive.
-                self.task?.sendPing { [weak self] error in
+                // Capture THIS socket so a late ping-failure from a previous task can't tear
+                // down a freshly reconnected one. Weak self so a hung ping doesn't pin us alive.
+                let socket = self.task
+                socket?.sendPing { [weak self] error in
                     if error != nil {
-                        Task { @MainActor in self?.scheduleReconnect() }
+                        Task { @MainActor in
+                            guard let self, self.task === socket else { return }
+                            self.scheduleReconnect()
+                        }
                     }
                 }
             }

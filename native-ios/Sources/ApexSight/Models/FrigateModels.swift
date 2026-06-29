@@ -220,7 +220,9 @@ struct ReviewData: Codable, Hashable {
 }
 
 struct FrigateRecording: Identifiable, Codable, Hashable {
-    var id: String { "\(startTime ?? 0)-\(endTime ?? 0)" }
+    // Fall back to a stable random id when both timestamps are nil so two timeless rows don't
+    // collide on "0.0-0.0" and trip SwiftUI's duplicate-ID warning / row glitches.
+    let id: String
     let startTime: Double?
     let endTime: Double?
     let motion: Double?
@@ -231,6 +233,19 @@ struct FrigateRecording: Identifiable, Codable, Hashable {
         case endTime = "end_time"
         case motion
         case objects
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        startTime = try c.decodeIfPresent(Double.self, forKey: .startTime)
+        endTime = try c.decodeIfPresent(Double.self, forKey: .endTime)
+        motion = try c.decodeIfPresent(Double.self, forKey: .motion)
+        objects = try c.decodeIfPresent(Double.self, forKey: .objects)
+        if let s = startTime, let e = endTime {
+            id = "\(s)-\(e)"
+        } else {
+            id = UUID().uuidString
+        }
     }
 }
 
