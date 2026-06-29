@@ -116,8 +116,11 @@ struct MainTabView: View {
             .glassNavBar()
             .preferredColorScheme(.dark)
         } detail: {
+            // No `.id(selectedTab)`: the @ViewBuilder switch already returns a distinct view
+            // type per tab, so the detail swaps correctly on selection — while forcing a fresh
+            // identity here would rebuild the whole tab (and tear down the camera players)
+            // every time you return to it on iPad.
             view(for: selectedTab ?? .cameras)
-                .id(selectedTab)
         }
     }
 

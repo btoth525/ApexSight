@@ -529,23 +529,36 @@ final class AppState: ObservableObject {
     /// Returns `true` if a fresh token was obtained.
     @discardableResult
     func reauthenticate() async -> Bool {
+        // Coalesce concurrent 401s (the 15s poller, refresh(), and each tab's .task can all
+        // hit an expired token at once) into a single login round-trip + one keychain/session
+        // write, instead of N parallel logins racing each other.
+        if let reauthTask { return await reauthTask.value }
         guard let session, let password = session.password, !password.isEmpty else { return false }
-        do {
-            let client = FrigateClient(baseURL: session.baseURL)
-            let token = try await client.login(username: session.username, password: password)
-            let next = FrigateSession(
-                baseURL: session.baseURL,
-                username: session.username,
-                token: token,
-                password: password
-            )
-            keychain.save(session: next)
-            self.session = next
-            return true
-        } catch {
-            return false
+        let task = Task { [weak self] () -> Bool in
+            do {
+                let client = FrigateClient(baseURL: session.baseURL)
+                let token = try await client.login(username: session.username, password: password)
+                let next = FrigateSession(
+                    baseURL: session.baseURL,
+                    username: session.username,
+                    token: token,
+                    password: password
+                )
+                self?.keychain.save(session: next)
+                self?.session = next
+                return true
+            } catch {
+                return false
+            }
         }
+        reauthTask = task
+        let result = await task.value
+        reauthTask = nil
+        return result
     }
+
+    /// In-flight token refresh, so concurrent 401s share one login instead of stampeding.
+    private var reauthTask: Task<Bool, Never>?
 
     /// In-flight full refresh, so concurrent callers coalesce into one network round-trip.
     private var refreshTask: Task<Void, Never>?

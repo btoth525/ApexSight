@@ -70,11 +70,11 @@ final class WatchAlertStore: NSObject, ObservableObject, WCSessionDelegate {
 
     func snooze(minutes: Int) {
         guard WCSession.default.activationState == .activated else { return }
-        WCSession.default.sendMessage(
-            ["action": "snooze", "minutes": minutes],
-            replyHandler: nil,
-            errorHandler: { _ in }
-        )
+        // transferUserInfo (not sendMessage): queued + delivered in the background even when the
+        // iPhone app isn't running, so the snooze reliably reaches the phone (and the relay)
+        // instead of silently failing when the phone is unreachable while we optimistically show
+        // "Snoozed".
+        WCSession.default.transferUserInfo(["action": "snooze", "minutes": minutes])
         snoozedUntil = Date().addingTimeInterval(TimeInterval(minutes * 60))
     }
 

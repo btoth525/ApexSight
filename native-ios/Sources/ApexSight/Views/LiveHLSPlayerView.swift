@@ -38,6 +38,10 @@ final class HLSLiveModel: ObservableObject {
     /// feeds smooth on real hardware), falling back to main if sub is unavailable. The
     /// full-screen viewer leaves this false so a single focused camera plays full quality.
     private var preferSub = false
+    /// Whether to auto-pause when the app backgrounds. Wall tiles pause (save battery/data); the
+    /// full-screen viewer leaves the player running so auto-Picture-in-Picture can take over on
+    /// background instead of being frozen by an eager pause.
+    var pausesOnBackground = true
 
     // These observer tokens are mutated only on the main actor, but `deinit` (which is
     // nonisolated) must remove them — and their teardown APIs (KVO invalidate,
@@ -53,6 +57,10 @@ final class HLSLiveModel: ObservableObject {
     private nonisolated(unsafe) var stallObs: NSObjectProtocol?
     private nonisolated(unsafe) var failObs: NSObjectProtocol?
     private nonisolated(unsafe) var reconnectTask: Task<Void, Never>?
+    /// True once we took the shared audio session for unmuted playback, so we deactivate it
+    /// again on re-mute / stop / dealloc — otherwise one unmute would duck the user's music
+    /// for the rest of the app session.
+    private nonisolated(unsafe) var didActivateAudio = false
     /// Playback-progress watchdog: a stream only counts as live once its time actually
     /// advances (real frames presented). A frozen/black "playing" stream never does.
     private var lastProgressTime: Double?
@@ -112,6 +120,9 @@ final class HLSLiveModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !self.isStopped else { return }
+                // Leave the full-screen player running so auto-PiP can take over; only the wall
+                // tiles pause to save battery/data.
+                guard self.pausesOnBackground else { return }
                 self.reconnectTask?.cancel(); self.reconnectTask = nil
                 self.player?.pause()
             }
@@ -141,6 +152,7 @@ final class HLSLiveModel: ObservableObject {
         teardownLifecycle()
         reconnectTask?.cancel()
         reconnectTask = nil
+        releaseAudioSession()
         // Capture player before nilling so teardownObservers can remove the time observer.
         let p = player
         player = nil
@@ -153,8 +165,19 @@ final class HLSLiveModel: ObservableObject {
         if !isMuted {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
             try? AVAudioSession.sharedInstance().setActive(true)
+            didActivateAudio = true
+        } else {
+            // Hand the session back so the user's music/podcast resumes instead of staying ducked.
+            releaseAudioSession()
         }
         player?.isMuted = isMuted
+    }
+
+    /// Deactivate the shared audio session if we took it, letting other apps' audio resume.
+    private func releaseAudioSession() {
+        guard didActivateAudio else { return }
+        didActivateAudio = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func reload() {
@@ -348,6 +371,9 @@ final class HLSLiveModel: ObservableObject {
         if let failObs { NotificationCenter.default.removeObserver(failObs) }
         lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
         reconnectTask?.cancel()
+        if didActivateAudio {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }
 
@@ -472,9 +498,12 @@ struct HLSLivePlayerView: View {
     private func fallToMJPEG() {
         guard !mjpegFallback else { return }
         fallbackTask?.cancel(); fallbackTask = nil
+        // Free the startup slot now — model.stop() doesn't change model.state, so the
+        // onChange(.playing/.failed) release won't fire for the timer-driven fallback path.
+        releaseGate()
         Self.hlsUnavailable.insert(camera.name)
         model.stop()
-        withAnimation(.easeIn(duration: 0.25)) { mjpegFallback = true }
+        withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = true }
     }
 
     var body: some View {
@@ -551,6 +580,9 @@ struct HLSLivePlayerView: View {
                 makeItem: { url in appState.client?.playerItem(for: url) },
                 reauth: { await appState.reauthenticate() }
             )
+            // Full-screen viewer (showControls + autoPiP) keeps playing on background so PiP can
+            // start; wall/grid tiles pause to save power.
+            model.pausesOnBackground = !showControls
             // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
             startTask = Task { @MainActor in
                 await StreamGate.shared.acquire()

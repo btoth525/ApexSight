@@ -93,6 +93,14 @@ struct CamerasTab: View {
                     } else if appState.errorMessage == nil {
                         emptyState
                     }
+                } else if columns == 1 {
+                    // Flat, per-camera identity (not row-index) so reordering / hiding a camera
+                    // shifts the others WITHOUT tearing down and reconnecting their persistent
+                    // HLS players — keeping the wall live with no black flash.
+                    ForEach(visibleCameras) { camera in
+                        CameraCard(camera: camera)
+                            .frame(maxWidth: .infinity)
+                    }
                 } else {
                     ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
                         HStack(spacing: 12) {

@@ -14,6 +14,7 @@ struct ApexSnoozeIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.snooze(until: Date().addingTimeInterval(60 * 60))
+        await SharedRelayGate.syncCurrent()
         return .result()
     }
 }
@@ -25,6 +26,7 @@ struct ApexResumeIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.clear()
+        await SharedRelayGate.syncCurrent()
         return .result()
     }
 }
@@ -79,6 +81,7 @@ struct ApexSetArmModeIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         ArmStateStore.mode = mode.core
+        await SharedRelayGate.syncCurrent()
         return .result(dialog: IntentDialog(stringLiteral: "ApexSight is now \(mode.core.title)."))
     }
 }
@@ -93,6 +96,7 @@ struct ApexArmToggleIntent: SetValueIntent {
 
     func perform() async throws -> some IntentResult {
         ArmStateStore.mode = value ? .away : .disarmed
+        await SharedRelayGate.syncCurrent()
         return .result()
     }
 }
@@ -118,6 +122,7 @@ struct ApexFocusFilter: SetFocusFilterIntent {
         } else {
             GlobalSnooze.clear()
         }
+        await SharedRelayGate.syncCurrent()
         return .result()
     }
 }

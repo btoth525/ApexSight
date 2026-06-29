@@ -53,6 +53,12 @@ final class WatchSyncManager: NSObject, WCSessionDelegate {
         replyHandler(["ok": true])
     }
 
+    // The watch sends snooze/resume via transferUserInfo (queued background delivery), so the
+    // phone may be launched in the background to receive it here.
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        handle(userInfo)
+    }
+
     private func handle(_ message: [String: Any]) {
         switch message["action"] as? String {
         case "snooze":

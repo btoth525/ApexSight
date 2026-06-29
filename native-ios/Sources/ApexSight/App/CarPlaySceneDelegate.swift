@@ -16,6 +16,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     private var lastSeenReviewID: String?
     private var hasLoadedOnce = false
+    private var isRefreshing = false
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
@@ -49,6 +50,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     @MainActor
     private func refresh() async {
+        // A slow/remote link can make one refresh (sequential thumbnail downloads) outlast the
+        // 30s timer, so guard against overlapping runs that would double-fire the new-alert
+        // pop-up and race lastSeenReviewID.
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         guard let session = KeychainStore().loadSession() else {
             // Not signed in — make BOTH tabs say so, otherwise Cameras stays stuck on
             // the "Loading…" placeholder forever.

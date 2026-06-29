@@ -114,6 +114,9 @@ final class FrigateEventStream {
                         self.onEvent?(.connected)
                     }
                     self.reconnectAttempts = 0
+                    // Recovered — drop back to the clean header-auth path so we don't keep
+                    // appending ?token= on every later reconnect for the socket's lifetime.
+                    self.useQueryTokenFallback = false
                     self.handle(message: message)
                     self.receiveNext()
                 case .failure:

@@ -24,6 +24,9 @@ final class ClipPlayerModel: ObservableObject {
     private var statusObs: NSKeyValueObservation?
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var wasPlayingBeforeBackground = false
+    /// True once we took the shared audio session, so we deactivate it on stop/dealloc and
+    /// the user's music/podcast resumes instead of staying ducked after viewing a clip.
+    private var didActivateAudio = false
 
     init() {
         // Pause recording playback when the app backgrounds so AVPlayer stops decoding
@@ -56,6 +59,9 @@ final class ClipPlayerModel: ObservableObject {
         if let endObs { NotificationCenter.default.removeObserver(endObs) }
         statusObs?.invalidate()
         lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        if didActivateAudio {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     /// Load only if nothing is playing yet (idempotent — safe to call from `.task`).
@@ -127,11 +133,16 @@ final class ClipPlayerModel: ObservableObject {
         // resurrect a clip from a stale Retry tap after it's gone.
         lastURL = nil
         lastClient = nil
+        if didActivateAudio {
+            didActivateAudio = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func configureAudioSession() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
         try? AVAudioSession.sharedInstance().setActive(true)
+        didActivateAudio = true
     }
 
     private func teardown() {
