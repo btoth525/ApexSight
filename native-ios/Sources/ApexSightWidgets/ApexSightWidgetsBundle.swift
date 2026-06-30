@@ -5,6 +5,7 @@ import SwiftUI
 struct ApexSightWidgetsBundle: WidgetBundle {
     var body: some Widget {
         CameraSnapshotWidget()
+        SelectedCameraWidget()
         IncidentLiveActivity()
         if #available(iOS 18.0, *) {
             ApexSnoozeControl()
