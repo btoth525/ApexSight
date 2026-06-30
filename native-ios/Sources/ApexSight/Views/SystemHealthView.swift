@@ -64,6 +64,14 @@ struct SystemHealthView: View {
                             metric("Cameras", value: "\(appState.stats?.cameras?.count ?? appState.cameras.count)")
                             metric("Detectors", value: "\(appState.stats?.detectors?.count ?? 0)")
                             metric("Events", value: "\(appState.events.count)")
+                            // Realtime reflects the live WebSocket, not just the last REST call —
+                            // so a `/ws` that's silently dropped by a reverse proxy reads
+                            // "Reconnecting" here instead of a misleading "Healthy".
+                            metric(
+                                "Realtime",
+                                value: appState.isLive ? "Live" : "Reconnecting",
+                                state: appState.isLive ? .live : .recording
+                            )
                             metric(
                                 "Status",
                                 value: appState.errorMessage == nil ? "Healthy" : "Needs attention",

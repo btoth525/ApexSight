@@ -74,8 +74,13 @@ targets:
           - remote-notification
         BGTaskSchedulerPermittedIdentifiers:
           - com.brandontoth.apexsight.refresh
+        # ATS: allow cleartext HTTP only to local/private hosts (RFC-1918 IPs, *.local,
+        # unqualified hostnames) — i.e. a Frigate box on the LAN — while keeping ATS enforced
+        # for public hosts. Remote access is HTTPS-only via the reverse proxy, so it stays
+        # compliant. NOTE: if you ever point the app at a *public* host over plain HTTP, this
+        # will block it; that setup needs the broader (and App-Review-flagged) arbitrary-loads.
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
     dependencies:
       - target: ApexSightWidgets
         embed: true
@@ -85,7 +90,10 @@ targets:
         embed: true
       - package: WebRTC
     scheme:
-      testTargets: []
+      testTargets:
+        - ApexSightTests
+        - ApexSightUITests
+      gatherCoverageData: true
 
   ApexSightWidgets:
     type: app-extension
@@ -106,8 +114,9 @@ targets:
         CFBundleDisplayName: ApexSight Widgets
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Match the app: local-network cleartext only, ATS enforced for public hosts.
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
@@ -151,6 +160,39 @@ targets:
         CFBundleDisplayName: ApexSight Alerts
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # The service extension downloads notification snapshots/GIFs, which fall back to the
+        # local-HTTP Frigate base URL. Without this exception that fallback was silently ATS-
+        # blocked, so local-only users got no rich-notification image. Mirrors the app's scope.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+
+  ApexSightTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/ApexSightTests
+    dependencies:
+      - target: ApexSightNative
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.tests
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
+
+  ApexSightUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/ApexSightUITests
+    dependencies:
+      - target: ApexSightNative
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.uitests
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q9ZUDN4QZ

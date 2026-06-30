@@ -20,10 +20,16 @@ struct FrigateSession: Codable, Equatable {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw FrigateError.invalidURL }
 
+        // Host without any `:port` suffix, so local-host detection works whether or not the
+        // user typed a port (e.g. `frigate.local:8971`, `localhost:5000`).
+        let hostOnly = String(trimmed.split(separator: ":", maxSplits: 1).first ?? "")
+        let lowerHost = hostOnly.lowercased()
+
         let withScheme: String
         if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
             withScheme = trimmed
-        } else if trimmed.hasPrefix("192.168.") || trimmed.hasPrefix("10.") || trimmed.hasPrefix("127.") || trimmed == "localhost" || isLAN172(host: trimmed) {
+        } else if hostOnly.hasPrefix("192.168.") || hostOnly.hasPrefix("10.") || hostOnly.hasPrefix("127.") || lowerHost == "localhost" || lowerHost.hasSuffix(".local") || isLAN172(host: hostOnly) {
+            // LAN / loopback / mDNS hosts speak plain HTTP by default (no public TLS cert).
             withScheme = "http://\(trimmed)"
         } else {
             withScheme = "https://\(trimmed)"

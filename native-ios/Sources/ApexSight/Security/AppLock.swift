@@ -52,6 +52,10 @@ final class AppLockController: ObservableObject {
     static let preferenceKey = "biometricLockEnabled"
 
     @Published private(set) var isLocked = false
+    /// True whenever the app is not active (inactive/background). Drives an unconditional
+    /// opaque privacy cover so live camera frames never leak into the app-switcher snapshot,
+    /// regardless of whether the optional biometric lock is enabled.
+    @Published private(set) var isObscured = false
     private var authenticating = false
 
     private var enabled: Bool { UserDefaults.standard.bool(forKey: Self.preferenceKey) }
@@ -68,6 +72,14 @@ final class AppLockController: ObservableObject {
         guard enabled, BiometricLock.isAvailable else { isLocked = false; return }
         isLocked = true
     }
+
+    /// Drop the opaque privacy cover the moment the app is no longer active. Called on
+    /// `.inactive` (before `.background`) so live content can't flash during the transition.
+    func markObscured() { isObscured = true }
+
+    /// Lift the privacy cover once the app is active again (and the biometric lock, if any,
+    /// has been cleared by `unlock()`).
+    func markRevealed() { isObscured = false }
 
     /// Prompt for biometrics to clear the lock. Idempotent — ignores re-entry while a
     /// prompt is already on screen.

@@ -24,6 +24,10 @@ final class ImageCache {
         // (causing re-decodes / black flashes). Accurate cost = fewer evictions.
         let w = image.cgImage?.width ?? Int(image.size.width)
         let h = image.cgImage?.height ?? Int(image.size.height)
-        cache.setObject(image, forKey: url as NSURL, cost: w * h * 4)
+        // Animated GIFs (event/review previews) decode to N frames, but `cgImage` is only the
+        // first. Bill all frames so a handful of multi-frame GIFs can't blow past the 64 MB
+        // budget while the cost accounting thinks they're a single still.
+        let frames = image.images?.count ?? 1
+        cache.setObject(image, forKey: url as NSURL, cost: w * h * 4 * frames)
     }
 }

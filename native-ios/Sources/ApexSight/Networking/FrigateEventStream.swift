@@ -222,5 +222,9 @@ private struct EventUpdate: Decodable {
 }
 
 private extension JSONDecoder {
-    static var frigateStream: JSONDecoder { JSONDecoder() }
+    /// One reused decoder for the WebSocket hot path — `handle(message:)` decodes the
+    /// envelope plus up to three nested payloads per frame, so a computed `var` (a fresh
+    /// allocation every access) was wasted work on every event. `JSONDecoder` is thread-safe
+    /// for decoding, mirroring `FrigateClient`'s `static let frigate`.
+    static let frigateStream = JSONDecoder()
 }

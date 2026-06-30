@@ -41,3 +41,29 @@ struct LockOverlayView: View {
         }
     }
 }
+
+/// Opaque privacy cover shown whenever the app is not active (app switcher, Control Center
+/// pull, incoming call) — independent of the optional Face ID lock. Without this, the default
+/// user (who never turns on the biometric lock) has their live camera frames captured into the
+/// multitasking snapshot. No unlock affordance: it clears itself the moment the app is active.
+struct PrivacyCoverView: View {
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            LinearGradient(
+                colors: [Color.cyan.opacity(0.18), .clear],
+                startPoint: .top, endPoint: .center
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 48, weight: .black))
+                    .foregroundStyle(.cyan)
+                Text("ApexSight")
+                    .font(.system(size: 20, weight: .black))
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+}

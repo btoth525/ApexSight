@@ -42,11 +42,19 @@ struct ApexSightApp: App {
                     OfflineBanner()
                         .environmentObject(appState)
                 }
-                // Face ID / passcode privacy cover — only visible when the user enabled
-                // the lock and the app is locked (launch / return from background).
+                // Privacy covers. The biometric LockOverlay (with an unlock button) appears
+                // only when the optional lock is enabled and engaged. The plain PrivacyCover
+                // is unconditional — it hides live camera frames from the app-switcher snapshot
+                // for every user, enabled lock or not, and clears itself on `.active`.
                 .overlay {
                     if appLock.isLocked {
                         LockOverlayView { appLock.unlock() }
+                            .transition(.opacity)
+                    } else if appLock.isObscured && appState.session != nil {
+                        // Only cover once signed in — there's no camera content to protect
+                        // before that, and covering would otherwise flash behind the onboarding
+                        // Local Network / notification permission dialogs (which make us inactive).
+                        PrivacyCoverView()
                             .transition(.opacity)
                     }
                 }
@@ -79,6 +87,8 @@ struct ApexSightApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        // Lift the privacy cover now that real content is safe to show.
+                        appLock.markRevealed()
                         appState.startRealtime()
                         appState.startForegroundPolling()
                         appState.consumePendingIntentLink()
@@ -89,6 +99,12 @@ struct ApexSightApp: App {
                         IncidentActivityController.end()
                         // Prompt for Face ID if we locked on the way out.
                         appLock.unlock()
+                    case .inactive:
+                        // Drop the opaque cover as soon as the app goes inactive (app-switcher,
+                        // Control Center, incoming call) — before `.background` — so live frames
+                        // never make it into the multitasking snapshot. Default users get this
+                        // even without the biometric lock turned on.
+                        appLock.markObscured()
                     case .background:
                         appState.stopRealtime()
                         appState.stopForegroundPolling()
@@ -97,7 +113,7 @@ struct ApexSightApp: App {
                         appLock.lockIfEnabled()
                         // Push preferences up to iCloud (no-op until iCloud KVS is enabled).
                         SettingsSync.pushToCloud()
-                    default:
+                    @unknown default:
                         break
                     }
                 }

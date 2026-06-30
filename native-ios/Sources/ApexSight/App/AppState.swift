@@ -565,6 +565,10 @@ final class AppState: ObservableObject {
     /// In-flight full refresh, so concurrent callers coalesce into one network round-trip.
     private var refreshTask: Task<Void, Never>?
 
+    /// Whether the one-time background capability probe (PTZ / recordings) has run for the
+    /// current server. Reset on sign-out / server switch so each server is diagnosed once.
+    private var didAutoDiagnoseSession = false
+
     func refresh() async {
         // At cold launch several tabs' `.task` and the foreground poller can all call refresh()
         // at once; without coalescing that's 2-3 racing full fan-outs (cameras+events+reviews+
@@ -636,6 +640,13 @@ final class AppState: ObservableObject {
             // image round-trip for the widget snapshot.
             Task { await cacheWidgetSnapshot(from: loadedCameras) }
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
+            // One-time per server: probe PTZ/recordings in the background so those feature gates
+            // light up on their own (the PTZ control, recordings timeline) instead of requiring a
+            // manual Diagnostics tap — and without adding N×3 probe calls to every 15s poll.
+            if !didAutoDiagnoseSession {
+                didAutoDiagnoseSession = true
+                Task { [weak self] in await self?.autoDiagnoseCapabilities() }
+            }
             isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once and retry the whole
@@ -707,10 +718,18 @@ final class AppState: ObservableObject {
     }
 
     private func buildBaseCapabilities(cameras: [FrigateCamera], streams: [String: JSONValue]) -> [CameraCapability] {
-        cameras.map { camera in
-            CameraCapability(
+        // Carry forward the probe-only flags (PTZ, recordings) from a prior diagnostic pass so
+        // the 15s poll's base rebuild doesn't wipe them back to false — that reset is why the
+        // PTZ control vanished after appearing: `hasPtz` is set by diagnostics, then the very
+        // next poll erased it. Keyed by camera name; falls back to false for never-diagnosed cams.
+        let prior = Dictionary(uniqueKeysWithValues: capabilities.map { ($0.camera, $0) })
+        return cameras.map { camera in
+            let known = prior[camera.name]
+            return CameraCapability(
                 camera: camera.name,
                 hasLatestFrame: true,
+                hasRecordings: known?.hasRecordings ?? false,
+                hasPtz: known?.hasPtz ?? false,
                 hasGo2RtcStream: streams[camera.name] != nil,
                 zones: camera.zones,
                 objects: camera.objects
@@ -728,6 +747,16 @@ final class AppState: ObservableObject {
         if !diagnosed.isEmpty {
             capabilities = diagnosed
         }
+    }
+
+    /// Background, no-spinner variant of `refreshCapabilityDiagnostics`, run once per server
+    /// from the refresh path. Keeps the manual Diagnostics button behaviour intact while making
+    /// probe-gated controls (PTZ especially) appear automatically.
+    private func autoDiagnoseCapabilities() async {
+        guard let client else { return }
+        let diagnosed = await buildCapabilityDiagnostics(cameras: cameras, client: client)
+        guard !diagnosed.isEmpty else { return }
+        capabilities = diagnosed
     }
 
     private func buildCapabilityDiagnostics(cameras: [FrigateCamera], client: FrigateClient) async -> [CameraCapability] {
@@ -763,9 +792,23 @@ final class AppState: ObservableObject {
         return output.sorted { $0.camera < $1.camera }
     }
 
+    /// Cancels any in-flight full refresh / token reauth so a network round-trip that
+    /// captured the *previous* server's `client` can't resume and publish its cameras/events
+    /// over the just-cleared state. Cancellation propagates to the `async let` children in
+    /// `refresh(retryOnAuthFailure:)`, which then throw `CancellationError` (ignored) instead
+    /// of assigning stale data. Without this, switching servers briefly showed the old
+    /// household's wall until the next 15s poll corrected it.
+    private func cancelInFlightServerWork() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        reauthTask?.cancel()
+        reauthTask = nil
+    }
+
     func switchTo(session: FrigateSession) {
         stopRealtime()
         stopForegroundPolling()
+        cancelInFlightServerWork()
         locallyViewedIDs.removeAll()
         self.session = session
         keychain.save(session: session)
@@ -776,6 +819,7 @@ final class AppState: ObservableObject {
         subLabels = []
         stats = nil
         capabilities = []
+        didAutoDiagnoseSession = false
         recentLogs = []
         Task {
             await refresh()
@@ -787,6 +831,7 @@ final class AppState: ObservableObject {
     func signOut() {
         stopRealtime()
         stopForegroundPolling()
+        cancelInFlightServerWork()
         locallyViewedIDs.removeAll()
         unreviewedCount = 0
         keychain.clear()
@@ -800,6 +845,7 @@ final class AppState: ObservableObject {
         subLabels = []
         stats = nil
         capabilities = []
+        didAutoDiagnoseSession = false
         recentLogs = []
     }
 
