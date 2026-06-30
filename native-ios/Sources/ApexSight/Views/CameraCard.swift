@@ -2,7 +2,6 @@ import SwiftUI
 
 struct CameraCard: View {
     @EnvironmentObject private var appState: AppState
-    @ObservedObject private var thermal = ThermalMonitor.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
 
@@ -23,32 +22,21 @@ struct CameraCard: View {
                 // staggers how many spin up at once so load stays fast; the cached snapshot
                 // sits behind so it's never black, and it's letterboxed so ultra-wide
                 // cameras show the whole scene.
-                if thermal.shouldReduceLoad {
-                    // Hot / Low Power: skip the live HLS decode (the wall's main heat+energy
-                    // source) and show the latest snapshot instead. Live resumes automatically
-                    // when the device cools or leaves Low Power.
-                    if let url = appState.client?.latestFrameURL(camera: camera.name) {
-                        RemoteImage(url: url, contentMode: .fit)
-                    } else {
-                        Color.black
+                HLSLivePlayerView(
+                    camera: camera,
+                    preferSub: true,
+                    persistent: true,
+                    onPlaying: { playing in
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
                     }
-                } else {
-                    HLSLivePlayerView(
-                        camera: camera,
-                        preferSub: true,
-                        persistent: true,
-                        onPlaying: { playing in
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
-                        }
-                    )
+                )
 
-                    // Calm "warming up" hint while the tile is still connecting — a soft breathing
-                    // dot over the cached snapshot, never a spinner. Beats Protect's frozen-frame
-                    // look: a tile that hasn't gone live yet reads as alive, not stuck.
-                    if !isLive {
-                        ConnectingHint()
-                            .transition(.opacity)
-                    }
+                // Calm "warming up" hint while the tile is still connecting — a soft breathing
+                // dot over the cached snapshot, never a spinner. Beats Protect's frozen-frame
+                // look: a tile that hasn't gone live yet reads as alive, not stuck.
+                if !isLive {
+                    ConnectingHint()
+                        .transition(.opacity)
                 }
 
                 LinearGradient(
@@ -96,17 +84,7 @@ struct CameraCard: View {
     /// up — the snapshot is already on screen, so there's no "Connecting" clutter.
     @ViewBuilder
     private var liveBadge: some View {
-        if thermal.shouldReduceLoad, let reason = thermal.reason {
-            HStack(spacing: 5) {
-                Image(systemName: "bolt.slash.fill").font(.system(size: 8, weight: .bold))
-                Text(reason).font(.system(size: 10, weight: .heavy))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(GlassTheme.orange, in: Capsule())
-            .transition(.opacity)
-        } else if isLive {
+        if isLive {
             HStack(spacing: 5) {
                 Circle().fill(.white).frame(width: 6, height: 6)
                 Text("LIVE")
