@@ -29,7 +29,9 @@ enum WidgetDataFetcher {
         guard let defaults = appGroup,
               let base = defaults.string(forKey: "apex.frigateBaseURL"),
               let baseURL = URL(string: base) else { return }
-        let token = defaults.string(forKey: "apex.frigateToken")
+        // Token from the shared Keychain group (no longer plaintext in the App-Group plist);
+        // nil simply yields an unauthenticated request, same as before.
+        let token = SharedTokenStore.load()
 
         guard var comps = URLComponents(
             url: baseURL.appendingPathComponent("api/review"),

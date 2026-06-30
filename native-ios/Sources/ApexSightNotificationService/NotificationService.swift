@@ -94,7 +94,10 @@ final class NotificationService: UNNotificationServiceExtension {
     private static let appGroupSuite = "group.com.brandontoth.apexsight"
 
     private static func appGroupToken() -> String? {
-        UserDefaults(suiteName: appGroupSuite)?.string(forKey: "apex.frigateToken")
+        // Token now lives in the shared Keychain access group (no longer plaintext in the
+        // App-Group plist). A miss falls through to the no-token path, which downloads the
+        // unauthenticated snapshot or the bundled placeholder — never a crash.
+        SharedTokenStore.load()
     }
 
     private static func appGroupBaseURL() -> String? {

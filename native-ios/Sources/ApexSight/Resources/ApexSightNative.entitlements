@@ -6,6 +6,10 @@
 	<array>
 		<string>group.com.brandontoth.apexsight</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.brandontoth.apexsight.shared</string>
+	</array>
 	<key>aps-environment</key>
 	<string>production</string>
 	<key>com.apple.developer.applesignin</key>

@@ -153,6 +153,9 @@ targets:
     platform: iOS
     sources:
       - path: Sources/ApexSightNotificationService
+      # Just the shared Keychain token reader (Foundation + Security only — extension-safe),
+      # so the NSE can read the bearer token from the shared Keychain group.
+      - path: Sources/ApexSightShared/SharedTokenStore.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.NotificationService

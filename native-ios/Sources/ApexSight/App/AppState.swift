@@ -120,11 +120,16 @@ final class AppState: ObservableObject {
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
         if let session {
             defaults?.set(session.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
-            defaults?.set(session.token, forKey: "apex.frigateToken")
+            // The token is a secret: store it in the shared Keychain access group, not in the
+            // App-Group plist. The base URL is not sensitive and stays in defaults.
+            SharedTokenStore.save(session.token)
         } else {
             defaults?.removeObject(forKey: "apex.frigateBaseURL")
-            defaults?.removeObject(forKey: "apex.frigateToken")
+            SharedTokenStore.clear()
         }
+        // Belt-and-suspenders: clear any token left in the plist by an older build that mirrored
+        // it there, so the secret doesn't linger after this migration.
+        defaults?.removeObject(forKey: "apex.frigateToken")
     }
 
     // MARK: - Real-time
