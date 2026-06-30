@@ -26,6 +26,13 @@ final class NowPlayingController {
 
     /// Publish `player` to the system playback UI with the given camera/clip metadata.
     /// Re-attaching the same player just refreshes its metadata.
+    ///
+    /// NOTE: the system only routes a Now Playing session to Control Center / Dynamic Island when
+    /// the app holds an **active** `AVAudioSession`. Live tiles open muted and only activate
+    /// `.playback` on unmute (a deliberate "don't duck the user's music for a silent video"
+    /// policy), so in practice this surfaces once the camera is unmuted / for clips. Forcing the
+    /// session active here would interrupt other audio for a muted feed — a UX regression — so we
+    /// don't; if "show in Now Playing while muted" is wanted, that's an explicit policy change.
     func attach(player: AVPlayer, title: String, subtitle: String, isLive: Bool) {
         if currentPlayer === player, session != nil {
             publishMetadata(title: title, subtitle: subtitle, isLive: isLive)

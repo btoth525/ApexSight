@@ -20,26 +20,4 @@ extension View {
             self
         }
     }
-
-    /// Dim custom overlay chrome (camera controls, wall badges) when the window/tile is inactive —
-    /// the iOS 27 "appearsActive" affordance for iPad multitasking / Stage Manager / Mirroring.
-    /// No-op below iOS 27. Implemented via the environment flag so call sites stay declarative.
-    @ViewBuilder
-    func ios27DimWhenInactive() -> some View {
-        if #available(iOS 27.0, *) {
-            self.modifier(AppearsActiveDim())
-        } else {
-            self
-        }
-    }
-}
-
-/// Reduces opacity when the hosting scene is not the active one. Reads the SwiftUI environment
-/// `appearsActive` flag added in iOS 27; harmless on a single-window iPhone (always active).
-@available(iOS 27.0, *)
-private struct AppearsActiveDim: ViewModifier {
-    @Environment(\.appearsActive) private var appearsActive
-    func body(content: Content) -> some View {
-        content.opacity(appearsActive ? 1.0 : 0.55)
-    }
 }
