@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apns, config, db, recap, render
+from . import apns, config, db, recap, render, turn
 from .accounts import frigate_router, router as auth_router
 from .admin import router as admin_router
 from .web import router as web_router
@@ -196,7 +196,31 @@ class ActivityRegisterIn(BaseModel):
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"ok": True, "apns_configured": apns.is_configured(), "devices": db.device_count()}
+    return {
+        "ok": True,
+        "apns_configured": apns.is_configured(),
+        "devices": db.device_count(),
+        "turn_configured": turn.is_configured(),
+    }
+
+
+class TurnIn(BaseModel):
+    pairing_code: str = Field(min_length=4, max_length=64)
+
+
+@app.post("/v1/turn-credentials")
+async def turn_credentials(body: TurnIn, _: None = Depends(rate_limit)) -> list[dict]:
+    """Mint short-lived Cloudflare TURN ICE servers for a paired household so two-way talk
+    works away from home. Auth = the pairing code (same as every other /v1/* call)."""
+    code = body.pairing_code.upper().strip()
+    if not db.devices_for(code):
+        raise HTTPException(status_code=403, detail="unknown pairing code")
+    try:
+        return await turn.mint_ice_servers()      # [{urls, username?, credential?}]
+    except turn.TurnNotConfigured:
+        raise HTTPException(status_code=503, detail="TURN not configured on relay")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"TURN mint failed: {exc}")
 
 
 @app.post("/v1/register")

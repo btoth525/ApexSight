@@ -27,6 +27,9 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     private var micTrack: RTCAudioTrack?
     private var gatheringContinuation: CheckedContinuation<Void, Never>?
     private var bgObserver: NSObjectProtocol?
+    /// Fails an attempt that never connects (remote with no reachable media path) instead of
+    /// spinning forever, with copy that points at the actual fix (TURN on the relay).
+    private var connectWatchdog: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -59,8 +62,12 @@ final class TwoWayTalkController: NSObject, ObservableObject {
 
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
+        // STUN for the direct LAN path + TURN (minted by the relay) so talk also works away from
+        // home, where the Cloudflare tunnel proxies only HTTPS/WS and ICE has no media path.
+        config.iceServers = await TurnSettings.iceServers()
         config.bundlePolicy = .maxBundle
+        config.iceTransportPolicy = .all     // direct on LAN, relay (TURN) when needed
+        startConnectWatchdog()
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let pc = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
             status = .failed("Couldn't create connection")
@@ -91,6 +98,7 @@ final class TwoWayTalkController: NSObject, ObservableObject {
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswer(source: cameraTwoWaySource, offerSDP: localSDP)
             try await setRemote(RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
+            connectWatchdog?.cancel(); connectWatchdog = nil
             status = .talking
             Haptics.success()
         } catch {
@@ -107,6 +115,7 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     // MARK: - Internals
 
     private func teardown() {
+        connectWatchdog?.cancel(); connectWatchdog = nil
         micTrack = nil
         pc?.delegate = nil       // stop delegate callbacks from firing after close
         pc?.close()
@@ -114,6 +123,20 @@ final class TwoWayTalkController: NSObject, ObservableObject {
         gatheringContinuation?.resume()
         gatheringContinuation = nil
         deactivateAudioSession()
+    }
+
+    /// 6s budget from `.connecting`: a remote attempt with no reachable media path fails here
+    /// with actionable copy instead of spinning. Cancelled on success and in teardown.
+    private func startConnectWatchdog() {
+        connectWatchdog?.cancel()
+        connectWatchdog = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard let self, !Task.isCancelled, self.status == .connecting else { return }
+            self.status = .failed(TurnSettings.hasRelay
+                ? "Couldn't reach the camera's audio. Check the camera is online and that TURN is set on the relay."
+                : "Two-way talk needs the relay's TURN key to work away from home (set it in the relay's admin settings).")
+            self.teardown()
+        }
     }
 
     private func requestMicPermission() async -> Bool {
@@ -182,7 +205,9 @@ extension TwoWayTalkController: RTCPeerConnectionDelegate {
     }
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        if newState == .failed || newState == .disconnected || newState == .closed {
+        // Only treat a hard drop as failure — `.disconnected` is often transient (a brief network
+        // blip that ICE recovers from on its own), so don't tear down the talk session on it.
+        if newState == .failed || newState == .closed {
             Task { @MainActor [weak self] in
                 guard let self, self.status == .talking else { return }
                 self.status = .failed("Connection lost")

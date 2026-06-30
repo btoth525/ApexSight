@@ -34,6 +34,15 @@
       <span class="muted">Leave on Auto. Use Force sandbox only if pushes to a debug build fail with BadDeviceToken.</span>
     </label>
 
+    <h2>Remote Two-Way Talk (TURN)</h2>
+    <span class="muted">Lets push-to-talk work away from home. Create a TURN key in the Cloudflare dashboard → Realtime → TURN, then paste it here. The long-lived token stays on the relay; the app mints short-lived credentials with its pairing code.</span>
+    <label>TURN Key ID
+      <input type="text" name="turn_key_id" value="{{ settings.turn_key_id }}" placeholder="Cloudflare TURN Key ID" />
+    </label>
+    <label>TURN API Token
+      <input type="password" name="turn_key_token" placeholder="{% if settings.turn_loaded %}configured ✓ — paste a new token only to replace it{% else %}long-term TURN API token{% endif %}" />
+    </label>
+
     <button type="submit" class="primary">Save</button>
   </form>
 </div>

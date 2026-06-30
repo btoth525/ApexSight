@@ -81,6 +81,8 @@ def _settings() -> dict:
         "bundle_id": cfg.get("apns_bundle_id", config.DEFAULT_BUNDLE_ID),
         "env_mode": cfg.get("apns_env_mode", "auto"),
         "p8_loaded": bool(cfg.get("apns_p8")),
+        "turn_key_id": cfg.get("turn_key_id", ""),
+        "turn_loaded": bool(cfg.get("turn_key_token")),
     }
 
 
@@ -153,9 +155,15 @@ async def save_settings(
     team_id: str = Form(""),
     bundle_id: str = Form(""),
     env_mode: str = Form("auto"),
+    turn_key_id: str = Form(""),
+    turn_key_token: str = Form(""),
     p8: UploadFile | None = None,
 ):
     _require(request)
+    if turn_key_id:
+        db.set_config("turn_key_id", turn_key_id.strip())
+    if turn_key_token:
+        db.set_config("turn_key_token", turn_key_token.strip())
     if key_id:
         db.set_config("apns_key_id", key_id.strip())
     if team_id:

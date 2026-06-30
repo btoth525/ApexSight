@@ -1,0 +1,47 @@
+name: iOS CI
+
+# Build + unit-test the app on every PR and on pushes to the main line.
+on:
+  push:
+    branches: [Main-Build]
+  pull_request:
+    branches: [Main-Build]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: native-ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project ApexSightNative.xcodeproj -scheme ApexSightNative
+
+      - name: Build & run unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project ApexSightNative.xcodeproj \
+            -scheme ApexSightNative \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -only-testing:ApexSightTests \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify || xcodebuild test \
+            -project ApexSightNative.xcodeproj \
+            -scheme ApexSightNative \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -only-testing:ApexSightTests \
+            CODE_SIGNING_ALLOWED=NO
