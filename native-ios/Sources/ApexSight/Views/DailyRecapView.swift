@@ -64,6 +64,7 @@ struct DailyRecapView: View {
     /// Generate the on-device AI summary once the recap is loaded. No-op (leaves `aiSummary` nil,
     /// so the card simply doesn't appear) when Apple Intelligence is unavailable or disabled.
     private func generateAISummary() async {
+#if canImport(FoundationModels)
         guard AppleAI.isAvailable, let recap, !recap.isEmpty else { return }
         guard #available(iOS 26, *) else { return }
 
@@ -82,6 +83,7 @@ struct DailyRecapView: View {
             prompt: "Today's activity:\n" + facts.joined(separator: "\n") + "\n\nWrite the summary."
         )
         if let summary, !Task.isCancelled { aiSummary = summary }
+#endif
     }
 
     private func aiSummaryCard(_ text: String) -> some View {

@@ -1,6 +1,9 @@
 name: iOS CI
 
 # Build + unit-test the app on every PR and on pushes to the main line.
+# The app builds on whatever Xcode the runner provides: the Foundation Models (AI) code is
+# guarded with `#if canImport(FoundationModels)`, so it's simply excluded on a toolchain that
+# predates the iOS 26 SDK — the app and tests still build either way.
 on:
   push:
     branches: [Main-Build]
@@ -21,6 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select newest installed Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $LATEST"
+          sudo xcode-select -s "$LATEST"
+          xcodebuild -version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -30,18 +40,22 @@ jobs:
       - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project ApexSightNative.xcodeproj -scheme ApexSightNative
 
+      - name: Pick an available iPhone simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available \
+            | grep -E 'iPhone' \
+            | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' \
+            | head -1)
+          echo "Using simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
       - name: Build & run unit tests
         run: |
           set -o pipefail
           xcodebuild test \
             -project ApexSightNative.xcodeproj \
             -scheme ApexSightNative \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-            -only-testing:ApexSightTests \
-            CODE_SIGNING_ALLOWED=NO \
-            | xcbeautify || xcodebuild test \
-            -project ApexSightNative.xcodeproj \
-            -scheme ApexSightNative \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
             -only-testing:ApexSightTests \
             CODE_SIGNING_ALLOWED=NO

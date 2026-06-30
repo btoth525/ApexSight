@@ -1,12 +1,15 @@
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 /// On-device Apple Intelligence (Foundation Models) helpers — **text only**. Image input,
 /// OCR/barcode tools, and Private Cloud Compute are iOS 27 and need the newer SDK, so they're
 /// deliberately out of scope here. Everything runs entirely on the device (no network, no cloud,
-/// no footage leaves the phone) and is gated three ways: the `@available(iOS 26)` SDK gate, the
+/// no footage leaves the phone) and is gated: the `canImport`/`@available(iOS 26)` SDK gates, the
 /// runtime `isAvailable` capability gate (Apple-Intelligence hardware + model downloaded), and a
-/// user setting. Callers fall back to the app's existing behaviour whenever AI isn't available.
+/// user setting. The whole type compiles even on toolchains without FoundationModels (CI / older
+/// Xcode) — AI is simply reported unavailable and every caller falls back to existing behaviour.
 enum AppleAI {
     /// User master switch (Settings → "Apple Intelligence"). Default on; flipping it off hides
     /// every AI affordance regardless of hardware.
@@ -14,13 +17,15 @@ enum AppleAI {
         UserDefaults.standard.object(forKey: "appleIntelligenceEnabled") as? Bool ?? true
     }
 
-    /// Whether this device can run the on-device model at all (iOS 26+, Apple-Intelligence
-    /// hardware, model downloaded) — ignoring the user toggle. Drives whether the Settings
-    /// toggle is even shown, so devices that can't do AI never see a dead switch.
+    /// Whether this device can run the on-device model at all (SDK present, iOS 26+, Apple-
+    /// Intelligence hardware, model downloaded) — ignoring the user toggle. Drives whether the
+    /// Settings toggle is even shown, so devices that can't do AI never see a dead switch.
     static var deviceSupportsAI: Bool {
+        #if canImport(FoundationModels)
         if #available(iOS 26, *) {
             return SystemLanguageModel.default.isAvailable
         }
+        #endif
         return false
     }
 
@@ -29,6 +34,8 @@ enum AppleAI {
     static var isAvailable: Bool {
         userEnabled && deviceSupportsAI
     }
+
+    #if canImport(FoundationModels)
 
     /// A short on-device summary for a prompt (used by the daily digest and search answers).
     /// Returns nil on any failure so the caller can fall back to its existing text.
@@ -73,4 +80,6 @@ enum AppleAI {
         guard let response = try? await session.respond(to: text, generating: FrigateQuery.self) else { return nil }
         return response.content
     }
+
+    #endif
 }

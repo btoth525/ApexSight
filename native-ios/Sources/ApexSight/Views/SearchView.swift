@@ -698,9 +698,11 @@ struct SearchView: View {
                 answer = AskParser.answer(for: plan, results: sorted)
                 // …then, when Apple Intelligence is available, replace it with a natural-language
                 // answer over the same results. Falls back to the template on any failure.
+#if canImport(FoundationModels)
                 if AppleAI.isAvailable, #available(iOS 26, *) {
                     if let aiAnswer = await aiAnswer(question: q, events: sorted) { answer = aiAnswer }
                 }
+#endif
             } else {
                 // A description ("kid on a bike", "blue car", "Amazon"). Run ALL three
                 // matchers and merge — so we never come back empty when matching events
@@ -732,6 +734,7 @@ struct SearchView: View {
                 // 4. Apple Intelligence (on-device): parse the request into structured filters
                 //    (camera / label / zone / has-clip) and pull those events too — catches
                 //    phrasings the keyword/semantic matchers miss. Purely additive + gated.
+#if canImport(FoundationModels)
                 if AppleAI.isAvailable, #available(iOS 26, *),
                    let aiq = await AppleAI.parseQuery(q, cameras: appState.cameras.map(\.name), labels: appState.labels),
                    aiq.camera != nil || aiq.label != nil || aiq.zone != nil {
@@ -742,6 +745,7 @@ struct SearchView: View {
                     )) ?? []
                     add(aiEvents)
                 }
+#endif
 
                 // Last resort: nothing matched the recent pool — query the implied object
                 // labels directly (e.g. "kid on a bike" → all person + bicycle events),
@@ -777,6 +781,7 @@ struct SearchView: View {
         }
     }
 
+#if canImport(FoundationModels)
     /// Natural-language answer to a question, generated on-device from ONLY the matched events.
     /// Returns nil on any failure so the caller keeps the reliable templated answer.
     @available(iOS 26, *)
@@ -794,6 +799,7 @@ struct SearchView: View {
             prompt: "Question: \(question)\n\n\(context)"
         )
     }
+#endif
 
     /// Exact sub-label / object-label matches for a query, honoring the panel's
     /// camera/zone/date filters. Lets "Amazon", "FedEx", a person's name, "car",
