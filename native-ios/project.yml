@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 95
+    CURRENT_PROJECT_VERSION: 96
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -90,6 +90,11 @@ targets:
       - target: ApexSightWatch
         embed: true
       - package: WebRTC
+      # Explicitly link AppIntents so `appintentsmetadataprocessor` actually runs and extracts
+      # the AppShortcutsProvider metadata. Without a hard framework dependency the build logged
+      # "Metadata extraction skipped. No AppIntents.framework dependency found", which meant the
+      # App Shortcuts (Siri / Spotlight "Show cameras", "Search events", etc.) never registered.
+      - sdk: AppIntents.framework
     scheme:
       testTargets:
         - ApexSightTests
