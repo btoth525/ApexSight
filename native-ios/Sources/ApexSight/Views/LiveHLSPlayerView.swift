@@ -598,6 +598,8 @@ struct HLSLivePlayerView: View {
         .onDisappear {
             startTask?.cancel(); startTask = nil
             releaseGate()
+            // Stop publishing to the system playback UI when the full-screen viewer closes.
+            if showControls { NowPlayingController.shared.detach(player: model.player) }
             if persistent {
                 if model.player == nil {
                     // Disappeared before the gate handed us a slot (player never built), so
@@ -620,7 +622,15 @@ struct HLSLivePlayerView: View {
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
             switch newState {
-            case .playing: fallbackTask?.cancel(); fallbackTask = nil; releaseGate()  // up — free the slot
+            case .playing:
+                fallbackTask?.cancel(); fallbackTask = nil; releaseGate()  // up — free the slot
+                // Full-screen viewer publishes this camera to the system playback UI
+                // (Lock Screen / Control Center / Dynamic Island / CarPlay). Wall tiles don't.
+                if showControls, let player = model.player {
+                    NowPlayingController.shared.attach(
+                        player: player, title: titleize(camera.name), subtitle: "Live", isLive: true
+                    )
+                }
             case .failed: releaseGate(); fallToMJPEG()                                 // gave up — free + MJPEG
             default: break
             }
