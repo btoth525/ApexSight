@@ -27,6 +27,10 @@ struct EventDetailView: View {
     /// Distinguishes "no description yet" from "still fetching", so the AI card can show a
     /// skeleton on first load instead of silently appearing only once text arrives.
     @State private var isLoadingAIDescription = true
+    /// iOS 27 on-device (Apple Intelligence) scene analysis of the event snapshot. Separate from
+    /// the server-side Frigate GenAI description above — this never leaves the phone.
+    @State private var onDeviceAnalysis: String?
+    @State private var isAnalyzingOnDevice = false
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -70,6 +74,7 @@ struct EventDetailView: View {
                     } else if isLoadingAIDescription {
                         aiSkeletonCard
                     }
+                    onDeviceAICard
                     detailsCard
                     actionsCard
                 }
@@ -112,6 +117,65 @@ struct EventDetailView: View {
             sharePayload = SharePayload(url: url)
         } catch {
             withAnimation { downloadFeedback = (error as? ClipDownloadError)?.errorDescription ?? "Could not prepare the clip." }
+        }
+    }
+
+    /// iOS 27 on-device Apple Intelligence analysis of this event's snapshot. Only appears on
+    /// hardware that can run it (and with the user's AI toggle on); the work runs entirely on the
+    /// phone via FoundationModels image input — no frame leaves the device.
+    @ViewBuilder
+    private var onDeviceAICard: some View {
+        if #available(iOS 27.0, *), AppleAI.isAvailable {
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                    HStack(spacing: GlassTheme.Space.s) {
+                        Image(systemName: "apple.intelligence")
+                            .foregroundStyle(GlassTheme.accent)
+                        SectionHeader("On-Device Analysis")
+                        Spacer()
+                    }
+                    if let onDeviceAnalysis {
+                        Text(onDeviceAnalysis)
+                            .font(.system(size: 15))
+                            .foregroundStyle(GlassTheme.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Analyze this frame privately on your iPhone — describe who or what is in view.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(GlassTheme.secondary)
+                        Button {
+                            Task { await analyzeOnDevice() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if isAnalyzingOnDevice {
+                                    ProgressView().tint(.white).scaleEffect(0.7)
+                                }
+                                Text(isAnalyzingOnDevice ? "Analyzing…" : "Analyze on device")
+                            }
+                        }
+                        .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                        .disabled(isAnalyzingOnDevice)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Pull the already-loaded snapshot from the image cache and run on-device scene description.
+    @available(iOS 27.0, *)
+    private func analyzeOnDevice() async {
+        guard !isAnalyzingOnDevice,
+              let url = appState.client?.eventSnapshotURL(id: event.id),
+              let cgImage = ImageCache.shared.image(for: url)?.cgImage else {
+            withAnimation { onDeviceAnalysis = "Snapshot isn't ready yet — open the snapshot first, then try again." }
+            return
+        }
+        Haptics.tap()
+        isAnalyzingOnDevice = true
+        defer { isAnalyzingOnDevice = false }
+        let result = await AppleAI.describeScene(in: cgImage, cameraName: event.camera)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            onDeviceAnalysis = result ?? "Couldn't analyze this frame on-device."
         }
     }
 
