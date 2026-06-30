@@ -93,6 +93,8 @@ struct MultiCameraGridView: View {
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            // iOS 27: collapse the nav bar while scrolling the wall so the feeds get full height.
+            .ios27ToolbarMinimizeOnScroll()
             .sheet(item: $selectedCamera) { camera in
                 NavigationStack {
                     LiveStreamView(camera: camera)
