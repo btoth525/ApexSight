@@ -4,6 +4,7 @@ struct SettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var path = NavigationPath()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
+    @AppStorage("appleIntelligenceEnabled") private var appleIntelligenceEnabled = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
@@ -27,6 +28,11 @@ struct SettingsTab: View {
                         serverCard
                         securityCard
                         appearanceCard
+
+                        // Apple Intelligence — only on devices that can actually run the model.
+                        if AppleAI.deviceSupportsAI {
+                            intelligenceCard
+                        }
 
                         // Privacy / app lock card — only when the device can authenticate.
                         if BiometricLock.isAvailable {
@@ -171,6 +177,29 @@ struct SettingsTab: View {
                     appearanceOption(label: "Light", icon: "sun.max.fill", value: "light")
                 }
             }
+        }
+    }
+
+    // MARK: - Apple Intelligence
+
+    private var intelligenceCard: some View {
+        GlassCard {
+            Toggle(isOn: $appleIntelligenceEnabled) {
+                HStack(spacing: GlassTheme.Space.m) {
+                    iconTile(systemName: "apple.intelligence", tint: GlassTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Apple Intelligence")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("On-device AI for daily summaries and natural-language search. Private — nothing leaves your iPhone.")
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .tint(GlassTheme.accent)
+            .sensoryFeedback(.selection, trigger: appleIntelligenceEnabled)
         }
     }
 

@@ -693,7 +693,14 @@ struct SearchView: View {
                     subLabel: subLabel, zone: zone,
                     after: afterDate ?? plan.after, before: plan.before, limit: 200
                 )).filter { plan.matches($0) }
-                answer = AskParser.answer(for: plan, results: found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) })
+                let sorted = found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+                // Always compute the reliable on-device templated answer first…
+                answer = AskParser.answer(for: plan, results: sorted)
+                // …then, when Apple Intelligence is available, replace it with a natural-language
+                // answer over the same results. Falls back to the template on any failure.
+                if AppleAI.isAvailable, #available(iOS 26, *) {
+                    if let aiAnswer = await aiAnswer(question: q, events: sorted) { answer = aiAnswer }
+                }
             } else {
                 // A description ("kid on a bike", "blue car", "Amazon"). Run ALL three
                 // matchers and merge — so we never come back empty when matching events
@@ -721,6 +728,20 @@ struct SearchView: View {
                 add(semantic)   // best-match first when the server supports it
                 add(exact)      // precise carrier/face/object hits
                 add(keyword)    // on-device relevance — guarantees results when matches exist
+
+                // 4. Apple Intelligence (on-device): parse the request into structured filters
+                //    (camera / label / zone / has-clip) and pull those events too — catches
+                //    phrasings the keyword/semantic matchers miss. Purely additive + gated.
+                if AppleAI.isAvailable, #available(iOS 26, *),
+                   let aiq = await AppleAI.parseQuery(q, cameras: appState.cameras.map(\.name), labels: appState.labels),
+                   aiq.camera != nil || aiq.label != nil || aiq.zone != nil {
+                    let aiEvents = (try? await client.events(
+                        camera: fCamera ?? aiq.camera, label: fLabel ?? aiq.label,
+                        zone: zone ?? aiq.zone, after: afterDate,
+                        limit: 200, hasClip: aiq.hasClip ? true : nil
+                    )) ?? []
+                    add(aiEvents)
+                }
 
                 // Last resort: nothing matched the recent pool — query the implied object
                 // labels directly (e.g. "kid on a bike" → all person + bicycle events),
@@ -754,6 +775,24 @@ struct SearchView: View {
             results = []
             Haptics.error()
         }
+    }
+
+    /// Natural-language answer to a question, generated on-device from ONLY the matched events.
+    /// Returns nil on any failure so the caller keeps the reliable templated answer.
+    @available(iOS 26, *)
+    private func aiAnswer(question: String, events: [FrigateEvent]) async -> String? {
+        let lines = events.prefix(40).map { e -> String in
+            let t = e.startTime.map { Date(timeIntervalSince1970: $0).formatted(date: .omitted, time: .shortened) } ?? "—"
+            let sub = e.subLabel.map { " (\($0))" } ?? ""
+            return "\(t) — \(e.displayLabel)\(sub) at \(titleize(e.camera))"
+        }.joined(separator: "\n")
+        let context = events.isEmpty
+            ? "No matching events were found."
+            : "Matching events (\(events.count) total):\n\(lines)"
+        return await AppleAI.summarize(
+            instructions: "Answer a question about a home's security events using ONLY the provided list. Be brief and factual (1-2 sentences), give counts and times when relevant, and if the list is empty say nothing matched. No markdown, no identity guesses.",
+            prompt: "Question: \(question)\n\n\(context)"
+        )
     }
 
     /// Exact sub-label / object-label matches for a query, honoring the panel's

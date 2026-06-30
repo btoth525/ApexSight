@@ -12,6 +12,10 @@ struct DailyRecapView: View {
     // ("all quiet") so we can offer a retry instead of implying nothing happened.
     @State private var loadFailed = false
 
+    /// On-device AI summary of the day (Apple Intelligence). Nil when AI is unavailable/disabled
+    /// or still generating — the rest of the recap renders exactly as before either way.
+    @State private var aiSummary: String?
+
     @AppStorage("apex.recap.enabled") private var recapEnabled = false
     @State private var recapTime = Calendar.current.date(
         from: DateComponents(hour: RecapSettings.hour, minute: RecapSettings.minute)
@@ -28,6 +32,7 @@ struct DailyRecapView: View {
                     } else if loadFailed {
                         errorCard
                     } else if let recap, !recap.isEmpty {
+                        if let aiSummary { aiSummaryCard(aiSummary) }
                         statsCard(recap)
                         objectsCard(recap)
                         camerasCard(recap)
@@ -50,7 +55,51 @@ struct DailyRecapView: View {
         .navigationTitle("Daily Recap")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
-        .task { await load() }
+        .task {
+            await load()
+            await generateAISummary()
+        }
+    }
+
+    /// Generate the on-device AI summary once the recap is loaded. No-op (leaves `aiSummary` nil,
+    /// so the card simply doesn't appear) when Apple Intelligence is unavailable or disabled.
+    private func generateAISummary() async {
+        guard AppleAI.isAvailable, let recap, !recap.isEmpty else { return }
+        guard #available(iOS 26, *) else { return }
+
+        var facts: [String] = ["\(recap.total) total events today."]
+        if !recap.people.isEmpty { facts.append("People recognized: \(recap.people.map(titleize).joined(separator: ", ")).") }
+        if recap.packages > 0 { facts.append("\(recap.packages) package event(s).") }
+        if let busiest = recap.busiestHourLabel { facts.append("Busiest around \(busiest).") }
+        let topCams = recap.cameraCounts.prefix(4).map { "\(titleize($0.camera)) (\($0.count))" }
+        if !topCams.isEmpty { facts.append("By camera: \(topCams.joined(separator: ", ")).") }
+        let topLabels = recap.labelCounts.prefix(6).map { "\($0.label) \($0.count)" }
+        if !topLabels.isEmpty { facts.append("By object: \(topLabels.joined(separator: ", ")).") }
+        if !recap.carriers.isEmpty { facts.append("Carriers: \(recap.carriers.map { "\($0.name) \($0.count)" }.joined(separator: ", ")).") }
+
+        let summary = await AppleAI.summarize(
+            instructions: "You summarize a home's security events for the day in 2-3 short, plain, factual sentences. Note patterns like deliveries, known vs unknown people, and busy times. No alarmism, no identity guesses, no markdown.",
+            prompt: "Today's activity:\n" + facts.joined(separator: "\n") + "\n\nWrite the summary."
+        )
+        if let summary, !Task.isCancelled { aiSummary = summary }
+    }
+
+    private func aiSummaryCard(_ text: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                HStack(spacing: 6) {
+                    Image(systemName: "apple.intelligence").font(.caption)
+                    Text("SUMMARY").font(.caption2).fontWeight(.semibold).tracking(0.8)
+                }
+                .foregroundStyle(GlassTheme.accent)
+                Text(text)
+                    .font(.body)
+                    .foregroundStyle(GlassTheme.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("AI summary. \(text)")
     }
 
     // MARK: - Cards
