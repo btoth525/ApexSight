@@ -330,7 +330,7 @@ struct LiveStreamView: View {
                     actionButton(icon: "slider.horizontal.3", label: "Controls") {
                         showCameraControls = true
                     }
-                    if #available(iOS 27.0, *), AppleAI.isAvailable {
+                    if #available(iOS 27.0, *), AppleAI.visionAIAvailable {
                         actionButton(icon: "sparkles", label: "Ask AI") {
                             Task { await analyzeLive() }
                         }

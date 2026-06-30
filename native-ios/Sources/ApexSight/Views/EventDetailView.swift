@@ -125,7 +125,7 @@ struct EventDetailView: View {
     /// phone via FoundationModels image input — no frame leaves the device.
     @ViewBuilder
     private var onDeviceAICard: some View {
-        if #available(iOS 27.0, *), AppleAI.isAvailable {
+        if #available(iOS 27.0, *), AppleAI.visionAIAvailable {
             GlassCard {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                     HStack(spacing: GlassTheme.Space.s) {
