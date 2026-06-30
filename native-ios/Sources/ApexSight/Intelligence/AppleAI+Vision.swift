@@ -6,27 +6,21 @@ import FoundationModels
 #if canImport(Vision)
 import Vision
 #endif
-// The OCR/barcode tools live in the Vision↔FoundationModels cross-import overlay; import it
-// explicitly since the implicit overlay load doesn't always surface its symbols under the beta SDK.
-#if canImport(_Vision_FoundationModels)
-import _Vision_FoundationModels
-#endif
 
-/// iOS 27 **image-input** Foundation Models — the capability the original `AppleAI` explicitly
-/// deferred ("Image input … iOS 27 and need the newer SDK"). Everything runs entirely on-device:
-/// no frame ever leaves the phone. Gated three ways like the rest of `AppleAI` — SDK presence
-/// (`canImport`), `@available(iOS 27)`, and the runtime `isAvailable` (Apple-Intelligence hardware
-/// + model downloaded + user toggle). On anything that can't run it, every entry point returns nil
-/// and the caller falls back silently.
+/// On-device image understanding for camera frames. Two independent capabilities:
 ///
-/// NOTE: Apple Intelligence does not run on the iOS Simulator and needs iPhone 15 Pro / 16+
-/// hardware, so this path is **compile-verified only** here — it must be exercised on a real
-/// iOS 27 device.
+/// 1. `describeScene` — iOS 27 multimodal Foundation Models ("who/what is in this frame"). Needs
+///    Apple-Intelligence hardware + iOS 27; gated and compile-guarded, returns nil otherwise.
+/// 2. `readText` — license-plate / label / signage OCR via **Vision** (`VNRecognizeTextRequest`,
+///    iOS 13+). Mature, fast, runs on ANY device — deliberately NOT tied to Apple Intelligence,
+///    so plate reading works even where the LLM can't run.
+///
+/// Everything runs entirely on-device; no frame leaves the phone. NOTE: the Foundation Models
+/// path does not run on the simulator — verify `describeScene` on a real iOS 27 device.
 @available(iOS 27.0, *)
 extension AppleAI {
 
-    /// True when on-device vision AI can actually run right now (mirrors `isAvailable`, which
-    /// already checks model availability + the user master toggle).
+    /// True when on-device scene description (Foundation Models image input) can run right now.
     static var visionAIAvailable: Bool {
         #if canImport(FoundationModels)
         return isAvailable
@@ -36,10 +30,7 @@ extension AppleAI {
     }
 
     #if canImport(FoundationModels)
-
-    /// Describe what's visible in a single camera frame, on-device. Powers a "What's in this
-    /// frame? / Who's that?" affordance on the full-screen viewer and event detail.
-    /// Returns nil on any failure so the caller falls back silently.
+    /// Describe what's visible in a single camera frame, on-device. Returns nil on any failure.
     static func describeScene(in image: CGImage, cameraName: String) async -> String? {
         guard SystemLanguageModel.default.isAvailable else { return nil }
         let session = LanguageModelSession(instructions: """
@@ -54,28 +45,38 @@ extension AppleAI {
         let text = response?.content.trimmingCharacters(in: .whitespacesAndNewlines)
         return (text?.isEmpty == false) ? text : nil
     }
+    #endif
+}
 
-    #if canImport(_Vision_FoundationModels)
-    /// Read clearly legible text in a frame (license plates, package labels, signage) using the
-    /// on-device OCR tool. Returns nil when nothing is legible or AI is unavailable.
+extension AppleAI {
+    /// Read clearly legible text in a frame (license plates, package labels, signage) using
+    /// Vision's on-device text recognizer. Runs on any iOS 17+ device — no Apple Intelligence
+    /// required. Returns nil when nothing legible is found.
     static func readText(in image: CGImage) async -> String? {
-        guard SystemLanguageModel.default.isAvailable else { return nil }
-        let session = LanguageModelSession(tools: [OCRTool()], instructions: """
-        Extract any clearly legible text from the image — license plates, package labels, signage. \
-        Reply with just the text you can read. If there is none, reply exactly "No legible text".
-        """)
-        let response = try? await session.respond(options: GenerationOptions()) {
-            "What text is visible in this image?"
-            Attachment(image)
+        #if canImport(Vision)
+        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            let request = VNRecognizeTextRequest { request, error in
+                guard error == nil,
+                      let observations = request.results as? [VNRecognizedTextObservation] else {
+                    continuation.resume(returning: nil); return
+                }
+                let lines = observations
+                    .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { $0.count >= 2 }
+                continuation.resume(returning: lines.isEmpty ? nil : lines.joined(separator: " · "))
+            }
+            request.recognitionLevel = .accurate
+            // Plates / labels aren't dictionary words — language correction hurts more than helps.
+            request.usesLanguageCorrection = false
+            let handler = VNImageRequestHandler(cgImage: image, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                continuation.resume(returning: nil)
+            }
         }
-        let text = response?.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let text, !text.isEmpty,
-              text.caseInsensitiveCompare("No legible text") != ComparisonResult.orderedSame else {
-            return nil
-        }
-        return text
+        #else
+        return nil
+        #endif
     }
-    #endif
-
-    #endif
 }

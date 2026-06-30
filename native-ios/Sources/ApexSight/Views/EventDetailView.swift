@@ -173,9 +173,16 @@ struct EventDetailView: View {
         Haptics.tap()
         isAnalyzingOnDevice = true
         defer { isAnalyzingOnDevice = false }
-        let result = await AppleAI.describeScene(in: cgImage, cameraName: event.camera)
+        // Scene description + any legible text (license plates, package labels) — both on-device.
+        async let scene = AppleAI.describeScene(in: cgImage, cameraName: event.camera)
+        async let text = AppleAI.readText(in: cgImage)
+        let (description, legibleText) = await (scene, text)
+        var combined = description ?? "Couldn't analyze this frame on-device."
+        if let legibleText, !legibleText.isEmpty {
+            combined += "\n\n📄 Text seen: \(legibleText)"
+        }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            onDeviceAnalysis = result ?? "Couldn't analyze this frame on-device."
+            onDeviceAnalysis = combined
         }
     }
 
