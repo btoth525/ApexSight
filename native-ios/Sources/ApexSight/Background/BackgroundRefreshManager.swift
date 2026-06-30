@@ -129,7 +129,9 @@ enum BackgroundRefreshManager {
         KeychainStore().save(session: next)
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
         defaults?.set(next.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
-        defaults?.set(token, forKey: "apex.frigateToken")
+        // Token → shared Keychain (not the App-Group plist); clear any stale plaintext copy.
+        SharedTokenStore.save(token)
+        defaults?.removeObject(forKey: "apex.frigateToken")
         return next
     }
 }
