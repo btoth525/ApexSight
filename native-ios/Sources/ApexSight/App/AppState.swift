@@ -569,6 +569,12 @@ final class AppState: ObservableObject {
     /// current server. Reset on sign-out / server switch so each server is diagnosed once.
     private var didAutoDiagnoseSession = false
 
+    /// Bumped on every sign-out / server switch. Long-running background work (the capability
+    /// probe) and the refresh-task bookkeeping capture the generation at entry and bail before
+    /// publishing if it changed — so a probe that started on the previous server can't land its
+    /// results over the new server, and a stale caller can't nil out a newer refresh task.
+    private var serverGeneration = 0
+
     func refresh() async {
         // At cold launch several tabs' `.task` and the foreground poller can all call refresh()
         // at once; without coalescing that's 2-3 racing full fan-outs (cameras+events+reviews+
@@ -577,13 +583,17 @@ final class AppState: ObservableObject {
             await refreshTask.value
             return
         }
+        let gen = serverGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.refresh(retryOnAuthFailure: true)
         }
         refreshTask = task
         await task.value
-        refreshTask = nil
+        // Only clear if a server switch/sign-out hasn't replaced this task in the meantime —
+        // otherwise a stale caller resuming after its cancelled task would wipe the tracking of
+        // a newer refresh, defeating coalescing and leaving it uncancellable.
+        if serverGeneration == gen { refreshTask = nil }
     }
 
     private func refresh(retryOnAuthFailure: Bool) async {
@@ -754,8 +764,11 @@ final class AppState: ObservableObject {
     /// probe-gated controls (PTZ especially) appear automatically.
     private func autoDiagnoseCapabilities() async {
         guard let client else { return }
+        let gen = serverGeneration
         let diagnosed = await buildCapabilityDiagnostics(cameras: cameras, client: client)
-        guard !diagnosed.isEmpty else { return }
+        // The probe is N×3 network calls long; if the user switched servers or signed out while
+        // it ran, drop the result rather than publish the previous server's PTZ/recordings flags.
+        guard serverGeneration == gen, !diagnosed.isEmpty else { return }
         capabilities = diagnosed
     }
 
@@ -799,6 +812,7 @@ final class AppState: ObservableObject {
     /// of assigning stale data. Without this, switching servers briefly showed the old
     /// household's wall until the next 15s poll corrected it.
     private func cancelInFlightServerWork() {
+        serverGeneration &+= 1
         refreshTask?.cancel()
         refreshTask = nil
         reauthTask?.cancel()

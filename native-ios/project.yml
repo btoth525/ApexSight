@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 94
+    CURRENT_PROJECT_VERSION: 95
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -74,13 +74,14 @@ targets:
           - remote-notification
         BGTaskSchedulerPermittedIdentifiers:
           - com.brandontoth.apexsight.refresh
-        # ATS: allow cleartext HTTP only to local/private hosts (RFC-1918 IPs, *.local,
-        # unqualified hostnames) — i.e. a Frigate box on the LAN — while keeping ATS enforced
-        # for public hosts. Remote access is HTTPS-only via the reverse proxy, so it stays
-        # compliant. NOTE: if you ever point the app at a *public* host over plain HTTP, this
-        # will block it; that setup needs the broader (and App-Review-flagged) arbitrary-loads.
+        # ATS: arbitrary loads stay ON because the Frigate base URL is user-supplied and the
+        # supported access patterns include cleartext HTTP to hosts ATS's local-networking
+        # exception does NOT cover — Tailscale CGNAT (100.64/10), custom LAN hostnames
+        # (frigate.lan / router DNS), and DDNS/public-IP-over-HTTP. There's no domain we can
+        # enumerate at build time for a user-entered host, so narrowing this would break those
+        # setups. (Narrowing to NSAllowsLocalNetworking was evaluated and reverted for that reason.)
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
     dependencies:
       - target: ApexSightWidgets
         embed: true
@@ -114,9 +115,9 @@ targets:
         CFBundleDisplayName: ApexSight Widgets
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # Match the app: local-network cleartext only, ATS enforced for public hosts.
+        # Match the app — the widget fetches camera snapshots from the same user-supplied host.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
@@ -161,10 +162,11 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # The service extension downloads notification snapshots/GIFs, which fall back to the
-        # local-HTTP Frigate base URL. Without this exception that fallback was silently ATS-
-        # blocked, so local-only users got no rich-notification image. Mirrors the app's scope.
+        # (possibly HTTP) Frigate base URL. It previously had NO ATS exception at all, so that
+        # fallback was silently blocked and local/Tailscale/DDNS users got no rich-notification
+        # image. Adding the app's arbitrary-loads scope here is purely additive — it fixes that.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
