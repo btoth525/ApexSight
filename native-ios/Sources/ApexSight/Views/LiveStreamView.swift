@@ -9,7 +9,10 @@ struct LiveStreamView: View {
     @State private var streamMode: StreamMode = .live
     @State private var isLive = false
     @State private var showPTZ = false
-    @State private var capability: CameraCapability?
+    /// Whether THIS camera actually reports PTZ features — resolved lazily on open (one
+    /// ptz/info call), so the control only appears on cameras that can really pan/tilt and the
+    /// camera wall never pays for a PTZ probe.
+    @State private var hasPTZ = false
     @State private var reloadToken = UUID()
     @State private var showChrome = true
     @State private var hideTask: Task<Void, Never>?
@@ -52,8 +55,11 @@ struct LiveStreamView: View {
         .toolbar(.hidden, for: .tabBar)
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
         .task {
-            capability = appState.capabilities.first(where: { $0.camera == camera.name })
             scheduleHideChrome()
+            // Confirm real PTZ for this one camera (off the wall path, cancels if you leave).
+            if !isBirdseye, let client = appState.client {
+                hasPTZ = await client.ptzCapable(camera: camera.name)
+            }
         }
         .onChange(of: streamMode) { _, _ in
             isLive = false
@@ -210,7 +216,7 @@ struct LiveStreamView: View {
                 .accessibilityLabel("Stream source, currently \(streamMode.rawValue)")
             }
 
-            if capability?.hasPtz == true {
+            if hasPTZ {
                 Button {
                     Haptics.select()
                     showPTZ.toggle()

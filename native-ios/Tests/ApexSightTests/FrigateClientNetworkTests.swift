@@ -139,6 +139,25 @@ struct FrigateClientNetworkTests {
         #expect(event.hasClip == true)
     }
 
+    @Test("PTZ capability is true only when ptz/info reports non-empty features")
+    func ptzCapability() async {
+        // Real PTZ camera: features present → capable.
+        MockURLProtocol.reset()
+        MockURLProtocol.respond(status: 200, body: Data(#"{"features":["pt","zoom"],"presets":[]}"#.utf8))
+        #expect(await makeClient(token: "t").ptzCapable(camera: "Front Door") == true)
+
+        // Fixed camera: ptz/info still returns 200 but features is empty → NOT capable
+        // (this is the bug that put a PTZ control on every camera).
+        MockURLProtocol.reset()
+        MockURLProtocol.respond(status: 200, body: Data(#"{"features":[],"presets":[]}"#.utf8))
+        #expect(await makeClient(token: "t").ptzCapable(camera: "Backyard") == false)
+
+        // Old Frigate with no features key → NOT capable.
+        MockURLProtocol.reset()
+        MockURLProtocol.respond(status: 200, body: Data("{}".utf8))
+        #expect(await makeClient(token: "t").ptzCapable(camera: "Garage") == false)
+    }
+
     @Test("Cameras decode from config and sort by name")
     func camerasDecode() async throws {
         MockURLProtocol.reset()

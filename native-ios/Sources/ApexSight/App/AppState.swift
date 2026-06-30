@@ -565,10 +565,6 @@ final class AppState: ObservableObject {
     /// In-flight full refresh, so concurrent callers coalesce into one network round-trip.
     private var refreshTask: Task<Void, Never>?
 
-    /// Whether the one-time background capability probe (PTZ / recordings) has run for the
-    /// current server. Reset on sign-out / server switch so each server is diagnosed once.
-    private var didAutoDiagnoseSession = false
-
     /// Bumped on every sign-out / server switch. Long-running background work (the capability
     /// probe) and the refresh-task bookkeeping capture the generation at entry and bail before
     /// publishing if it changed — so a probe that started on the previous server can't land its
@@ -650,13 +646,11 @@ final class AppState: ObservableObject {
             // image round-trip for the widget snapshot.
             Task { await cacheWidgetSnapshot(from: loadedCameras) }
             capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
-            // One-time per server: probe PTZ/recordings in the background so those feature gates
-            // light up on their own (the PTZ control, recordings timeline) instead of requiring a
-            // manual Diagnostics tap — and without adding N×3 probe calls to every 15s poll.
-            if !didAutoDiagnoseSession {
-                didAutoDiagnoseSession = true
-                Task { [weak self] in await self?.autoDiagnoseCapabilities() }
-            }
+            // NOTE: capability diagnostics (latest-frame / recordings / PTZ probes) are NOT run
+            // here. Firing N×3 requests at the Frigate server the moment the wall is loading its
+            // live streams measurably slowed first-frame time. PTZ is now detected lazily, per
+            // camera, only when you open it full-screen (see LiveStreamView); the deeper probe
+            // stays behind the manual Diagnostics button on the Health screen.
             isReachable = true
         } catch {
             // Token expired mid-session: silently re-login once and retry the whole
@@ -759,19 +753,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Background, no-spinner variant of `refreshCapabilityDiagnostics`, run once per server
-    /// from the refresh path. Keeps the manual Diagnostics button behaviour intact while making
-    /// probe-gated controls (PTZ especially) appear automatically.
-    private func autoDiagnoseCapabilities() async {
-        guard let client else { return }
-        let gen = serverGeneration
-        let diagnosed = await buildCapabilityDiagnostics(cameras: cameras, client: client)
-        // The probe is N×3 network calls long; if the user switched servers or signed out while
-        // it ran, drop the result rather than publish the previous server's PTZ/recordings flags.
-        guard serverGeneration == gen, !diagnosed.isEmpty else { return }
-        capabilities = diagnosed
-    }
-
     private func buildCapabilityDiagnostics(cameras: [FrigateCamera], client: FrigateClient) async -> [CameraCapability] {
         let knownCapabilities = Dictionary(uniqueKeysWithValues: capabilities.map { ($0.camera, $0) })
         var output: [CameraCapability] = []
@@ -794,10 +775,9 @@ final class AppState: ObservableObject {
                 capability.hasRecordings = !(try await client.recordings(camera: camera.name)).isEmpty
             } catch {}
 
-            do {
-                _ = try await client.ptzInfo(camera: camera.name)
-                capability.hasPtz = true
-            } catch {}
+            // Accurate PTZ: only true when the camera reports real pan/tilt/zoom features, not
+            // just a 200 from ptz/info (which every camera returns).
+            capability.hasPtz = await client.ptzCapable(camera: camera.name)
 
             output.append(capability)
         }
@@ -833,7 +813,6 @@ final class AppState: ObservableObject {
         subLabels = []
         stats = nil
         capabilities = []
-        didAutoDiagnoseSession = false
         recentLogs = []
         Task {
             await refresh()
@@ -859,7 +838,6 @@ final class AppState: ObservableObject {
         subLabels = []
         stats = nil
         capabilities = []
-        didAutoDiagnoseSession = false
         recentLogs = []
     }
 

@@ -206,6 +206,17 @@ struct FrigateClient {
         try await get("api/\(camera)/ptz/info")
     }
 
+    /// True only when Frigate reports actual PTZ `features` (pan/tilt/zoom) for this camera.
+    /// The `ptz/info` endpoint returns 200 for *every* camera (with an empty `features` list
+    /// for fixed cameras), so a bare success is NOT a PTZ signal — checking `features` is what
+    /// keeps the PTZ control off cameras that can't move. Yields false on any error/old Frigate.
+    func ptzCapable(camera: String) async -> Bool {
+        guard let info = try? await ptzInfo(camera: camera),
+              case .object(let dict) = info,
+              case .array(let features) = dict["features"] else { return false }
+        return !features.isEmpty
+    }
+
     /// Continuous live MJPEG stream of a camera's detect feed.
     /// Stock Frigate serves this at `/api/<camera>` (multipart/x-mixed-replace).
     /// Used as the "Lite" fallback mode when HLS fails or is unavailable.
