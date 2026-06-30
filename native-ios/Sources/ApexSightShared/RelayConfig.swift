@@ -11,9 +11,14 @@ enum RelayConfig {
     /// The relay every copy of the app talks to. Baked in so testers need zero setup.
     static let defaultURL = "https://relay.plexserver525.com"
 
-    /// Empty on purpose for the public, account-based build: push routing now comes
-    /// from the signed-in account's private ingest token (set via AccountStore), so
-    /// each user only ever receives their own alerts. (Set a value here only for a
-    /// private single-household build where every install should auto-join one code.)
-    static let defaultPairingCode = ""
+    /// Baked household pairing code for this PRIVATE single-household build (Brandon + wife).
+    /// MUST match the HA add-on's `pairing_code` (apexsight-push config.yaml → "APEX-PLEX-5250")
+    /// or the relay routes the add-on's pushes to a device set this phone isn't in.
+    ///
+    /// Why this is set (was ""): a reinstall wipes the app-group container, so the previously
+    /// stored code is lost; with an empty default `ensurePairingCode()` would mint a NEW random
+    /// code and the phone would silently stop receiving the add-on's pushes (which always target
+    /// the fixed household code). Baking the shared code makes every install/reinstall auto-rejoin
+    /// the household with zero setup. (Leave "" only for a public multi-household/account build.)
+    static let defaultPairingCode = "APEX-PLEX-5250"
 }
