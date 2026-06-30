@@ -21,6 +21,10 @@ struct LiveStreamView: View {
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
     @StateObject private var talk = TwoWayTalkController()
+    // iOS 27 on-device "Ask AI" — describe who/what is on this live camera right now.
+    @State private var aiResult: String?
+    @State private var isAnalyzingAI = false
+    @State private var showAIResult = false
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
@@ -79,6 +83,35 @@ struct LiveStreamView: View {
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.items)
         }
+        .sheet(isPresented: $showAIResult) {
+            LiveAIResultSheet(cameraName: camera.name, isLoading: isAnalyzingAI, result: aiResult)
+                .presentationDetents([.medium])
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .onChange(of: showAIResult) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
+    }
+
+    /// On-device "Ask AI": describe who/what is on this live camera using the current snapshot,
+    /// plus any legible text (plates/labels). Entirely on-device; gated to iOS 27 + AppleAI.
+    @available(iOS 27.0, *)
+    private func analyzeLive() async {
+        guard !isAnalyzingAI else { return }
+        guard let url = appState.client?.latestFrameURL(camera: camera.name),
+              let cg = ImageCache.shared.image(for: url)?.cgImage else {
+            aiResult = "Give the live view a second to load, then try again."
+            showAIResult = true
+            return
+        }
+        isAnalyzingAI = true
+        aiResult = nil
+        showAIResult = true
+        async let scene = AppleAI.describeScene(in: cg, cameraName: camera.name)
+        async let text = AppleAI.readText(in: cg)
+        let (description, legibleText) = await (scene, text)
+        var combined = description ?? "Couldn't analyze this frame on-device."
+        if let legibleText, !legibleText.isEmpty { combined += "\n\n📄 Text seen: \(legibleText)" }
+        isAnalyzingAI = false
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { aiResult = combined }
     }
 
     /// Grab the camera's current still and hand it to the share sheet (AirDrop / Messages / …).
@@ -297,6 +330,11 @@ struct LiveStreamView: View {
                     actionButton(icon: "slider.horizontal.3", label: "Controls") {
                         showCameraControls = true
                     }
+                    if #available(iOS 27.0, *), AppleAI.isAvailable {
+                        actionButton(icon: "sparkles", label: "Ask AI") {
+                            Task { await analyzeLive() }
+                        }
+                    }
                     actionButton(icon: "square.and.arrow.up", label: "Share") {
                         Task { await shareSnapshot() }
                     }
@@ -364,5 +402,51 @@ struct LiveStreamView: View {
         )
         .accessibilityLabel("Push to talk")
         .accessibilityHint("Press and hold to speak through the camera")
+    }
+}
+
+/// Bottom sheet that presents the on-device "Ask AI" result for a live camera. Pure local
+/// inference — the copy makes the privacy guarantee explicit.
+private struct LiveAIResultSheet: View {
+    let cameraName: String
+    let isLoading: Bool
+    let result: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+            HStack(spacing: GlassTheme.Space.s) {
+                Image(systemName: "sparkles").foregroundStyle(GlassTheme.accent)
+                Text("On-Device Analysis")
+                    .font(.headline)
+                    .foregroundStyle(GlassTheme.primary)
+                Spacer()
+            }
+            Text(titleize(cameraName))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(GlassTheme.secondary)
+
+            if isLoading {
+                HStack(spacing: GlassTheme.Space.s) {
+                    ProgressView().tint(.white)
+                    Text("Analyzing this frame on your iPhone…")
+                        .font(.callout)
+                        .foregroundStyle(GlassTheme.secondary)
+                }
+                .padding(.top, GlassTheme.Space.s)
+            } else if let result {
+                ScrollView {
+                    Text(result)
+                        .font(.system(size: 16))
+                        .foregroundStyle(GlassTheme.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Spacer()
+            Label("Runs entirely on your device — no image leaves your iPhone.",
+                  systemImage: "lock.shield")
+                .font(.caption)
+                .foregroundStyle(GlassTheme.tertiary)
+        }
+        .padding(GlassTheme.Space.xl)
     }
 }
