@@ -17,6 +17,8 @@ struct SearchView: View {
     /// re-sorting by time.
     @State private var resultsRanked = false
     @State private var isSearching = false
+    /// Monotonic search id — drops stale late writes from a superseded search (see performSearch).
+    @State private var searchGeneration = 0
     @State private var hasSearched = false
     @State private var errorMessage: String?
     @State private var plateQuery = ""
@@ -666,7 +668,14 @@ struct SearchView: View {
         errorMessage = nil
         answer = nil
         resultsRanked = false
-        defer { isSearching = false }
+        // Generation token: results now show BEFORE the slow LLM step finishes (so isSearching
+        // flips false mid-run), which means a NEW search can start while this one's LLM widening is
+        // still awaiting. Stamp this run and drop any late write whose generation is stale, so an
+        // old search can never clobber a newer one's results.
+        searchGeneration &+= 1
+        let gen = searchGeneration
+        // Only the latest search controls the spinner — an older run finishing must not flip it.
+        defer { if gen == searchGeneration { isSearching = false } }
 
         // Only the filters the user explicitly set in the panel.
         let fCamera = selectedCamera == "all" ? nil : selectedCamera
@@ -712,7 +721,9 @@ struct SearchView: View {
                 // …then, if Apple Intelligence is available, upgrade the wording in place.
 #if canImport(FoundationModels)
                 if AppleAI.isAvailable, #available(iOS 26, *) {
-                    if let aiAnswer = await aiAnswer(question: q, events: sorted) { answer = aiAnswer }
+                    if let aiAnswer = await aiAnswer(question: q, events: sorted), gen == searchGeneration {
+                        answer = aiAnswer
+                    }
                 }
 #endif
             } else {
@@ -764,7 +775,7 @@ struct SearchView: View {
                     )) ?? []
                     var changed = false
                     for e in aiEvents where !seen.contains(e.id) { seen.insert(e.id); merged.append(e); changed = true }
-                    if changed { results = plateFiltered(merged) }
+                    if changed, gen == searchGeneration { results = plateFiltered(merged) }
                 }
 #endif
             }
