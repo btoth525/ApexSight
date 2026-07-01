@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import UIKit
+import ImageIO
 import AppIntents
 
 /// iOS 27 A5 — a user-customizable widget. The user picks a camera (via `SelectCameraIntent`) and
@@ -53,7 +54,23 @@ enum SelectedCameraSnapshotFetcher {
         }
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return UIImage(data: data)
+        // Downsample with ImageIO so a multi-MB latest.jpg never inflates to a full bitmap in the
+        // tight widget memory budget (which would get the widget process jetsam'd → blank widget).
+        return downsampled(data, maxPixel: 900)
+    }
+
+    private static func downsampled(_ data: Data, maxPixel: CGFloat) -> UIImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        return UIImage(cgImage: cg)
     }
 }
 

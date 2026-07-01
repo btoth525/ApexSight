@@ -184,22 +184,49 @@ struct SettingsTab: View {
 
     private var intelligenceCard: some View {
         GlassCard {
-            Toggle(isOn: $appleIntelligenceEnabled) {
-                HStack(spacing: GlassTheme.Space.m) {
-                    iconTile(systemName: "apple.intelligence", tint: GlassTheme.accent)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Apple Intelligence")
-                            .font(.headline)
-                            .foregroundStyle(GlassTheme.primary)
-                        Text("On-device AI for daily summaries and natural-language search. Private — nothing leaves your iPhone.")
-                            .font(.footnote)
-                            .foregroundStyle(GlassTheme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                Toggle(isOn: $appleIntelligenceEnabled) {
+                    HStack(spacing: GlassTheme.Space.m) {
+                        iconTile(systemName: "apple.intelligence", tint: GlassTheme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Apple Intelligence")
+                                .font(.headline)
+                                .foregroundStyle(GlassTheme.primary)
+                            Text("On-device AI for scene analysis, daily summaries and natural-language search. Private — nothing leaves your iPhone.")
+                                .font(.footnote)
+                                .foregroundStyle(GlassTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
+                .tint(GlassTheme.accent)
+                .sensoryFeedback(.selection, trigger: appleIntelligenceEnabled)
+
+                if appleIntelligenceEnabled {
+                    Divider().overlay(GlassTheme.separator)
+                    NavigationLink {
+                        AICamerasSettingsView().environmentObject(appState)
+                    } label: {
+                        HStack(spacing: GlassTheme.Space.m) {
+                            iconTile(systemName: "video.badge.waveform", tint: GlassTheme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI Cameras")
+                                    .font(.headline)
+                                    .foregroundStyle(GlassTheme.primary)
+                                Text("Choose which cameras run on-device analysis.")
+                                    .font(.footnote)
+                                    .foregroundStyle(GlassTheme.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(GlassTheme.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .tint(GlassTheme.accent)
-            .sensoryFeedback(.selection, trigger: appleIntelligenceEnabled)
         }
     }
 

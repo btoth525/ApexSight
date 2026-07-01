@@ -95,16 +95,18 @@ struct LiveStreamView: View {
     /// plus any legible text (plates/labels). Entirely on-device; gated to iOS 27 + AppleAI.
     @available(iOS 27.0, *)
     private func analyzeLive() async {
-        guard !isAnalyzingAI else { return }
-        guard let url = appState.client?.latestFrameURL(camera: camera.name),
-              let cg = ImageCache.shared.image(for: url)?.cgImage else {
-            aiResult = "Give the live view a second to load, then try again."
-            showAIResult = true
-            return
-        }
+        guard !isAnalyzingAI, let client = appState.client else { return }
         isAnalyzingAI = true
         aiResult = nil
         showAIResult = true
+        // Fetch the current frame FRESH (latest.jpg ignores the local cache) so "Ask AI" always
+        // analyzes what's on the camera right now, not a stale prewarmed thumbnail.
+        guard let data = try? await client.imageData(from: client.latestFrameURL(camera: camera.name)),
+              let cg = UIImage(data: data)?.cgImage else {
+            isAnalyzingAI = false
+            aiResult = "Couldn't grab the current frame — check the connection and try again."
+            return
+        }
         async let scene = AppleAI.describeScene(in: cg, cameraName: camera.name)
         async let text = AppleAI.readText(in: cg)
         let (description, legibleText) = await (scene, text)
@@ -311,7 +313,8 @@ struct LiveStreamView: View {
                     .padding(.horizontal, GlassTheme.Space.xxl)
             }
 
-            HStack(spacing: GlassTheme.Space.xl) {
+            ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: GlassTheme.Space.l) {
                 actionButton(icon: "arrow.clockwise", label: "Refresh") {
                     isLive = false
                     reloadToken = UUID()
@@ -330,7 +333,7 @@ struct LiveStreamView: View {
                     actionButton(icon: "slider.horizontal.3", label: "Controls") {
                         showCameraControls = true
                     }
-                    if #available(iOS 27.0, *), AppleAI.visionAIAvailable {
+                    if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(camera.name) {
                         actionButton(icon: "sparkles", label: "Ask AI") {
                             Task { await analyzeLive() }
                         }
@@ -344,8 +347,14 @@ struct LiveStreamView: View {
                 }
             }
             // Morph the action-button glass as a single system (so PTZ/Talk fluidly join in).
-            .glassGroup(spacing: GlassTheme.Space.xl)
+            .glassGroup(spacing: GlassTheme.Space.l)
             .padding(.horizontal, GlassTheme.Space.l)
+            .frame(maxWidth: .infinity)   // center the row when it fits the screen
+            }
+            // Horizontal scroll so a full control set (Refresh/Snapshot/Timeline/Controls/Ask AI/
+            // Share/Talk) is never clipped off-screen on narrower iPhones — it simply doesn't
+            // scroll when everything already fits.
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .padding(.bottom, 40)
         }
     }

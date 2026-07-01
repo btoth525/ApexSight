@@ -675,42 +675,51 @@ struct SearchView: View {
         let zone = selectedZone == "all" ? nil : selectedZone
         let q = query.trimmingCharacters(in: .whitespaces)
 
-        do {
-            var found: [FrigateEvent]
+        // Optional license-plate filter from the panel — applied to whatever we're about to show.
+        let plate = plateQuery.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        func plateFiltered(_ list: [FrigateEvent]) -> [FrigateEvent] {
+            plate.isEmpty ? list : list.filter { ($0.recognizedLicensePlate ?? "").uppercased().contains(plate) }
+        }
+        // Show results the instant the fast matchers finish; the on-device LLM only WIDENS them
+        // afterward (never gates the display). Turns "search takes forever" into "instant".
+        func present(_ list: [FrigateEvent]) {
+            let shown = plateFiltered(list)
+            results = shown
+            isSearching = false
+            if shown.isEmpty { Haptics.warning() } else { Haptics.success() }
+        }
 
+        do {
             if q.isEmpty {
                 // Pure filter browse.
-                found = try await client.events(
+                let found = try await client.events(
                     camera: fCamera, label: fLabel, subLabel: subLabel,
                     zone: zone, after: afterDate, limit: 300
                 )
+                present(found)
             } else if isQuestion(q) {
-                // A question ("how many packages today", "when was the dog out") — parse it
-                // into structured filters so counts/times are precise, then answer.
+                // A question ("how many packages today") — parse into precise filters, then answer.
                 let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames)
-                found = (try await client.events(
+                let found = (try await client.events(
                     camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
                     subLabel: subLabel, zone: zone,
                     after: afterDate ?? plan.after, before: plan.before, limit: 200
                 )).filter { plan.matches($0) }
                 let sorted = found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
-                // Always compute the reliable on-device templated answer first…
+                // Reliable on-device templated answer + results show IMMEDIATELY.
                 answer = AskParser.answer(for: plan, results: sorted)
-                // …then, when Apple Intelligence is available, replace it with a natural-language
-                // answer over the same results. Falls back to the template on any failure.
+                present(sorted)
+                // …then, if Apple Intelligence is available, upgrade the wording in place.
 #if canImport(FoundationModels)
                 if AppleAI.isAvailable, #available(iOS 26, *) {
                     if let aiAnswer = await aiAnswer(question: q, events: sorted) { answer = aiAnswer }
                 }
 #endif
             } else {
-                // A description ("kid on a bike", "blue car", "Amazon"). Run ALL three
-                // matchers and merge — so we never come back empty when matching events
-                // exist, regardless of whether the server has semantic search enabled:
-                //   1. Frigate semantic search (visual + GenAI description) — best match.
-                //   2. Exact sub-label/object hits (Amazon/FedEx/a person's name/"car").
-                //   3. On-device keyword ranker over a broad recent set (kid→person,
-                //      bike→bicycle, blue/car token match) — the reliable safety net.
+                // A description ("kid on a bike", "blue car", "Amazon"). Run the three fast
+                // matchers, merge, and SHOW them right away:
+                //   1. Frigate semantic search  2. exact sub-label/object hits
+                //   3. on-device keyword ranker (reliable safety net)
                 async let semanticTask = client.safeSemanticSearch(
                     query: q, camera: fCamera, label: fLabel,
                     subLabel: subLabel, zone: zone, after: afterDate, limit: 300
@@ -727,13 +736,23 @@ struct SearchView: View {
                 func add(_ list: [FrigateEvent]) {
                     for event in list where !seen.contains(event.id) { seen.insert(event.id); merged.append(event) }
                 }
-                add(semantic)   // best-match first when the server supports it
-                add(exact)      // precise carrier/face/object hits
-                add(keyword)    // on-device relevance — guarantees results when matches exist
+                add(semantic); add(exact); add(keyword)
 
-                // 4. Apple Intelligence (on-device): parse the request into structured filters
-                //    (camera / label / zone / has-clip) and pull those events too — catches
-                //    phrasings the keyword/semantic matchers miss. Purely additive + gated.
+                // Nothing in the recent pool → query implied object labels directly, reaching back.
+                if merged.isEmpty {
+                    for label in AskParser.impliedLabels(in: q) {
+                        let evs = (try? await client.events(
+                            camera: fCamera, label: label, zone: zone, after: afterDate, limit: 100
+                        )) ?? []
+                        add(evs)
+                    }
+                }
+                resultsRanked = true
+                present(merged)   // ← results on screen NOW; the LLM step below is a bonus.
+
+                // Apple Intelligence (on-device): parse the request into structured filters and pull
+                // those events too — additive, and it runs AFTER results are already visible, so slow
+                // model spin-up never delays the search. New hits are appended when they arrive.
 #if canImport(FoundationModels)
                 if AppleAI.isAvailable, #available(iOS 26, *),
                    let aiq = await AppleAI.parseQuery(q, cameras: appState.cameras.map(\.name), labels: appState.labels),
@@ -743,35 +762,12 @@ struct SearchView: View {
                         zone: zone ?? aiq.zone, after: afterDate,
                         limit: 200, hasClip: aiq.hasClip ? true : nil
                     )) ?? []
-                    add(aiEvents)
+                    var changed = false
+                    for e in aiEvents where !seen.contains(e.id) { seen.insert(e.id); merged.append(e); changed = true }
+                    if changed { results = plateFiltered(merged) }
                 }
 #endif
-
-                // Last resort: nothing matched the recent pool — query the implied object
-                // labels directly (e.g. "kid on a bike" → all person + bicycle events),
-                // which can reach further back than the mixed recent set.
-                if merged.isEmpty {
-                    for label in AskParser.impliedLabels(in: q) {
-                        let evs = (try? await client.events(
-                            camera: fCamera, label: label, zone: zone, after: afterDate, limit: 100
-                        )) ?? []
-                        add(evs)
-                    }
-                }
-                found = merged
-                resultsRanked = true
             }
-
-            // Optional license-plate filter from the panel.
-            let plate = plateQuery.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            if !plate.isEmpty {
-                found = found.filter { ($0.recognizedLicensePlate ?? "").uppercased().contains(plate) }
-            }
-
-            results = found
-            // Tactile confirmation the search finished: a soft success for hits, a
-            // gentle warning when nothing matched.
-            if found.isEmpty { Haptics.warning() } else { Haptics.success() }
         } catch {
             if !error.isCancellation {
                 errorMessage = error.localizedDescription

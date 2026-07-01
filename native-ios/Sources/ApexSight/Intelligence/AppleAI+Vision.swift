@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import ImageIO
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -78,6 +79,78 @@ extension AppleAI {
         #else
         return []
         #endif
+    }
+
+    /// Analyze a short event as a SEQUENCE of frames (from its preview GIF) so the AI understands
+    /// motion/activity — "a person walked up, left a package, and left" — not just one still frame.
+    /// Vision reads each frame; the on-device language model narrates the sequence. Returns nil if
+    /// the GIF has too few frames or nothing was observed (caller falls back to single-frame).
+    static func describeEvent(gifData: Data, cameraName: String) async -> String? {
+        let frames = extractFrames(from: gifData, maxFrames: 6)
+        guard frames.count >= 2 else { return nil }
+
+        var timeline: [String] = []
+        for (i, frame) in frames.enumerated() {
+            let facts = await visionObservations(in: frame)
+            if !facts.isEmpty { timeline.append("Moment \(i + 1): \(facts.joined(separator: ", "))") }
+        }
+        guard !timeline.isEmpty else { return nil }
+
+        // OCR across frames from the end (subjects are usually closest/clearest by the last frames).
+        var legibleText: String?
+        for frame in frames.reversed() {
+            if let t = await readText(in: frame) { legibleText = t; break }
+        }
+
+        let observations = timeline.joined(separator: "\n")
+
+        #if canImport(FoundationModels)
+        if #available(iOS 26, *), SystemLanguageModel.default.isAvailable {
+            let session = LanguageModelSession(instructions: eventNarrationInstructions(cameraName: cameraName))
+            var prompt = "Time-ordered observations from the clip:\n\(observations)"
+            if let legibleText { prompt += "\nText or license plate read in the clip: \(legibleText)" }
+            if let response = try? await session.respond(to: prompt) {
+                let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { return text }
+            }
+        }
+        #endif
+
+        // Factual fallback with no on-device language model.
+        var summary = timeline.joined(separator: "; ")
+        if let legibleText { summary += "\n\n📄 Text seen: \(legibleText)" }
+        return summary
+    }
+
+    /// The temporal-narration prompt — deliberately strong: chronological, movement-focused, no
+    /// hallucination, security-log tone, plate verbatim.
+    private static func eventNarrationInstructions(cameraName: String) -> String {
+        """
+        You are a home-security analyst writing a short, factual log entry for a camera named \
+        "\(cameraName)". You are given time-ordered observations of a brief event clip — each line is \
+        what an on-device vision model detected at one moment, in chronological order. Write 1–2 \
+        concise, natural sentences describing what HAPPENED across the clip: who or what appeared, what \
+        they did, and how the scene changed over time (arrived, approached, left something, walked \
+        past, drove by, lingered, departed). Emphasize movement and the change between moments rather \
+        than listing each moment. If a license plate or text was read, include it verbatim. Never \
+        invent anything that is not in the observations. No preamble and never say "frame", "moment", \
+        or "the clip shows" — just the log entry itself, e.g.: "A delivery driver walked up to the \
+        porch, set down a package, and returned to a white van."
+        """
+    }
+
+    /// Sample up to `maxFrames` evenly-spaced frames from animated image data (a Frigate preview GIF).
+    private static func extractFrames(from data: Data, maxFrames: Int) -> [CGImage] {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return [] }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return [] }
+        let n = min(maxFrames, count)
+        var frames: [CGImage] = []
+        for i in 0..<n {
+            let index = n == 1 ? 0 : Int((Double(i) * Double(count - 1) / Double(n - 1)).rounded())
+            if let cg = CGImageSourceCreateImageAtIndex(source, index, nil) { frames.append(cg) }
+        }
+        return frames
     }
 
     /// Read clearly legible text in a frame (license plates, package labels, signage) via Vision's

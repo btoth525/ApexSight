@@ -9,7 +9,6 @@ struct EventDetailView: View {
     @State private var actionIsError = false
     @State private var isActing = false
     @StateObject private var clipModel = ClipPlayerModel()
-    @State private var isDownloading = false
     @State private var downloadFeedback: String?
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
@@ -92,6 +91,14 @@ struct EventDetailView: View {
                 isLoadingAIDescription = false
             }
         }
+        .task(id: event.id) {
+            // On-device analysis: show the saved result instantly, or run it once automatically —
+            // but only for cameras the user enabled in Settings → Apple Intelligence → AI Cameras.
+            if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(event.camera) {
+                onDeviceAnalysis = nil
+                await loadOrRunAnalysis()
+            }
+        }
         .sheet(isPresented: $showSimilarSheet) {
             SimilarEventsSheet(sourceEvent: event, events: similarEvents, errorMessage: similarError)
                 .environmentObject(appState)
@@ -125,7 +132,7 @@ struct EventDetailView: View {
     /// phone via FoundationModels image input — no frame leaves the device.
     @ViewBuilder
     private var onDeviceAICard: some View {
-        if #available(iOS 27.0, *), AppleAI.visionAIAvailable {
+        if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(event.camera) {
             GlassCard {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                     HStack(spacing: GlassTheme.Space.s) {
@@ -134,24 +141,33 @@ struct EventDetailView: View {
                         SectionHeader("On-Device Analysis")
                         Spacer()
                     }
-                    if let onDeviceAnalysis {
+                    if isAnalyzingOnDevice && onDeviceAnalysis == nil {
+                        HStack(spacing: GlassTheme.Space.s) {
+                            ProgressView().tint(.white).scaleEffect(0.7)
+                            Text("Analyzing on your iPhone…")
+                                .font(.system(size: 13))
+                                .foregroundStyle(GlassTheme.secondary)
+                        }
+                    } else if let onDeviceAnalysis {
                         Text(onDeviceAnalysis)
                             .font(.system(size: 15))
                             .foregroundStyle(GlassTheme.primary)
                             .fixedSize(horizontal: false, vertical: true)
+                        Button {
+                            Task { await analyzeOnDevice(force: true) }
+                        } label: {
+                            Label("Re-analyze", systemImage: "arrow.clockwise")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(GlassTheme.accent)
+                        .disabled(isAnalyzingOnDevice)
                     } else {
-                        Text("Analyze this frame privately on your iPhone — describe who or what is in view.")
+                        Text("Couldn't analyze this frame.")
                             .font(.system(size: 13))
                             .foregroundStyle(GlassTheme.secondary)
-                        Button {
-                            Task { await analyzeOnDevice() }
-                        } label: {
-                            HStack(spacing: 6) {
-                                if isAnalyzingOnDevice {
-                                    ProgressView().tint(.white).scaleEffect(0.7)
-                                }
-                                Text(isAnalyzingOnDevice ? "Analyzing…" : "Analyze on device")
-                            }
+                        Button { Task { await analyzeOnDevice(force: true) } } label: {
+                            Text("Try again")
                         }
                         .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                         .disabled(isAnalyzingOnDevice)
@@ -161,28 +177,57 @@ struct EventDetailView: View {
         }
     }
 
-    /// Pull the already-loaded snapshot from the image cache and run on-device scene description.
+    /// Load a saved analysis for this event, or run one automatically the first time it's opened —
+    /// so the user never has to press a button and the result survives closing the app.
     @available(iOS 27.0, *)
-    private func analyzeOnDevice() async {
-        guard !isAnalyzingOnDevice,
-              let url = appState.client?.eventSnapshotURL(id: event.id),
-              let cgImage = ImageCache.shared.image(for: url)?.cgImage else {
-            withAnimation { onDeviceAnalysis = "Snapshot isn't ready yet — open the snapshot first, then try again." }
+    private func loadOrRunAnalysis() async {
+        if let cached = AIAnalysisStore.load(event.id) {
+            onDeviceAnalysis = cached
             return
         }
-        Haptics.tap()
+        await analyzeOnDevice(force: false)
+    }
+
+    /// Fetch the event snapshot FRESH (the image cache is only warmed on the Snapshot tab, so an
+    /// event showing its clip has no cached frame — that's why analysis used to say "waiting for
+    /// snapshot"), run scene description + text OCR on-device, show it, and persist it.
+    @available(iOS 27.0, *)
+    private func analyzeOnDevice(force: Bool) async {
+        guard !isAnalyzingOnDevice, let client = appState.client else { return }
+        if force { Haptics.tap() }
         isAnalyzingOnDevice = true
         defer { isAnalyzingOnDevice = false }
-        // Scene description + any legible text (license plates, package labels) — both on-device.
-        async let scene = AppleAI.describeScene(in: cgImage, cameraName: event.camera)
-        async let text = AppleAI.readText(in: cgImage)
-        let (description, legibleText) = await (scene, text)
-        var combined = description ?? "Couldn't analyze this frame on-device."
-        if let legibleText, !legibleText.isEmpty {
-            combined += "\n\n📄 Text seen: \(legibleText)"
+
+        var combined: String?
+
+        // Prefer the animated preview GIF — a short sequence lets the AI read MOTION ("walked up,
+        // left a package, drove off"), which is far better than a single still. Falls back to the
+        // snapshot when there's no clip or too few frames.
+        if hasClip,
+           let gifData = try? await client.imageData(from: client.eventPreviewGifURL(id: event.id)) {
+            combined = await AppleAI.describeEvent(gifData: gifData, cameraName: event.camera)
         }
+
+        if combined == nil,
+           let data = try? await client.imageData(from: client.eventSnapshotURL(id: event.id)),
+           let cgImage = UIImage(data: data)?.cgImage {
+            async let scene = AppleAI.describeScene(in: cgImage, cameraName: event.camera)
+            async let text = AppleAI.readText(in: cgImage)
+            let (description, legibleText) = await (scene, text)
+            if let description {
+                var single = description
+                if let legibleText, !legibleText.isEmpty { single += "\n\n📄 Text seen: \(legibleText)" }
+                combined = single
+            }
+        }
+
+        guard let result = combined else {
+            if force { withAnimation { onDeviceAnalysis = nil } }
+            return
+        }
+        AIAnalysisStore.save(event.id, result)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            onDeviceAnalysis = combined
+            onDeviceAnalysis = result
         }
     }
 
@@ -357,18 +402,8 @@ struct EventDetailView: View {
                         .buttonStyle(.plain)
                         .disabled(isPreparingShare)
                         .accessibilityLabel(isPreparingShare ? "Preparing clip to share" : "Share clip")
-
-                        Button {
-                            Task { await downloadClip() }
-                        } label: {
-                            Image(systemName: isDownloading ? "arrow.down.circle" : "arrow.down.circle.fill")
-                                .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(GlassTheme.accent)
-                                .symbolEffect(.pulse, isActive: isDownloading)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isDownloading)
-                        .accessibilityLabel(isDownloading ? "Saving clip" : "Save clip to Photos")
+                        // (Save-to-Photos button removed — it errored on the Photos write; Share
+                        // covers saving via the share sheet's "Save Video", which works reliably.)
                     }
                 }
 
@@ -433,26 +468,6 @@ struct EventDetailView: View {
         }
     }
 
-    private func downloadClip() async {
-        guard let client = appState.client else { return }
-        Haptics.tap()
-        isDownloading = true
-        downloadFeedback = nil
-        defer { isDownloading = false }
-        do {
-            let url = client.eventClipURL(id: event.id)
-            try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(event.id)")
-            Haptics.success()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                downloadFeedback = "Saved to Photos."
-            }
-        } catch {
-            Haptics.error()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                downloadFeedback = error.localizedDescription
-            }
-        }
-    }
 
     private var actionsCard: some View {
         GlassCard {

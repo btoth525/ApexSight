@@ -62,7 +62,13 @@ final class AppState: ObservableObject {
         didSet { updateAppBadge() }
     }
     /// Active bounding boxes per camera, keyed by camera name, auto-cleared on event end.
-    @Published var liveDetections: [String: [LiveDetection]] = [:]
+    /// Republished at most ~7 Hz (see `scheduleDetectionFlush`) — the raw WebSocket feed mutates
+    /// this several times per second per tracked object, and every mutation re-renders EVERY view
+    /// observing AppState (Settings, Search, the tab bar…). Coalescing kills that app-wide churn.
+    @Published private(set) var liveDetections: [String: [LiveDetection]] = [:]
+    /// Working copy that absorbs the high-frequency updates; flushed into `liveDetections` on a tick.
+    private var pendingDetections: [String: [LiveDetection]] = [:]
+    private var detectionFlushScheduled = false
     /// True when the birdseye composite stream is available in go2rtc.
     @Published var hasBirdseye = false
     /// Camera names with a `<name>_twoway` go2rtc stream — eligible for push-to-talk.
@@ -372,8 +378,9 @@ final class AppState: ObservableObject {
               let w = item.frameWidth, w > 0,
               let h = item.frameHeight, h > 0 else {
             if change == .end {
-                liveDetections[item.camera]?.removeAll { $0.id == item.id }
-                if liveDetections[item.camera]?.isEmpty == true { liveDetections.removeValue(forKey: item.camera) }
+                pendingDetections[item.camera]?.removeAll { $0.id == item.id }
+                if pendingDetections[item.camera]?.isEmpty == true { pendingDetections.removeValue(forKey: item.camera) }
+                scheduleDetectionFlush()
             }
             return
         }
@@ -382,10 +389,27 @@ final class AppState: ObservableObject {
             width: (box[2] - box[0]) / w, height: (box[3] - box[1]) / h
         )
         let det = LiveDetection(id: item.id, label: item.displayLabel, normBox: normBox)
-        var current = liveDetections[item.camera] ?? []
+        var current = pendingDetections[item.camera] ?? []
         current.removeAll { $0.id == item.id }
         if change != .end { current.append(det) }
-        if current.isEmpty { liveDetections.removeValue(forKey: item.camera) } else { liveDetections[item.camera] = current }
+        if current.isEmpty { pendingDetections.removeValue(forKey: item.camera) } else { pendingDetections[item.camera] = current }
+        scheduleDetectionFlush()
+    }
+
+    /// Publish the coalesced detections at most ~7 Hz so a burst of WebSocket frames re-renders the
+    /// UI a few times a second, not dozens. Smooth enough for bounding boxes; keeps the rest of the
+    /// app (Settings/Search) from redrawing on every frame during active motion.
+    private func scheduleDetectionFlush() {
+        guard !detectionFlushScheduled else { return }
+        detectionFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let self else { return }
+            self.detectionFlushScheduled = false
+            if self.liveDetections != self.pendingDetections {
+                self.liveDetections = self.pendingDetections
+            }
+        }
     }
 
     private func upsertEvent(_ item: FrigateEvent) {
