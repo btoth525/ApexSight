@@ -5,7 +5,9 @@ import Foundation
 /// Stored as the DISABLED set so newly-added cameras are enabled by default.
 enum AICameraSettings {
     private static let disabledKey = "ai.cameras.disabled"
-    private static var defaults: UserDefaults { .standard }
+    // App Group so the Notification Service Extension (a separate process) can honor per-camera AI
+    // when it enriches a closed-app push. Falls back to standard defaults if the suite is missing.
+    private static var defaults: UserDefaults { UserDefaults(suiteName: ApexAppGroup.identifier) ?? .standard }
 
     static var disabledCameras: Set<String> {
         get { Set(defaults.stringArray(forKey: disabledKey) ?? []) }

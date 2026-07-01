@@ -4,7 +4,9 @@ struct SettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var path = NavigationPath()
     @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
-    @AppStorage("appleIntelligenceEnabled") private var appleIntelligenceEnabled = true
+    // App-group store so the Notification Service Extension can read the master AI toggle.
+    @AppStorage("appleIntelligenceEnabled", store: UserDefaults(suiteName: ApexAppGroup.identifier))
+    private var appleIntelligenceEnabled = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))

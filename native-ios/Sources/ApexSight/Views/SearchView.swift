@@ -632,8 +632,8 @@ struct SearchView: View {
         guard let client = appState.client else { return }
         loadingBrowse = true
         defer { loadingBrowse = false }
-        // Pull a deep window so every sub-label (Amazon, FedEx, your truck, faces) surfaces.
-        if let fetched = try? await client.events(limit: 600) {
+        // Recent window for the browse/smart-album groups — smaller = faster Explore-tab open.
+        if let fetched = try? await client.events(limit: 300) {
             browseEvents = fetched
         } else if browseEvents.isEmpty {
             // Only fall back to live events when we have nothing — a transient refresh
@@ -733,7 +733,7 @@ struct SearchView: View {
                 //   3. on-device keyword ranker (reliable safety net)
                 async let semanticTask = client.safeSemanticSearch(
                     query: q, camera: fCamera, label: fLabel,
-                    subLabel: subLabel, zone: zone, after: afterDate, limit: 300
+                    subLabel: subLabel, zone: zone, after: afterDate, limit: 200
                 )
                 let exact = await exactMatches(q, client: client, camera: fCamera, zone: zone)
                 let keyword = await keywordFallback(
@@ -841,9 +841,12 @@ struct SearchView: View {
         _ q: String, client: FrigateClient,
         camera: String?, label: String?, subLabel: String?, zone: String?
     ) async -> [FrigateEvent] {
+        // Recency-biased pool — Frigate returns newest first, so a smaller window is far faster to
+        // fetch/decode and still covers almost every real query. Deep/older matches are handled by
+        // the implied-label direct queries in performSearch, so this stays tight for speed.
         let pool = (try? await client.events(
             camera: camera, label: label, subLabel: subLabel, zone: zone,
-            after: afterDate, limit: 600
+            after: afterDate, limit: 250
         )) ?? []
 
         let implied = Set(AskParser.impliedLabels(in: q))
@@ -878,8 +881,12 @@ struct SearchView: View {
     private func isQuestion(_ q: String) -> Bool {
         let l = q.lowercased()
         if l.hasSuffix("?") { return true }
-        let starters = ["how ", "when ", "did ", "was ", "is ", "are ", "any ", "who "]
+        let starters = ["how ", "when ", "did ", "was ", "is ", "are ", "any ", "who ",
+                        "what", "whats", "what's", "has ", "have ", "were ", "show me any",
+                        "anything", "anyone", "tell me"]
         if starters.contains(where: l.hasPrefix) { return true }
+        // Recap-style phrasings ("what's been going on today", "what happened at the door").
         return l.contains("how many") || l.contains("last seen") || l.contains("when did")
+            || l.contains("going on") || l.contains("happened") || l.contains("happening")
     }
 }

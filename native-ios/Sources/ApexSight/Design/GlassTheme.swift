@@ -90,6 +90,9 @@ struct GlassCard<Content: View>: View {
         let shape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
         content
             .padding(GlassTheme.Space.l)
+            // Fill the container width so a single wide row can't stretch the card past the screen
+            // (which made pages like Settings drift horizontally); also keeps cards uniform.
+            .frame(maxWidth: .infinity, alignment: .leading)
             // Content cards stay a calm dark frosted surface (HIG: Liquid Glass is for the
             // control layer, not large content backgrounds), with a top-lit edge for depth.
             .background(material, in: shape)

@@ -14,7 +14,9 @@ enum AppleAI {
     /// User master switch (Settings → "Apple Intelligence"). Default on; flipping it off hides
     /// every AI affordance regardless of hardware.
     static var userEnabled: Bool {
-        UserDefaults.standard.object(forKey: "appleIntelligenceEnabled") as? Bool ?? true
+        // App Group so the Notification Service Extension can honor the master toggle too.
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier) ?? .standard
+        return defaults.object(forKey: "appleIntelligenceEnabled") as? Bool ?? true
     }
 
     /// Whether this device can run the on-device model at all (SDK present, iOS 26+, Apple-
