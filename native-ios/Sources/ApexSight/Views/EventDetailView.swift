@@ -207,13 +207,13 @@ struct EventDetailView: View {
         // snapshot when there's no clip or too few frames.
         if hasClip,
            let gifData = try? await client.imageData(from: client.eventPreviewGifURL(id: event.id)) {
-            combined = await AppleAI.describeEvent(gifData: gifData, cameraName: event.camera)
+            combined = await AppleAI.describeEvent(gifData: gifData, cameraName: event.camera, knownLabel: event.label)
         }
 
         if combined == nil,
            let data = try? await client.imageData(from: client.eventSnapshotURL(id: event.id)),
            let cgImage = UIImage(data: data)?.cgImage {
-            async let scene = AppleAI.describeScene(in: cgImage, cameraName: event.camera)
+            async let scene = AppleAI.describeScene(in: cgImage, cameraName: event.camera, knownLabel: event.label)
             async let text = AppleAI.readText(in: cgImage)
             let (description, legibleText) = await (scene, text)
             if let description {

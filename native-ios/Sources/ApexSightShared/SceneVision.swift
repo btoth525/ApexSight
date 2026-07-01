@@ -25,15 +25,17 @@ public enum SceneVision {
     public static func summarize(cgImage: CGImage) -> String? {
         var facts: [String] = []
 
+        // Deliberately LIGHT for the notification extension: people count + pets + text only. These
+        // are fast (no heavy image-classifier model to load, which was delaying the alert), and they
+        // add exactly what Frigate's own label ("Person"/"Package") doesn't — how many, pets, plates.
         let humans = VNDetectHumanRectanglesRequest()
         let animals = VNRecognizeAnimalsRequest()
-        let classify = VNClassifyImageRequest()
         let text = VNRecognizeTextRequest()
         text.recognitionLevel = .fast
         text.usesLanguageCorrection = false
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([humans, animals, classify, text])
+        try? handler.perform([humans, animals, text])
 
         if let people = humans.results, !people.isEmpty {
             facts.append(people.count == 1 ? "1 person" : "\(people.count) people")
@@ -43,28 +45,35 @@ public enum SceneVision {
                 facts.append("a \(label)")
             }
         }
-        // Only fall back to scene classification when there were no people/animals — those are the
-        // security-relevant subjects; scene labels ("driveway") are context.
-        if facts.isEmpty, let scenes = classify.results {
-            let top = scenes
-                .filter { $0.confidence > 0.45 && $0.hasMinimumPrecision(0.5, forRecall: 0.4) }
-                .prefix(2)
-                .map { $0.identifier.replacingOccurrences(of: "_", with: " ") }
-            facts.append(contentsOf: top)
-        }
 
         var summary: String? = facts.isEmpty ? nil : facts.joined(separator: ", ")
 
-        // Append a legible plate/label if the recognizer found one.
+        // Append a legible plate/label — but Frigate BURNS a timestamp + "person: 88%" overlay into
+        // snapshots, so filter that out or OCR "reads" the clock. Only real text survives.
         if let obs = text.results {
             let read = obs.compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespaces) }
-                .filter { $0.count >= 3 }
+                .filter { isRealText($0) }
             if let first = read.first {
                 summary = (summary.map { $0 + " · " } ?? "") + "“\(first)”"
             }
         }
 
         return (summary?.isEmpty == false) ? summary : nil
+    }
+
+    /// Reject Frigate's burned-in overlay so OCR doesn't surface the clock/label as "text":
+    /// dates (06/30/2026), times (17:39:50), detector scores ("person: 88%"), and junk.
+    public static func isRealText(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 3 else { return false }
+        let lower = t.lowercased()
+        // date / time / score overlays
+        if t.range(of: #"^\d{1,2}[/:.\-]\d{1,2}([/:.\-]\d{2,4})?$"#, options: .regularExpression) != nil { return false }
+        if t.range(of: #"^\d{1,2}:\d{2}(:\d{2})?$"#, options: .regularExpression) != nil { return false }
+        if lower.range(of: #"^(person|car|truck|dog|cat|bird|package|bicycle|motorcycle|bus|face)\s*:?\s*\d"#, options: .regularExpression) != nil { return false }
+        // must contain at least a couple of letters/digits and not be mostly punctuation
+        let alnum = t.filter { $0.isLetter || $0.isNumber }
+        return alnum.count >= 3
     }
     #endif
 

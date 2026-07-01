@@ -24,8 +24,14 @@ extension AppleAI {
     /// Describe who/what is visible in a camera frame, fully on-device. Vision classifies the scene
     /// and counts people/pets; the on-device text model (when available) turns those facts into a
     /// natural sentence. Returns nil only if Vision finds nothing legible.
-    static func describeScene(in image: CGImage, cameraName: String) async -> String? {
-        let facts = await visionObservations(in: image)
+    static func describeScene(in image: CGImage, cameraName: String, knownLabel: String? = nil) async -> String? {
+        var facts = await visionObservations(in: image)
+        // Frigate's own detection is authoritative (Vision's person detector misses partial/indoor
+        // people), so seed it if Vision didn't independently surface it.
+        if let knownLabel, !knownLabel.isEmpty,
+           !facts.contains(where: { $0.localizedCaseInsensitiveContains(knownLabel) }) {
+            facts.insert("a \(knownLabel)", at: 0)
+        }
         guard !facts.isEmpty else { return nil }
         let factual = facts.joined(separator: ", ")
 
@@ -85,7 +91,7 @@ extension AppleAI {
     /// motion/activity — "a person walked up, left a package, and left" — not just one still frame.
     /// Vision reads each frame; the on-device language model narrates the sequence. Returns nil if
     /// the GIF has too few frames or nothing was observed (caller falls back to single-frame).
-    static func describeEvent(gifData: Data, cameraName: String) async -> String? {
+    static func describeEvent(gifData: Data, cameraName: String, knownLabel: String? = nil) async -> String? {
         let frames = extractFrames(from: gifData, maxFrames: 6)
         guard frames.count >= 2 else { return nil }
 
@@ -93,6 +99,11 @@ extension AppleAI {
         for (i, frame) in frames.enumerated() {
             let facts = await visionObservations(in: frame)
             if !facts.isEmpty { timeline.append("Moment \(i + 1): \(facts.joined(separator: ", "))") }
+        }
+        // Anchor on Frigate's authoritative detection so the narration names the object even when
+        // Vision's frame-by-frame detectors miss a partial/indoor subject.
+        if let knownLabel, !knownLabel.isEmpty {
+            timeline.insert("The camera detected a \(knownLabel).", at: 0)
         }
         guard !timeline.isEmpty else { return nil }
 
@@ -165,7 +176,9 @@ extension AppleAI {
                 }
                 let lines = observations
                     .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { $0.count >= 2 }
+                    // Drop Frigate's burned-in timestamp / "person: 88%" overlay so OCR returns
+                    // only real text (plates, package labels), not the clock.
+                    .filter { SceneVision.isRealText($0) }
                 continuation.resume(returning: lines.isEmpty ? nil : lines.joined(separator: " · "))
             }
             request.recognitionLevel = .accurate

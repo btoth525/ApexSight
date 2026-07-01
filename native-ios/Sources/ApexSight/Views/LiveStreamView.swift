@@ -99,9 +99,9 @@ struct LiveStreamView: View {
         isAnalyzingAI = true
         aiResult = nil
         showAIResult = true
-        // Fetch the current frame FRESH (latest.jpg ignores the local cache) so "Ask AI" always
-        // analyzes what's on the camera right now, not a stale prewarmed thumbnail.
-        guard let data = try? await client.imageData(from: client.latestFrameURL(camera: camera.name)),
+        // Fetch the current frame FRESH and CLEAN (overlays off) so Vision sees the real scene, not
+        // Frigate's burned-in timestamp/box. latest.jpg ignores the local cache, so it's live.
+        guard let data = try? await client.imageData(from: client.cleanFrameURL(camera: camera.name)),
               let cg = UIImage(data: data)?.cgImage else {
             isAnalyzingAI = false
             aiResult = "Couldn't grab the current frame — check the connection and try again."

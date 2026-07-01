@@ -249,6 +249,19 @@ struct FrigateClient {
         baseURL.appending(path: "api/\(camera)/latest.jpg")
     }
 
+    /// Live frame with Frigate's overlays OFF (timestamp, bounding box, motion, regions) — for
+    /// on-device AI analysis, so Vision/OCR see the real scene instead of the burned-in clock.
+    func cleanFrameURL(camera: String) -> URL {
+        var comps = URLComponents(url: baseURL.appending(path: "api/\(camera)/latest.jpg"), resolvingAgainstBaseURL: false)
+        comps?.queryItems = [
+            URLQueryItem(name: "timestamp", value: "0"),
+            URLQueryItem(name: "bbox", value: "0"),
+            URLQueryItem(name: "motion", value: "0"),
+            URLQueryItem(name: "regions", value: "0"),
+        ]
+        return comps?.url ?? baseURL.appending(path: "api/\(camera)/latest.jpg")
+    }
+
     /// A request with Frigate auth headers applied — for custom streamers (MJPEG).
     func authedRequest(for url: URL) -> URLRequest {
         seedCookie(for: url)
