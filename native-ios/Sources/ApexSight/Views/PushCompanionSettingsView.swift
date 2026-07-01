@@ -112,6 +112,19 @@ struct PushCompanionSettingsView: View {
                 Spacer()
                 if s.spinning {
                     ProgressView().tint(GlassTheme.accent)
+                } else if permissionDenied {
+                    // Notifications are denied at the OS level — re-requesting authorization is a
+                    // no-op iOS answers instantly with .denied. The only real fix is the Settings
+                    // app, so send the user straight there.
+                    Button("Open Settings") {
+                        Haptics.tap()
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GlassTheme.accent)
+                    .accessibilityLabel("Open iOS Settings to enable notifications")
                 } else if s.showRetry {
                     Button("Retry") {
                         Haptics.tap()
@@ -182,6 +195,7 @@ struct PushCompanionSettingsView: View {
                         Image(systemName: copiedCode ? "checkmark" : "doc.on.doc")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(copiedCode ? GlassTheme.green : GlassTheme.accent)
+                            .hitTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(copiedCode ? "Pairing code copied" : "Copy pairing code")

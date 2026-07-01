@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var path = NavigationPath()
-    @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     // App-group store so the Notification Service Extension can read the master AI toggle.
     @AppStorage("appleIntelligenceEnabled", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var appleIntelligenceEnabled = true
@@ -30,7 +29,6 @@ struct SettingsTab: View {
                     VStack(spacing: GlassTheme.Space.l) {
                         serverCard
                         securityCard
-                        appearanceCard
                         spotlightCard
 
                         // Apple Intelligence — only on devices that can actually run the model.
@@ -52,6 +50,9 @@ struct SettingsTab: View {
                     }
                     .padding(GlassTheme.Space.l)
                 }
+                // Kill the rubber-band bounce when the content already fits (and prevent any
+                // stray horizontal slide of the whole page reported at default text size).
+                .scrollBounceBehavior(.basedOnSize)
                 .softScrollEdges()
             }
             .navigationTitle("Settings")
@@ -170,19 +171,6 @@ struct SettingsTab: View {
     }
 
     // MARK: - Appearance
-
-    private var appearanceCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                SectionHeader("Appearance")
-                HStack(spacing: GlassTheme.Space.m) {
-                    appearanceOption(label: "System", icon: "circle.lefthalf.filled", value: "system")
-                    appearanceOption(label: "Dark", icon: "moon.fill", value: "dark")
-                    appearanceOption(label: "Light", icon: "sun.max.fill", value: "light")
-                }
-            }
-        }
-    }
 
     // MARK: - Apple Intelligence
 
@@ -350,33 +338,6 @@ struct SettingsTab: View {
             .foregroundStyle(tint)
             .frame(width: 38, height: 38)
             .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
-    }
-
-    private func appearanceOption(label: String, icon: String, value: String) -> some View {
-        let selected = colorSchemePreference == value
-        return Button {
-            Haptics.select()
-            colorSchemePreference = value
-        } label: {
-            VStack(spacing: GlassTheme.Space.s) {
-                Image(systemName: icon)
-                    .font(.system(.title3, design: .default).weight(.semibold))
-                    .foregroundStyle(selected ? Color.black : GlassTheme.primary)
-                    .frame(width: 52, height: 52)
-                    .background(
-                        selected ? GlassTheme.accent : GlassTheme.surfaceHigh,
-                        in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
-                    )
-                Text(label)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(selected ? GlassTheme.accent : GlassTheme.secondary)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label) appearance")
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {

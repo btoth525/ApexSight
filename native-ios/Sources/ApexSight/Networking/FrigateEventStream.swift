@@ -104,9 +104,12 @@ final class FrigateEventStream {
     }
 
     private func receiveNext() {
-        task?.receive { [weak self] result in
+        // Capture THIS socket so a late result from a previous, replaced task can't drive
+        // events or tear down a freshly reconnected socket (mirrors startHeartbeat's guard).
+        let socket = task
+        socket?.receive { [weak self] result in
             Task { @MainActor in
-                guard let self, self.isActive else { return }
+                guard let self, self.isActive, self.task === socket else { return }
                 switch result {
                 case .success(let message):
                     if self.pendingConnectedEvent {

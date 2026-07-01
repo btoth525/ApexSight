@@ -403,12 +403,20 @@ struct LiveStreamView: View {
                 .foregroundStyle(active ? GlassTheme.red : GlassTheme.secondary)
         }
         .contentShape(Circle())
+        // Push-to-talk lives inside the horizontal control ScrollView, so a plain
+        // DragGesture(minimumDistance: 0) loses the scroll-vs-press arbitration and the row
+        // scrolls instead of talking. Sequencing a short LongPress *before* the drag claims the
+        // touch (a scroll needs movement; the long-press needs the finger to hold still briefly),
+        // then the trailing drag keeps Talk engaged for as long as the finger stays down.
         .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+            LongPressGesture(minimumDuration: 0.12, maximumDistance: 60)
+                .sequenced(before: DragGesture(minimumDistance: 0))
+                .onChanged { value in
+                    // `.second(true, _)` = the long-press fired and the hold/drag is now active.
+                    guard case .second(true, _) = value else { return }
                     guard talk.status == .idle, let client = appState.client else { return }
                     Haptics.tap()
-                    Task { await talk.start(cameraTwoWaySource: "\(camera.name)_twoway", client: client) }
+                    talk.begin(cameraTwoWaySource: "\(camera.name)_twoway", client: client)
                 }
                 .onEnded { _ in talk.stop() }
         )

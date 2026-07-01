@@ -44,7 +44,13 @@ enum LiveActivityPushManager {
         }
     }
 
+    /// Ids already being observed, so an activity that's BOTH present at launch (the
+    /// `activities` loop) AND later re-emitted by `activityUpdates` isn't tracked twice —
+    /// which would stream the same token to the relay from two competing loops.
+    private static var trackedActivityIDs: Set<String> = []
+
     private static func trackUpdateToken(_ activity: Activity<IncidentActivityAttributes>) {
+        guard trackedActivityIDs.insert(activity.id).inserted else { return }
         Task {
             for await tokenData in activity.pushTokenUpdates {
                 await register(token: hex(tokenData), kind: "update")

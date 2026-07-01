@@ -8,6 +8,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var showPassword = false
     @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @FocusState private var focus: Field?
     private enum Field { case url, username, password }
@@ -37,20 +38,20 @@ struct LoginView: View {
                     }
                     .scaleEffect(appeared ? 1 : 0.6)
                     .opacity(appeared ? 1 : 0)
-                    .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.1), value: appeared)
+                    .animation(reduceMotion ? nil : .spring(response: 0.55, dampingFraction: 0.7).delay(0.1), value: appeared)
 
                     Text("ApexSight")
                         .font(.system(.largeTitle, design: .rounded).weight(.bold))
                         .foregroundStyle(GlassTheme.primary)
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 12)
-                        .animation(.easeOut(duration: 0.4).delay(0.25), value: appeared)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.4).delay(0.25), value: appeared)
 
                     Text("Native Frigate control")
                         .font(.subheadline)
                         .foregroundStyle(GlassTheme.secondary)
                         .opacity(appeared ? 1 : 0)
-                        .animation(.easeOut(duration: 0.4).delay(0.35), value: appeared)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.4).delay(0.35), value: appeared)
                 }
 
                 // Form card
@@ -101,7 +102,7 @@ struct LoginView: View {
                 .padding(.horizontal, GlassTheme.Space.l)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 24)
-                .animation(.easeOut(duration: 0.45).delay(0.4), value: appeared)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.45).delay(0.4), value: appeared)
 
                 Spacer(minLength: 0)
 
@@ -110,7 +111,7 @@ struct LoginView: View {
                     .foregroundStyle(GlassTheme.tertiary)
                     .multilineTextAlignment(.center)
                     .opacity(appeared ? 1 : 0)
-                    .animation(.easeOut(duration: 0.4).delay(0.55), value: appeared)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.4).delay(0.55), value: appeared)
                 }
                 .frame(minHeight: proxy.size.height)
                 .frame(maxWidth: .infinity)

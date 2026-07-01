@@ -30,6 +30,10 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     /// Fails an attempt that never connects (remote with no reachable media path) instead of
     /// spinning forever, with copy that points at the actual fix (TURN on the relay).
     private var connectWatchdog: Task<Void, Never>?
+    /// The in-flight connect. Held so a quick release (`stop()`) can CANCEL it — otherwise a
+    /// press released before the SDP handshake finishes would let the mic + peer connection open
+    /// after the finger is already up, with no release event coming, leaving a stuck hot mic.
+    private var startTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -48,16 +52,28 @@ final class TwoWayTalkController: NSObject, ObservableObject {
 
     var isActive: Bool { status == .connecting || status == .talking }
 
-    /// Begin talking to `camera`. Resolves the mic permission, builds the peer connection,
-    /// gathers ICE, exchanges SDP with go2rtc, and opens the audio.
-    func start(cameraTwoWaySource: String, client: FrigateClient) async {
-        guard !isActive else { return }
+    /// Begin talking to `camera` (mic-button press). Synchronous entry point that OWNS the
+    /// connect Task, so a quick release — `stop()` — can cancel an in-flight handshake. Without
+    /// this, a press released before the SDP exchange completed would open the mic + peer
+    /// connection *after* the finger lifted, with no release event left to close it.
+    func begin(cameraTwoWaySource: String, client: FrigateClient) {
+        guard !isActive, startTask == nil else { return }
         status = .connecting
+        startTask = Task { [weak self] in
+            await self?.connect(cameraTwoWaySource: cameraTwoWaySource, client: client)
+            self?.startTask = nil
+        }
+    }
 
+    /// Resolves mic permission, builds the peer connection, gathers ICE, exchanges SDP with
+    /// go2rtc, and opens the audio. Checks for cancellation at every await so a released press
+    /// tears down cleanly and never strands an open mic.
+    private func connect(cameraTwoWaySource: String, client: FrigateClient) async {
         guard await requestMicPermission() else {
-            status = .failed("Microphone access denied")
+            if !Task.isCancelled { status = .failed("Microphone access denied") }
             return
         }
+        guard !Task.isCancelled else { return }   // nothing acquired yet — just bail
         configureAudioSession()
 
         let config = RTCConfiguration()
@@ -67,10 +83,12 @@ final class TwoWayTalkController: NSObject, ObservableObject {
         config.iceServers = await TurnSettings.iceServers()
         config.bundlePolicy = .maxBundle
         config.iceTransportPolicy = .all     // direct on LAN, relay (TURN) when needed
+        guard !Task.isCancelled else { teardown(); return }   // audio session is live — clean it up
         startConnectWatchdog()
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let pc = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
             status = .failed("Couldn't create connection")
+            teardown()
             return
         }
         self.pc = pc
@@ -92,22 +110,33 @@ final class TwoWayTalkController: NSObject, ObservableObject {
                     if let sdp { cont.resume(returning: sdp) } else { cont.resume(throwing: err ?? TalkError.noOffer) }
                 }
             }
+            try Task.checkCancellation()
             try await setLocal(offer, on: pc)
             await waitForIceGathering(pc)   // non-trickle: send the offer with candidates baked in
+            try Task.checkCancellation()
 
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswer(source: cameraTwoWaySource, offerSDP: localSDP)
+            try Task.checkCancellation()
             try await setRemote(RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
+            try Task.checkCancellation()   // last gate before we commit to "talking"
             connectWatchdog?.cancel(); connectWatchdog = nil
             status = .talking
             Haptics.success()
         } catch {
-            status = .failed(error.isCancellation ? "Cancelled" : error.localizedDescription)
-            teardown()
+            // Released mid-handshake: silently tear down and leave status as stop() set it (.idle).
+            if error.isCancellation || Task.isCancelled {
+                teardown()
+            } else {
+                status = .failed(error.localizedDescription)
+                teardown()
+            }
         }
     }
 
     func stop() {
+        startTask?.cancel()
+        startTask = nil
         teardown()
         status = .idle
     }
@@ -135,6 +164,9 @@ final class TwoWayTalkController: NSObject, ObservableObject {
             self.status = .failed(TurnSettings.hasRelay
                 ? "Couldn't reach the camera's audio. Check the camera is online and that TURN is set on the relay."
                 : "Two-way talk needs the relay's TURN key to work away from home (set it in the relay's admin settings).")
+            // Cancel the in-flight connect so, when its pending await returns, it bails at the next
+            // cancellation checkpoint instead of resuming on the now-torn-down peer connection.
+            self.startTask?.cancel()
             self.teardown()
         }
     }

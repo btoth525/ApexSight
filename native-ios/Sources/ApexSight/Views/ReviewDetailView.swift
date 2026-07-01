@@ -5,6 +5,7 @@ import SwiftUI
 struct ReviewDetailView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let review: FrigateReviewItem
 
     @State private var showReviewedConfirmation = false
@@ -32,7 +33,7 @@ struct ReviewDetailView: View {
                     hero
                     if let reviewAIDescription {
                         aiCard(reviewAIDescription)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     } else if isLoadingAIDescription {
                         aiSkeletonCard
                     }
@@ -66,7 +67,7 @@ struct ReviewDetailView: View {
             detectionEvents = []
             isLoadingAIDescription = true
             let fetched = try? await client.reviewDescription(id: review.id)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
                 reviewAIDescription = fetched
                 isLoadingAIDescription = false
             }
@@ -78,7 +79,7 @@ struct ReviewDetailView: View {
                 for id in ids { group.addTask { try? await client.event(id: id) } }
                 for await event in group { if let event { loaded.append(event) } }
             }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
                 detectionEvents = loaded.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
                 loadingDetections = false
             }

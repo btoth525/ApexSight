@@ -4,6 +4,7 @@ import AVFoundation
 
 struct EventDetailView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let event: FrigateEvent
     @State private var actionFeedback: String?
     @State private var actionIsError = false
@@ -69,7 +70,7 @@ struct EventDetailView: View {
                     heroCard
                     if let genAIDescription {
                         aiCard(genAIDescription)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     } else if isLoadingAIDescription {
                         aiSkeletonCard
                     }
@@ -90,7 +91,7 @@ struct EventDetailView: View {
             genAIDescription = nil
             isLoadingAIDescription = true
             let fetched = try? await appState.client?.eventDescription(id: event.id)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
                 genAIDescription = fetched
                 isLoadingAIDescription = false
             }
@@ -232,7 +233,7 @@ struct EventDetailView: View {
             return
         }
         AIAnalysisStore.save(event.id, result)
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
             onDeviceAnalysis = result
         }
     }
@@ -251,7 +252,7 @@ struct EventDetailView: View {
                     Button {
                         Haptics.tap()
                         editedAIDescription = text
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
                             isEditingAIDescription = true
                         }
                     } label: {
@@ -291,7 +292,7 @@ struct EventDetailView: View {
                     HStack(spacing: GlassTheme.Space.m) {
                         Button("Cancel") {
                             Haptics.tap()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
                                 isEditingAIDescription = false
                             }
                         }
@@ -489,7 +490,7 @@ struct EventDetailView: View {
                     Text(feedback)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(actionIsError ? GlassTheme.red : GlassTheme.green)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
 
                 actionButton("Retain Event", icon: "pin.fill", tint: GlassTheme.blue, isLoading: isActing) {
@@ -559,14 +560,14 @@ struct EventDetailView: View {
 
     /// Shows a transient feedback line (auto-clears) in the Actions card.
     private func showFeedback(_ message: String, isError: Bool) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
             actionFeedback = message
             actionIsError = isError
         }
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             if actionFeedback == message {
-                withAnimation(.easeOut(duration: 0.2)) { actionFeedback = nil }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { actionFeedback = nil }
             }
         }
     }

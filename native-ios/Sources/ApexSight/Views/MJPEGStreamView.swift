@@ -16,17 +16,26 @@ struct MJPEGStreamView: UIViewRepresentable {
     var contentMode: UIView.ContentMode = .scaleAspectFit
     /// Reports the first decoded frame so callers can cross-fade away a placeholder.
     var onFirstFrame: (() -> Void)? = nil
+    /// Reports that the stream ended or couldn't connect (offline camera, HTTP error, timeout,
+    /// or a mid-stream drop) so callers can surface a retry instead of sitting on "Connecting…".
+    /// Never fired for our own suspend()/stop() cancellations.
+    var onError: (() -> Void)? = nil
 
     func makeUIView(context: Context) -> MJPEGUIView {
         let view = MJPEGUIView()
         view.imageView.contentMode = contentMode
         view.onFirstFrame = onFirstFrame
+        view.onError = onError
         view.start(request: client.authedRequest(for: url))
         return view
     }
 
     func updateUIView(_ uiView: MJPEGUIView, context: Context) {
         uiView.imageView.contentMode = contentMode
+        // Refresh the callbacks — SwiftUI hands fresh closures on each update, and the ones
+        // captured at makeUIView would otherwise go stale (e.g. capturing an old fill mode).
+        uiView.onFirstFrame = onFirstFrame
+        uiView.onError = onError
     }
 
     static func dismantleUIView(_ uiView: MJPEGUIView, coordinator: ()) {
@@ -37,6 +46,13 @@ struct MJPEGStreamView: UIViewRepresentable {
 final class MJPEGUIView: UIView, URLSessionDataDelegate {
     let imageView = UIImageView()
     var onFirstFrame: (() -> Void)?
+    var onError: (() -> Void)?
+    /// True while a suspend()/stop() is tearing the task down, so the resulting
+    /// `didCompleteWithError(NSURLErrorCancelled)` isn't misreported as a stream failure.
+    private var isTearingDown = false
+    /// Fire `onError` at most once per connection attempt (a rejected response also produces a
+    /// follow-up `didCompleteWithError`, which would otherwise report twice).
+    private var hasReportedError = false
 
     private var session: URLSession?
     private var task: URLSessionDataTask?
@@ -79,6 +95,12 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     /// Open (or re-open) the MJPEG connection for the stored request.
     private func openConnection() {
         guard let request = currentRequest, task == nil else { return }
+        isTearingDown = false
+        hasReportedError = false
+        // Reset per-connection so `onFirstFrame` fires again after a reconnect (background→
+        // foreground, or a recovered drop). Callers use that callback to clear an "offline"
+        // overlay — without the reset it would stay pinned over a now-live picture.
+        hasDeliveredFrame = false
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = .infinity
@@ -114,6 +136,7 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
 
     /// Tear down the live connection but keep `currentRequest` so it can be re-opened.
     private func suspend() {
+        isTearingDown = true
         task?.cancel()
         task = nil
         session?.invalidateAndCancel()
@@ -128,6 +151,21 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
         currentRequest = nil
         suspend()
         buffer.removeAll()
+    }
+
+    /// Reject a non-2xx response (offline camera → 502/504 from the proxy, 401 on a stale token)
+    /// before it's mistaken for stream data — surface it as an error so a retry can appear.
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            completionHandler(.cancel)
+            reportError()
+            return
+        }
+        completionHandler(.allow)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -164,6 +202,23 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
                 }
             }
         }
+    }
+
+    /// The stream ended: either it never connected (offline camera, DNS/TLS failure, timeout)
+    /// or a live connection dropped. A healthy multipart MJPEG stream never completes on its own,
+    /// so any non-cancel completion is a real failure worth surfacing.
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // Our own suspend()/stop() cancellations aren't failures.
+        if isTearingDown { return }
+        if let error = error as NSError?, error.code == NSURLErrorCancelled { return }
+        reportError()
+    }
+
+    /// Surface a stream failure to the caller exactly once per connection attempt.
+    private func reportError() {
+        guard !isTearingDown, !hasReportedError else { return }
+        hasReportedError = true
+        onError?()
     }
 
     /// Decode a JPEG frame to a fully-decoded UIImage on the calling (background) queue.

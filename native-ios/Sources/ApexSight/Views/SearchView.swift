@@ -132,11 +132,15 @@ struct SearchView: View {
                         results = []
                         answer = nil
                         hasSearched = false
+                        // Also drop any active label/sub-label/camera/date/plate filters — otherwise
+                        // they silently constrain the NEXT typed search with no visible chip to explain
+                        // why "dog" suddenly returns nothing.
+                        clearFilters()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundStyle(GlassTheme.tertiary)
-                            .frame(minWidth: 44, minHeight: 30)
+                            .frame(minWidth: 44, minHeight: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -170,6 +174,7 @@ struct SearchView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28, weight: .regular))
                     .foregroundStyle(isSearching ? GlassTheme.tertiary : GlassTheme.accent)
+                    .hitTarget()
             }
             .buttonStyle(.plain)
             .disabled(isSearching)
@@ -293,6 +298,9 @@ struct SearchView: View {
                 Haptics.tap()
                 selectedLabel = group.label ?? "all"
                 selectedSubLabel = group.subLabel ?? "all"
+                // Surface the filter panel so the now-active label/sub-label constraint is visible;
+                // otherwise the next typed query is silently narrowed with no on-screen chip.
+                showFilters = true
                 Task { await performSearch() }
             } label: {
                 HStack(spacing: GlassTheme.Space.s) {

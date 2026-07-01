@@ -28,6 +28,9 @@ struct RecordingBrowserView: View {
     /// Best-effort continuous preview frame timestamps for the visible range (Frigate Preview
     /// API). Empty when previews are unavailable; scrubbing degrades to event thumbnails.
     @State private var previewTimes: [Double] = []
+    /// The in-flight scrub-preview fetch, held so a day-switch can cancel it — otherwise an older
+    /// day's frames could resolve last and overwrite the current day's preview bubble.
+    @State private var previewTask: Task<Void, Never>?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -70,7 +73,7 @@ struct RecordingBrowserView: View {
         .onChange(of: selectedDate) { _, date in
             Task { await loadDay(date) }
         }
-        .onDisappear { clipModel.stop() }
+        .onDisappear { clipModel.stop(); previewTask?.cancel() }
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.items)
         }
@@ -728,14 +731,17 @@ struct RecordingBrowserView: View {
         if !recordings.isEmpty { playFromScrub() }
 
         // Best-effort continuous scrub previews. Fully detached and defensive: it no-ops on
-        // any failure and only enriches the bubble — it never blocks load or scrubbing.
-        Task {
+        // any failure and only enriches the bubble — it never blocks load or scrubbing. Cancelled
+        // and guarded on the day so a slow fetch for a previous day can't clobber the current one.
+        previewTask?.cancel()
+        previewTask = Task {
             let frames = await client.previewFrameTimes(
                 camera: camera.name,
                 start: startOfDay.timeIntervalSince1970,
                 end: endOfDay.timeIntervalSince1970
             )
-            if !frames.isEmpty { previewTimes = frames }
+            guard !Task.isCancelled, date == selectedDate, !frames.isEmpty else { return }
+            previewTimes = frames
         }
     }
 

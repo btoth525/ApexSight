@@ -245,8 +245,13 @@ final class AppState: ObservableObject {
             // Badge = the un-reviewed ALERTS currently in the list, so it always matches
             // what you see and clearing them drops it to zero — not the entire retained
             // server history (which could be thousands of never-reviewed old alerts).
-            unreviewedCount = visible.filter { $0.severity == "alert" }.count
-            isReachable = true
+            // Guard both assignments: @Published fires objectWillChange (re-rendering every
+            // view holding AppState) even when re-assigning an identical value, and
+            // unreviewedCount's didSet also writes the app-group plist + a setBadgeCount system
+            // call. On the 15s foreground poll that was churning the whole app every tick.
+            let newUnreviewed = visible.filter { $0.severity == "alert" }.count
+            if newUnreviewed != unreviewedCount { unreviewedCount = newUnreviewed }
+            if !isReachable { isReachable = true }
         } catch {
             // Token expired mid-session: silently re-login once, then retry so the
             // live lists keep updating instead of quietly going stale.
@@ -565,6 +570,7 @@ final class AppState: ObservableObject {
         // write, instead of N parallel logins racing each other.
         if let reauthTask { return await reauthTask.value }
         guard let session, let password = session.password, !password.isEmpty else { return false }
+        let gen = serverGeneration
         let task = Task { [weak self] () -> Bool in
             do {
                 let client = FrigateClient(baseURL: session.baseURL)
@@ -584,7 +590,10 @@ final class AppState: ObservableObject {
         }
         reauthTask = task
         let result = await task.value
-        reauthTask = nil
+        // Only clear if a server switch/sign-out hasn't installed a newer reauth in the
+        // meantime — otherwise a stale reauth resuming here would nil out a live task and
+        // break the coalescing that keeps concurrent 401s to a single login (mirrors refreshTask).
+        if serverGeneration == gen { reauthTask = nil }
         return result
     }
 

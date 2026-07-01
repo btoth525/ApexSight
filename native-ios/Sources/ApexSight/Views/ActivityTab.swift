@@ -239,6 +239,7 @@ struct ActivityTab: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {

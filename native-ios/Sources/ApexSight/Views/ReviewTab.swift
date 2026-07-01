@@ -223,7 +223,10 @@ struct ReviewTab: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.m) {
                         if appState.isLoading { ProgressView().tint(GlassTheme.accent) }
-                        if !appState.reviews.isEmpty {
+                        // Gate on the VISIBLE list, not just reviews — the Detections filter renders
+                        // from `detectionItems` (which mark-all also clears), so keying off
+                        // appState.reviews hid the button while detections were on screen.
+                        if !filtered.isEmpty {
                             Button {
                                 showMarkAllConfirm = true
                             } label: {

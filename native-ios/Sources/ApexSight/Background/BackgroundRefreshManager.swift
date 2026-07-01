@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import os
 import UserNotifications
 
 /// Best-effort background polling for new alert reviews when the app is not running.
@@ -26,14 +27,29 @@ enum BackgroundRefreshManager {
     private static func handle(task: BGAppRefreshTask) {
         schedule() // always queue the next run
 
+        // Complete the task EXACTLY once. Cancelling `work` on expiration doesn't stop
+        // `performRefresh` (it swallows cancellation via `try?`), so without this guard the
+        // work Task's `setTaskCompleted(true)` would fire a SECOND completion after the
+        // expiration handler already completed it — a BackgroundTasks assertion that gets the
+        // app throttled by the scheduler.
+        let completed = OSAllocatedUnfairLock(initialState: false)
+        func complete(success: Bool) {
+            let firstToComplete = completed.withLock { done -> Bool in
+                guard !done else { return false }
+                done = true
+                return true
+            }
+            if firstToComplete { task.setTaskCompleted(success: success) }
+        }
+
         let work = Task {
             await performRefresh()
-            task.setTaskCompleted(success: true)
+            complete(success: true)
         }
 
         task.expirationHandler = {
             work.cancel()
-            task.setTaskCompleted(success: false)
+            complete(success: false)
         }
     }
 

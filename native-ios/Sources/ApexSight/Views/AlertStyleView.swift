@@ -196,6 +196,7 @@ struct AlertStyleView: View {
                         Image(systemName: "minus.circle.fill")
                             .font(.system(size: 20, weight: .regular))
                             .foregroundStyle(GlassTheme.red)
+                            .hitTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove \(key) emoji")
@@ -229,6 +230,7 @@ struct AlertStyleView: View {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 26, weight: .regular))
                         .foregroundStyle(canAddEmoji ? GlassTheme.accent : GlassTheme.tertiary)
+                        .hitTarget()
                 }
                 .buttonStyle(.plain)
                 .disabled(!canAddEmoji)

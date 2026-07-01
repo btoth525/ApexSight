@@ -272,7 +272,7 @@ struct CamerasTab: View {
                             Image(systemName: "arrow.up.arrow.down.circle")
                                 .font(.system(size: 18, weight: .black))
                                 .foregroundStyle(GlassTheme.cyan)
-                                .frame(width: 40, height: 40)
+                                .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
                         .accessibilityLabel("Arrange cameras")
@@ -339,7 +339,7 @@ struct CamerasTab: View {
             Image(systemName: "rectangle.grid.2x2.fill")
                 .font(.system(size: 18, weight: .black))
                 .foregroundStyle(GlassTheme.cyan)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Multi-camera views")

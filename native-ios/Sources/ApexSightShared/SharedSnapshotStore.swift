@@ -124,10 +124,15 @@ enum SharedSnapshotStore {
     static func saveRecentAlerts(_ alerts: [SharedAlert], heroImageData: Data?) {
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
 
-        if let heroImageData,
-           let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) {
+        if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) {
             let heroURL = containerURL.appendingPathComponent(recentHeroFileName)
-            try? heroImageData.write(to: heroURL, options: [.atomic])
+            if let heroImageData {
+                try? heroImageData.write(to: heroURL, options: [.atomic])
+            } else {
+                // No fresh hero (thumbnail fetch failed, or "all clear") — delete the stale one so
+                // the widget never shows an old snapshot under a newer caption or an empty feed.
+                try? FileManager.default.removeItem(at: heroURL)
+            }
         }
 
         if let encoded = try? JSONEncoder().encode(Array(alerts.prefix(8))) {

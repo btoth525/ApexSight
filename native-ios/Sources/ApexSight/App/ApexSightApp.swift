@@ -8,7 +8,6 @@ struct ApexSightApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var notificationDelegate = NotificationResponseDelegate()
     @StateObject private var appLock = AppLockController()
-    @AppStorage("colorSchemePreference") private var colorSchemePreference = "dark"
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -17,14 +16,6 @@ struct ApexSightApp: App {
         // launch interrupts/ducks the user's music or podcast before any video even plays (and
         // live video defaults to muted). The clip player and live unmute take the session on
         // demand, only when there's actually audio to play.
-    }
-
-    private var preferredColorScheme: ColorScheme? {
-        switch colorSchemePreference {
-        case "light": return .light
-        case "dark": return .dark
-        default: return nil
-        }
     }
 
     var body: some Scene {
@@ -59,7 +50,10 @@ struct ApexSightApp: App {
                             .transition(.opacity)
                     }
                 }
-                .preferredColorScheme(preferredColorScheme)
+                // The whole design system is a hardcoded dark-glass palette (near-white text,
+                // dark surfaces). Light mode would render unreadable, so the app is dark-only —
+                // pinned here rather than exposed as a broken Appearance setting.
+                .preferredColorScheme(.dark)
                 .onAppear {
                     notificationDelegate.configure(appState: appState)
                 }

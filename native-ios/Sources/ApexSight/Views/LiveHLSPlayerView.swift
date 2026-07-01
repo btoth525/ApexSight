@@ -279,6 +279,10 @@ final class HLSLiveModel: ObservableObject {
         guard let player, player.timeControlStatus == .playing,
               let item = player.currentItem, item.presentationSize != .zero else { return }
         state = .playing
+        // A stream that stalled, scheduled a reconnect, then recovered on its own must cancel
+        // that pending reconnect — otherwise it fires later and needlessly rebuilds a live,
+        // playing stream (a visible black flash).
+        reconnectTask?.cancel(); reconnectTask = nil
         retryCount = 0
         totalAttempts = 0
         didTryReauth = false
@@ -417,6 +421,10 @@ struct HLSLivePlayerView: View {
     /// broken even though the camera is healthy), fall back to Frigate's MJPEG stream —
     /// which Frigate serves itself, not go2rtc — so the view is never stuck on black.
     @State private var mjpegFallback = false
+    /// True once the MJPEG fallback itself fails to connect (a genuinely offline camera) — drives
+    /// the retry overlay so the view never sits on "Connecting…" forever. Reset whenever we
+    /// (re)enter the MJPEG path or retry.
+    @State private var mjpegFailed = false
     @State private var fallbackTask: Task<Void, Never>?
     /// Drives the staggered startup through StreamGate so a wall of cameras doesn't all begin
     /// negotiating + decoding at once on launch.
@@ -472,7 +480,16 @@ struct HLSLivePlayerView: View {
             url: client.mjpegURL(camera: camera.name),
             client: client,
             contentMode: fillMode ? .scaleAspectFill : .scaleAspectFit,
-            onFirstFrame: { onPlaying?(true) }
+            onFirstFrame: {
+                mjpegFailed = false
+                onPlaying?(true)
+            },
+            onError: {
+                // MJPEG is our last resort; if it can't connect either, the camera is offline.
+                // Surface a retry instead of an eternal "Connecting…".
+                onPlaying?(false)
+                withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { mjpegFailed = true }
+            }
         )
         if showControls {
             ZoomableScrollView(onSingleTap: onSingleTap) { stream }
@@ -506,7 +523,36 @@ struct HLSLivePlayerView: View {
         releaseGate()
         Self.hlsUnavailable.insert(camera.name)
         model.stop()
+        mjpegFailed = false
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = true }
+    }
+
+    /// Point the model at this camera's HLS endpoints. Idempotent — just installs closures —
+    /// so it's safe to call from both first appearance and a retry after teardown.
+    private func configureModel() {
+        model.configure(
+            cameraName: camera.name,
+            preferSub: preferSub,
+            makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
+            makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
+            makeItem: { url in appState.client?.playerItem(for: url) },
+            reauth: { await appState.reauthenticate() }
+        )
+        // Full-screen viewer (showControls + autoPiP) keeps playing on background so PiP can
+        // start; wall/grid tiles pause to save power.
+        model.pausesOnBackground = !showControls
+    }
+
+    /// Retry an offline camera from scratch: forget the "HLS unavailable" verdict, leave the
+    /// MJPEG fallback, and re-run the full HLS → MJPEG cascade so a camera that just came back
+    /// online recovers on tap.
+    private func retry() {
+        mjpegFailed = false
+        Self.hlsUnavailable.remove(camera.name)
+        withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { mjpegFallback = false }
+        configureModel()
+        model.start()
+        startFallbackTimer()
     }
 
     var body: some View {
@@ -552,8 +598,12 @@ struct HLSLivePlayerView: View {
                 .allowsHitTesting(false)
             }
 
-            if case .failed(let message) = model.state, !mjpegFallback {
-                failureOverlay(message)
+            // A hard HLS `.failed` immediately falls through to MJPEG (see onChange below), so the
+            // only failure the user actually sees is when MJPEG — the last resort — can't connect
+            // either. That means the camera is genuinely offline: show a retry instead of
+            // stranding the view on the snapshot with a spinning "Connecting…".
+            if mjpegFallback, mjpegFailed {
+                failureOverlay("Camera offline")
             }
 
             if showControls {
@@ -575,17 +625,7 @@ struct HLSLivePlayerView: View {
                 mjpegFallback = true
                 return
             }
-            model.configure(
-                cameraName: camera.name,
-                preferSub: preferSub,
-                makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
-                makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
-                makeItem: { url in appState.client?.playerItem(for: url) },
-                reauth: { await appState.reauthenticate() }
-            )
-            // Full-screen viewer (showControls + autoPiP) keeps playing on background so PiP can
-            // start; wall/grid tiles pause to save power.
-            model.pausesOnBackground = !showControls
+            configureModel()
             // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
             startTask = Task { @MainActor in
                 await StreamGate.shared.acquire()
@@ -701,7 +741,7 @@ struct HLSLivePlayerView: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
-            Button { model.reload() } label: {
+            Button { Haptics.tap(); retry() } label: {
                 Label("Retry", systemImage: "arrow.clockwise")
                     .font(.system(size: 14, weight: .black))
                     .foregroundStyle(.black)
