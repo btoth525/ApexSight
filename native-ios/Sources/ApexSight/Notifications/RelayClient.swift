@@ -37,6 +37,11 @@ enum RelayClient {
         let style: NotificationStyle
     }
 
+    private struct AICamerasBody: Encodable {
+        let pairing_code: String
+        let disabled: [String]
+    }
+
     private struct GateBody: Encodable {
         let pairing_code: String
         let disarmed: Bool
@@ -93,6 +98,13 @@ enum RelayClient {
 
     static func unregister(relayURL: String, deviceToken: String) async throws {
         try await post(relayURL: relayURL, path: "/v1/unregister", body: UnregisterBody(device_token: deviceToken))
+    }
+
+    /// Tell the relay which cameras have AI descriptions in notifications turned OFF, so the
+    /// HomeKit-style GenAI-description follow-up is only sent for the cameras the user enabled.
+    static func syncAICameras(relayURL: String, pairingCode: String, disabled: [String]) async throws {
+        try await post(relayURL: relayURL, path: "/v1/ai-cameras",
+                       body: AICamerasBody(pairing_code: pairingCode, disabled: disabled))
     }
 
     /// Asks the relay to send a test push to this device.

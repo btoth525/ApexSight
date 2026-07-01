@@ -11,7 +11,7 @@ struct AICamerasSettingsView: View {
             GlassBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                    Text("When a camera is on, opening one of its events auto-analyzes the snapshot on your iPhone — who or what is in view, plus any license plate. Turn off cameras you don't want analyzed.")
+                    Text("For cameras that are on: opening an event auto-analyzes the snapshot on your iPhone (who/what is in view, plus any plate), and — once Frigate writes its AI description — your notification updates with it, HomeKit-style. Turn off any camera you don't want AI on.")
                         .font(.footnote)
                         .foregroundStyle(GlassTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -56,6 +56,8 @@ struct AICamerasSettingsView: View {
         .navigationTitle("AI Cameras")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        // Reconcile the current choice to the relay whenever the page opens.
+        .onAppear { syncToRelay() }
     }
 
     private func binding(for name: String) -> Binding<Bool> {
@@ -65,6 +67,7 @@ struct AICamerasSettingsView: View {
                 Haptics.select()
                 AICameraSettings.setEnabled(on, for: name)
                 disabled = AICameraSettings.disabledCameras
+                syncToRelay()
             }
         )
     }
@@ -73,5 +76,16 @@ struct AICamerasSettingsView: View {
         Haptics.tap()
         for cam in appState.cameras { AICameraSettings.setEnabled(on, for: cam.name) }
         disabled = AICameraSettings.disabledCameras
+        syncToRelay()
+    }
+
+    /// Push the per-camera choice to the relay so AI-description notification follow-ups honor it
+    /// even when the app is closed. Fire-and-forget; harmless if the relay/pairing isn't set up.
+    private func syncToRelay() {
+        let relayURL = DeviceTokenStore.relayURL
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard !relayURL.isEmpty, !pairing.isEmpty else { return }
+        let disabledList = Array(AICameraSettings.disabledCameras)
+        Task { try? await RelayClient.syncAICameras(relayURL: relayURL, pairingCode: pairing, disabled: disabledList) }
     }
 }
