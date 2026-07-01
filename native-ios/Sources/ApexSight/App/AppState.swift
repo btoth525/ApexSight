@@ -240,7 +240,7 @@ final class AppState: ObservableObject {
             let visible = visibleReviews(r)
             let reviewsChanged = reviewSignature(visible) != reviewSignature(reviews)
             if reviewsChanged { reviews = visible }
-            if eventSignature(e) != eventSignature(events) { events = e }
+            if eventSignature(e) != eventSignature(events) { events = e; SpotlightIndexer.index(e) }
             if reviewsChanged { cacheLatestAlertForWidget() }
             // Badge = the un-reviewed ALERTS currently in the list, so it always matches
             // what you see and clearing them drops it to zero — not the entire retained

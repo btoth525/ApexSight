@@ -8,6 +8,7 @@ struct SettingsTab: View {
     @AppStorage("appleIntelligenceEnabled", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var appleIntelligenceEnabled = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("spotlightEventsEnabled") private var spotlightEventsEnabled = true
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
@@ -30,6 +31,7 @@ struct SettingsTab: View {
                         serverCard
                         securityCard
                         appearanceCard
+                        spotlightCard
 
                         // Apple Intelligence — only on devices that can actually run the model.
                         if AppleAI.deviceSupportsAI {
@@ -183,6 +185,30 @@ struct SettingsTab: View {
     }
 
     // MARK: - Apple Intelligence
+
+    private var spotlightCard: some View {
+        GlassCard {
+            Toggle(isOn: $spotlightEventsEnabled) {
+                HStack(spacing: GlassTheme.Space.m) {
+                    iconTile(systemName: "magnifyingglass", tint: GlassTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Spotlight Search")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("Find your camera events from the Home Screen search (swipe down). Metadata only — no images are indexed.")
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .tint(GlassTheme.accent)
+            .sensoryFeedback(.selection, trigger: spotlightEventsEnabled)
+            .onChange(of: spotlightEventsEnabled) { _, on in
+                if on { SpotlightIndexer.index(appState.events) } else { SpotlightIndexer.clear() }
+            }
+        }
+    }
 
     private var intelligenceCard: some View {
         GlassCard {

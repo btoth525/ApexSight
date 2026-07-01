@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import CoreSpotlight
 
 @main
 struct ApexSightApp: App {
@@ -83,6 +84,13 @@ struct ApexSightApp: App {
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
+                }
+                // Tap a Frigate event from iOS Spotlight → open it (identifier is the apex:// link).
+                .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                    if let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                       let url = URL(string: id) {
+                        appState.handleDeepLink(url)
+                    }
                 }
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
