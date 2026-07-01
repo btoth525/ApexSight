@@ -310,7 +310,9 @@ extension View {
     @ViewBuilder
     func softScrollEdges() -> some View {
         if #available(iOS 26.0, *) {
-            self.scrollEdgeEffectStyle(.soft, for: .all)
+            // Vertical only — these are vertical scroll views; `.all` also styles the horizontal
+            // edges, which shouldn't apply here.
+            self.scrollEdgeEffectStyle(.soft, for: .vertical)
         } else {
             self
         }

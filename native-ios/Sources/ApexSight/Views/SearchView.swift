@@ -692,7 +692,9 @@ struct SearchView: View {
         // Show results the instant the fast matchers finish; the on-device LLM only WIDENS them
         // afterward (never gates the display). Turns "search takes forever" into "instant".
         func present(_ list: [FrigateEvent]) {
-            let shown = plateFiltered(list)
+            // Cap what we render — best matches are already first, and a huge result list is what
+            // made scrolling lag. 50 is plenty to scan; refine with filters/date to narrow further.
+            let shown = Array(plateFiltered(list).prefix(50))
             results = shown
             isSearching = false
             if shown.isEmpty { Haptics.warning() } else { Haptics.success() }
@@ -711,21 +713,15 @@ struct SearchView: View {
                 let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames)
                 let found = (try await client.events(
                     camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
-                    subLabel: subLabel, zone: zone,
-                    after: afterDate ?? plan.after, before: plan.before, limit: 200
+                    subLabel: subLabel ?? plan.subLabel, zone: zone,
+                    after: afterDate ?? plan.after, before: plan.before, limit: 100
                 )).filter { plan.matches($0) }
                 let sorted = found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
-                // Reliable on-device templated answer + results show IMMEDIATELY.
+                // On-device templated answer — deterministic and reliable. We intentionally do NOT
+                // swap in a slower LLM re-write afterward: the visible answer changing ~2s later
+                // read as a glitch. The template already reads naturally ("Yes — 3 UPS deliveries…").
                 answer = AskParser.answer(for: plan, results: sorted)
                 present(sorted)
-                // …then, if Apple Intelligence is available, upgrade the wording in place.
-#if canImport(FoundationModels)
-                if AppleAI.isAvailable, #available(iOS 26, *) {
-                    if let aiAnswer = await aiAnswer(question: q, events: sorted), gen == searchGeneration {
-                        answer = aiAnswer
-                    }
-                }
-#endif
             } else {
                 // A description ("kid on a bike", "blue car", "Amazon"). Run the three fast
                 // matchers, merge, and SHOW them right away:
@@ -733,7 +729,7 @@ struct SearchView: View {
                 //   3. on-device keyword ranker (reliable safety net)
                 async let semanticTask = client.safeSemanticSearch(
                     query: q, camera: fCamera, label: fLabel,
-                    subLabel: subLabel, zone: zone, after: afterDate, limit: 200
+                    subLabel: subLabel, zone: zone, after: afterDate, limit: 120
                 )
                 let exact = await exactMatches(q, client: client, camera: fCamera, zone: zone)
                 let keyword = await keywordFallback(
@@ -846,7 +842,7 @@ struct SearchView: View {
         // the implied-label direct queries in performSearch, so this stays tight for speed.
         let pool = (try? await client.events(
             camera: camera, label: label, subLabel: subLabel, zone: zone,
-            after: afterDate, limit: 250
+            after: afterDate, limit: 120
         )) ?? []
 
         let implied = Set(AskParser.impliedLabels(in: q))

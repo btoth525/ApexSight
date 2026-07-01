@@ -8,6 +8,7 @@ import Foundation
 
 struct AskPlan {
     var label: String?
+    var subLabel: String?          // e.g. a carrier (amazon/ups) — Frigate stores these as sub_labels
     var camera: String?
     var after: Date?
     var before: Date?
@@ -22,6 +23,9 @@ struct AskPlan {
         if unknownOnly, !(e.subLabel?.isEmpty ?? true) { return false }
         if let name = personName {
             guard let face = e.recognizedFace, face.caseInsensitiveCompare(name) == .orderedSame else { return false }
+        }
+        if let subLabel {
+            guard (e.subLabel ?? "").localizedCaseInsensitiveContains(subLabel) else { return false }
         }
         return true
     }
@@ -58,12 +62,22 @@ enum AskParser {
         let text = q.lowercased()
         var plan = AskPlan()
 
-        // Object
-        for entry in labelMap where entry.keys.contains(where: { text.contains($0) }) {
-            plan.label = entry.label
-            plan.subjectSingular = entry.singular
-            plan.subjectPlural = entry.plural
-            break
+        // Delivery carriers ride on Frigate SUB-LABELS (amazon/ups/fedex on the delivery person or
+        // truck), NOT the 'package' label — which often has zero events. So match sub_label and
+        // leave the object label open, or "any amazon today" finds nothing.
+        let carriers = ["amazon", "ups", "fedex", "usps", "dhl", "ontrac", "lasership"]
+        if let carrier = carriers.first(where: { text.contains($0) }) {
+            plan.subLabel = carrier
+            plan.subjectSingular = "\(carrier.uppercased()) delivery"
+            plan.subjectPlural = "\(carrier.uppercased()) deliveries"
+        } else {
+            // Object
+            for entry in labelMap where entry.keys.contains(where: { text.contains($0) }) {
+                plan.label = entry.label
+                plan.subjectSingular = entry.singular
+                plan.subjectPlural = entry.plural
+                break
+            }
         }
 
         // Camera (match the camera's words against the question)
