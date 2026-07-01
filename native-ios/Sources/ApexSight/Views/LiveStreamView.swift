@@ -314,7 +314,7 @@ struct LiveStreamView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: GlassTheme.Space.l) {
+            HStack(spacing: GlassTheme.Space.s) {
                 actionButton(icon: "arrow.clockwise", label: "Refresh") {
                     isLive = false
                     reloadToken = UUID()
@@ -347,8 +347,8 @@ struct LiveStreamView: View {
                 }
             }
             // Morph the action-button glass as a single system (so PTZ/Talk fluidly join in).
-            .glassGroup(spacing: GlassTheme.Space.l)
-            .padding(.horizontal, GlassTheme.Space.l)
+            .glassGroup(spacing: GlassTheme.Space.s)
+            .padding(.horizontal, GlassTheme.Space.m)
             .frame(maxWidth: .infinity)   // center the row when it fits the screen
             }
             // Horizontal scroll so a full control set (Refresh/Snapshot/Timeline/Controls/Ask AI/

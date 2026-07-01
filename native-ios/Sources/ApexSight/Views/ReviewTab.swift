@@ -196,7 +196,7 @@ struct ReviewTab: View {
                                         }
                                     }
                                 } header: {
-                                    Text("\(filtered.count) items")
+                                    Text("^[\(filtered.count) item](inflect: true)")
                                         .font(.footnote.weight(.medium))
                                         .foregroundStyle(GlassTheme.secondary)
                                         .monospacedDigit()

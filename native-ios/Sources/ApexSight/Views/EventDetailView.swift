@@ -389,7 +389,7 @@ struct EventDetailView: View {
                         Text("\(titleize(event.camera)) · \(timestamp(event.startTime))")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(GlassTheme.secondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
                     }
                     Spacer()
                     if hasClip {
