@@ -196,6 +196,8 @@ struct EventDetailView: View {
         guard !isAnalyzingOnDevice, let client = appState.client else { return }
         if force { Haptics.tap() }
         isAnalyzingOnDevice = true
+        // On an explicit re-run, clear the old text so the "Analyzing…" spinner shows.
+        if force { withAnimation { onDeviceAnalysis = nil } }
         defer { isAnalyzingOnDevice = false }
 
         var combined: String?
