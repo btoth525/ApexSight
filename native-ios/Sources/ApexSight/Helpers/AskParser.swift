@@ -58,18 +58,24 @@ enum AskParser {
         return labels
     }
 
-    static func interpret(_ q: String, cameras: [String], faceNames: [String]) -> AskPlan {
+    static func interpret(_ q: String, cameras: [String], faceNames: [String], subLabels: [String] = []) -> AskPlan {
         let text = q.lowercased()
         var plan = AskPlan()
 
-        // Delivery carriers ride on Frigate SUB-LABELS (amazon/ups/fedex on the delivery person or
-        // truck), NOT the 'package' label — which often has zero events. So match sub_label and
-        // leave the object label open, or "any amazon today" finds nothing.
-        let carriers = ["amazon", "ups", "fedex", "usps", "dhl", "ontrac", "lasership"]
-        if let carrier = carriers.first(where: { text.contains($0) }) {
-            plan.subLabel = carrier
-            plan.subjectSingular = "\(carrier.uppercased()) delivery"
-            plan.subjectPlural = "\(carrier.uppercased()) deliveries"
+        // ANY recognized Frigate SUB-LABEL wins first — carriers (amazon/ups/fedex), a recognized
+        // name/pet (Chico), etc. These ride on person/car events, NOT their own object label, so we
+        // match sub_label and leave the object label open. Longest match first so "amazon prime"
+        // beats "amazon". Known server sub_labels take priority; a built-in carrier list is the
+        // fallback for carriers Frigate may tag before they've synced into the app's list.
+        let knownCarriers = ["amazon", "ups", "fedex", "usps", "dhl", "ontrac", "lasership"]
+        let candidates = (subLabels.map { $0.lowercased() } + knownCarriers)
+            .filter { !$0.isEmpty }
+            .sorted { $0.count > $1.count }
+        if let hit = candidates.first(where: { text.contains($0) }) {
+            plan.subLabel = hit
+            let pretty = hit.count <= 5 ? hit.uppercased() : hit.capitalized
+            plan.subjectSingular = pretty
+            plan.subjectPlural = "\(pretty) events"
         } else {
             // Object
             for entry in labelMap where entry.keys.contains(where: { text.contains($0) }) {

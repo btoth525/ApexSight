@@ -710,7 +710,7 @@ struct SearchView: View {
                 present(found)
             } else if isQuestion(q) {
                 // A question ("how many packages today") — parse into precise filters, then answer.
-                let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames)
+                let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, subLabels: appState.subLabels)
                 let found = (try await client.events(
                     camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
                     subLabel: subLabel ?? plan.subLabel, zone: zone,
