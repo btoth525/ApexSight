@@ -251,7 +251,9 @@ struct DailyRecapView: View {
                                 Capsule().fill(GlassTheme.surfaceHigh)
                                 Capsule()
                                     .fill(GlassTheme.accent)
-                                    .frame(width: geo.size.width * CGFloat(item.count) / CGFloat(max(maxCount, 1)))
+                                    // Clamp to the track width so a row whose count exceeds `maxCount`
+                                    // (if the data isn't strictly sorted) can't overflow the card.
+                                    .frame(width: geo.size.width * min(CGFloat(item.count) / CGFloat(max(maxCount, 1)), 1))
                             }
                         }
                         .frame(height: 6)

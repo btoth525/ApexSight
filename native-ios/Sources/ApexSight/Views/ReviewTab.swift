@@ -4,6 +4,7 @@ import UIKit
 struct ReviewTab: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Persisted so the filter/sort choice survives navigating away and back.
     @AppStorage("review.selectedSeverity") private var selectedSeverity = "all"
     @AppStorage("review.sortNewest") private var sortNewest = true
@@ -47,7 +48,7 @@ struct ReviewTab: View {
     private func dismissReview(_ review: FrigateReviewItem) {
         Haptics.success()
         commitPending()   // a previous undo, if any, becomes final
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
             hiddenIDs.insert(review.id)
             pendingReview = review
         }
@@ -62,7 +63,7 @@ struct ReviewTab: View {
         pendingWork?.cancel()
         pendingWork = nil
         guard let review = pendingReview else { return }
-        withAnimation(.easeOut(duration: 0.2)) { pendingReview = nil }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { pendingReview = nil }
         Task { await appState.markReviewViewed(review) }
     }
 
@@ -71,7 +72,7 @@ struct ReviewTab: View {
         pendingWork?.cancel()
         pendingWork = nil
         let review = pendingReview
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
             if let review { hiddenIDs.remove(review.id) }
             pendingReview = nil
         }
@@ -102,7 +103,7 @@ struct ReviewTab: View {
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
             .padding(.horizontal, GlassTheme.Space.l)
             .padding(.bottom, GlassTheme.Space.l)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         }
     }
 

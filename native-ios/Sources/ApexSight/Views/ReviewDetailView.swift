@@ -60,6 +60,10 @@ struct ReviewDetailView: View {
         .onDisappear { clipModel.stop() }
         .task(id: review.id) {
             guard let client = appState.client else { return }
+            // Reset prior review's data so a reused view doesn't show review A's summary +
+            // detections under review B's header until B loads.
+            reviewAIDescription = nil
+            detectionEvents = []
             isLoadingAIDescription = true
             let fetched = try? await client.reviewDescription(id: review.id)
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -154,7 +158,7 @@ struct ReviewDetailView: View {
                         Text(NotificationCopy.body(for: review))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(GlassTheme.secondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
                     }
 
                     Spacer()

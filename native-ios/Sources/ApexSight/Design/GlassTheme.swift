@@ -126,18 +126,30 @@ struct PillButtonStyle: ButtonStyle {
     var tint: Color = GlassTheme.accent
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, GlassTheme.Space.l)
-            .padding(.vertical, GlassTheme.Space.m)
-            .background(tint, in: Capsule())
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { Haptics.tap() }
-            }
+        Label(configuration: configuration, tint: tint)
+    }
+
+    // Inner view so the style can read `isEnabled` — a `.disabled()` pill must LOOK disabled,
+    // not render full-brightness and silently do nothing on tap.
+    private struct Label: View {
+        let configuration: Configuration
+        let tint: Color
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, GlassTheme.Space.l)
+                .padding(.vertical, GlassTheme.Space.m)
+                .background(tint, in: Capsule())
+                .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.4)
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
+                .onChange(of: configuration.isPressed) { _, pressed in
+                    if pressed && isEnabled { Haptics.tap() }
+                }
+        }
     }
 }
 
@@ -145,18 +157,27 @@ struct PillButtonStyle: ButtonStyle {
 
 struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, GlassTheme.Space.m)
-            .padding(.vertical, 10)
-            // Interactive Liquid Glass on iOS 26+ (scales/shimmers on press); frosted below.
-            .liquidGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-                         interactive: true, fallbackMaterial: .ultraThinMaterial)
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { Haptics.tap() }
-            }
+        Label(configuration: configuration)
+    }
+
+    private struct Label: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .padding(.horizontal, GlassTheme.Space.m)
+                .padding(.vertical, 10)
+                // Interactive Liquid Glass on iOS 26+ (scales/shimmers on press); frosted below.
+                .liquidGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                             interactive: true, fallbackMaterial: .ultraThinMaterial)
+                .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.4)
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
+                .onChange(of: configuration.isPressed) { _, pressed in
+                    if pressed && isEnabled { Haptics.tap() }
+                }
+        }
     }
 }
 

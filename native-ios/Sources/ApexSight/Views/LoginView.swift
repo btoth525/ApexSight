@@ -15,10 +15,15 @@ struct LoginView: View {
     var body: some View {
         ZStack {
             GlassBackground()
-            VStack(spacing: GlassTheme.Space.xl) {
-                Spacer()
+            // Scrollable so the software keyboard can't cover the lower fields / Connect button on
+            // short viewports (iPhone SE, landscape); the minHeight keeps the content centered when
+            // there's room, exactly as before.
+            GeometryReader { proxy in
+              ScrollView {
+                VStack(spacing: GlassTheme.Space.xl) {
+                    Spacer(minLength: 0)
 
-                // Logo + title
+                    // Logo + title
                 VStack(spacing: GlassTheme.Space.m) {
                     ZStack {
                         Circle()
@@ -98,7 +103,7 @@ struct LoginView: View {
                 .offset(y: appeared ? 0 : 24)
                 .animation(.easeOut(duration: 0.45).delay(0.4), value: appeared)
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 Text("Connects directly to your Frigate instance.\nNo data leaves your network.")
                     .font(.footnote)
@@ -106,6 +111,12 @@ struct LoginView: View {
                     .multilineTextAlignment(.center)
                     .opacity(appeared ? 1 : 0)
                     .animation(.easeOut(duration: 0.4).delay(0.55), value: appeared)
+                }
+                .frame(minHeight: proxy.size.height)
+                .frame(maxWidth: .infinity)
+              }
+              .scrollBounceBehavior(.basedOnSize)
+              .scrollDismissesKeyboard(.interactively)
             }
         }
         // Buzz when a sign-in attempt fails so the error registers even if the user
@@ -197,6 +208,7 @@ struct LoginView: View {
                 Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
                     .font(.subheadline)
                     .foregroundStyle(GlassTheme.secondary)
+                    .hitTarget()
             }
             .buttonStyle(.plain)
             .accessibilityLabel(showPassword ? "Hide password" : "Show password")

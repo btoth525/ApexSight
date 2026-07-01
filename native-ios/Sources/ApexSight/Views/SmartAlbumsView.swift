@@ -150,7 +150,13 @@ struct SmartAlbumsView: View {
         loading = true
         errorMessage = nil
         defer { loading = false }
-        guard let client = appState.client else { return }
+        guard let client = appState.client else {
+            // Not connected — surface the retryable error state, not the misleading
+            // "nothing to organize yet" empty state (which implies there's no activity).
+            errorMessage = "Not connected to your Frigate server."
+            albums = []
+            return
+        }
         let after = Calendar.current.date(byAdding: .day, value: -7, to: Date())
         do {
             // A thrown fetch error now surfaces a retryable error state instead of

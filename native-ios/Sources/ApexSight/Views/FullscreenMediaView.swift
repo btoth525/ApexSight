@@ -85,7 +85,9 @@ struct ExpandableMediaModifier: ViewModifier {
                             .frame(width: 34, height: 34)
                             .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
+                            .hitTarget()
                     }
+                    .accessibilityLabel("View full screen")
                     .padding(GlassTheme.Space.s)
                 }
             }

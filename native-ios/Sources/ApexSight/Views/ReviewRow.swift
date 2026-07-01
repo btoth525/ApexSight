@@ -76,21 +76,24 @@ struct ReviewRow: View {
     private var info: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(NotificationCopy.combinedTitle(for: review))
-                .font(.system(size: 18, weight: .bold))
+                .font(.headline)
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Text(subtitle)
-                .font(.system(size: 13, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
             if let epoch = review.startTime {
                 Text(Date(timeIntervalSince1970: epoch).formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
             }
         }
         .padding(14)
+        // Semantic fonts scale with Dynamic Type (the list previously used fixed sizes and ignored
+        // it); cap the growth so the text overlay can't outgrow the fixed thumbnail card.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     private var severityBadge: some View {
@@ -115,7 +118,7 @@ struct ReviewRow: View {
             Image(systemName: "checkmark")
                 .font(.system(size: 16, weight: .black))
                 .foregroundStyle(.white)
-                .frame(width: 42, height: 42)
+                .frame(width: 44, height: 44)
                 .background(.black.opacity(0.5), in: Circle())
                 .overlay { Circle().stroke(.white.opacity(0.35), lineWidth: 1) }
         }

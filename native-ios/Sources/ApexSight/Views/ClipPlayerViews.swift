@@ -26,7 +26,9 @@ struct ZoomableClipPlayer: View {
                     .frame(width: 34, height: 34)
                     .background(.ultraThinMaterial, in: Circle())
                     .foregroundStyle(.white)
+                    .hitTarget()
             }
+            .accessibilityLabel(muted ? "Unmute" : "Mute")
             .padding(8)
         }
     }

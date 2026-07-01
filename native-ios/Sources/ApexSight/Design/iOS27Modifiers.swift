@@ -20,4 +20,13 @@ extension View {
             self
         }
     }
+
+    /// Guarantee at least the 44×44pt HIG minimum tap target for small icon-only controls, without
+    /// changing their visual size. Expands the hittable area around the (usually ~16–34pt) glyph and
+    /// makes the whole area tappable. Use on `Button` labels / tappable icons.
+    func hitTarget(_ side: CGFloat = 44) -> some View {
+        self
+            .frame(minWidth: side, minHeight: side)
+            .contentShape(Rectangle())
+    }
 }

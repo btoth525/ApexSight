@@ -84,6 +84,10 @@ struct EventDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task(id: event.id) {
+            // Clear the prior event's text first — otherwise, when this view is reused for a new
+            // event (NavigationLink to another FrigateEvent), event A's description lingers over
+            // event B until B's fetch returns.
+            genAIDescription = nil
             isLoadingAIDescription = true
             let fetched = try? await appState.client?.eventDescription(id: event.id)
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -254,19 +258,23 @@ struct EventDetailView: View {
                         Image(systemName: "pencil")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GlassTheme.accent)
+                            .hitTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Edit description")
                     Button {
                         Task { await regenerateAIDescription() }
                     } label: {
-                        if isRegeneratingAI {
-                            ProgressView().tint(GlassTheme.accent).scaleEffect(0.75)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(GlassTheme.accent)
+                        Group {
+                            if isRegeneratingAI {
+                                ProgressView().tint(GlassTheme.accent).scaleEffect(0.75)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(GlassTheme.accent)
+                            }
                         }
+                        .hitTarget()
                     }
                     .buttonStyle(.plain)
                     .disabled(isRegeneratingAI)
@@ -400,6 +408,7 @@ struct EventDetailView: View {
                                 .font(.system(size: 26, weight: .semibold))
                                 .foregroundStyle(GlassTheme.accent)
                                 .symbolEffect(.pulse, isActive: isPreparingShare)
+                                .hitTarget()
                         }
                         .buttonStyle(.plain)
                         .disabled(isPreparingShare)

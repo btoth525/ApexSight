@@ -6,6 +6,7 @@ import SwiftUI
 struct CameraQuickControlsSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let camera: FrigateCamera
 
@@ -42,10 +43,10 @@ struct CameraQuickControlsSheet: View {
                     .padding(.vertical, GlassTheme.Space.s)
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.bottom, 50)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: toastMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: toastMessage)
     }
 
     @ViewBuilder

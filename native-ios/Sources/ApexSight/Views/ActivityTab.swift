@@ -5,6 +5,7 @@ import SwiftUI
 /// filters and counts. Distinct from Review, which is the alert triage queue.
 struct ActivityTab: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Persisted so the chosen filters survive navigating away and back (and relaunches).
     @AppStorage("activity.selectedCamera") private var selectedCamera = "all"
     @AppStorage("activity.selectedLabel") private var selectedLabel = "all"
@@ -392,12 +393,12 @@ struct ActivityTab: View {
     }
 
     private func showToast(_ message: String) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { toast = message }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) { toast = message }
         toastTask?.cancel()
         toastTask = Task {
             try? await Task.sleep(nanoseconds: 2_600_000_000)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { if toast == message { toast = nil } }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { if toast == message { toast = nil } }
         }
     }
 
@@ -413,7 +414,7 @@ struct ActivityTab: View {
                 .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
                 .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 .padding(.bottom, GlassTheme.Space.l)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         }
     }
 }

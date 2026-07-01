@@ -6,6 +6,7 @@ struct CameraGroupsView: View {
     @State private var showEditor = false
     @State private var editingGroup: CameraGroup?
     @State private var pendingDeletion: CameraGroup?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -31,7 +32,7 @@ struct CameraGroupsView: View {
                     .padding(.top, GlassTheme.Space.xs)
                 }
                 .padding(GlassTheme.Space.l)
-                .animation(.easeInOut(duration: 0.25), value: store.groups.isEmpty)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: store.groups.isEmpty)
             }
         }
         .navigationTitle("Camera Groups")
@@ -88,7 +89,7 @@ struct CameraGroupsView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(GlassTheme.red)
-                        .frame(width: 32, height: 32)
+                        .hitTarget()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Delete \(group.name)")

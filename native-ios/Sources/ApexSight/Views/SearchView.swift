@@ -136,6 +136,8 @@ struct SearchView: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundStyle(GlassTheme.tertiary)
+                            .frame(minWidth: 44, minHeight: 30)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -155,6 +157,7 @@ struct SearchView: View {
                 Image(systemName: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(showFilters ? GlassTheme.accent : GlassTheme.secondary)
+                    .hitTarget()
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Filters")
@@ -244,12 +247,17 @@ struct SearchView: View {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
                     SkeletonBlock(cornerRadius: GlassTheme.Radius.chip)
                         .frame(width: 150, height: 18)
-                    HStack(spacing: GlassTheme.Space.s) {
-                        ForEach(0..<4, id: \.self) { _ in
-                            SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
-                                .frame(width: 104, height: 104)
+                    // Match the real shelf (groupRow), which scrolls horizontally — a fixed 440pt
+                    // HStack of four 104pt tiles otherwise clips off the trailing edge on every iPhone.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: GlassTheme.Space.s) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
+                                    .frame(width: 104, height: 104)
+                            }
                         }
                     }
+                    .scrollDisabled(true)
                 }
             }
         }
