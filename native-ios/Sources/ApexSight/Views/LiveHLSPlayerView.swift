@@ -402,6 +402,9 @@ struct HLSLivePlayerView: View {
     /// Single tap on the video (full-screen view) — used to toggle immersive chrome.
     var onSingleTap: (() -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
+    /// Reports fit vs. fill (crop) so a host drawing a detection overlay can map boxes into the
+    /// same displayed video rect. Fires on toggle and on appear.
+    var onFillModeChange: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
     @StateObject private var ownPiP = LivePiPController()
@@ -645,6 +648,7 @@ struct HLSLivePlayerView: View {
                 Button {
                     Haptics.tap()
                     fillMode.toggle()
+                    onFillModeChange?(fillMode)
                 } label: {
                     Image(systemName: fillMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 14, weight: .black))
