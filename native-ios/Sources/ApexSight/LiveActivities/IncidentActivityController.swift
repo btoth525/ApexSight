@@ -71,6 +71,24 @@ enum IncidentActivityController {
         }
     }
 
+    /// End only one camera's incident banner — for the review-`.end` path, where camera
+    /// A's review finishing must not tear down camera B's still-active incident (or a
+    /// relay-push-started banner for another camera). The end-everything `end()` stays
+    /// for explicit dismissal / app-open.
+    static func end(camera: String) {
+        if current?.attributes.camera == camera {
+            endTask?.cancel()
+            endTask = nil
+            current = nil
+        }
+        Task {
+            for activity in Activity<IncidentActivityAttributes>.activities
+            where activity.attributes.camera == camera {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+    }
+
     private static func scheduleAutoEnd() {
         endTask?.cancel()
         // Capture the activity this timer owns, so a stale 45s timer ends only the banner it was
@@ -78,7 +96,11 @@ enum IncidentActivityController {
         let target = current
         endTask = Task {
             try? await Task.sleep(nanoseconds: 45_000_000_000) // 45s — don't linger
-            guard !Task.isCancelled, let target else { return }
+            // Re-verify at the last synchronous moment: a fresh alert may have updated the
+            // banner and rescheduled while this timer's sleep was completing — its cancel
+            // only helps if we check again here, and `target` must still be the banner the
+            // controller considers live.
+            guard !Task.isCancelled, let target, target.id == current?.id else { return }
             await target.end(nil, dismissalPolicy: .immediate)
             if current?.id == target.id { current = nil }
         }

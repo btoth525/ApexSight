@@ -122,6 +122,24 @@ final class NotificationPreferencesStore: ObservableObject {
         return false
     }
 
+    /// Side-effect-free variant of `shouldDeliver` for surfaces that should respect the
+    /// user's mutes but NOT consume (or be blocked by) the notification cooldown — the
+    /// incident Live Activity and foreground presentation of relay pushes. Hard mutes
+    /// (Disarm, snoozes), per-camera/object/zone toggles, and quiet hours all apply;
+    /// triggers can re-open soft mutes exactly as in `shouldDeliver`.
+    func wouldDeliver(camera: String, label: String, zones: [String], score: Double, triggers: [NotificationTrigger]) -> Bool {
+        guard ArmStateStore.notificationsActive else { return false }
+        guard !GlobalSnooze.isActive else { return false }
+        guard !preferences.isSnoozed(camera) else { return false }
+
+        let passesSoftFilters = preferences.isCameraEnabled(camera)
+            && preferences.isObjectEnabled(label)
+            && (zones.isEmpty || zones.contains { preferences.isZoneEnabled($0) })
+            && !preferences.isQuietNow()
+        return passesSoftFilters
+            || shouldDeliverViaTrigger(camera: camera, label: label, zones: zones, score: score, triggers: triggers)
+    }
+
     /// The delivery decision used by every local alert path, now trigger-aware.
     ///
     /// Triggers are ADDITIVE allow-rules: a matching enabled trigger can re-open a
@@ -131,17 +149,9 @@ final class NotificationPreferencesStore: ObservableObject {
     /// single shared cooldown still applies so a trigger can't spam. With no enabled
     /// triggers this collapses to exactly the old `shouldDeliver` behavior.
     func shouldDeliver(camera: String, label: String, zones: [String], score: Double, triggers: [NotificationTrigger]) -> Bool {
-        // Hard mutes — never bypassable.
-        guard ArmStateStore.notificationsActive else { return false }
-        guard !GlobalSnooze.isActive else { return false }
-        guard !preferences.isSnoozed(camera) else { return false }
-
-        let passesSoftFilters = preferences.isCameraEnabled(camera)
-            && preferences.isObjectEnabled(label)
-            && (zones.isEmpty || zones.contains { preferences.isZoneEnabled($0) })
-            && !preferences.isQuietNow()
-        let triggerAllows = shouldDeliverViaTrigger(camera: camera, label: label, zones: zones, score: score, triggers: triggers)
-        guard passesSoftFilters || triggerAllows else { return false }
+        guard wouldDeliver(camera: camera, label: label, zones: zones, score: score, triggers: triggers) else {
+            return false
+        }
 
         // One cooldown gate shared by both paths.
         let cooldown = TimeInterval(preferences.cooldown(for: camera))

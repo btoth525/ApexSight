@@ -22,11 +22,23 @@ enum DeviceTokenStore {
         set { defaults?.set(newValue, forKey: tokenKey) }
     }
 
-    /// True once we have an APNs token — i.e. instant push via the relay is set up.
-    /// When this is true the app skips its own local notifications so the relay is
-    /// the single source and you never get a duplicate for the same event.
+    private static let relayConfirmedKey = "apex.relayRegistrationConfirmed"
+
+    /// True once the relay has ACKNOWLEDGED our current registration this install.
+    /// Set on a successful `RelayClient.register`, cleared when one fails.
+    static var relayConfirmed: Bool {
+        get { defaults?.bool(forKey: relayConfirmedKey) ?? false }
+        set { defaults?.set(newValue, forKey: relayConfirmedKey) }
+    }
+
+    /// True once instant push via the relay is ACTUALLY set up — an APNs token exists
+    /// AND the relay confirmed it received it. When true the app skips its own local
+    /// notifications so the relay is the single source and nothing doubles up.
+    /// Requiring the relay confirmation matters: an APNs token almost always arrives
+    /// (Apple's side is reliable), but if the relay registration fails the relay never
+    /// pushes — gating only on the token silently killed every notification path at once.
     static var hasRemotePush: Bool {
-        (deviceTokenHex?.isEmpty == false)
+        (deviceTokenHex?.isEmpty == false) && relayConfirmed
     }
 
     static var lastError: String? {

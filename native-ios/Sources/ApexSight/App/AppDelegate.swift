@@ -48,16 +48,34 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // Re-send the token to the relay on EVERY registration (every launch/foreground),
         // so the relay always holds the current token — like other apps. This self-heals
         // a rotated token after an app update, reinstall, or restore.
+        //
+        // The outcome MUST be recorded: `hasRemotePush` (which suppresses every local
+        // fallback path) now requires `relayConfirmed`. Swallowing a failed registration
+        // here used to leave the app in "relay will push" mode while the relay had no
+        // token — a total, silent notification blackout until the next launch.
         Task {
             let relayURL = DeviceTokenStore.relayURL
             let pairing = DeviceTokenStore.ensurePairingCode()
             guard !relayURL.isEmpty, !pairing.isEmpty else { return }
-            try? await RelayClient.register(
-                relayURL: relayURL,
-                deviceToken: hex,
-                pairingCode: pairing,
-                environment: APNSEnvironment.current
-            )
+            for attempt in 0..<2 {
+                do {
+                    try await RelayClient.register(
+                        relayURL: relayURL,
+                        deviceToken: hex,
+                        pairingCode: pairing,
+                        environment: APNSEnvironment.current
+                    )
+                    DeviceTokenStore.relayConfirmed = true
+                    DeviceTokenStore.lastError = nil
+                    return
+                } catch {
+                    DeviceTokenStore.lastError = "Relay registration failed: \(error.localizedDescription)"
+                    // One quick retry rides out a transient blip (DNS, tunnel hiccup)
+                    // before dropping back to local notifications for this session.
+                    if attempt == 0 { try? await Task.sleep(nanoseconds: 10_000_000_000) }
+                }
+            }
+            DeviceTokenStore.relayConfirmed = false
         }
     }
 
@@ -66,6 +84,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         DeviceTokenStore.lastError = error.localizedDescription
+        // No usable token → the relay can't reach this device; let local paths take over.
+        DeviceTokenStore.relayConfirmed = false
     }
 
     func application(

@@ -80,12 +80,50 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
         }
     }
 
-    // Show banners/sounds even when the app is foregrounded.
+    // Foreground presentation policy.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let request = notification.request
+
+        // Test pushes must always be visible — they exist to prove the pipeline.
+        if request.identifier.hasPrefix("apex-test-") {
+            completionHandler([.banner, .sound, .badge])
+            return
+        }
+
+        // Our own just-posted local alert while the app is frontmost: the in-app glass
+        // banner (+haptic) already covers it, so presenting the system banner + sound too
+        // double-alerted every fallback-path alert. Keep it in Notification Center
+        // (silent) so it's still there after leaving the app.
+        if request.identifier.hasPrefix("apex-review-") {
+            completionHandler([.list, .badge])
+            return
+        }
+
+        // Relay pushes: the relay only knows the GLOBAL gate, so per-camera mutes,
+        // Disarm, snoozes, and quiet hours were silent no-ops for pushes. Honor them
+        // at presentation time — the app-side last chance while foregrounded.
+        // (`wouldDeliver`, not `shouldDeliver`: presentation must not consume the
+        // local-notification cooldown clock.)
+        if let camera = request.content.userInfo["camera"] as? String {
+            Task { @MainActor in
+                let muted: Bool
+                if let appState = self.appState {
+                    muted = !appState.notificationPrefs.wouldDeliver(
+                        camera: camera, label: "object", zones: [],
+                        score: 0, triggers: appState.triggerStore.triggers
+                    )
+                } else {
+                    muted = false
+                }
+                completionHandler(muted ? [.list] : [.banner, .sound, .badge])
+            }
+            return
+        }
+
         completionHandler([.banner, .sound, .badge])
     }
 

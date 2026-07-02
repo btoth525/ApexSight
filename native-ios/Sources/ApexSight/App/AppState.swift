@@ -69,6 +69,11 @@ final class AppState: ObservableObject {
     /// Working copy that absorbs the high-frequency updates; flushed into `liveDetections` on a tick.
     private var pendingDetections: [String: [LiveDetection]] = [:]
     private var detectionFlushScheduled = false
+    /// Staged copy of `events` for the WebSocket feed — same coalescing idea as
+    /// `pendingDetections`. The raw `events` topic fires several times a second per
+    /// tracked object during motion; publishing each one re-diffed the entire app.
+    private var pendingEvents: [FrigateEvent]?
+    private var eventFlushScheduled = false
     /// True when the birdseye composite stream is available in go2rtc.
     @Published var hasBirdseye = false
     /// Camera names with a `<name>_twoway` go2rtc stream — eligible for push-to-talk.
@@ -240,7 +245,9 @@ final class AppState: ObservableObject {
             let visible = visibleReviews(r)
             let reviewsChanged = reviewSignature(visible) != reviewSignature(reviews)
             if reviewsChanged { reviews = visible }
-            if eventSignature(e) != eventSignature(events) { events = e; SpotlightIndexer.index(e) }
+            // Server list is authoritative — drop any staged WS copy so a pending
+            // flush can't overwrite this fresher data 250ms later.
+            if eventSignature(e) != eventSignature(events) { pendingEvents = nil; events = e; SpotlightIndexer.index(e) }
             if reviewsChanged { cacheLatestAlertForWidget() }
             // Badge = the un-reviewed ALERTS currently in the list, so it always matches
             // what you see and clearing them drops it to zero — not the entire retained
@@ -417,36 +424,73 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Stage the event and publish at most ~4 Hz. Updates to a known event replace it
+    /// in place (no reshuffle-to-top on every box move); only genuinely new events
+    /// insert at the front. Publishing per raw WS frame re-rendered every AppState
+    /// observer — the whole app — at several Hz during motion (the same storm the
+    /// detections coalescer fixed, on the other `@Published` variable).
     private func upsertEvent(_ item: FrigateEvent) {
-        events.removeAll { $0.id == item.id }
-        events.insert(item, at: 0)
-        if events.count > 50 { events = Array(events.prefix(50)) }
+        var list = pendingEvents ?? events
+        if let idx = list.firstIndex(where: { $0.id == item.id }) {
+            list[idx] = item
+        } else {
+            list.insert(item, at: 0)
+            if list.count > 50 { list = Array(list.prefix(50)) }
+        }
+        pendingEvents = list
+        scheduleEventFlush()
+    }
+
+    private func scheduleEventFlush() {
+        guard !eventFlushScheduled else { return }
+        eventFlushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self else { return }
+            self.eventFlushScheduled = false
+            if let pending = self.pendingEvents {
+                self.pendingEvents = nil
+                if pending != self.events { self.events = pending }
+            }
+        }
     }
 
     private func handleReview(_ item: FrigateReviewItem, change: ChangeType) {
         guard !locallyViewedIDs.contains(item.id) else { return }
         reviews.removeAll { $0.id == item.id }
+        // Keep the Review tab + app-icon badge instant on EVERY WebSocket-delivered
+        // change — including the removal-only paths (review ended, marked reviewed
+        // elsewhere), which used to leave the badge stale for up to 15s of poller lag.
+        defer { unreviewedCount = reviews.filter { $0.severity == "alert" }.count }
 
         // Already handled on the server (e.g. marked reviewed elsewhere) → keep it gone.
         if item.hasBeenReviewed == true { return }
 
         if change == .end {
-            // Only dismiss the Live Activity for alert reviews — detection reviews ending
-            // should not kill an ongoing alert incident's Dynamic Island banner.
-            if item.severity == "alert" { IncidentActivityController.end() }
+            // Only dismiss the Live Activity for alert reviews — and only THIS camera's.
+            // Ending them all tore down another camera's still-active incident banner
+            // whenever incidents overlapped.
+            if item.severity == "alert" { IncidentActivityController.end(camera: item.camera) }
             return
         }
 
         reviews.insert(item, at: 0)
         if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
-        // Keep the Review tab + app-icon badge instant on WebSocket-delivered alerts
-        // (same definition the poller uses), instead of lagging up to 15s.
-        unreviewedCount = reviews.filter { $0.severity == "alert" }.count
+
+        let label = item.data?.objects?.first ?? "object"
+        let zones = item.data?.zones ?? []
 
         // Live Activity: when instant push is active the RELAY starts/updates the incident
         // Live Activity (so it appears even with the app closed, and we don't double it).
-        // Without a relay token, the app drives it itself as the in-app fallback.
-        if item.severity == "alert", !DeviceTokenStore.hasRemotePush {
+        // Without a confirmed relay, the app drives it itself as the in-app fallback —
+        // but it must respect the user's mutes (Disarm, snoozes, per-camera/object/zone,
+        // quiet hours) exactly like every other alert surface. `wouldDeliver` is the
+        // side-effect-free check: no cooldown consumed, so incident UPDATES keep flowing.
+        if item.severity == "alert", !DeviceTokenStore.hasRemotePush,
+           notificationPrefs.wouldDeliver(
+               camera: item.camera, label: label, zones: zones,
+               score: 0, triggers: triggerStore.triggers
+           ) {
             IncidentActivityController.startOrUpdate(review: item)
         }
 
@@ -459,13 +503,15 @@ final class AppState: ObservableObject {
         // Activity above, not a second banner.
         guard item.severity == "alert" else { return }
 
-        let label = item.data?.objects?.first ?? "object"
-        let zones = item.data?.zones ?? []
+        // Dedup BEFORE the cooldown check: `shouldDeliver` stamps the cooldown clock as
+        // a side effect, so running it on already-seen incident updates kept refreshing
+        // the cooldown and could starve a genuinely NEW alert on the same camera for the
+        // whole incident.
+        guard LastSeenStore.isNew(item.id) else { return }
         guard notificationPrefs.shouldDeliver(
             camera: item.camera, label: label, zones: zones,
             score: 0, triggers: triggerStore.triggers
         ) else { return }
-        guard LastSeenStore.isNew(item.id) else { return }
         LastSeenStore.markSeen([item.id])
 
         // Single push path: when the relay is active it delivers this alert as a push —
@@ -669,6 +715,7 @@ final class AppState: ObservableObject {
                     Task { try? await CSSearchableIndex.default().indexAppEntities(entities) }
                 }
             }
+            pendingEvents = nil  // full refresh is authoritative over any staged WS copy
             events = (try? await nextEvents) ?? events
             if let r = try? await nextReviews {
                 reviews = visibleReviews(r)
@@ -845,6 +892,7 @@ final class AppState: ObservableObject {
         self.session = session
         keychain.save(session: session)
         cameras = []
+        pendingEvents = nil
         events = []
         reviews = []
         labels = []
@@ -870,6 +918,7 @@ final class AppState: ObservableObject {
         WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
         session = nil
         cameras = []
+        pendingEvents = nil
         events = []
         reviews = []
         labels = []
