@@ -368,11 +368,11 @@ struct EventDetailView: View {
                         )
                         .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.eventSnapshotURL(id: event.id) {
-                        ZoomableScrollView {
-                            RemoteImage(url: url, contentMode: .fit)
-                        }
-                        .frame(height: 300)
-                        .frame(maxWidth: .infinity)
+                        // Plain image inline (no inner scroll-zoom) so a tap flows through to
+                        // `.expandableMedia`, which opens the full-screen zoomable viewer.
+                        RemoteImage(url: url, contentMode: .fit)
+                            .frame(height: 300)
+                            .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.latestFrameURL(camera: event.camera) {
                         // No event snapshot — show the camera's latest frame, never a black box.
                         RemoteImage(url: url, contentMode: .fit)

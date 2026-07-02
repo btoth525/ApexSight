@@ -21,7 +21,11 @@ struct MetalDewarpView: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: MTKView, context: Context) {}
+    func updateUIView(_ view: MTKView, context: Context) {
+        // A reappear can hand us a freshly-built renderer while SwiftUI reuses the MTKView —
+        // rewire the delegate so the view never keeps drawing through a dead renderer.
+        if view.delegate !== renderer { view.delegate = renderer }
+    }
 }
 
 // MARK: - Fisheye viewer (gestures + renderer lifecycle)
@@ -38,11 +42,16 @@ struct FisheyeDewarpView: View {
     var paneIndex: Int? = nil
     /// Wall tiles render the saved view with gestures off (tap opens the viewer).
     var interactive: Bool = true
+    /// Provided by the quad view so all four panes share ONE frame tap. When nil, this
+    /// view owns its own source (the single dewarped view).
+    var sharedSource: FisheyeFrameSource? = nil
     /// Single tap toggles the host's immersive chrome, same as the flat player.
     var onSingleTap: (() -> Void)? = nil
 
     @ObservedObject private var store = FisheyeStore.shared
     @State private var renderer: DewarpRenderer?
+    /// Owned frame source for the single view (unused when `sharedSource` is set).
+    @State private var ownSource: FisheyeFrameSource?
     /// Gesture anchors — captured at the first change of each gesture so the whole
     /// drag/pinch is relative to where it started, not cumulative per-event.
     @State private var dragAnchor: (pan: Float, tilt: Float)?
@@ -119,15 +128,32 @@ struct FisheyeDewarpView: View {
             }
         }
         .onAppear {
-            let r = DewarpRenderer(player: player)
+            // Use the quad's shared tap, or spin up our own for the single view.
+            let source: FisheyeFrameSource
+            if let sharedSource {
+                source = sharedSource
+            } else {
+                let s = ownSource ?? FisheyeFrameSource(player: player)
+                ownSource = s
+                source = s
+            }
+            source.start()
+
+            let r = DewarpRenderer()
+            r.frameSource = source
             apply(config: store.config(for: camera.name), to: r)
             applyPose(store.pose(for: camera.name, pane: paneIndex), to: r)
-            r?.uniforms.mode = mode.rawValue
+            r.uniforms.mode = mode.rawValue
             renderer = r
         }
+        .onDisappear {
+            // Only tear down a source we own — the shared one is the quad's to manage.
+            if sharedSource == nil { ownSource?.stop() }
+        }
         .onChange(of: player) { _, newPlayer in
-            // HLS reconnects rebuild the AVPlayer — repoint the frame tap.
-            renderer?.player = newPlayer
+            // HLS reconnects rebuild the AVPlayer — repoint the frame tap (our own only;
+            // the quad repoints the shared source itself).
+            if sharedSource == nil { ownSource?.player = newPlayer }
         }
         .onChange(of: mode) { _, newMode in
             renderer?.uniforms.mode = newMode.rawValue
@@ -193,6 +219,17 @@ struct FisheyeQuadView: View {
     let camera: FrigateCamera
     var onSingleTap: (() -> Void)? = nil
 
+    /// ONE frame tap shared by all four panes — four separate outputs on one item starve
+    /// on device (that was the frozen-pane bug). Created before the panes render.
+    @StateObject private var source: FisheyeFrameSource
+
+    init(player: AVPlayer, camera: FrigateCamera, onSingleTap: (() -> Void)? = nil) {
+        self.player = player
+        self.camera = camera
+        self.onSingleTap = onSingleTap
+        _source = StateObject(wrappedValue: FisheyeFrameSource(player: player))
+    }
+
     var body: some View {
         GeometryReader { geo in
             let w = (geo.size.width - 2) / 2
@@ -209,6 +246,8 @@ struct FisheyeQuadView: View {
             }
         }
         .background(Color.black)
+        .onChange(of: player) { _, newPlayer in source.player = newPlayer }
+        .onDisappear { source.stop() }
         .accessibilityLabel("Quad fisheye view — four independent camera angles. Drag any pane to aim it.")
     }
 
@@ -218,6 +257,7 @@ struct FisheyeQuadView: View {
             camera: camera,
             mode: .ptz,
             paneIndex: index,
+            sharedSource: source,
             onSingleTap: onSingleTap
         )
         .frame(width: width, height: height)

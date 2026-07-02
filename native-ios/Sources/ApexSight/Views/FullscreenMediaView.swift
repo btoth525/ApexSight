@@ -77,6 +77,10 @@ struct ExpandableMediaModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // Tap anywhere on the media to open it full-screen (not just the corner button) —
+            // the whole snapshot/clip is the target, so it's obvious and easy while glancing.
+            .contentShape(Rectangle())
+            .onTapGesture { if media != nil { showFullscreen = true } }
             .overlay(alignment: .topTrailing) {
                 if media != nil {
                     Button { showFullscreen = true } label: {

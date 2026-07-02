@@ -22,6 +22,11 @@ enum LocalAlertNotifier {
         content.sound = .default
         content.threadIdentifier = "apex-\(review.camera)"
         content.categoryIdentifier = NativeNotificationManager.frigateAlertCategory
+        // Mark alerts Time Sensitive so they break through a Driving / Do Not Disturb Focus and
+        // surface on CarPlay — same as the relay-push path does in the notification-service
+        // extension. Needs the time-sensitive entitlement (present). Test pushes too, so a
+        // "Send Test Push" while driving proves the CarPlay path.
+        content.interruptionLevel = .timeSensitive
 
         let gifURL = client.reviewGifURL(review: review)
         let thumbURL = client.reviewSnapshotURL(review: review) ?? client.reviewThumbnailURL(review: review)
