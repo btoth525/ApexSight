@@ -57,23 +57,34 @@ struct FisheyeDewarpView: View {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
                 guard let renderer, mode != .off, gesturesEnabled else { return }
+                // A two-finger pinch also moves the touch centroid, which fires this
+                // drag simultaneously — pan/tilt swung wildly while zooming (and the
+                // garbage got SAVED). While a pinch is live, zoom owns the touch.
+                guard zoomAnchor == nil else {
+                    dragAnchor = nil
+                    return
+                }
                 if dragAnchor == nil {
                     dragAnchor = (renderer.uniforms.pan, renderer.uniforms.tilt)
                 }
                 guard let anchor = dragAnchor else { return }
-                // Aim-the-camera feel — finger right pans the view right (the user's
-                // explicit preference from on-device testing; grab-the-world read as
-                // backwards). Radians-per-point scales with zoom so dragging tracks.
+                // Grab-the-scene on BOTH axes — content follows the finger. The axes
+                // need OPPOSITE signs (pan −, tilt +) because screen-x runs with
+                // azimuth while screen-y runs against elevation; same-sign variants
+                // ship one axis inverted (pixel-diff-verified on the sim: drag right
+                // → content right, drag down → content down).
                 let s = 0.0045 / max(renderer.uniforms.zoom, 0.4)
                 renderer.uniforms.pan = anchor.pan - Float(value.translation.width) * s
                 if mode == .ptz {
-                    let tilt = anchor.tilt - Float(value.translation.height) * s
+                    let tilt = anchor.tilt + Float(value.translation.height) * s
                     renderer.uniforms.tilt = min(max(tilt, 0.05), .pi * 0.58)
                 }
             }
             .onEnded { _ in
                 dragAnchor = nil
-                savePose()
+                // A drag that was interrupted by a pinch has nothing new to save; a
+                // clean drag saves its final aim.
+                if zoomAnchor == nil { savePose() }
             }
     }
 
@@ -81,7 +92,12 @@ struct FisheyeDewarpView: View {
         MagnificationGesture()
             .onChanged { scale in
                 guard let renderer, mode != .off, gesturesEnabled else { return }
-                if zoomAnchor == nil { zoomAnchor = renderer.uniforms.zoom }
+                if zoomAnchor == nil {
+                    zoomAnchor = renderer.uniforms.zoom
+                    // Kill any in-flight drag the pinch's first events started — its
+                    // anchor is stale the moment two fingers are down.
+                    dragAnchor = nil
+                }
                 guard let anchor = zoomAnchor else { return }
                 renderer.uniforms.zoom = min(max(anchor * Float(scale), 0.5), 6)
             }
@@ -96,6 +112,7 @@ struct FisheyeDewarpView: View {
             if let renderer {
                 MetalDewarpView(renderer: renderer)
                     .gesture(dragGesture.simultaneously(with: pinchGesture))
+                    .onTapGesture(count: 2) { resetAim() }
                     .onTapGesture { onSingleTap?() }
             } else {
                 Color.black
@@ -104,10 +121,7 @@ struct FisheyeDewarpView: View {
         .onAppear {
             let r = DewarpRenderer(player: player)
             apply(config: store.config(for: camera.name), to: r)
-            let pose = store.pose(for: camera.name, pane: paneIndex)
-            r?.uniforms.pan = pose.pan
-            r?.uniforms.tilt = pose.tilt
-            r?.uniforms.zoom = pose.zoom
+            applyPose(store.pose(for: camera.name, pane: paneIndex), to: r)
             r?.uniforms.mode = mode.rawValue
             renderer = r
         }
@@ -125,13 +139,30 @@ struct FisheyeDewarpView: View {
             // Read-only surfaces (wall tile) follow the aim saved from the viewer live.
             // Interactive views skip this — their gestures are the source of that pose.
             if !interactive, let renderer {
-                let pose = store.pose(for: camera.name, pane: paneIndex)
-                renderer.uniforms.pan = pose.pan
-                renderer.uniforms.tilt = pose.tilt
-                renderer.uniforms.zoom = pose.zoom
+                applyPose(store.pose(for: camera.name, pane: paneIndex), to: renderer)
             }
         }
-        .accessibilityLabel("Dewarped fisheye view, \(mode.label). Drag to look around, pinch to zoom.")
+        .accessibilityLabel("Dewarped fisheye view, \(mode.label). Drag to look around, pinch to zoom, double-tap to reset.")
+    }
+
+    /// Apply a saved aim, clamped to sane ranges — a pose saved by an earlier build's
+    /// pinch/drag interference bug (or a bad write) must never wedge the view somewhere
+    /// unusable.
+    private func applyPose(_ pose: FisheyePose, to renderer: DewarpRenderer?) {
+        guard let renderer else { return }
+        renderer.uniforms.pan = pose.pan.isFinite ? pose.pan : 0
+        renderer.uniforms.tilt = min(max(pose.tilt.isFinite ? pose.tilt : 0.9, 0.05), .pi * 0.58)
+        renderer.uniforms.zoom = min(max(pose.zoom.isFinite ? pose.zoom : 1, 0.5), 6)
+    }
+
+    /// Double-tap: snap back to the default aim (and save it) — the escape hatch when
+    /// the view ends up somewhere weird.
+    private func resetAim() {
+        guard let renderer, gesturesEnabled, mode != .off else { return }
+        Haptics.tap()
+        let home = paneIndex.map(FisheyePose.quadDefault) ?? FisheyePose()
+        applyPose(home, to: renderer)
+        savePose()
     }
 
     private func savePose() {
