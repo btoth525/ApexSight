@@ -409,8 +409,16 @@ struct HLSLivePlayerView: View {
     /// Reports fit vs. fill (crop) so a host drawing a detection overlay can map boxes into the
     /// same displayed video rect. Fires on toggle and on appear.
     var onFillModeChange: ((Bool) -> Void)? = nil
+    /// Reports when the fisheye dewarp takes over the presentation, so a host can hide
+    /// overlays whose coordinates only make sense on the raw frame (detection boxes).
+    var onDewarpChange: ((Bool) -> Void)? = nil
 
     @StateObject private var model = HLSLiveModel()
+    @ObservedObject private var fisheyeStore = FisheyeStore.shared
+    /// Fisheye cameras open straight into virtual PTZ — the raw warped disc is never
+    /// what the user wants first. Ignored (and no UI shown) for normal cameras.
+    @State private var dewarpMode: DewarpMode = .ptz
+    @State private var showCalibration = false
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
     @State private var fillMode = false
@@ -436,6 +444,13 @@ struct HLSLivePlayerView: View {
     @MainActor private static var hlsUnavailable: Set<String> = []
 
     private var isPlaying: Bool { model.state == .playing }
+
+    /// The Metal dewarp presentation is live: a user-marked fisheye camera, in the
+    /// full-screen viewer, in any mode but Raw. (Wall tiles always show the raw feed —
+    /// eight simultaneous GPU dewarps would be waste, and PTZ needs gestures anyway.)
+    private var dewarpActive: Bool {
+        showControls && fisheyeStore.isFisheye(camera.name) && dewarpMode != .off
+    }
 
     /// Whether we already have a cached frame to show. When we do, we connect live
     /// SILENTLY behind it — no "Connecting…" pill — so the camera feels instant
@@ -576,7 +591,21 @@ struct HLSLivePlayerView: View {
             if mjpegFallback, let client = appState.client {
                 mjpegPlayer(client)
             } else if let player = model.player {
-                playerLayer(player)
+                if dewarpActive {
+                    // Metal fisheye dewarp replaces the AVPlayerLayer; the player keeps
+                    // decoding (the renderer taps its frames via AVPlayerItemVideoOutput)
+                    // and all reconnect/fallback logic stays live underneath.
+                    FisheyeDewarpView(
+                        player: player,
+                        camera: camera,
+                        mode: dewarpMode,
+                        onSingleTap: onSingleTap
+                    )
+                    .opacity(isPlaying ? 1 : 0)
+                    .animation(.easeIn(duration: 0.3), value: isPlaying)
+                } else {
+                    playerLayer(player)
+                }
             }
 
             // Subtle connecting pill — only when there's no frame to show yet. If a
@@ -614,6 +643,16 @@ struct HLSLivePlayerView: View {
             }
         }
         .onAppear {
+            #if DEBUG
+            // Sim-driving hook: synthetic taps can't reliably reach the bottom control row
+            // (home-indicator gesture band), so tests inject the dewarp mode via the app group.
+            if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?
+                .object(forKey: "apex.debug.dewarpMode") as? Int,
+               let injected = DewarpMode(rawValue: Int32(raw)) {
+                dewarpMode = injected
+            }
+            #endif
+            onDewarpChange?(dewarpActive)
             // Returning to a kept-alive player (tab switch back) — just resume, instantly.
             if started {
                 if mjpegFallback == false { model.player?.play() }
@@ -662,6 +701,15 @@ struct HLSLivePlayerView: View {
                 started = false
             }
         }
+        .sheet(isPresented: $showCalibration) {
+            FisheyeCalibrationSheet(camera: camera)
+                .presentationDetents([.height(360)])
+                .presentationBackgroundInteraction(.enabled)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .onChange(of: dewarpMode) { _, _ in
+            onDewarpChange?(dewarpActive)
+        }
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
             switch newState {
@@ -685,19 +733,50 @@ struct HLSLivePlayerView: View {
             Spacer()
             HStack(spacing: 10) {
                 Spacer()
-                Button {
-                    Haptics.tap()
-                    fillMode.toggle()
-                    onFillModeChange?(fillMode)
-                } label: {
-                    Image(systemName: fillMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 14, weight: .black))
-                        .frame(width: 40, height: 40)
-                        .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
-                        .foregroundStyle(.white)
+                if showControls, fisheyeStore.isFisheye(camera.name) {
+                    // Cycle Virtual PTZ → Panorama → Little Planet → Raw.
+                    Button {
+                        Haptics.tap()
+                        let all = DewarpMode.allCases
+                        let next = all[(all.firstIndex(of: dewarpMode).map { ($0 + 1) % all.count }) ?? 0]
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { dewarpMode = next }
+                    } label: {
+                        Image(systemName: dewarpMode.icon)
+                            .font(.system(size: 14, weight: .black))
+                            .frame(width: 40, height: 40)
+                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel("Fisheye view: \(dewarpMode.label). Tap to change.")
+                    if dewarpActive {
+                        Button {
+                            Haptics.tap()
+                            showCalibration = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 14, weight: .black))
+                                .frame(width: 40, height: 40)
+                                .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
+                                .foregroundStyle(.white)
+                        }
+                        .accessibilityLabel("Calibrate fisheye lens")
+                    }
                 }
-                .accessibilityLabel(fillMode ? "Fit to screen" : "Fill screen")
-                if pip.isSupported {
+                if !dewarpActive {
+                    Button {
+                        Haptics.tap()
+                        fillMode.toggle()
+                        onFillModeChange?(fillMode)
+                    } label: {
+                        Image(systemName: fillMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 14, weight: .black))
+                            .frame(width: 40, height: 40)
+                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel(fillMode ? "Fit to screen" : "Fill screen")
+                }
+                if pip.isSupported, !dewarpActive {
                     Button {
                         Haptics.tap()
                         pip.toggle()

@@ -66,6 +66,7 @@ struct SettingsTab: View {
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
                 else if value == "recap" { DailyRecapView().environmentObject(appState) }
+                else if value == "fisheye" { FisheyeSettingsView().environmentObject(appState) }
             }
         }
     }
@@ -289,6 +290,9 @@ struct SettingsTab: View {
             }
             settingsRow(icon: "doc.text.image.fill", title: "Daily Recap", subtitle: "Today's activity + an optional daily summary") {
                 path.append("recap")
+            }
+            settingsRow(icon: "circle.grid.cross.fill", title: "Fisheye Cameras", subtitle: "Dewarp 360° lenses with virtual PTZ") {
+                path.append("fisheye")
             }
         }
     }

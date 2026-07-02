@@ -20,6 +20,9 @@ struct LiveStreamView: View {
     @State private var showDetectionOverlay = true
     /// Mirrors the player's fit/fill state so the detection overlay maps boxes into the same rect.
     @State private var playerFillMode = false
+    /// True while the fisheye dewarp owns the presentation — detection boxes are raw-frame
+    /// coordinates and would land nowhere meaningful on a dewarped image, so hide them.
+    @State private var playerDewarped = false
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
     @StateObject private var talk = TwoWayTalkController()
@@ -178,11 +181,13 @@ struct LiveStreamView: View {
                 overlayControlsVisible: showChrome,
                 onSingleTap: { toggleChrome() },
                 onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } },
-                onFillModeChange: { playerFillMode = $0 }
+                onFillModeChange: { playerFillMode = $0 },
+                onDewarpChange: { playerDewarped = $0 }
             )
             .id(reloadToken)
 
-            if showDetectionOverlay, let dets = appState.liveDetections[camera.name], !dets.isEmpty {
+            if showDetectionOverlay, !playerDewarped,
+               let dets = appState.liveDetections[camera.name], !dets.isEmpty {
                 DetectionOverlayView(detections: dets, videoAspect: camera.aspectRatio, fill: playerFillMode)
                     .allowsHitTesting(false)
             }
