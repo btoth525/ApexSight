@@ -17,11 +17,20 @@ enum IncidentActivityController {
             severity: review.severity ?? "alert"
         )
 
-        // Reconnect to our own activity if we lost the handle across an app session — but ONLY
-        // one for THIS camera. The camera lives in the immutable attributes and can't be updated
-        // in place, so adopting a different camera's banner would show this alert's text while
-        // its "View Live" link and tap target still point at the wrong camera.
-        if current?.activityState != .active {
+        // Single-banner policy: retire EVERY live incident banner that isn't this camera's —
+        // not just the one we hold a handle to. Orphans happen when the handle is lost across
+        // an app session or a relay push started one remotely; ending only `current` left
+        // those stacked on the Lock Screen next to the new banner.
+        for stale in Activity<IncidentActivityAttributes>.activities
+        where stale.activityState == .active && stale.attributes.camera != review.camera {
+            Task { await stale.end(nil, dismissalPolicy: .immediate) }
+        }
+
+        // Reconnect to our own activity if we lost the handle — but ONLY one for THIS camera.
+        // The camera lives in the immutable attributes and can't be updated in place, so
+        // adopting a different camera's banner would show this alert's text while its
+        // "View Live" link and tap target still point at the wrong camera.
+        if current?.activityState != .active || current?.attributes.camera != review.camera {
             current = Activity<IncidentActivityAttributes>.activities.first {
                 $0.activityState == .active && $0.attributes.camera == review.camera
             }
@@ -32,14 +41,9 @@ enum IncidentActivityController {
         // the system reclaims it, instead of lingering frozen-fresh on the Lock Screen.
         let staleDate = Date().addingTimeInterval(300)
 
-        if let current, current.attributes.camera == review.camera {
+        if let current {
             Task { await current.update(ActivityContent(state: state, staleDate: staleDate)) }
         } else {
-            // A different camera (or nothing) is showing — retire that activity and start a
-            // fresh one whose attributes.camera matches what we display.
-            if let stale = current {
-                Task { await stale.end(nil, dismissalPolicy: .immediate) }
-            }
             let attributes = IncidentActivityAttributes(
                 camera: review.camera,
                 startedAt: review.startTime ?? Date().timeIntervalSince1970

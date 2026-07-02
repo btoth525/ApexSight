@@ -28,6 +28,21 @@ struct FrigateClient {
         return URLSession(configuration: config)
     }()
 
+    /// Dedicated session for large media exports (clip downloads). Streams the response body
+    /// straight to disk instead of buffering the whole MP4 in memory, and lifts the resource
+    /// timeout to an hour so a big clip over a slow link isn't killed mid-transfer by
+    /// `apiSession`'s 60s cap. `waitsForConnectivity` rides out brief drops. Shares the cookie
+    /// jar so auth stays consistent with REST calls.
+    static let downloadSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60 * 60
+        config.waitsForConnectivity = true
+        config.httpCookieStorage = .shared
+        config.httpCookieAcceptPolicy = .always
+        return URLSession(configuration: config)
+    }()
+
     init(baseURL: URL, token: String? = nil, session: URLSession = FrigateClient.apiSession) {
         self.baseURL = baseURL
         self.token = token
@@ -579,6 +594,34 @@ struct FrigateClient {
         let (data, response) = try await session.data(for: request)
         try validate(response)
         return data
+    }
+
+    /// Streams an authenticated Frigate MP4 export to a named temp file on disk and returns its
+    /// URL. Unlike `imageData(from:)` this never holds the whole clip in memory — `download(for:)`
+    /// writes the body to disk as it arrives — and uses `downloadSession` so a large export over a
+    /// slow link isn't cut off by the short REST resource timeout. The caller owns the returned file.
+    func downloadClipFile(from url: URL, suggestedName: String) async throws -> URL {
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        seedCookie(for: url)
+        let (tempURL, response) = try await FrigateClient.downloadSession.download(for: request)
+        try validate(response)
+        // `download(for:)` writes to an unnamed temp file it deletes once this call returns, so move
+        // it to a stable, path-safe location before handing it back. Camera names come from arbitrary
+        // Frigate config, so flatten any "/" or ":" that would break the file component.
+        let safeName = suggestedName
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent(safeName)
+            .appendingPathExtension("mp4")
+        do {
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: tempURL, to: dest)
+        } catch {
+            throw ClipDownloadError.writeFailed
+        }
+        return dest
     }
 
     func playerItem(for url: URL) -> AVPlayerItem {

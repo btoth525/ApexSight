@@ -16,24 +16,12 @@ enum ClipDownloadError: LocalizedError {
 }
 
 /// Downloads an authenticated Frigate MP4 clip to a temporary file and saves it to the Photos library.
+/// Clips stream straight to disk via `FrigateClient.downloadClipFile` — never buffered whole in
+/// memory, and on the long-timeout download session so big exports over slow links survive.
 @MainActor
 enum ClipDownloader {
     static func downloadToPhotos(url: URL, client: FrigateClient, fileName: String) async throws {
-        let data = try await client.imageData(from: url)
-
-        // Camera names come from arbitrary Frigate config, so a "/" (or ":") in the name would
-        // turn the file component into a non-existent subpath and fail the write. Flatten any
-        // path separators to keep the temp file a single valid component.
-        let safeName = fileName.replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(safeName)
-            .appendingPathExtension("mp4")
-        do {
-            try data.write(to: tempURL, options: .atomic)
-        } catch {
-            throw ClipDownloadError.writeFailed
-        }
+        let tempURL = try await client.downloadClipFile(from: url, suggestedName: fileName)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let status = await requestAddPermission()
@@ -51,18 +39,7 @@ enum ClipDownloader {
     /// does NOT delete the file — the share sheet reads it after this returns. The OS clears the
     /// temp directory later.
     static func downloadToTempFile(url: URL, client: FrigateClient, fileName: String) async throws -> URL {
-        let data = try await client.imageData(from: url)
-        let safeName = fileName.replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(safeName)
-            .appendingPathExtension("mp4")
-        do {
-            try data.write(to: tempURL, options: .atomic)
-        } catch {
-            throw ClipDownloadError.writeFailed
-        }
-        return tempURL
+        try await client.downloadClipFile(from: url, suggestedName: fileName)
     }
 
     private static func requestAddPermission() async -> PHAuthorizationStatus {
