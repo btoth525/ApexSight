@@ -45,7 +45,20 @@ enum DewarpMode: Int32, CaseIterable {
     }
 }
 
-/// Per-camera fisheye lens calibration, persisted by `FisheyeStore`.
+/// A saved virtual-camera aim — where the user left the view pointed.
+struct FisheyePose: Codable, Equatable {
+    var pan: Float = 0
+    var tilt: Float = 0.9
+    var zoom: Float = 1
+    var mode: Int32 = DewarpMode.ptz.rawValue
+
+    /// Default aims for the quad view: four compass quadrants of the room.
+    static func quadDefault(_ pane: Int) -> FisheyePose {
+        FisheyePose(pan: Float(pane) * .pi / 2, tilt: 0.9, zoom: 1, mode: DewarpMode.ptz.rawValue)
+    }
+}
+
+/// Per-camera fisheye lens calibration + saved view state, persisted by `FisheyeStore`.
 struct FisheyeConfig: Codable, Equatable {
     /// Reolink fisheye lens ≈ 200° field of view.
     static let reolinkLensFOV: Float = 3.49
@@ -54,4 +67,27 @@ struct FisheyeConfig: Codable, Equatable {
     var centerY: Float = 0.5
     var radius: Float = 0.5
     var lensFOV: Float = reolinkLensFOV
+    /// Where the single dewarped view was last aimed (viewer AND wall tile restore it).
+    var pose: FisheyePose?
+    /// PTZ lock — gestures disabled so the saved view can't be nudged accidentally.
+    var locked: Bool = false
+    /// Verkada-style multi-view: one fisheye split into four independent PTZ panes.
+    var quadEnabled: Bool = false
+    /// Saved aim of each quad pane (index 0–3).
+    var quadPoses: [FisheyePose]?
+
+    init() {}
+
+    // Custom decoding so configs stored by earlier builds (no view-state keys) load cleanly.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        centerX = try c.decodeIfPresent(Float.self, forKey: .centerX) ?? 0.5
+        centerY = try c.decodeIfPresent(Float.self, forKey: .centerY) ?? 0.5
+        radius = try c.decodeIfPresent(Float.self, forKey: .radius) ?? 0.5
+        lensFOV = try c.decodeIfPresent(Float.self, forKey: .lensFOV) ?? Self.reolinkLensFOV
+        pose = try c.decodeIfPresent(FisheyePose.self, forKey: .pose)
+        locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        quadEnabled = try c.decodeIfPresent(Bool.self, forKey: .quadEnabled) ?? false
+        quadPoses = try c.decodeIfPresent([FisheyePose].self, forKey: .quadPoses)
+    }
 }

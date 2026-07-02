@@ -445,11 +445,20 @@ struct HLSLivePlayerView: View {
 
     private var isPlaying: Bool { model.state == .playing }
 
-    /// The Metal dewarp presentation is live: a user-marked fisheye camera, in the
-    /// full-screen viewer, in any mode but Raw. (Wall tiles always show the raw feed —
-    /// eight simultaneous GPU dewarps would be waste, and PTZ needs gestures anyway.)
+    /// The Metal dewarp presentation is live in the full-screen viewer: a user-marked
+    /// fisheye camera in any mode but Raw, or the quad multi-view.
     private var dewarpActive: Bool {
-        showControls && fisheyeStore.isFisheye(camera.name) && dewarpMode != .off
+        showControls && fisheyeStore.isFisheye(camera.name)
+            && (quadActive || dewarpMode != .off)
+    }
+
+    /// Verkada-style four-pane multi-view, persisted per camera.
+    private var quadActive: Bool {
+        fisheyeStore.config(for: camera.name).quadEnabled
+    }
+
+    private var fisheyeLocked: Bool {
+        fisheyeStore.config(for: camera.name).locked
     }
 
     /// Whether we already have a cached frame to show. When we do, we connect live
@@ -595,14 +604,35 @@ struct HLSLivePlayerView: View {
                     // Metal fisheye dewarp replaces the AVPlayerLayer; the player keeps
                     // decoding (the renderer taps its frames via AVPlayerItemVideoOutput)
                     // and all reconnect/fallback logic stays live underneath.
+                    Group {
+                        if quadActive {
+                            FisheyeQuadView(player: player, camera: camera, onSingleTap: onSingleTap)
+                        } else {
+                            FisheyeDewarpView(
+                                player: player,
+                                camera: camera,
+                                mode: dewarpMode,
+                                onSingleTap: onSingleTap
+                            )
+                        }
+                    }
+                    .opacity(isPlaying ? 1 : 0)
+                    .animation(.easeIn(duration: 0.3), value: isPlaying)
+                } else if !showControls, fisheyeStore.isFisheye(camera.name),
+                          let savedMode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
+                          savedMode != .off {
+                    // Wall tile: show the SAME saved dewarped view the viewer uses —
+                    // Verkada-style — instead of the raw warped disc. Gestures off
+                    // (the tile's tap/long-press behaviors stay with the cell).
                     FisheyeDewarpView(
                         player: player,
                         camera: camera,
-                        mode: dewarpMode,
-                        onSingleTap: onSingleTap
+                        mode: savedMode,
+                        interactive: false
                     )
                     .opacity(isPlaying ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: isPlaying)
+                    .allowsHitTesting(false)
                 } else {
                     playerLayer(player)
                 }
@@ -643,6 +673,11 @@ struct HLSLivePlayerView: View {
             }
         }
         .onAppear {
+            // Reopen exactly how the user left this camera — saved mode rides in the pose.
+            if fisheyeStore.isFisheye(camera.name),
+               let saved = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode) {
+                dewarpMode = saved
+            }
             #if DEBUG
             // Sim-driving hook: synthetic taps can't reliably reach the bottom control row
             // (home-indicator gesture band), so tests inject the dewarp mode via the app group.
@@ -707,7 +742,14 @@ struct HLSLivePlayerView: View {
                 .presentationBackgroundInteraction(.enabled)
                 .presentationBackground(.ultraThinMaterial)
         }
-        .onChange(of: dewarpMode) { _, _ in
+        .onChange(of: dewarpMode) { _, newMode in
+            // Persist the chosen view mode (including Raw) so the camera reopens —
+            // in the viewer AND on the wall tile — exactly how the user left it.
+            if fisheyeStore.isFisheye(camera.name) {
+                var pose = fisheyeStore.pose(for: camera.name, pane: nil)
+                pose.mode = newMode.rawValue
+                fisheyeStore.savePose(camera.name, pane: nil, pose: pose)
+            }
             onDewarpChange?(dewarpActive)
         }
         .onChange(of: model.state) { _, newState in
@@ -734,32 +776,62 @@ struct HLSLivePlayerView: View {
             HStack(spacing: 10) {
                 Spacer()
                 if showControls, fisheyeStore.isFisheye(camera.name) {
-                    // Cycle Virtual PTZ → Panorama → Little Planet → Raw.
+                    // Quad multi-view toggle — one fisheye, four independent PTZ panes.
                     Button {
                         Haptics.tap()
-                        let all = DewarpMode.allCases
-                        let next = all[(all.firstIndex(of: dewarpMode).map { ($0 + 1) % all.count }) ?? 0]
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { dewarpMode = next }
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            fisheyeStore.setQuadEnabled(camera.name, enabled: !quadActive)
+                        }
                     } label: {
-                        Image(systemName: dewarpMode.icon)
+                        Image(systemName: quadActive ? "rectangle.fill" : "square.split.2x2")
                             .font(.system(size: 14, weight: .black))
                             .frame(width: 40, height: 40)
                             .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
                     }
-                    .accessibilityLabel("Fisheye view: \(dewarpMode.label). Tap to change.")
-                    if dewarpActive {
+                    .accessibilityLabel(quadActive ? "Single view" : "Quad view — four angles at once")
+                    if !quadActive {
+                        // Cycle Virtual PTZ → Panorama → Little Planet → Raw.
                         Button {
                             Haptics.tap()
-                            showCalibration = true
+                            let all = DewarpMode.allCases
+                            let next = all[(all.firstIndex(of: dewarpMode).map { ($0 + 1) % all.count }) ?? 0]
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { dewarpMode = next }
                         } label: {
-                            Image(systemName: "slider.horizontal.3")
+                            Image(systemName: dewarpMode.icon)
                                 .font(.system(size: 14, weight: .black))
                                 .frame(width: 40, height: 40)
                                 .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                                 .foregroundStyle(.white)
                         }
-                        .accessibilityLabel("Calibrate fisheye lens")
+                        .accessibilityLabel("Fisheye view: \(dewarpMode.label). Tap to change.")
+                    }
+                    if dewarpActive {
+                        // PTZ lock — freeze every pane's aim so it can't be nudged.
+                        Button {
+                            Haptics.tap()
+                            fisheyeStore.setLocked(camera.name, locked: !fisheyeLocked)
+                        } label: {
+                            Image(systemName: fisheyeLocked ? "lock.fill" : "lock.open")
+                                .font(.system(size: 14, weight: .black))
+                                .frame(width: 40, height: 40)
+                                .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
+                                .foregroundStyle(fisheyeLocked ? GlassTheme.accent : .white)
+                        }
+                        .accessibilityLabel(fisheyeLocked ? "Unlock camera aim" : "Lock camera aim")
+                        if !fisheyeLocked {
+                            Button {
+                                Haptics.tap()
+                                showCalibration = true
+                            } label: {
+                                Image(systemName: "slider.horizontal.3")
+                                    .font(.system(size: 14, weight: .black))
+                                    .frame(width: 40, height: 40)
+                                    .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
+                                    .foregroundStyle(.white)
+                            }
+                            .accessibilityLabel("Calibrate fisheye lens")
+                        }
                     }
                 }
                 if !dewarpActive {

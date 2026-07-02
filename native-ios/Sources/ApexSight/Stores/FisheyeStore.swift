@@ -41,6 +41,45 @@ final class FisheyeStore: ObservableObject {
         save()
     }
 
+    /// Persist where the user left a view aimed. `pane` nil = the single dewarped view
+    /// (shared by the viewer and the wall tile); 0–3 = a quad-view pane.
+    func savePose(_ camera: String, pane: Int?, pose: FisheyePose) {
+        guard var config = configs[camera] else { return }
+        if let pane {
+            var poses = config.quadPoses ?? (0..<4).map(FisheyePose.quadDefault)
+            guard pane >= 0, pane < poses.count else { return }
+            poses[pane] = pose
+            config.quadPoses = poses
+        } else {
+            config.pose = pose
+        }
+        configs[camera] = config
+        save()
+    }
+
+    func pose(for camera: String, pane: Int?) -> FisheyePose {
+        let config = configs[camera] ?? FisheyeConfig()
+        if let pane {
+            let poses = config.quadPoses ?? (0..<4).map(FisheyePose.quadDefault)
+            return pane < poses.count ? poses[pane] : FisheyePose.quadDefault(pane)
+        }
+        return config.pose ?? FisheyePose()
+    }
+
+    func setLocked(_ camera: String, locked: Bool) {
+        guard var config = configs[camera] else { return }
+        config.locked = locked
+        configs[camera] = config
+        save()
+    }
+
+    func setQuadEnabled(_ camera: String, enabled: Bool) {
+        guard var config = configs[camera] else { return }
+        config.quadEnabled = enabled
+        configs[camera] = config
+        save()
+    }
+
     private func save() {
         guard let data = try? JSONEncoder().encode(configs) else { return }
         defaults?.set(data, forKey: key)
