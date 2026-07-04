@@ -146,6 +146,15 @@ struct ActivityTab: View {
             }
             .onDisappear { toastTask?.cancel(); toastTask = nil }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { Haptics.select(); path.append(IncidentsRoute()) } label: {
+                        Image(systemName: "square.stack.3d.up.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(GlassTheme.accent)
+                    }
+                    .accessibilityLabel("Incidents")
+                    .accessibilityHint("Grouped activity you can export")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.m) {
                         if appState.isLoading || loadingFiltered { ProgressView().tint(GlassTheme.accent) }
@@ -161,6 +170,15 @@ struct ActivityTab: View {
             }
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
+            }
+            .navigationDestination(for: IncidentsRoute.self) { _ in
+                IncidentsListView()
+            }
+            .navigationDestination(for: Incident.self) { incident in
+                IncidentDetailView(incident: incident)
+            }
+            .navigationDestination(for: MyExportsRoute.self) { _ in
+                MyExportsView()
             }
         }
     }

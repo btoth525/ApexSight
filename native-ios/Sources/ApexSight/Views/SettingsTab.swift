@@ -13,6 +13,7 @@ struct SettingsTab: View {
     private var armModeRaw = ArmMode.away.rawValue
     @State private var showSignOutConfirm = false
     @State private var showConfigEditor = false
+    @State private var showMyExports = false
     @State private var showRestartConfirm = false
     @State private var restartToast: String?
 
@@ -321,6 +322,17 @@ struct SettingsTab: View {
 
                 Button {
                     Haptics.tap()
+                    showMyExports = true
+                } label: {
+                    settingsRowContent(icon: "film.stack", title: "My Exports",
+                                       subtitle: "Clips you've exported — share, save, rename, delete")
+                }
+                .buttonStyle(.plain)
+
+                Divider().overlay(GlassTheme.separator)
+
+                Button {
+                    Haptics.tap()
                     showRestartConfirm = true
                 } label: {
                     settingsRowContent(icon: "arrow.triangle.2.circlepath", title: "Restart Frigate",
@@ -331,6 +343,9 @@ struct SettingsTab: View {
         }
         .fullScreenCover(isPresented: $showConfigEditor) {
             ConfigEditorView().environmentObject(appState)
+        }
+        .sheet(isPresented: $showMyExports) {
+            NavigationStack { MyExportsView().environmentObject(appState) }
         }
         .confirmationDialog("Restart Frigate now?", isPresented: $showRestartConfirm, titleVisibility: .visible) {
             Button("Restart Frigate", role: .destructive) {

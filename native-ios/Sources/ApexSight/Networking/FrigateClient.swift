@@ -527,6 +527,63 @@ struct FrigateClient {
         try validate(response)
     }
 
+    // MARK: - Exports (server-side clip rendering)
+
+    /// Ask Frigate to render a recording segment to a downloadable MP4 — server-side (ffmpeg),
+    /// so it works for ANY camera resolution/codec, including the ultra-wide HEVC cameras that
+    /// the on-device export pipeline can't decode. Returns the new export's id.
+    /// `playback` is "realtime" (default) or "timelapse_25x". Times are epoch seconds.
+    func startExport(camera: String, start: Double, end: Double,
+                     playback: String = "realtime", name: String? = nil) async throws -> String {
+        let url = baseURL.appending(path: "api/export/\(camera)/start/\(Int(start))/end/\(Int(end))")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &request)
+        var body: [String: Any] = ["playback": playback]
+        if let name, !name.isEmpty { body["name"] = name }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let id = json?["export_id"] as? String else {
+            let msg = json?["message"] as? String ?? "Frigate didn't return an export id."
+            throw FrigateError.message(msg)
+        }
+        return id
+    }
+
+    /// All exports Frigate currently holds (newest first), completed or still rendering.
+    func exports() async throws -> [FrigateExport] {
+        try await get("api/exports")
+    }
+
+    /// Authenticated URL for the finished export file (served at `/exports/<filename>`, NOT under
+    /// `/api`). Derive the filename from an export's `videoPath`.
+    func exportFileURL(filename: String) -> URL {
+        baseURL.appending(path: "exports/\(filename)")
+    }
+
+    func renameExport(id: String, name: String) async throws {
+        let url = baseURL.appending(path: "api/export/\(id)/rename")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &request)
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
+    func deleteExport(id: String) async throws {
+        let url = baseURL.appending(path: "api/export/\(id)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        applyAuth(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
     /// Seed values for a camera's runtime toggles, read from the config file. This is only a
     /// FALLBACK for the very first display — the live truth comes from Frigate's
     /// `<camera>/<feature>/state` WebSocket topics (see `AppState.cameraControlStates`). Runtime
