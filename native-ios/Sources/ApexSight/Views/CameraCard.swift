@@ -6,6 +6,7 @@ struct CameraCard: View {
     let camera: FrigateCamera
 
     @State private var isLive = false
+    @State private var showSnapshot = false
 
     private var capability: CameraCapability? {
         appState.capabilities.first(where: { $0.camera == camera.name })
@@ -64,6 +65,23 @@ struct CameraCard: View {
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+        // Long-press for a quick big snapshot without leaving the wall — tap still opens live.
+        .contextMenu {
+            if camera.name != "birdseye", appState.client?.latestFrameURL(camera: camera.name) != nil {
+                Button {
+                    Haptics.tap()
+                    showSnapshot = true
+                } label: {
+                    Label("View Snapshot", systemImage: "photo")
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showSnapshot) {
+            if let url = appState.client?.latestFrameURL(camera: camera.name) {
+                FullscreenMediaView(media: .image(url))
+                    .environmentObject(appState)
+            }
+        }
     }
 
     private var bottomBar: some View {
