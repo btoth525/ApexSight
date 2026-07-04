@@ -480,6 +480,53 @@ struct FrigateClient {
     // MARK: - Camera quick controls (temporary in-memory toggles, reset on Frigate restart)
 
     /// Enables or disables object detection for a camera. Survives until Frigate restarts.
+    // MARK: - Config editor + restart
+
+    /// The full raw Frigate config YAML, for the in-app editor. Frigate serves it as a plain
+    /// string, though some proxies JSON-encode it — handle both so the editor gets clean text.
+    func rawConfig() async throws -> String {
+        var request = URLRequest(url: baseURL.appending(path: "api/config/raw"))
+        applyAuth(to: &request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        // JSON-encoded string ("version: ...\n...") → decode to the real multiline text.
+        if let decoded = try? JSONDecoder().decode(String.self, from: data) { return decoded }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Save edited config YAML. Frigate VALIDATES it and rejects a broken config with a
+    /// descriptive message — surfaced so the editor can show exactly what's wrong instead of
+    /// silently bricking the server. `restart: true` applies it by restarting Frigate.
+    func saveConfig(_ yaml: String, restart: Bool) async throws {
+        var components = URLComponents(url: baseURL.appending(path: "api/config/save"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "save_option", value: restart ? "restart" : "saveonly")]
+        guard let url = components?.url else { throw FrigateError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &request)
+        request.httpBody = yaml.data(using: .utf8)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FrigateError.badResponse(0) }
+        // Frigate answers non-2xx (or 200 + {"success":false}) with a "message" explaining the
+        // validation failure — the most useful thing to show the user editing on a phone.
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let succeeded = (200..<300).contains(http.statusCode) && (json?["success"] as? Bool) != false
+        guard succeeded else {
+            let msg = json?["message"] as? String ?? "Frigate rejected the config (\(http.statusCode))."
+            throw FrigateError.message(msg)
+        }
+    }
+
+    /// Restart the Frigate process.
+    func restart() async throws {
+        var request = URLRequest(url: baseURL.appending(path: "api/restart"))
+        request.httpMethod = "POST"
+        applyAuth(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
     /// Seed values for a camera's runtime toggles, read from the config file. This is only a
     /// FALLBACK for the very first display — the live truth comes from Frigate's
     /// `<camera>/<feature>/state` WebSocket topics (see `AppState.cameraControlStates`). Runtime

@@ -12,6 +12,9 @@ struct SettingsTab: View {
     @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var armModeRaw = ArmMode.away.rawValue
     @State private var showSignOutConfirm = false
+    @State private var showConfigEditor = false
+    @State private var showRestartConfirm = false
+    @State private var restartToast: String?
 
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -42,6 +45,7 @@ struct SettingsTab: View {
                         }
 
                         configurationSection
+                        serverToolsCard
                         aboutCard
 
                         #if DEBUG
@@ -295,6 +299,74 @@ struct SettingsTab: View {
                 path.append("fisheye")
             }
         }
+    }
+
+    // MARK: - Server Tools (config editor + restart)
+
+    private var serverToolsCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Server")
+
+                Button {
+                    Haptics.tap()
+                    showConfigEditor = true
+                } label: {
+                    settingsRowContent(icon: "curlybraces", title: "Edit config.yml",
+                                       subtitle: "Load, edit, validate & save your Frigate config")
+                }
+                .buttonStyle(.plain)
+
+                Divider().overlay(GlassTheme.separator)
+
+                Button {
+                    Haptics.tap()
+                    showRestartConfirm = true
+                } label: {
+                    settingsRowContent(icon: "arrow.triangle.2.circlepath", title: "Restart Frigate",
+                                       subtitle: "Bounce the Frigate process — cameras briefly drop", tint: GlassTheme.orange)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .fullScreenCover(isPresented: $showConfigEditor) {
+            ConfigEditorView().environmentObject(appState)
+        }
+        .confirmationDialog("Restart Frigate now?", isPresented: $showRestartConfirm, titleVisibility: .visible) {
+            Button("Restart Frigate", role: .destructive) {
+                Task {
+                    do { try await appState.client?.restart(); restartToast = "Restarting Frigate…" }
+                    catch { restartToast = "Restart failed — check the connection" }
+                    Haptics.success()
+                    try? await Task.sleep(nanoseconds: 2_500_000_000); restartToast = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All cameras go offline for a few seconds while Frigate restarts.")
+        }
+        .overlay(alignment: .bottom) {
+            if let restartToast {
+                Text(restartToast)
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, GlassTheme.Space.l).padding(.vertical, GlassTheme.Space.s)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+        }
+    }
+
+    /// Shared row content used by the tappable Server Tools buttons (mirrors `settingsRow`).
+    private func settingsRowContent(icon: String, title: String, subtitle: String, tint: Color = GlassTheme.accent) -> some View {
+        HStack(spacing: GlassTheme.Space.m) {
+            iconTile(systemName: icon, tint: tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline).foregroundStyle(GlassTheme.primary)
+                Text(subtitle).font(.footnote).foregroundStyle(GlassTheme.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GlassTheme.tertiary)
+        }
+        .contentShape(Rectangle())
     }
 
     // MARK: - About

@@ -248,50 +248,75 @@ private struct SmallWidgetView: View {
 private struct MediumWidgetView: View {
     let entry: CameraSnapshotEntry
 
+    private var todayCount: Int {
+        entry.alerts.filter { Calendar.current.isDateInToday($0.when) }.count
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            ZStack(alignment: .bottomLeading) {
-                Color.black
-                HeroSnapshotImage(image: entry.heroImage)
+        // Cinematic full-bleed: the latest snapshot fills the whole widget with a graded scrim,
+        // the newest event reads large at the bottom, and a live activity badge floats top-right —
+        // no more sparse right-hand panel.
+        ZStack(alignment: .bottom) {
+            Color.black
+            HeroSnapshotImage(image: entry.heroImage)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
 
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.78)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
+            LinearGradient(
+                colors: [.black.opacity(0.35), .clear, .clear, .black.opacity(0.55), .black.opacity(0.92)],
+                startPoint: .top, endPoint: .bottom
+            )
 
-                if let latest = entry.latest {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
-                            .font(.system(size: 12, weight: .black, design: .rounded))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                        Text(relativeShort(latest.when))
-                            .font(.system(size: 9, weight: .heavy))
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(9)
-                }
-            }
-            .frame(width: 150)
-            .frame(maxHeight: .infinity)
-            .clipped()
-
-            VStack(alignment: .leading, spacing: 6) {
-                if entry.alerts.isEmpty {
-                    AllClearCompact()
-                } else {
-                    ForEach(Array(entry.alerts.prefix(3).enumerated()), id: \.offset) { _, alert in
-                        EventFeedRow(alert: alert)
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    // Wordmark, subtle — brands the glance.
+                    Text("APEXSIGHT")
+                        .font(.system(size: 9, weight: .black, design: .rounded))
+                        .tracking(1.4)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Spacer()
+                    if todayCount > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.fill").font(.system(size: 9, weight: .black))
+                            Text("\(todayCount) today").font(.system(size: 10, weight: .heavy, design: .rounded))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(WidgetTheme.accent.opacity(0.7), lineWidth: 1))
                     }
                 }
-                Spacer(minLength: 0)
+                Spacer()
+                HStack(alignment: .bottom) {
+                    if let latest = entry.latest {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
+                                .font(.system(size: 18, weight: .black, design: .rounded))
+                                .lineLimit(1).minimumScaleFactor(0.75)
+                            Text("\(titleizeWidget(latest.camera)) · \(relativeShort(latest.when))")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.white)
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.shield.fill").foregroundStyle(WidgetTheme.accent)
+                            Text("All clear").font(.system(size: 16, weight: .black, design: .rounded)).foregroundStyle(.white)
+                        }
+                    }
+                    Spacer()
+                    if entry.latest != nil {
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white.opacity(0.85), .black.opacity(0.35))
+                            .widgetAccentable()
+                    }
+                }
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(13)
         }
+        .widgetURL(entry.latest.flatMap { $0.id }.map { URL(string: "apex://review?id=\($0)")! })
     }
 }
 

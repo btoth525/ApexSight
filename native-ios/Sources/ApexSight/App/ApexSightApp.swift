@@ -22,6 +22,16 @@ struct ApexSightApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                // Reactive glow that traces the Dynamic Island and pulses with live camera
+                // activity. Only once signed in (nothing to react to on onboarding), and it
+                // sits UNDER the alert/offline banners + privacy covers so it never fights them.
+                .overlay {
+                    if appState.session != nil {
+                        DynamicIslandAura()
+                            .environmentObject(appState)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(alignment: .top) {
                     LiveAlertBanner()
                         .environmentObject(appState)
