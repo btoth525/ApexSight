@@ -22,10 +22,20 @@ struct LiveStreamView: View {
     @State private var playerFillMode = false
     /// True while the fisheye dewarp owns the presentation — detection boxes are raw-frame
     /// coordinates and would land nowhere meaningful on a dewarped image, so hide them.
-    @State private var playerDewarped = false
+    private var playerDewarped: Bool {
+        isFisheye && (fisheyeStore.config(for: camera.name).quadEnabled || dewarpMode != .off)
+    }
+    private var isFisheye: Bool { fisheyeStore.isFisheye(camera.name) }
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
     @StateObject private var talk = TwoWayTalkController()
+    // Unified control grid: the viewer owns mute, PiP, and the fisheye view state so every
+    // control renders as ONE uniform button system (no floating overlay cluster).
+    @State private var isMutedUI = true
+    @StateObject private var pip = LivePiPController()
+    @ObservedObject private var fisheyeStore = FisheyeStore.shared
+    @State private var dewarpMode: DewarpMode = .ptz
+    @State private var showCalibration = false
     // iOS 27 on-device "Ask AI" — describe who/what is on this live camera right now.
     @State private var aiResult: String?
     @State private var isAnalyzingAI = false
@@ -63,6 +73,35 @@ struct LiveStreamView: View {
         // the chrome, so there's no jarring slide-in/out.)
         .toolbar(.hidden, for: .tabBar)
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
+        .onAppear {
+            // Reopen exactly how the user left this fisheye camera (mode rides in the pose).
+            if isFisheye, let saved = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode) {
+                dewarpMode = saved
+            }
+            #if DEBUG
+            // Sim-driving hook (synthetic taps can't reach the control rows reliably).
+            if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?
+                .object(forKey: "apex.debug.dewarpMode") as? Int,
+               let injected = DewarpMode(rawValue: Int32(raw)) {
+                dewarpMode = injected
+            }
+            #endif
+        }
+        .onChange(of: dewarpMode) { _, newMode in
+            // Persist the chosen view mode (including Raw) so this camera reopens — here
+            // AND on the wall tile — exactly how the user left it.
+            if isFisheye {
+                var pose = fisheyeStore.pose(for: camera.name, pane: nil)
+                pose.mode = newMode.rawValue
+                fisheyeStore.savePose(camera.name, pane: nil, pose: pose)
+            }
+        }
+        .sheet(isPresented: $showCalibration) {
+            FisheyeCalibrationSheet(camera: camera)
+                .presentationDetents([.height(360)])
+                .presentationBackgroundInteraction(.enabled)
+                .presentationBackground(.ultraThinMaterial)
+        }
         .task {
             scheduleHideChrome()
             // Confirm real PTZ for this one camera (off the wall path, cancels if you leave).
@@ -179,10 +218,12 @@ struct LiveStreamView: View {
                 camera: camera,
                 showControls: true,
                 overlayControlsVisible: showChrome,
+                pipController: pip,
                 onSingleTap: { toggleChrome() },
                 onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } },
-                onFillModeChange: { playerFillMode = $0 },
-                onDewarpChange: { playerDewarped = $0 }
+                externalControls: true,
+                muted: isMutedUI,
+                dewarpModeOverride: isFisheye ? dewarpMode : nil
             )
             .id(reloadToken)
 
@@ -321,21 +362,37 @@ struct LiveStreamView: View {
                     .padding(.horizontal, GlassTheme.Space.xxl)
             }
 
-            // Show every action fully — never a half-clipped button. One centered row when
-            // the set fits; otherwise it wraps to two centered rows (ViewThatFits picks the
-            // first layout whose width fits). A horizontal scroll always left a partial
-            // button peeking at the edge, which read as "cut off".
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: GlassTheme.Space.s) {
-                    ForEach(actionItems.indices, id: \.self) { actionItems[$0] }
-                }
-                .padding(.horizontal, GlassTheme.Space.l)
-
-                twoRowActions
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, 40)
+            // ONE uniform control system: every action — stream, media, audio, PiP, fisheye —
+            // renders as the same 54pt labeled button, chunked into centered rows of up to
+            // five so nothing is ever clipped, scrolled, or floating off in a corner.
+            actionGrid
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 40)
         }
+    }
+
+    /// Centered rows of ≤5 uniform buttons — 7 buttons → 4+3, 12 → 4+4+4, always balanced.
+    private var actionGrid: some View {
+        let items = actionItems
+        let perRow = 5
+        let rowCount = max(1, Int(ceil(Double(items.count) / Double(perRow))))
+        let base = items.count / rowCount
+        let extra = items.count % rowCount   // first `extra` rows get one more
+        var rows: [[Int]] = []
+        var cursor = 0
+        for r in 0..<rowCount {
+            let size = base + (r < extra ? 1 : 0)
+            rows.append(Array(cursor..<(cursor + size)))
+            cursor += size
+        }
+        return VStack(spacing: GlassTheme.Space.m) {
+            ForEach(rows.indices, id: \.self) { r in
+                HStack(spacing: GlassTheme.Space.s) {
+                    ForEach(rows[r], id: \.self) { items[$0] }
+                }
+            }
+        }
+        .padding(.horizontal, GlassTheme.Space.l)
     }
 
     /// The live-view action buttons, in order — collected so they can render as one row or
@@ -376,22 +433,57 @@ struct LiveStreamView: View {
         if appState.twoWayCameras.contains(camera.name) {
             items.append(AnyView(talkButton))
         }
-        return items
-    }
 
-    /// Fallback layout when the buttons don't fit one row: two centered rows, split evenly.
-    private var twoRowActions: some View {
-        let items = actionItems
-        let firstCount = Int(ceil(Double(items.count) / 2))
-        return VStack(spacing: GlassTheme.Space.m) {
-            HStack(spacing: GlassTheme.Space.s) {
-                ForEach(0..<firstCount, id: \.self) { items[$0] }
+        // Player controls — same uniform buttons, no separate floating cluster.
+        items.append(AnyView(actionButton(
+            icon: isMutedUI ? "speaker.slash.fill" : "speaker.wave.2.fill",
+            label: isMutedUI ? "Muted" : "Audio"
+        ) {
+            isMutedUI.toggle()
+        }))
+        if pip.isSupported {
+            items.append(AnyView(actionButton(
+                icon: pip.isActive ? "pip.exit" : "pip.enter",
+                label: "PiP"
+            ) {
+                pip.toggle()
+            }))
+        }
+
+        // Fisheye controls (only for cameras the user marked fisheye in Settings).
+        if isFisheye {
+            let quadOn = fisheyeStore.config(for: camera.name).quadEnabled
+            let locked = fisheyeStore.config(for: camera.name).locked
+            items.append(AnyView(actionButton(
+                icon: quadOn ? "rectangle.fill" : "square.split.2x2",
+                label: quadOn ? "Single" : "Quad"
+            ) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    fisheyeStore.setQuadEnabled(camera.name, enabled: !quadOn)
+                }
+            }))
+            if !quadOn {
+                items.append(AnyView(actionButton(icon: dewarpMode.icon, label: "View") {
+                    let all = DewarpMode.allCases
+                    let next = all[(all.firstIndex(of: dewarpMode).map { ($0 + 1) % all.count }) ?? 0]
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { dewarpMode = next }
+                }))
             }
-            HStack(spacing: GlassTheme.Space.s) {
-                ForEach(firstCount..<items.count, id: \.self) { items[$0] }
+            if playerDewarped {
+                items.append(AnyView(actionButton(
+                    icon: locked ? "lock.fill" : "lock.open",
+                    label: locked ? "Locked" : "Lock"
+                ) {
+                    fisheyeStore.setLocked(camera.name, locked: !locked)
+                }))
+                if !locked {
+                    items.append(AnyView(actionButton(icon: "dial.low", label: "Tune") {
+                        showCalibration = true
+                    }))
+                }
             }
         }
-        .padding(.horizontal, GlassTheme.Space.l)
+        return items
     }
 
     private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {

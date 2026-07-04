@@ -38,34 +38,15 @@ final class NotificationService: UNNotificationServiceExtension {
         }
 
         // Try the animated GIF first, then static fallbacks, until one downloads.
-        let userInfo = request.content.userInfo
+        // No on-device AI text is added — the user wants the alert exactly as sent,
+        // with the picture attached (the "👁️ …" Vision subtitle was removed by request).
         download(candidates, token: token) { [weak self] attachment in
             guard let self else { return }
             if let attachment {
                 mutableContent.attachments = [attachment]
-                // Auto-run on-device scene analysis on the just-downloaded frame and fold a short
-                // "what's going on" summary into the alert — so a closed-app push reads
-                // "👁️ 2 people · a package" instead of just "Motion". Gated on the AI settings.
-                self.enrichWithScene(mutableContent, attachmentURL: attachment.url, userInfo: userInfo)
             }
             self.contentHandler?(mutableContent)
         }
-    }
-
-    /// Fold an on-device Vision scene summary into the notification subtitle, when the user has AI
-    /// on and hasn't disabled this camera. Reads the app-group flags the app mirrors out. Runs
-    /// synchronously (Vision on a downsampled frame is fast + low-memory) inside the NSE budget.
-    private func enrichWithScene(_ content: UNMutableNotificationContent, attachmentURL: URL, userInfo: [AnyHashable: Any]) {
-        let defaults = UserDefaults(suiteName: Self.appGroupSuite)
-        let masterOn = defaults?.object(forKey: "appleIntelligenceEnabled") as? Bool ?? true
-        guard masterOn else { return }
-        if let camera = userInfo["camera"] as? String, !camera.isEmpty {
-            let disabled = Set(defaults?.stringArray(forKey: "ai.cameras.disabled") ?? [])
-            if disabled.contains(camera) { return }
-        }
-        guard let data = try? Data(contentsOf: attachmentURL),
-              let summary = SceneVision.summarize(imageData: data) else { return }
-        content.subtitle = "👁️ " + summary
     }
 
     override func serviceExtensionTimeWillExpire() {

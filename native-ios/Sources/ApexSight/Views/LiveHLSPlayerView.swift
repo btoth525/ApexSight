@@ -161,8 +161,14 @@ final class HLSLiveModel: ObservableObject {
     }
 
     func toggleMute() {
-        isMuted.toggle()
-        if !isMuted {
+        setMuted(!isMuted)
+    }
+
+    /// Host-driven mute state (the viewer's uniform Audio button routes here).
+    func setMuted(_ muted: Bool) {
+        guard muted != isMuted || player?.isMuted != muted else { return }
+        isMuted = muted
+        if !muted {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
             try? AVAudioSession.sharedInstance().setActive(true)
             didActivateAudio = true
@@ -170,7 +176,7 @@ final class HLSLiveModel: ObservableObject {
             // Hand the session back so the user's music/podcast resumes instead of staying ducked.
             releaseAudioSession()
         }
-        player?.isMuted = isMuted
+        player?.isMuted = muted
     }
 
     /// Deactivate the shared audio session if we took it, letting other apps' audio resume.
@@ -412,13 +418,19 @@ struct HLSLivePlayerView: View {
     /// Reports when the fisheye dewarp takes over the presentation, so a host can hide
     /// overlays whose coordinates only make sense on the raw frame (detection boxes).
     var onDewarpChange: ((Bool) -> Void)? = nil
+    /// External control mode (the full-screen viewer): the HOST renders every control in
+    /// its own uniform action grid, so this view shows no floating overlay buttons at all.
+    var externalControls: Bool = false
+    /// Host-owned mute state (external control mode). nil = self-managed.
+    var muted: Bool? = nil
+    /// Host-owned fisheye view mode (external control mode). nil = self-managed.
+    var dewarpModeOverride: DewarpMode? = nil
 
     @StateObject private var model = HLSLiveModel()
     @ObservedObject private var fisheyeStore = FisheyeStore.shared
     /// Fisheye cameras open straight into virtual PTZ — the raw warped disc is never
     /// what the user wants first. Ignored (and no UI shown) for normal cameras.
     @State private var dewarpMode: DewarpMode = .ptz
-    @State private var showCalibration = false
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
     @State private var fillMode = false
@@ -445,11 +457,14 @@ struct HLSLivePlayerView: View {
 
     private var isPlaying: Bool { model.state == .playing }
 
+    /// The fisheye view mode in effect — host-owned when overridden, else internal state.
+    private var effectiveDewarpMode: DewarpMode { dewarpModeOverride ?? dewarpMode }
+
     /// The Metal dewarp presentation is live in the full-screen viewer: a user-marked
     /// fisheye camera in any mode but Raw, or the quad multi-view.
     private var dewarpActive: Bool {
         showControls && fisheyeStore.isFisheye(camera.name)
-            && (quadActive || dewarpMode != .off)
+            && (quadActive || effectiveDewarpMode != .off)
     }
 
     /// Verkada-style four-pane multi-view, persisted per camera.
@@ -611,7 +626,7 @@ struct HLSLivePlayerView: View {
                             FisheyeDewarpView(
                                 player: player,
                                 camera: camera,
-                                mode: dewarpMode,
+                                mode: effectiveDewarpMode,
                                 onSingleTap: onSingleTap
                             )
                         }
@@ -665,7 +680,7 @@ struct HLSLivePlayerView: View {
                 failureOverlay("Camera offline")
             }
 
-            if showControls {
+            if showControls, !externalControls {
                 liveControls
                     .opacity(overlayControlsVisible ? 1 : 0)
                     .allowsHitTesting(overlayControlsVisible)
@@ -673,8 +688,11 @@ struct HLSLivePlayerView: View {
             }
         }
         .onAppear {
+            // Host-owned mute (external control mode) applies from the first frame.
+            if let muted { model.setMuted(muted) }
             // Reopen exactly how the user left this camera — saved mode rides in the pose.
-            if fisheyeStore.isFisheye(camera.name),
+            // (Skipped when the host owns the mode — it restores/persists itself.)
+            if dewarpModeOverride == nil, fisheyeStore.isFisheye(camera.name),
                let saved = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode) {
                 dewarpMode = saved
             }
@@ -736,16 +754,17 @@ struct HLSLivePlayerView: View {
                 started = false
             }
         }
-        .sheet(isPresented: $showCalibration) {
-            FisheyeCalibrationSheet(camera: camera)
-                .presentationDetents([.height(360)])
-                .presentationBackgroundInteraction(.enabled)
-                .presentationBackground(.ultraThinMaterial)
+        .onChange(of: muted) { _, newValue in
+            if let newValue { model.setMuted(newValue) }
+        }
+        .onChange(of: dewarpModeOverride) { _, _ in
+            onDewarpChange?(dewarpActive)
         }
         .onChange(of: dewarpMode) { _, newMode in
             // Persist the chosen view mode (including Raw) so the camera reopens —
             // in the viewer AND on the wall tile — exactly how the user left it.
-            if fisheyeStore.isFisheye(camera.name) {
+            // (Host-owned mode persists in the host.)
+            if dewarpModeOverride == nil, fisheyeStore.isFisheye(camera.name) {
                 var pose = fisheyeStore.pose(for: camera.name, pane: nil)
                 pose.mode = newMode.rawValue
                 fisheyeStore.savePose(camera.name, pane: nil, pose: pose)
@@ -775,84 +794,7 @@ struct HLSLivePlayerView: View {
             Spacer()
             HStack(spacing: 10) {
                 Spacer()
-                if showControls, fisheyeStore.isFisheye(camera.name) {
-                    // Quad multi-view toggle — one fisheye, four independent PTZ panes.
-                    Button {
-                        Haptics.tap()
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                            fisheyeStore.setQuadEnabled(camera.name, enabled: !quadActive)
-                        }
-                        // quadActive changes dewarpActive without touching dewarpMode, so the
-                        // host must hear about it here — otherwise the detection overlay draws
-                        // raw-frame boxes over the quad panes (or stays hidden over Raw).
-                        onDewarpChange?(dewarpActive)
-                    } label: {
-                        Image(systemName: quadActive ? "rectangle.fill" : "square.split.2x2")
-                            .font(.system(size: 14, weight: .black))
-                            .frame(width: 40, height: 40)
-                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
-                            .foregroundStyle(.white)
-                    }
-                    .accessibilityLabel(quadActive ? "Single view" : "Quad view — four angles at once")
-                    if !quadActive {
-                        // Cycle Virtual PTZ → Panorama → Little Planet → Raw.
-                        Button {
-                            Haptics.tap()
-                            let all = DewarpMode.allCases
-                            let next = all[(all.firstIndex(of: dewarpMode).map { ($0 + 1) % all.count }) ?? 0]
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { dewarpMode = next }
-                        } label: {
-                            Image(systemName: dewarpMode.icon)
-                                .font(.system(size: 14, weight: .black))
-                                .frame(width: 40, height: 40)
-                                .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
-                                .foregroundStyle(.white)
-                        }
-                        .accessibilityLabel("Fisheye view: \(dewarpMode.label). Tap to change.")
-                    }
-                    if dewarpActive {
-                        // PTZ lock — freeze every pane's aim so it can't be nudged.
-                        Button {
-                            Haptics.tap()
-                            fisheyeStore.setLocked(camera.name, locked: !fisheyeLocked)
-                        } label: {
-                            Image(systemName: fisheyeLocked ? "lock.fill" : "lock.open")
-                                .font(.system(size: 14, weight: .black))
-                                .frame(width: 40, height: 40)
-                                .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
-                                .foregroundStyle(fisheyeLocked ? GlassTheme.accent : .white)
-                        }
-                        .accessibilityLabel(fisheyeLocked ? "Unlock camera aim" : "Lock camera aim")
-                        if !fisheyeLocked {
-                            Button {
-                                Haptics.tap()
-                                showCalibration = true
-                            } label: {
-                                Image(systemName: "slider.horizontal.3")
-                                    .font(.system(size: 14, weight: .black))
-                                    .frame(width: 40, height: 40)
-                                    .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
-                                    .foregroundStyle(.white)
-                            }
-                            .accessibilityLabel("Calibrate fisheye lens")
-                        }
-                    }
-                }
-                if !dewarpActive {
-                    Button {
-                        Haptics.tap()
-                        fillMode.toggle()
-                        onFillModeChange?(fillMode)
-                    } label: {
-                        Image(systemName: fillMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 14, weight: .black))
-                            .frame(width: 40, height: 40)
-                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
-                            .foregroundStyle(.white)
-                    }
-                    .accessibilityLabel(fillMode ? "Fit to screen" : "Fill screen")
-                }
-                if pip.isSupported, !dewarpActive {
+                if pip.isSupported {
                     Button {
                         Haptics.tap()
                         pip.toggle()
@@ -860,7 +802,7 @@ struct HLSLivePlayerView: View {
                         Image(systemName: pip.isActive ? "pip.exit" : "pip.enter")
                             .font(.system(size: 14, weight: .black))
                             .frame(width: 40, height: 40)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
                     }
                     .accessibilityLabel(pip.isActive ? "Exit Picture in Picture" : "Picture in Picture")
@@ -974,6 +916,11 @@ struct ZoomablePlayerView: UIViewRepresentable {
             guard pip != nil, controller == nil,
                   AVPictureInPictureController.isPictureInPictureSupported(),
                   let controller = AVPictureInPictureController(playerLayer: layer) else { return }
+            // PiP REQUIRES the app audio session category to be .playback — without it,
+            // startPictureInPicture() silently no-ops. The app only set it on UNMUTE, so
+            // PiP never worked on a muted stream (the default). Category only — the session
+            // is activated by the unmute flow, so this doesn't duck other apps' audio.
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
             controller.canStartPictureInPictureAutomaticallyFromInline = autoPiP
             controller.delegate = self
             self.controller = controller
