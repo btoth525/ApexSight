@@ -12,6 +12,9 @@ struct ReviewDetailView: View {
     @State private var isWorking = false
     @StateObject private var clipModel = ClipPlayerModel()
     @State private var mediaMode: MediaMode = .video
+    /// True while our fullscreen media cover is presented — onDisappear must NOT stop the
+    /// clip player then (the cover is displaying that very player).
+    @State private var mediaExpanded = false
     @State private var detectionEvents: [FrigateEvent] = []
     @State private var loadingDetections = false
     @State private var reviewAIDescription: String?
@@ -53,12 +56,15 @@ struct ReviewDetailView: View {
             // Force a (re)load keyed to THIS review so a reused detail view can never
             // show the previous review's clip. VOD HLS for the review's time range —
             // Frigate's documented, iOS-recommended recording source.
-            clipModel.load(
+            // URL-keyed: a reused view for a NEW review loads fresh; a re-appear for the
+            // SAME review (returning from fullscreen expand or a push) keeps playback
+            // instead of reloading + ghost-auto-playing under Snapshot mode.
+            clipModel.loadIfNeeded(
                 client: client,
                 url: client.recordingHLSURL(camera: review.camera, start: start, end: end)
             )
         }
-        .onDisappear { clipModel.stop() }
+        .onDisappear { if !mediaExpanded { clipModel.stop() } }
         .task(id: review.id) {
             guard let client = appState.client else { return }
             // Reset prior review's data so a reused view doesn't show review A's summary +
@@ -146,7 +152,7 @@ struct ReviewDetailView: View {
                 }
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
-                .expandableMedia(fullscreenMedia)
+                .expandableMedia(fullscreenMedia, isPresented: $mediaExpanded)
 
                 HStack(alignment: .top, spacing: GlassTheme.Space.m) {
                     VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
@@ -222,7 +228,7 @@ struct ReviewDetailView: View {
         case .video:
             // The clip is expandable to the zoomable video. While it's still loading
             // (no player yet) hide the button rather than fall back to the snapshot.
-            guard let player = clipModel.player else { return nil }
+            guard clipModel.isReady, let player = clipModel.player else { return nil }
             return .player(player)
         case .snapshot:
             guard let url = snapshotURL else { return nil }

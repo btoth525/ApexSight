@@ -22,7 +22,8 @@ enum ClipDownloadError: LocalizedError {
 enum ClipDownloader {
     static func downloadToPhotos(url: URL, client: FrigateClient, fileName: String) async throws {
         let tempURL = try await client.downloadClipFile(from: url, suggestedName: fileName)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
+        // Remove the whole per-call directory (downloadClipFile wraps each file in one).
+        defer { try? FileManager.default.removeItem(at: tempURL.deletingLastPathComponent()) }
 
         let status = await requestAddPermission()
         guard status == .authorized || status == .limited else {

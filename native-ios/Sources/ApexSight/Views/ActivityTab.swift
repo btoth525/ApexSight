@@ -360,6 +360,13 @@ struct ActivityTab: View {
 
     private func saveClip(_ event: FrigateEvent) {
         guard let client = appState.client else { return }
+        // Offline: fail NOW with a clear message. The download session's
+        // waitsForConnectivity would otherwise park this unstructured Task silently
+        // for up to an hour with no error and no cancel path.
+        guard appState.isReachable else {
+            showToast(ClipDownloadError.noConnection.localizedDescription)
+            return
+        }
         Haptics.tap()
         showToast("Saving clip…")
         Task { @MainActor in
@@ -379,6 +386,10 @@ struct ActivityTab: View {
 
     private func shareClip(_ event: FrigateEvent) async {
         guard let client = appState.client else { return }
+        guard appState.isReachable else {
+            showToast(ClipDownloadError.noConnection.localizedDescription)
+            return
+        }
         Haptics.tap()
         showToast("Preparing clip…")
         do {

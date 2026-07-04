@@ -53,7 +53,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // fallback path) now requires `relayConfirmed`. Swallowing a failed registration
         // here used to leave the app in "relay will push" mode while the relay had no
         // token — a total, silent notification blackout until the next launch.
-        Task {
+        //
+        // Generation guard: this fires on every foreground, and each run may sleep 10s
+        // mid-retry — without the guard, a STALE run's failure could clobber a newer
+        // run's success (→ duplicate notifications + a false error in Settings).
+        Self.registerGeneration += 1
+        let generation = Self.registerGeneration
+        Task { @MainActor in
             let relayURL = DeviceTokenStore.relayURL
             let pairing = DeviceTokenStore.ensurePairingCode()
             guard !relayURL.isEmpty, !pairing.isEmpty else { return }
@@ -65,19 +71,27 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                         pairingCode: pairing,
                         environment: APNSEnvironment.current
                     )
+                    guard generation == Self.registerGeneration else { return }
                     DeviceTokenStore.relayConfirmed = true
                     DeviceTokenStore.lastError = nil
                     return
                 } catch {
-                    DeviceTokenStore.lastError = "Relay registration failed: \(error.localizedDescription)"
+                    if generation == Self.registerGeneration {
+                        DeviceTokenStore.lastError = "Relay registration failed: \(error.localizedDescription)"
+                    }
                     // One quick retry rides out a transient blip (DNS, tunnel hiccup)
                     // before dropping back to local notifications for this session.
                     if attempt == 0 { try? await Task.sleep(nanoseconds: 10_000_000_000) }
                 }
             }
+            guard generation == Self.registerGeneration else { return }
             DeviceTokenStore.relayConfirmed = false
         }
     }
+
+    /// Monotonic id for relay-registration attempts; only the newest may write the outcome.
+    /// Touched only on the main thread (delegate callback + @MainActor tasks).
+    private nonisolated(unsafe) static var registerGeneration = 0
 
     func application(
         _ application: UIApplication,

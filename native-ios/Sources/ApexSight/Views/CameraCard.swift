@@ -66,6 +66,8 @@ struct CameraCard: View {
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
         // Long-press for a quick big snapshot without leaving the wall — tap still opens live.
+        // The explicit preview matters: the default one re-instantiates the whole label —
+        // including a second HLS connection to this camera — just for the popup.
         .contextMenu {
             if camera.name != "birdseye", appState.client?.latestFrameURL(camera: camera.name) != nil {
                 Button {
@@ -74,6 +76,13 @@ struct CameraCard: View {
                 } label: {
                     Label("View Snapshot", systemImage: "photo")
                 }
+            }
+        } preview: {
+            if camera.name != "birdseye", let url = appState.client?.latestFrameURL(camera: camera.name) {
+                RemoteImage(url: url, contentMode: .fit)
+                    .aspectRatio(camera.aspectRatio, contentMode: .fit)
+                    .frame(width: 340)
+                    .background(Color.black)
             }
         }
         .fullScreenCover(isPresented: $showSnapshot) {

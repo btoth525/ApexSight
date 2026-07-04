@@ -285,8 +285,12 @@ struct FisheyeCalibrationSheet: View {
                 Spacer()
                 Button("Reset") {
                     Haptics.tap()
-                    config = FisheyeConfig()
-                    store.update(camera.name, config: config)
+                    // Reset LENS fields only — pose/lock/quad state are not calibration.
+                    config.centerX = 0.5
+                    config.centerY = 0.5
+                    config.radius = 0.5
+                    config.lensFOV = FisheyeConfig.reolinkLensFOV
+                    saveCalibration()
                 }
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(GlassTheme.accent)
@@ -317,10 +321,23 @@ struct FisheyeCalibrationSheet: View {
         }
         .padding(GlassTheme.Space.l)
         .onAppear { config = store.config(for: camera.name) }
-        .onChange(of: config) { _, newConfig in
+        .onChange(of: config) { _, _ in
             // Live-apply while scrubbing — the viewer under the sheet updates in real time.
-            store.update(camera.name, config: newConfig)
+            saveCalibration()
         }
+    }
+
+    /// Write ONLY the lens-calibration fields, read-modify-write against the LIVE stored
+    /// config. Writing the sheet's whole snapshot clobbered any pose the user saved while
+    /// the sheet was up (it's `.presentationBackgroundInteraction(.enabled)` precisely so
+    /// they can aim while calibrating) — the aim kept snapping back (audit, build 126).
+    private func saveCalibration() {
+        var live = store.config(for: camera.name)
+        live.centerX = config.centerX
+        live.centerY = config.centerY
+        live.radius = config.radius
+        live.lensFOV = config.lensFOV
+        store.update(camera.name, config: live)
     }
 
     private func calibrationSlider(

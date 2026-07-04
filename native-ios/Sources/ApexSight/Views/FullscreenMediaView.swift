@@ -69,21 +69,28 @@ struct FullscreenMediaView: View {
 /// full-screen with the same smooth zoom. Pass `nil` to hide the button (e.g. while loading).
 struct ExpandableMediaModifier: ViewModifier {
     let media: FullscreenMediaView.Media?
+    /// Optional externally-owned presentation state. Hosts that share an AVPlayer with the
+    /// cover pass this so their `onDisappear` (which fires when a fullScreenCover presents!)
+    /// can tell "covered by our own viewer" apart from "actually left the screen" — and not
+    /// stop the very player the cover is displaying.
+    var isPresented: Binding<Bool>? = nil
     // The fullscreen cover hosts RemoteImage (for the .image case), which needs appState
     // to load via appState.client. Cover content doesn't reliably inherit the presenter's
     // environment objects, so capture and re-inject it here.
     @EnvironmentObject private var appState: AppState
-    @State private var showFullscreen = false
+    @State private var internalPresented = false
+
+    private var presented: Binding<Bool> { isPresented ?? $internalPresented }
 
     func body(content: Content) -> some View {
         content
             // Tap anywhere on the media to open it full-screen (not just the corner button) —
             // the whole snapshot/clip is the target, so it's obvious and easy while glancing.
             .contentShape(Rectangle())
-            .onTapGesture { if media != nil { showFullscreen = true } }
+            .onTapGesture { if media != nil { presented.wrappedValue = true } }
             .overlay(alignment: .topTrailing) {
                 if media != nil {
-                    Button { showFullscreen = true } label: {
+                    Button { presented.wrappedValue = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(width: 34, height: 34)
@@ -95,7 +102,7 @@ struct ExpandableMediaModifier: ViewModifier {
                     .padding(GlassTheme.Space.s)
                 }
             }
-            .fullScreenCover(isPresented: $showFullscreen) {
+            .fullScreenCover(isPresented: presented) {
                 if let media {
                     FullscreenMediaView(media: media)
                         .environmentObject(appState)
@@ -106,7 +113,9 @@ struct ExpandableMediaModifier: ViewModifier {
 
 extension View {
     /// Overlays a fullscreen-expand button that opens a zoomable, landscape-capable viewer.
-    func expandableMedia(_ media: FullscreenMediaView.Media?) -> some View {
-        modifier(ExpandableMediaModifier(media: media))
+    /// Pass `isPresented` when the host must know the cover is up (e.g. to keep a shared
+    /// AVPlayer alive through its own `onDisappear`).
+    func expandableMedia(_ media: FullscreenMediaView.Media?, isPresented: Binding<Bool>? = nil) -> some View {
+        modifier(ExpandableMediaModifier(media: media, isPresented: isPresented))
     }
 }

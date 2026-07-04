@@ -136,7 +136,15 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
         }
         let alert = CPAlertTemplate(titleVariants: [full, short], actions: [view, dismiss])
-        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+        // CarPlay allows ONE presented template — a newer alert arriving while an older
+        // popup is still up was silently dropped. Replace the stale popup with the new one.
+        if interfaceController?.presentedTemplate != nil {
+            interfaceController?.dismissTemplate(animated: false) { [weak self] _, _ in
+                self?.interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+            }
+        } else {
+            interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+        }
     }
 
     // MARK: - Detail screens (snapshot + info)

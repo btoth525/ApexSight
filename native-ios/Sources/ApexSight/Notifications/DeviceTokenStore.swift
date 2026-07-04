@@ -23,11 +23,28 @@ enum DeviceTokenStore {
     }
 
     private static let relayConfirmedKey = "apex.relayRegistrationConfirmed"
+    private static let relayConfirmedSeededKey = "apex.relayConfirmedSeeded"
 
     /// True once the relay has ACKNOWLEDGED our current registration this install.
     /// Set on a successful `RelayClient.register`, cleared when one fails.
+    ///
+    /// MIGRATION SEED: installs upgraded from before this flag existed already hold a
+    /// token the relay ACKed under the old flow — and the relay keeps pushing to it. If
+    /// the flag started false, every alert would arrive TWICE (relay push + the local
+    /// fallback fired by background refresh) until the user's first app-open re-registers
+    /// — a window of hours to days. So the first read on an install that already has a
+    /// token seeds true, once; a genuinely failing register still clears it afterwards.
     static var relayConfirmed: Bool {
-        get { defaults?.bool(forKey: relayConfirmedKey) ?? false }
+        get {
+            guard let defaults else { return false }
+            if !defaults.bool(forKey: relayConfirmedSeededKey) {
+                defaults.set(true, forKey: relayConfirmedSeededKey)
+                if deviceTokenHex?.isEmpty == false {
+                    defaults.set(true, forKey: relayConfirmedKey)
+                }
+            }
+            return defaults.bool(forKey: relayConfirmedKey)
+        }
         set { defaults?.set(newValue, forKey: relayConfirmedKey) }
     }
 

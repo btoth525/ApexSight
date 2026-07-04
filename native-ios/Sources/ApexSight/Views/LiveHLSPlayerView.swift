@@ -782,6 +782,10 @@ struct HLSLivePlayerView: View {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                             fisheyeStore.setQuadEnabled(camera.name, enabled: !quadActive)
                         }
+                        // quadActive changes dewarpActive without touching dewarpMode, so the
+                        // host must hear about it here — otherwise the detection overlay draws
+                        // raw-frame boxes over the quad panes (or stays hidden over Raw).
+                        onDewarpChange?(dewarpActive)
                     } label: {
                         Image(systemName: quadActive ? "rectangle.fill" : "square.split.2x2")
                             .font(.system(size: 14, weight: .black))

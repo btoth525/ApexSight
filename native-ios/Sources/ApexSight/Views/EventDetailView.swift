@@ -14,6 +14,9 @@ struct EventDetailView: View {
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
     @State private var mediaMode: MediaMode = .video
+    /// True while our fullscreen media cover is presented — onDisappear must NOT stop the
+    /// clip player then (the cover is displaying that very player).
+    @State private var mediaExpanded = false
     @State private var genAIDescription: String?
     @State private var isEditingAIDescription = false
     @State private var isRegeneratingAI = false
@@ -46,10 +49,10 @@ struct EventDetailView: View {
     private var fullscreenMedia: FullscreenMediaView.Media? {
         switch mediaMode {
         case .video where hasClip:
-            // A real clip is showing — expand opens the zoomable video. While it's still
-            // loading (no player yet) we hide the button rather than fall back to the
-            // snapshot, so expand never shows the wrong medium.
-            guard let player = clipModel.player else { return nil }
+            // A real clip is showing — expand opens the zoomable video. Gate on isReady
+            // (the AVPlayer exists synchronously from the first load call, so `player != nil`
+            // was true during buffering and tapping the skeleton opened a black viewer).
+            guard clipModel.isReady, let player = clipModel.player else { return nil }
             return .player(player)
         case .video, .snapshot:
             // Either Snapshot mode, or Video mode for a clip-less event — both render the
@@ -386,7 +389,7 @@ struct EventDetailView: View {
                 }
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
-                .expandableMedia(fullscreenMedia)
+                .expandableMedia(fullscreenMedia, isPresented: $mediaExpanded)
 
                 HStack(alignment: .top, spacing: GlassTheme.Space.m) {
                     VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
@@ -432,9 +435,12 @@ struct EventDetailView: View {
                 guard hasClip, let client = appState.client else { clipModel.stop(); return }
                 // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`) —
                 // the documented, iOS-recommended way to play an event back.
-                clipModel.load(client: client, url: client.eventVodURL(id: event.id))
+                // loadIfNeeded is URL-keyed: a reused view for a NEW event loads fresh, but a
+                // re-appear for the SAME event (returning from fullscreen expand or a push)
+                // keeps the existing playback instead of reloading + ghost-auto-playing.
+                clipModel.loadIfNeeded(client: client, url: client.eventVodURL(id: event.id))
             }
-            .onDisappear { clipModel.stop() }
+            .onDisappear { if !mediaExpanded { clipModel.stop() } }
         }
     }
 

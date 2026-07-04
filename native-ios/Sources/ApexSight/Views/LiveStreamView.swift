@@ -433,6 +433,11 @@ struct LiveStreamView: View {
             Text(connecting ? "Connecting…" : (active ? "Talking…" : "Hold to Talk"))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(active ? GlassTheme.red : GlassTheme.secondary)
+                .lineLimit(1)
+                // FIXED width: the caption swaps mid-hold ("Hold to Talk" → "Talking…"), and a
+                // width change can flip the ViewThatFits row layout, which destroys the
+                // in-flight press gesture — .onEnded never fires and the mic stays hot.
+                .frame(width: 92)
         }
         .contentShape(Circle())
         // Push-to-talk lives inside the horizontal control ScrollView, so a plain

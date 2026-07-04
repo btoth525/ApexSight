@@ -471,6 +471,11 @@ final class AppState: ObservableObject {
             // Ending them all tore down another camera's still-active incident banner
             // whenever incidents overlapped.
             if item.severity == "alert" { IncidentActivityController.end(camera: item.camera) }
+            // The incident ENDED but is still unreviewed — it belongs in the queue. Removing
+            // it made the row + badge vanish, then flap back on the next 15s poll (which
+            // fetches reviewed:false and re-adds it).
+            reviews.insert(item, at: 0)
+            if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
             return
         }
 
@@ -715,8 +720,12 @@ final class AppState: ObservableObject {
                     Task { try? await CSSearchableIndex.default().indexAppEntities(entities) }
                 }
             }
+            // Await FIRST, then clear + assign in one synchronous block: a WS frame arriving
+            // during the await re-stages pendingEvents from the OLD list, and a nil-before-
+            // await ordering let that stale copy flush over the fresh server list 250ms later.
+            let fetchedEvents = (try? await nextEvents) ?? events
             pendingEvents = nil  // full refresh is authoritative over any staged WS copy
-            events = (try? await nextEvents) ?? events
+            events = fetchedEvents
             if let r = try? await nextReviews {
                 reviews = visibleReviews(r)
             }

@@ -64,9 +64,12 @@ final class ClipPlayerModel: ObservableObject {
         }
     }
 
-    /// Load only if nothing is playing yet (idempotent — safe to call from `.task`).
+    /// Load only if this exact URL isn't already loaded (idempotent — safe to call from
+    /// `.task`, which re-runs on every re-appear: returning from a fullscreen expand or a
+    /// push used to force a reload that flashed the player AND auto-played ghost audio
+    /// while Snapshot mode was showing). A different URL (reused view, new event) loads.
     func loadIfNeeded(client: FrigateClient, url: URL) {
-        guard player == nil else { return }
+        guard player == nil || lastURL != url else { return }
         load(client: client, url: url)
     }
 

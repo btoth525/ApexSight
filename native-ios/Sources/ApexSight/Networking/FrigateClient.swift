@@ -606,17 +606,19 @@ struct FrigateClient {
         seedCookie(for: url)
         let (tempURL, response) = try await FrigateClient.downloadSession.download(for: request)
         try validate(response)
-        // `download(for:)` writes to an unnamed temp file it deletes once this call returns, so move
-        // it to a stable, path-safe location before handing it back. Camera names come from arbitrary
-        // Frigate config, so flatten any "/" or ":" that would break the file component.
+        // `download(for:)` writes to an unnamed temp file it deletes once this call returns, so
+        // move it into a UNIQUE per-call directory that still carries the human-readable name
+        // (the share sheet shows the filename). A fixed path collided when Save-to-Photos and
+        // Share of the same clip ran concurrently — each call deleted the other's file mid-use.
+        // Camera names come from arbitrary Frigate config, so flatten path separators.
         let safeName = suggestedName
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent(safeName)
-            .appendingPathExtension("mp4")
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clip-\(UUID().uuidString)", isDirectory: true)
+        let dest = dir.appendingPathComponent(safeName).appendingPathExtension("mp4")
         do {
-            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: tempURL, to: dest)
         } catch {
             throw ClipDownloadError.writeFailed

@@ -111,9 +111,13 @@ fragment float4 dewarpFragment(VSOut in [[stage_in]],
     float2 cbcr  = cbcrTex.sample(s, srcUV).rg;
 
     // BT.709, video range (16–235 luma / 16–240 chroma) — the correct matrix for IP cameras.
+    // NOTE: 1.793/−0.213/−0.533/2.112 are the INTEGRATED video-range constants (they already
+    // contain the 255/224 chroma expansion) — so chroma is centered only, NOT pre-scaled.
+    // Pre-scaling by 1.138 on top double-applied the expansion: ~14% oversaturated vs the
+    // AVPlayerLayer path (audit finding, build 126).
     float Y  = (yV - 0.0627) * 1.164;
-    float Cb = (cbcr.x - 0.5) * 1.138;
-    float Cr = (cbcr.y - 0.5) * 1.138;
+    float Cb = cbcr.x - 0.5;
+    float Cr = cbcr.y - 0.5;
     float3 rgb = float3(Y + 1.793 * Cr,
                         Y - 0.213 * Cb - 0.533 * Cr,
                         Y + 2.112 * Cb);
