@@ -321,50 +321,77 @@ struct LiveStreamView: View {
                     .padding(.horizontal, GlassTheme.Space.xxl)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: GlassTheme.Space.s) {
-                actionButton(icon: "arrow.clockwise", label: "Refresh") {
-                    isLive = false
-                    reloadToken = UUID()
+            // Show every action fully — never a half-clipped button. One centered row when
+            // the set fits; otherwise it wraps to two centered rows (ViewThatFits picks the
+            // first layout whose width fits). A horizontal scroll always left a partial
+            // button peeking at the edge, which read as "cut off".
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: GlassTheme.Space.s) {
+                    ForEach(actionItems.indices, id: \.self) { actionItems[$0] }
                 }
-                if !isBirdseye {
-                    actionButton(icon: "photo", label: "Snapshot") {
-                        streamMode = .snapshot
-                    }
-                    NavigationLink {
-                        RecordingBrowserView(camera: camera)
-                    } label: {
-                        actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
-                    }
-                    .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-                    .accessibilityLabel("Open recording timeline")
-                    actionButton(icon: "slider.horizontal.3", label: "Controls") {
-                        showCameraControls = true
-                    }
-                    if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(camera.name) {
-                        actionButton(icon: "sparkles", label: "Ask AI") {
-                            Task { await analyzeLive() }
-                        }
-                    }
-                    actionButton(icon: "square.and.arrow.up", label: "Share") {
-                        Task { await shareSnapshot() }
-                    }
-                    if appState.twoWayCameras.contains(camera.name) {
-                        talkButton
-                    }
-                }
+                .padding(.horizontal, GlassTheme.Space.l)
+
+                twoRowActions
             }
-            // Morph the action-button glass as a single system (so PTZ/Talk fluidly join in).
-            .glassGroup(spacing: GlassTheme.Space.s)
-            .padding(.horizontal, GlassTheme.Space.m)
-            .frame(maxWidth: .infinity)   // center the row when it fits the screen
-            }
-            // Horizontal scroll so a full control set (Refresh/Snapshot/Timeline/Controls/Ask AI/
-            // Share/Talk) is never clipped off-screen on narrower iPhones — it simply doesn't
-            // scroll when everything already fits.
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .frame(maxWidth: .infinity)
             .padding(.bottom, 40)
         }
+    }
+
+    /// The live-view action buttons, in order — collected so they can render as one row or
+    /// wrap to two (see `ViewThatFits` above). Type-erased because the set is conditional
+    /// (birdseye, Ask AI availability, two-way audio).
+    private var actionItems: [AnyView] {
+        var items: [AnyView] = [
+            AnyView(actionButton(icon: "arrow.clockwise", label: "Refresh") {
+                isLive = false
+                reloadToken = UUID()
+            })
+        ]
+        guard !isBirdseye else { return items }
+
+        items.append(AnyView(actionButton(icon: "photo", label: "Snapshot") {
+            streamMode = .snapshot
+        }))
+        items.append(AnyView(
+            NavigationLink {
+                RecordingBrowserView(camera: camera)
+            } label: {
+                actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
+            }
+            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+            .accessibilityLabel("Open recording timeline")
+        ))
+        items.append(AnyView(actionButton(icon: "slider.horizontal.3", label: "Controls") {
+            showCameraControls = true
+        }))
+        if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(camera.name) {
+            items.append(AnyView(actionButton(icon: "sparkles", label: "Ask AI") {
+                Task { await analyzeLive() }
+            }))
+        }
+        items.append(AnyView(actionButton(icon: "square.and.arrow.up", label: "Share") {
+            Task { await shareSnapshot() }
+        }))
+        if appState.twoWayCameras.contains(camera.name) {
+            items.append(AnyView(talkButton))
+        }
+        return items
+    }
+
+    /// Fallback layout when the buttons don't fit one row: two centered rows, split evenly.
+    private var twoRowActions: some View {
+        let items = actionItems
+        let firstCount = Int(ceil(Double(items.count) / 2))
+        return VStack(spacing: GlassTheme.Space.m) {
+            HStack(spacing: GlassTheme.Space.s) {
+                ForEach(0..<firstCount, id: \.self) { items[$0] }
+            }
+            HStack(spacing: GlassTheme.Space.s) {
+                ForEach(firstCount..<items.count, id: \.self) { items[$0] }
+            }
+        }
+        .padding(.horizontal, GlassTheme.Space.l)
     }
 
     private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {

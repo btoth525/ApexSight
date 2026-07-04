@@ -144,31 +144,63 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     @MainActor
     private func pushAlertDetail(_ review: FrigateReviewItem, client: FrigateClient) async {
         let subject = review.data?.subLabels?.first ?? review.data?.objects?.first ?? "Activity"
-        let hero = CPListItem(text: titleize(subject), detailText: relative(review.startTime))
-        var rows: [CPListItem] = [hero]
-        rows.append(CPListItem(text: "Camera", detailText: titleize(review.camera)))
+        var infoRows: [CPListItem] = [CPListItem(text: "Camera", detailText: titleize(review.camera))]
         if let zones = review.data?.zones, !zones.isEmpty {
-            rows.append(CPListItem(text: "Zone", detailText: zones.map(titleize).joined(separator: ", ")))
+            infoRows.append(CPListItem(text: "Zone", detailText: zones.map(titleize).joined(separator: ", ")))
         }
-        let detail = CPListTemplate(title: titleize(review.camera), sections: [CPListSection(items: rows)])
+        infoRows.append(CPListItem(text: "When", detailText: relative(review.startTime)))
+
+        let detail = CPListTemplate(title: titleize(subject), sections: [
+            CPListSection(items: [CPListItem(text: "Loading snapshot…", detailText: nil)]),
+            CPListSection(items: infoRows)
+        ])
         interfaceController?.pushTemplate(detail, animated: true, completion: nil)
 
-        if let url = client.reviewSnapshotURL(review: review) ?? client.reviewThumbnailURL(review: review),
-           let data = try? await client.imageData(from: url),
-           let image = UIImage(data: data) {
-            hero.setImage(downscaled(image))
-        }
+        let url = client.reviewSnapshotURL(review: review) ?? client.reviewThumbnailURL(review: review)
+        let imageSection = await snapshotSection(url: url, client: client, label: titleize(review.camera))
+            ?? CPListSection(items: [CPListItem(text: "Snapshot unavailable", detailText: nil)])
+        detail.updateSections([imageSection, CPListSection(items: infoRows)])
     }
 
     @MainActor
     private func pushCameraDetail(_ name: String, client: FrigateClient) async {
-        let hero = CPListItem(text: titleize(name), detailText: "Latest still")
-        let detail = CPListTemplate(title: titleize(name), sections: [CPListSection(items: [hero])])
+        let detail = CPListTemplate(title: titleize(name), sections: [
+            CPListSection(items: [CPListItem(text: "Loading latest still…", detailText: nil)])
+        ])
         interfaceController?.pushTemplate(detail, animated: true, completion: nil)
 
-        if let data = try? await client.imageData(from: client.latestFrameURL(camera: name)),
-           let image = UIImage(data: data) {
-            hero.setImage(downscaled(image))
+        let url = client.latestFrameURL(camera: name)
+        if let section = await snapshotSection(url: url, client: client, label: titleize(name)) {
+            detail.updateSections([section])
+        } else {
+            detail.updateSections([CPListSection(items: [CPListItem(text: "Still unavailable", detailText: nil)])])
+        }
+    }
+
+    /// The biggest snapshot CarPlay allows a list app to show: a `CPListImageRowItem` gallery
+    /// tile (far larger than a list thumbnail). CarPlay has NO full-screen image template for
+    /// camera apps — that's an Apple driver-distraction restriction, not a missing feature. The
+    /// snapshot is letterboxed into the row's square so a wide camera isn't cropped.
+    @MainActor
+    private func snapshotSection(url: URL?, client: FrigateClient, label: String) async -> CPListSection? {
+        guard let url,
+              let data = try? await client.imageData(from: url),
+              let image = UIImage(data: data) else { return nil }
+        let tile = squarePadded(downscaled(image, maxDimension: 600))
+        let row = CPListImageRowItem(text: label, images: [tile])
+        row.listImageRowHandler = { _, _, completion in completion() }
+        return CPListSection(items: [row])
+    }
+
+    /// Letterbox an image onto a black square so it fills a CarPlay image-row tile without cropping.
+    private func squarePadded(_ image: UIImage) -> UIImage {
+        let side = max(image.size.width, image.size.height)
+        let canvas = CGSize(width: side, height: side)
+        return UIGraphicsImageRenderer(size: canvas).image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: canvas))
+            let origin = CGPoint(x: (side - image.size.width) / 2, y: (side - image.size.height) / 2)
+            image.draw(in: CGRect(origin: origin, size: image.size))
         }
     }
 
