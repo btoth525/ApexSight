@@ -330,7 +330,7 @@ struct ObjectConfig: Codable, Hashable {
 
 /// Current enabled/disabled state of per-camera Frigate features.
 /// Read via `FrigateClient.cameraControlState(camera:)`.
-struct CameraControlState {
+struct CameraControlState: Equatable {
     var detect: Bool = true
     var recordings: Bool = false
     var snapshots: Bool = false

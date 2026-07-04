@@ -448,11 +448,11 @@ struct LiveStreamView: View {
         ) {
             isMutedUI.toggle()
         }))
-        // Only show PiP where it can ACTUALLY start — Picture-in-Picture needs a real
-        // AVPlayerLayer, which the fisheye Metal view and the MJPEG fallback don't have.
-        // `isPossible` flips true once the controller attaches to a live HLS layer, so the
-        // button appears only on cameras where tapping it works (no more dead button).
-        if pip.isPossible {
+        // PiP shows on the plain HLS presentation (not the fisheye Metal view — that has no
+        // AVPlayerLayer to float). Gated on STABLE inputs only (device support + whether this
+        // camera is dewarped), NOT on `pip.isPossible` — that flips true at connect, which was
+        // making the whole grid re-chunk and shift when the camera went connecting→connected.
+        if pip.isSupported && !playerDewarped {
             items.append(AnyView(actionButton(
                 icon: pip.isActive ? "pip.exit" : "pip.enter",
                 label: "PiP"

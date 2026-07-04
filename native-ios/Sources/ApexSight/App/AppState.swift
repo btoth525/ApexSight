@@ -382,7 +382,36 @@ final class AppState: ObservableObject {
             updateLiveDetection(item, change: change)
         case .review(let item, let change):
             handleReview(item, change: change)
+        case .controlState(let camera, let feature, let on):
+            applyControlState(camera: camera, feature: feature, on: on)
         }
+    }
+
+    /// Live per-camera feature state, kept current from Frigate's `<camera>/<feature>/state`
+    /// WebSocket topics (Frigate sends the retained current values on connect, then updates on
+    /// every change). This is the SOURCE OF TRUTH for the Controls sheet — `/api/config` only
+    /// reflects the config file, not the running toggles.
+    @Published var cameraControlStates: [String: CameraControlState] = [:]
+
+    private func applyControlState(camera: String, feature: String, on: Bool) {
+        var state = cameraControlStates[camera] ?? CameraControlState()
+        switch feature {
+        case "detect": state.detect = on
+        case "recordings": state.recordings = on
+        case "snapshots": state.snapshots = on
+        case "audio": state.audio = on
+        case "motion": state.motion = on
+        default: return
+        }
+        if cameraControlStates[camera] != state { cameraControlStates[camera] = state }
+    }
+
+    /// Toggle a runtime camera feature LIVE over the WebSocket (the only thing Frigate applies
+    /// without a restart). Updates the local state optimistically; Frigate echoes the real state
+    /// back on `<camera>/<feature>/state`, which keeps the map honest.
+    func setCameraControl(camera: String, feature: CameraFeature, enabled: Bool) {
+        eventStream.send(topic: "\(camera)/\(feature.rawValue)/set", payload: enabled ? "ON" : "OFF")
+        applyControlState(camera: camera, feature: feature.rawValue, on: enabled)
     }
 
     private func updateLiveDetection(_ item: FrigateEvent, change: ChangeType) {

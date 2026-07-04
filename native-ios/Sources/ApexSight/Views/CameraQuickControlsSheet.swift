@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Per-camera feature toggles — arm/disarm detect, recordings, snapshots, and audio
-/// without touching Frigate's config file. Changes are temporary (survive until Frigate
-/// restarts) but instant, which is exactly what "I need to walk past this camera" requires.
+/// Per-camera feature toggles — arm/disarm detect, recordings, snapshots, audio, and motion
+/// LIVE. Commands go over Frigate's WebSocket (`<camera>/<feature>/set`), which applies them
+/// instantly to the running instance; the HTTP config API only stages the config file and needs
+/// a restart (that was the "says it did but it didn't" bug). State is read from the live
+/// `<camera>/<feature>/state` topics that `AppState.cameraControlStates` keeps current.
 struct CameraQuickControlsSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
@@ -10,9 +12,16 @@ struct CameraQuickControlsSheet: View {
 
     let camera: FrigateCamera
 
-    @State private var state = CameraControlState()
-    @State private var isLoading = true
+    /// Only true on the very first open of a camera whose live state hasn't arrived yet.
+    @State private var isLoading = false
     @State private var toastMessage: String?
+
+    /// The live state (WS is the source of truth). Falls back to a neutral default until the
+    /// retained state arrives — which is usually already present, since the socket is connected
+    /// the whole time the app is open.
+    private var state: CameraControlState {
+        appState.cameraControlStates[camera.name] ?? CameraControlState()
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,7 +38,7 @@ struct CameraQuickControlsSheet: View {
                         .foregroundStyle(GlassTheme.accent)
                 }
             }
-            .task { await loadState() }
+            .task { await seedStateIfNeeded() }
         }
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
@@ -58,72 +67,28 @@ struct CameraQuickControlsSheet: View {
         } else {
             List {
                 Section {
-                    controlRow(
-                        icon: "eye.fill",
-                        tint: GlassTheme.green,
-                        title: "Detection",
-                        subtitle: "Object detection — person, car, animal",
-                        isOn: $state.detect
-                    ) { enabled in
-                        await toggle(label: "Detection \(enabled ? "on" : "off")") {
-                            try await appState.client?.setCameraDetect(camera: camera.name, enabled: enabled)
-                        }
-                    }
-
-                    controlRow(
-                        icon: "record.circle.fill",
-                        tint: GlassTheme.red,
-                        title: "Recordings",
-                        subtitle: "Save clips to Frigate storage",
-                        isOn: $state.recordings
-                    ) { enabled in
-                        await toggle(label: "Recordings \(enabled ? "on" : "off")") {
-                            try await appState.client?.setCameraRecordings(camera: camera.name, enabled: enabled)
-                        }
-                    }
-
-                    controlRow(
-                        icon: "photo.fill",
-                        tint: GlassTheme.blue,
-                        title: "Snapshots",
-                        subtitle: "Save detection stills to Frigate",
-                        isOn: $state.snapshots
-                    ) { enabled in
-                        await toggle(label: "Snapshots \(enabled ? "on" : "off")") {
-                            try await appState.client?.setCameraSnapshots(camera: camera.name, enabled: enabled)
-                        }
-                    }
-
-                    controlRow(
-                        icon: "waveform",
-                        tint: GlassTheme.orange,
-                        title: "Audio Detection",
-                        subtitle: "Detect barking, alarms, breaking glass",
-                        isOn: $state.audio
-                    ) { enabled in
-                        await toggle(label: "Audio \(enabled ? "on" : "off")") {
-                            try await appState.client?.setCameraAudio(camera: camera.name, enabled: enabled)
-                        }
-                    }
-
-                    controlRow(
-                        icon: "figure.walk",
-                        tint: GlassTheme.cyan,
-                        title: "Motion",
-                        subtitle: "Pixel-level motion zone trigger",
-                        isOn: $state.motion
-                    ) { enabled in
-                        await toggle(label: "Motion \(enabled ? "on" : "off")") {
-                            try await appState.client?.setCameraMotion(camera: camera.name, enabled: enabled)
-                        }
-                    }
+                    controlRow(icon: "eye.fill", tint: GlassTheme.green, title: "Detection",
+                               subtitle: "Object detection — person, car, animal",
+                               isOn: state.detect, feature: .detect)
+                    controlRow(icon: "record.circle.fill", tint: GlassTheme.red, title: "Recordings",
+                               subtitle: "Save clips to Frigate storage",
+                               isOn: state.recordings, feature: .recordings)
+                    controlRow(icon: "photo.fill", tint: GlassTheme.blue, title: "Snapshots",
+                               subtitle: "Save detection stills to Frigate",
+                               isOn: state.snapshots, feature: .snapshots)
+                    controlRow(icon: "waveform", tint: GlassTheme.orange, title: "Audio Detection",
+                               subtitle: "Detect barking, alarms, breaking glass",
+                               isOn: state.audio, feature: .audio)
+                    controlRow(icon: "figure.walk", tint: GlassTheme.cyan, title: "Motion",
+                               subtitle: "Pixel-level motion zone trigger",
+                               isOn: state.motion, feature: .motion)
                 } header: {
                     Text(titleize(camera.name))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(GlassTheme.secondary)
                         .textCase(nil)
                 } footer: {
-                    Text("These toggles are temporary — they reset when Frigate restarts. Edit config.yml for permanent changes.")
+                    Text("Live camera controls. Changes apply instantly and reset when Frigate restarts (edit config.yml for permanent changes).")
                         .font(.caption)
                         .foregroundStyle(GlassTheme.tertiary)
                 }
@@ -137,15 +102,15 @@ struct CameraQuickControlsSheet: View {
         tint: Color,
         title: String,
         subtitle: String,
-        isOn: Binding<Bool>,
-        onToggle: @escaping (Bool) async -> Void
+        isOn: Bool,
+        feature: CameraFeature
     ) -> some View {
         HStack(spacing: GlassTheme.Space.m) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isOn.wrappedValue ? tint : GlassTheme.tertiary)
+                .foregroundStyle(isOn ? tint : GlassTheme.tertiary)
                 .frame(width: 32, height: 32)
-                .background((isOn.wrappedValue ? tint : GlassTheme.tertiary).opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background((isOn ? tint : GlassTheme.tertiary).opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -160,12 +125,14 @@ struct CameraQuickControlsSheet: View {
 
             // Title as the (visually hidden) toggle label so VoiceOver announces e.g.
             // "Detection, switch, on" instead of a bare "switch"; subtitle becomes the hint.
+            // The command goes over the WebSocket and Frigate echoes the real state back into
+            // `appState.cameraControlStates`, which this row reads — no optimistic-revert race.
             Toggle(title, isOn: Binding(
-                get: { isOn.wrappedValue },
+                get: { isOn },
                 set: { newVal in
-                    isOn.wrappedValue = newVal
                     Haptics.tap()
-                    Task { await onToggle(newVal) }
+                    appState.setCameraControl(camera: camera.name, feature: feature, enabled: newVal)
+                    showToast("\(title) \(newVal ? "on" : "off")")
                 }
             ))
             .labelsHidden()
@@ -175,23 +142,14 @@ struct CameraQuickControlsSheet: View {
         .listRowBackground(Color.white.opacity(0.04))
     }
 
-    private func loadState(showLoading: Bool = true) async {
-        if showLoading { isLoading = true }
-        if let state = try? await appState.client?.cameraControlState(camera: camera.name) {
-            self.state = state
-        }
-        if showLoading { isLoading = false }
-    }
-
-    private func toggle(label: String, action: @escaping () async throws -> Void) async {
-        do {
-            try await action()
-            showToast(label)
-        } catch {
-            showToast("Failed — check Frigate connection")
-            // The switch was flipped optimistically; re-sync to Frigate's real state so the
-            // control never shows a value that didn't actually take effect.
-            await loadState(showLoading: false)
+    /// Seed the live state map for this camera if the WS hasn't delivered it yet, using the
+    /// config file as a first approximation. Once a `<camera>/<feature>/state` message arrives
+    /// it overrides this. Usually the map is already populated (socket connected on launch).
+    private func seedStateIfNeeded() async {
+        guard appState.cameraControlStates[camera.name] == nil else { return }
+        if let seed = try? await appState.client?.cameraControlState(camera: camera.name),
+           appState.cameraControlStates[camera.name] == nil {
+            appState.cameraControlStates[camera.name] = seed
         }
     }
 

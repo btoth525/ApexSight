@@ -5,8 +5,18 @@ enum StreamEvent {
     case review(FrigateReviewItem, ChangeType)
     case event(FrigateEvent, ChangeType)
     case stats(FrigateStats)
+    /// A camera's runtime feature toggle changed — Frigate relays `<camera>/<feature>/state`
+    /// with payload "ON"/"OFF". `feature` ∈ detect/recordings/snapshots/audio/motion.
+    case controlState(camera: String, feature: String, on: Bool)
     case connected
     case disconnected
+}
+
+/// Runtime camera features that Frigate toggles LIVE over the WebSocket (`<camera>/<feature>/set`
+/// payload ON/OFF, echoed on `<camera>/<feature>/state`). The HTTP `/api/config/set` only stages
+/// the config file (needs a restart), so these must go over the socket.
+enum CameraFeature: String, CaseIterable {
+    case detect, recordings, snapshots, audio, motion
 }
 
 enum ChangeType: String {
@@ -200,8 +210,25 @@ final class FrigateEventStream {
                 onEvent?(.stats(stats))
             }
         default:
-            break
+            // Runtime feature state: "<camera>/<feature>/state" with a plain "ON"/"OFF" payload.
+            let parts = envelope.topic.split(separator: "/")
+            if parts.count == 3, parts[2] == "state",
+               let feature = CameraFeature(rawValue: String(parts[1])) {
+                let on = envelope.payload.uppercased() == "ON"
+                onEvent?(.controlState(camera: String(parts[0]), feature: feature.rawValue, on: on))
+            }
         }
+    }
+
+    /// Publish a command over the live socket — Frigate's WS accepts `{topic, payload, retain}`
+    /// and bridges it to MQTT. This is how runtime camera toggles actually apply (unlike the
+    /// config-file `/api/config/set`, which needs a restart). No-op if the socket isn't up.
+    func send(topic: String, payload: String) {
+        guard let task else { return }
+        let message: [String: Any] = ["topic": topic, "payload": payload, "retain": false]
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let string = String(data: data, encoding: .utf8) else { return }
+        task.send(.string(string)) { _ in }
     }
 }
 
