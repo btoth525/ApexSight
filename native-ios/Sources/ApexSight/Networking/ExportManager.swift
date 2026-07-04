@@ -143,42 +143,35 @@ final class ExportManager: ObservableObject {
 
     func reset() { phase = .idle }
 
-    /// Save downloaded files to the photo library. Each clip is saved INDEPENDENTLY so one bad
-    /// clip (e.g. a codec Photos rejects) doesn't sink the rest, and the real underlying error is
-    /// surfaced instead of a generic message.
-    func saveToPhotos(_ urls: [URL]) async {
+    /// Save downloaded files to the photo library. Each clip is saved INDEPENDENTLY so one bad clip
+    /// doesn't sink the rest. Returns the clips Photos REFUSED (e.g. the ultra-wide HEVC that Photos
+    /// can't import, error 3302) so the caller can offer Share instead. Empty = everything saved.
+    @discardableResult
+    func saveToPhotos(_ urls: [URL]) async -> [URL] {
         guard await requestAdd() else {
-            phase = .failed("Photos access is off — enable it in Settings › ApexSight › Photos."); return
+            phase = .failed("Photos access is off — enable it in Settings › ApexSight › Photos.")
+            return urls
         }
         phase = .saving
-        var saved = 0
-        var lastError: String?
+        var failed: [URL] = []
         for url in urls {
-            // Skip anything that didn't actually land on disk.
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attrs?[.size] as? Int) ?? 0
-            guard size > 0 else { lastError = "The clip file was empty."; continue }
+            guard size > 0 else { failed.append(url); continue }
             do {
                 try await PHPhotoLibrary.shared().performChanges {
-                    // PHAssetCreationRequest.addResource is more robust than
-                    // creationRequestForAssetFromVideo and gives a real error on rejection.
+                    // addResource is more robust than creationRequestForAssetFromVideo.
                     let request = PHAssetCreationRequest.forAsset()
                     let options = PHAssetResourceCreationOptions()
                     options.shouldMoveFile = false
                     request.addResource(with: .video, fileURL: url, options: options)
                 }
-                saved += 1
             } catch {
-                lastError = (error as NSError).localizedDescription
+                failed.append(url)
             }
         }
-        if saved == urls.count {
-            phase = .finished(urls)
-        } else if saved > 0 {
-            phase = .failed("Saved \(saved) of \(urls.count). \(lastError ?? "")")
-        } else {
-            phase = .failed(lastError ?? "Couldn't save to Photos.")
-        }
+        phase = .finished(urls)   // return the bar to its Share/Save actions
+        return failed
     }
 
     private func requestAdd() async -> Bool {

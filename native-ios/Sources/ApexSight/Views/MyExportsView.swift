@@ -120,8 +120,14 @@ struct MyExportsView: View {
 
     private func save(_ export: FrigateExport) async {
         guard let url = await downloadURL(export) else { flash("Download failed"); return }
-        await exporter.saveToPhotos([url])
-        if case .failed(let m) = exporter.phase { flash(m) } else { flash("Saved to Photos ✓") }
+        let failed = await exporter.saveToPhotos([url])
+        if case .failed(let m) = exporter.phase { flash(m) }
+        else if failed.isEmpty { flash("Saved to Photos ✓") }
+        else {
+            // Photos refused it (ultra-wide clip) — share it so it can still be saved to Files.
+            flash("Photos can't import this clip — opening Share")
+            sharePayload = SharePayload(urls: failed)
+        }
     }
 
     private func commitRename() async {

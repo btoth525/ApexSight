@@ -112,6 +112,7 @@ struct IncidentDetailView: View {
 
     @State private var sharePayload: SharePayload?
     @State private var showSavedToast = false
+    @State private var saveNote: String?
 
     var body: some View {
         ScrollView {
@@ -244,15 +245,16 @@ struct IncidentDetailView: View {
                 Text(msg).font(.caption).foregroundStyle(GlassTheme.orange).multilineTextAlignment(.center)
                 exportButton
             case .finished(let urls):
-                HStack(spacing: GlassTheme.Space.m) {
-                    Button { sharePayload = SharePayload(urls: urls) } label: {
-                        Label("Share", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
-                    }.buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
-                    Button {
-                        Task { await exporter.saveToPhotos(urls); if case .finished = exporter.phase { flashSaved() } }
-                    } label: {
-                        Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
-                    }.buttonStyle(PillButtonStyle(tint: GlassTheme.surfaceHigh))
+                VStack(spacing: 6) {
+                    if let saveNote { Text(saveNote).font(.caption).foregroundStyle(GlassTheme.secondary).multilineTextAlignment(.center) }
+                    HStack(spacing: GlassTheme.Space.m) {
+                        Button { sharePayload = SharePayload(urls: urls) } label: {
+                            Label("Share", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                        }.buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                        Button { Task { await saveOrShare(urls) } } label: {
+                            Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
+                        }.buttonStyle(PillButtonStyle(tint: GlassTheme.surfaceHigh))
+                    }
                 }
             default:
                 exportButton
@@ -297,6 +299,26 @@ struct IncidentDetailView: View {
         .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
     }
 
+
+    /// Save to Photos; any clip Photos refuses (e.g. the ultra-wide HEVC — error 3302) is handed to
+    /// the Share sheet instead so it can still be saved to Files or sent. So "Save" always lands
+    /// somewhere useful.
+    private func saveOrShare(_ urls: [URL]) async {
+        saveNote = nil
+        let failed = await exporter.saveToPhotos(urls)
+        guard case .finished = exporter.phase else { return }   // e.g. permission denied → phase shows the reason
+        if failed.isEmpty {
+            flashSaved()
+        } else {
+            let savedCount = urls.count - failed.count
+            withAnimation {
+                saveNote = savedCount > 0
+                    ? "Saved \(savedCount) to Photos. Photos can't import the ultra-wide clip — sharing it so you can save to Files or send it."
+                    : "Photos can't import this ultra-wide clip — sharing it so you can save to Files or send it."
+            }
+            sharePayload = SharePayload(urls: failed)
+        }
+    }
 
     private func flashSaved() {
         withAnimation { showSavedToast = true }
