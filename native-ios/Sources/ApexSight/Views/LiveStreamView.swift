@@ -387,13 +387,20 @@ struct LiveStreamView: View {
         }
         return VStack(spacing: GlassTheme.Space.m) {
             ForEach(rows.indices, id: \.self) { r in
-                HStack(spacing: GlassTheme.Space.s) {
-                    ForEach(rows[r], id: \.self) { items[$0] }
+                HStack(spacing: GlassTheme.Space.m) {
+                    // Fixed-width cells → circles are evenly spaced no matter how wide each
+                    // label is ("Refresh" vs "Hold to Talk"). Without this the gaps between
+                    // circles varied with label width.
+                    ForEach(rows[r], id: \.self) { items[$0].frame(width: Self.actionCellWidth) }
                 }
             }
         }
         .padding(.horizontal, GlassTheme.Space.l)
     }
+
+    /// Uniform action-button cell width — the circle is 54pt; the extra room lets labels
+    /// like "Hold to Talk" sit under it without changing the button's footprint.
+    private static let actionCellWidth: CGFloat = 74
 
     /// The live-view action buttons, in order — collected so they can render as one row or
     /// wrap to two (see `ViewThatFits` above). Type-erased because the set is conditional
@@ -441,7 +448,11 @@ struct LiveStreamView: View {
         ) {
             isMutedUI.toggle()
         }))
-        if pip.isSupported {
+        // Only show PiP where it can ACTUALLY start — Picture-in-Picture needs a real
+        // AVPlayerLayer, which the fisheye Metal view and the MJPEG fallback don't have.
+        // `isPossible` flips true once the controller attaches to a live HLS layer, so the
+        // button appears only on cameras where tapping it works (no more dead button).
+        if pip.isPossible {
             items.append(AnyView(actionButton(
                 icon: pip.isActive ? "pip.exit" : "pip.enter",
                 label: "PiP"
@@ -506,6 +517,9 @@ struct LiveStreamView: View {
             Text(label)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(GlassTheme.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity)   // stay within the fixed cell — never reflow the grid
         }
     }
 
@@ -526,10 +540,10 @@ struct LiveStreamView: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(active ? GlassTheme.red : GlassTheme.secondary)
                 .lineLimit(1)
-                // FIXED width: the caption swaps mid-hold ("Hold to Talk" → "Talking…"), and a
-                // width change can flip the ViewThatFits row layout, which destroys the
-                // in-flight press gesture — .onEnded never fires and the mic stays hot.
-                .frame(width: 92)
+                .minimumScaleFactor(0.75)
+                // The grid cell is a fixed width, so the mid-hold caption swap
+                // ("Hold to Talk" → "Talking…") can't reflow the layout and destroy the gesture.
+                .frame(maxWidth: .infinity)
         }
         .contentShape(Circle())
         // Push-to-talk lives inside the horizontal control ScrollView, so a plain

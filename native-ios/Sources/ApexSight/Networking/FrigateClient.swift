@@ -485,7 +485,8 @@ struct FrigateClient {
     }
 
     func setCameraRecordings(camera: String, enabled: Bool) async throws {
-        try await cameraToggle(camera: camera, feature: "recordings", enabled: enabled)
+        // Frigate's config key is `record`, not `recordings`.
+        try await cameraToggle(camera: camera, feature: "record", enabled: enabled)
     }
 
     func setCameraSnapshots(camera: String, enabled: Bool) async throws {
@@ -500,15 +501,30 @@ struct FrigateClient {
         try await cameraToggle(camera: camera, feature: "motion", enabled: enabled)
     }
 
+    /// Toggle a runtime camera feature. Frigate 0.14+ removed the old
+    /// `/api/{camera}/{feature}/set` endpoints (they 404); the live way is `PUT /api/config/set`
+    /// with the dotted config path in the query AND a JSON body (`requires_restart: 0` applies it
+    /// without a full Frigate restart). `feature` must be the real config KEY: detect / record /
+    /// snapshots / audio / motion. Verified against Frigate 0.17.1.
     private func cameraToggle(camera: String, feature: String, enabled: Bool) async throws {
-        guard var components = URLComponents(url: baseURL.appending(path: "api/\(camera)/\(feature)/set"), resolvingAgainstBaseURL: false) else { throw FrigateError.invalidURL }
-        components.queryItems = [URLQueryItem(name: "enabled", value: enabled ? "1" : "0")]
+        guard var components = URLComponents(url: baseURL.appending(path: "api/config/set"), resolvingAgainstBaseURL: false) else { throw FrigateError.invalidURL }
+        components.queryItems = [
+            URLQueryItem(name: "cameras.\(camera).\(feature).enabled", value: enabled ? "true" : "false")
+        ]
         guard let url = components.url else { throw FrigateError.invalidURL }
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuth(to: &request)
-        let (_, response) = try await session.data(for: request)
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["requires_restart": 0])
+        let (data, response) = try await session.data(for: request)
         try validate(response)
+        // Frigate answers 200 even when the config path is invalid — with {"success": false}.
+        // Surface that as an error so the toggle reverts instead of lying that it worked.
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let success = json["success"] as? Bool, success == false {
+            throw FrigateError.badResponse(422)
+        }
     }
 
     /// Returns the enabled/disabled state for detect, recordings, snapshots, and audio
