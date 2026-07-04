@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 // Navigation routes so Incidents/My-Exports push inside the Activity tab's existing stack.
 struct IncidentsRoute: Hashable {}
@@ -106,6 +107,7 @@ private struct IncidentCard: View {
 struct IncidentDetailView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var exporter = ExportManager()
+    @StateObject private var stitch = IncidentPlayerModel()
     let incident: Incident
 
     @State private var sharePayload: SharePayload?
@@ -114,8 +116,9 @@ struct IncidentDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                stitchedPlayer
                 header
-                pathTimeline
+                filmstrip
             }
             .padding(GlassTheme.Space.m)
             .padding(.bottom, 120)
@@ -125,6 +128,10 @@ struct IncidentDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .safeAreaInset(edge: .bottom) { exportBar }
+        .onAppear {
+            if let client = appState.client { stitch.configure(legs: incident.events, client: client) }
+        }
+        .onDisappear { stitch.teardown() }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.items) }
         .overlay(alignment: .bottom) {
             if showSavedToast {
@@ -154,45 +161,71 @@ struct IncidentDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The story as a vertical timeline of legs (one per event), tappable into the clip.
-    private var pathTimeline: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SectionHeader("Timeline")
-                .padding(.bottom, GlassTheme.Space.s)
-            ForEach(Array(incident.events.enumerated()), id: \.element.id) { idx, event in
-                NavigationLink(value: event) {
-                    legRow(event, isLast: idx == incident.events.count - 1)
+    /// The whole incident played back-to-back as one reel.
+    private var stitchedPlayer: some View {
+        VideoPlayer(player: stitch.player)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .background(Color.black)
+            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                // Which camera is on screen right now.
+                if incident.events.indices.contains(stitch.currentIndex) {
+                    let cam = incident.events[stitch.currentIndex].camera
+                    Label(prettyCamera(cam), systemImage: "video.fill")
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(10)
                 }
-                .buttonStyle(.plain)
+            }
+    }
+
+    /// HomeKit-style strip of the segments below the player: tap to jump, current one highlighted.
+    private var filmstrip: some View {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+            SectionHeader("\(incident.events.count) clips · plays as one")
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: GlassTheme.Space.s) {
+                        ForEach(Array(incident.events.enumerated()), id: \.element.id) { idx, event in
+                            segmentCell(event, index: idx)
+                                .id(idx)
+                                .onTapGesture { Haptics.select(); stitch.jump(to: idx) }
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+                .onChange(of: stitch.currentIndex) { _, idx in
+                    withAnimation { proxy.scrollTo(idx, anchor: .center) }
+                }
             }
         }
     }
 
-    private func legRow(_ event: FrigateEvent, isLast: Bool) -> some View {
-        HStack(alignment: .top, spacing: GlassTheme.Space.m) {
-            VStack(spacing: 0) {
-                Circle().fill(event.label == "person" ? GlassTheme.orange : GlassTheme.accent)
-                    .frame(width: 11, height: 11)
-                if !isLast { Rectangle().fill(GlassTheme.separator).frame(width: 2).frame(maxHeight: .infinity) }
-            }
-            .frame(width: 11)
-
+    private func segmentCell(_ event: FrigateEvent, index: Int) -> some View {
+        let isCurrent = index == stitch.currentIndex
+        return VStack(alignment: .leading, spacing: 4) {
             RemoteImage(url: appState.client?.eventSnapshotURL(id: event.id), maxPixelSize: 300)
-                .frame(width: 64, height: 64)
+                .frame(width: 132, height: 78)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.displayLabel.capitalized).font(.subheadline.weight(.semibold)).foregroundStyle(GlassTheme.primary)
-                Text(prettyCamera(event.camera)).font(.caption).foregroundStyle(GlassTheme.secondary)
-                if let s = event.startTime {
-                    Text(Date(timeIntervalSince1970: s).formatted(date: .omitted, time: .standard))
-                        .font(.caption2).foregroundStyle(GlassTheme.tertiary)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isCurrent ? GlassTheme.accent : .clear, lineWidth: 2.5))
+                .overlay(alignment: .bottomTrailing) {
+                    if isCurrent {
+                        Image(systemName: "play.fill").font(.system(size: 9, weight: .black))
+                            .padding(4).background(GlassTheme.accent, in: Circle()).foregroundStyle(.black).padding(5)
+                    }
                 }
+            Text(prettyCamera(event.camera)).font(.caption2.weight(.semibold))
+                .foregroundStyle(isCurrent ? GlassTheme.primary : GlassTheme.secondary).lineLimit(1)
+            if let s = event.startTime {
+                Text(Date(timeIntervalSince1970: s).formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 10)).foregroundStyle(GlassTheme.tertiary)
             }
-            Spacer(minLength: 0)
-            Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(GlassTheme.accent.opacity(0.85))
         }
-        .padding(.bottom, GlassTheme.Space.m)
+        .frame(width: 132)
     }
 
     // MARK: Export bar
