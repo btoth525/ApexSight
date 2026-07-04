@@ -19,7 +19,25 @@ struct Incident: Identifiable, Hashable {
         return order
     }
 
-    var isCrossCamera: Bool { cameraPath.count > 1 }
+    /// The camera with the most events — the incident's "home" camera.
+    var primaryCamera: String {
+        let counts = Dictionary(grouping: events, by: { $0.camera }).mapValues(\.count)
+        return counts.max { $0.value < $1.value }?.key ?? events.first?.camera ?? ""
+    }
+
+    /// Cameras with a REAL presence (≥2 events) — filters out a single stray detection on another
+    /// camera so we don't overclaim "tracked across N cameras" for what's really one-camera activity.
+    var significantCameras: [String] {
+        let counts = Dictionary(grouping: events, by: { $0.camera }).mapValues(\.count)
+        return cameraPath.filter { (counts[$0] ?? 0) >= 2 }
+    }
+
+    /// Genuine cross-camera movement: two or more cameras each saw sustained activity.
+    var isCrossCamera: Bool { significantCameras.count > 1 }
+
+    /// Which cameras to actually export — every significant camera for a true cross-camera
+    /// incident, else just the home camera.
+    var exportCameras: [String] { isCrossCamera ? significantCameras : [primaryCamera] }
 
     var start: Double { events.compactMap(\.startTime).min() ?? 0 }
     var end: Double {
@@ -53,10 +71,10 @@ struct Incident: Identifiable, Hashable {
 
     var hasAlert: Bool { events.contains { $0.label == "person" } }
 
-    /// Export window per camera: the incident's full span, padded a touch so the subject's
-    /// entry/exit isn't clipped. One entry per camera on the path.
+    /// Export window per camera: that camera's own span within the incident, padded a touch so the
+    /// subject's entry/exit isn't clipped. One entry per meaningful camera (see `exportCameras`).
     func exportWindows(pad: TimeInterval = 3) -> [(camera: String, start: Double, end: Double)] {
-        cameraPath.map { cam in
+        exportCameras.map { cam in
             let cameraEvents = events.filter { $0.camera == cam }
             let s = (cameraEvents.compactMap(\.startTime).min() ?? start) - pad
             let e = (cameraEvents.map { $0.endTime ?? $0.startTime ?? end }.max() ?? end) + pad
@@ -68,7 +86,7 @@ struct Incident: Identifiable, Hashable {
 enum IncidentBuilder {
     /// Cluster events into incidents. A new incident starts when an event begins more than `gap`
     /// seconds after the running cluster's latest activity. Returns newest-first.
-    static func build(from events: [FrigateEvent], gap: TimeInterval = 180) -> [Incident] {
+    static func build(from events: [FrigateEvent], gap: TimeInterval = 120) -> [Incident] {
         let sorted = events
             .filter { $0.startTime != nil }
             .sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }

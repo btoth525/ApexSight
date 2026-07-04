@@ -66,7 +66,7 @@ private struct IncidentCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(alignment: .topLeading) {
                         if incident.isCrossCamera {
-                            Label("\(incident.cameraPath.count)", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                            Label("\(incident.significantCameras.count)", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                                 .font(.system(size: 10, weight: .black))
                                 .padding(.horizontal, 6).padding(.vertical, 3)
                                 .background(GlassTheme.accent, in: Capsule())
@@ -152,7 +152,7 @@ struct IncidentDetailView: View {
             Text("\(incident.startDate.formatted(date: .abbreviated, time: .shortened)) · \(Self.durationText(incident.duration))")
                 .font(.subheadline).foregroundStyle(GlassTheme.secondary)
             if incident.isCrossCamera {
-                Label("Tracked across \(incident.cameraPath.count) cameras", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
+                Label("Tracked across \(incident.significantCameras.count) cameras", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(GlassTheme.accent)
                     .padding(.top, 2)
@@ -231,12 +231,15 @@ struct IncidentDetailView: View {
     // MARK: Export bar
 
     private var exportBar: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             switch exporter.phase {
             case .rendering(let done, let total):
-                progressRow("Rendering on Frigate… \(done)/\(total)")
-            case .downloading:
-                progressRow("Downloading…")
+                progressBar(label: total > 1 ? "Preparing clip \(min(done + 1, total)) of \(total)…" : "Preparing on Frigate…",
+                            value: nil)
+            case .downloading(let progress):
+                progressBar(label: "Downloading… \(Int(progress * 100))%", value: progress)
+            case .saving:
+                progressBar(label: "Saving to Photos…", value: nil)
             case .failed(let msg):
                 Text(msg).font(.caption).foregroundStyle(GlassTheme.orange).multilineTextAlignment(.center)
                 exportButton
@@ -246,7 +249,7 @@ struct IncidentDetailView: View {
                         Label("Share", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
                     }.buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                     Button {
-                        Task { await exporter.saveToPhotos(urls); flashSaved() }
+                        Task { await exporter.saveToPhotos(urls); if case .finished = exporter.phase { flashSaved() } }
                     } label: {
                         Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
                     }.buttonStyle(PillButtonStyle(tint: GlassTheme.surfaceHigh))
@@ -257,6 +260,23 @@ struct IncidentDetailView: View {
         }
         .padding(GlassTheme.Space.m)
         .background(.ultraThinMaterial)
+    }
+
+    /// HomeKit-style live progress: a filling bar with a percentage (determinate) or a sweep
+    /// (indeterminate, while Frigate renders).
+    private func progressBar(label: String, value: Double?) -> some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text(label).font(.subheadline.weight(.semibold)).foregroundStyle(GlassTheme.secondary)
+                Spacer()
+                if value == nil { ProgressView().tint(GlassTheme.accent).scaleEffect(0.8) }
+            }
+            ProgressView(value: value, total: 1.0)
+                .progressViewStyle(.linear)
+                .tint(GlassTheme.accent)
+                .animation(.easeOut(duration: 0.2), value: value)
+        }
+        .padding(.vertical, 2)
     }
 
     private var exportButton: some View {
@@ -271,20 +291,12 @@ struct IncidentDetailView: View {
                 await exporter.export(windows: windows, name: name, client: client)
             }
         } label: {
-            Label(incident.isCrossCamera ? "Export \(incident.cameraPath.count) clips" : "Export clip",
+            Label(incident.exportCameras.count > 1 ? "Export \(incident.exportCameras.count) clips" : "Export clip",
                   systemImage: "film.stack").frame(maxWidth: .infinity)
         }
         .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
     }
 
-    private func progressRow(_ text: String) -> some View {
-        HStack(spacing: GlassTheme.Space.s) {
-            ProgressView().tint(GlassTheme.accent)
-            Text(text).font(.subheadline.weight(.medium)).foregroundStyle(GlassTheme.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-    }
 
     private func flashSaved() {
         withAnimation { showSavedToast = true }

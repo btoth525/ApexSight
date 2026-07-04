@@ -703,6 +703,29 @@ struct FrigateClient {
         return dest
     }
 
+    /// Same as `downloadClipFile` but reports byte-level progress (0…1) as it streams — so the UI
+    /// can fill a live progress bar while a large export downloads.
+    func downloadClipFile(from url: URL, suggestedName: String,
+                          onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        seedCookie(for: url)
+        let tempURL = try await ProgressDownloader.run(request: request, onProgress: onProgress)
+        let safeName = suggestedName
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clip-\(UUID().uuidString)", isDirectory: true)
+        let dest = dir.appendingPathComponent(safeName).appendingPathExtension("mp4")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: tempURL, to: dest)
+        } catch {
+            throw ClipDownloadError.writeFailed
+        }
+        return dest
+    }
+
     func playerItem(for url: URL) -> AVPlayerItem {
         seedCookie(for: url)
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": authHeaders])
