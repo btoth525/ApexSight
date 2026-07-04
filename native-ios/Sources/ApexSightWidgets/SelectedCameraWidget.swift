@@ -25,6 +25,10 @@ struct SelectedCameraProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: SelectCameraIntent, in context: Context) async -> Timeline<SelectedCameraEntry> {
+        // Pull fresh alerts straight from Frigate so this widget (including the Lock Screen
+        // accessory families) updates on its OWN WidgetKit schedule — not only when the app is
+        // opened or a push arrives. Mirrors the home-screen widget's self-refresh.
+        await WidgetDataFetcher.refresh()
         let entry = await makeEntry(for: configuration, wantsImage: Self.isSystemFamily(context.family))
         let next = Calendar.current.date(byAdding: .minute, value: 15, to: entry.date) ?? entry.date.addingTimeInterval(900)
         return Timeline(entries: [entry], policy: .after(next))

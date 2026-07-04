@@ -305,6 +305,7 @@ final class AppState: ObservableObject {
             locallyViewedIDs.formUnion(ids)
             reviews.removeAll()
             unreviewedCount = 0
+            cacheLatestAlertForWidget()   // clears the widgets too
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -336,7 +337,14 @@ final class AppState: ObservableObject {
     private func cacheLatestAlertForWidget() {
         guard let client else { return }
         let recent = Array(reviews.prefix(8))
-        guard !recent.isEmpty else { return }
+        // Nothing left → write "all clear" and reload so the widgets CLEAR (they used to keep
+        // showing the last alert because this bailed early on an empty list).
+        guard !recent.isEmpty else {
+            SharedSnapshotStore.saveRecentAlerts([], heroImageData: nil)
+            WidgetCenter.shared.reloadAllTimelines()
+            WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
+            return
+        }
 
         let alerts: [SharedAlert] = recent.map { review in
             SharedAlert(
@@ -986,6 +994,9 @@ final class AppState: ObservableObject {
             try await client.markReviewsViewed(ids: [id])
             locallyViewedIDs.insert(id)
             reviews.removeAll { $0.id == id }
+            unreviewedCount = reviews.filter { $0.severity == "alert" }.count
+            // Rewrite + reload the widgets so a reviewed alert clears there too, not just in-app.
+            cacheLatestAlertForWidget()
         } catch {
             errorMessage = error.localizedDescription
         }

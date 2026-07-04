@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 131
+    CURRENT_PROJECT_VERSION: 132
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -158,6 +158,11 @@ targets:
       - path: Sources/ApexSightShared/SharedTokenStore.swift
       # On-device Vision scene summary for AI-enriched alerts (Vision + ImageIO, extension-safe).
       - path: Sources/ApexSightShared/SceneVision.swift
+      # Widget cache + fetcher (Foundation/WidgetKit — extension-safe): on every alert push the
+      # NSE refreshes the home/Lock-Screen widgets with the current Frigate state, so they update
+      # on alerts and clear reviewed ones without the app being opened.
+      - path: Sources/ApexSightShared/SharedSnapshotStore.swift
+      - path: Sources/ApexSightWidgets/WidgetDataFetcher.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.brandontoth.apexsight.native.NotificationService

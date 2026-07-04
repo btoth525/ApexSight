@@ -26,6 +26,16 @@ final class NotificationService: UNNotificationServiceExtension {
         // without opening the app.
         Self.bumpBadgeAndRefreshWidgets(for: request.content, into: mutableContent)
 
+        // Refresh the widgets with the CURRENT Frigate state (same data the app shows): fetch
+        // the latest un-reviewed alerts + hero thumbnail and rewrite the widget cache, then
+        // reload. This is what makes the widgets update the moment an alert arrives — and clear
+        // themselves when everything's been reviewed — without opening the app. Runs alongside
+        // the attachment download; WidgetKit is told to reload once the fresh cache is written.
+        Task {
+            await WidgetDataFetcher.refresh()
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+
         // Prefer a token sent in the payload; otherwise fall back to the one the
         // app mirrors into the shared app group (remote pushes from the HA bridge
         // carry no user token, so this is how authenticated Frigate snapshots load).
