@@ -251,72 +251,109 @@ private struct MediumWidgetView: View {
     private var todayCount: Int {
         entry.alerts.filter { Calendar.current.isDateInToday($0.when) }.count
     }
+    private var severityColor: Color {
+        switch entry.latest?.severity {
+        case "alert": return Color(red: 1.0, green: 0.27, blue: 0.30)   // red ring
+        case "detection": return WidgetTheme.accent
+        default: return .white.opacity(0.22)
+        }
+    }
 
     var body: some View {
-        // Cinematic full-bleed: the latest snapshot fills the whole widget with a graded scrim,
-        // the newest event reads large at the bottom, and a live activity badge floats top-right —
-        // no more sparse right-hand panel.
-        ZStack(alignment: .bottom) {
-            Color.black
-            HeroSnapshotImage(image: entry.heroImage)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-
-            LinearGradient(
-                colors: [.black.opacity(0.35), .clear, .clear, .black.opacity(0.55), .black.opacity(0.92)],
-                startPoint: .top, endPoint: .bottom
-            )
-
-            VStack(spacing: 0) {
-                HStack(alignment: .top) {
-                    // Wordmark, subtle — brands the glance.
-                    Text("APEXSIGHT")
-                        .font(.system(size: 9, weight: .black, design: .rounded))
-                        .tracking(1.4)
-                        .foregroundStyle(.white.opacity(0.5))
-                    Spacer()
-                    if todayCount > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bolt.fill").font(.system(size: 9, weight: .black))
-                            Text("\(todayCount) today").font(.system(size: 10, weight: .heavy, design: .rounded))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(WidgetTheme.accent.opacity(0.7), lineWidth: 1))
+        HStack(spacing: 11) {
+            // Left: the latest snapshot as a framed card with a severity-colored ring + label.
+            ZStack(alignment: .bottomLeading) {
+                Color.black
+                HeroSnapshotImage(image: entry.heroImage)
+                LinearGradient(colors: [.clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                if let latest = entry.latest {
+                    HStack(spacing: 4) {
+                        Text(alertEmoji(latest.label)).font(.system(size: 12))
+                        Text(titleizeWidget(latest.subLabel ?? latest.label))
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.8)
                     }
-                }
-                Spacer()
-                HStack(alignment: .bottom) {
-                    if let latest = entry.latest {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
-                                .font(.system(size: 18, weight: .black, design: .rounded))
-                                .lineLimit(1).minimumScaleFactor(0.75)
-                            Text("\(titleizeWidget(latest.camera)) · \(relativeShort(latest.when))")
-                                .font(.system(size: 11, weight: .heavy))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(.white)
-                    } else {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.shield.fill").foregroundStyle(WidgetTheme.accent)
-                            Text("All clear").font(.system(size: 16, weight: .black, design: .rounded)).foregroundStyle(.white)
-                        }
-                    }
-                    Spacer()
-                    if entry.latest != nil {
-                        Image(systemName: "chevron.right.circle.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.white.opacity(0.85), .black.opacity(0.35))
-                            .widgetAccentable()
-                    }
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+                    .background(.black.opacity(0.45), in: Capsule())
+                    .padding(8)
                 }
             }
-            .padding(13)
+            .frame(width: 132)
+            .frame(maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(severityColor, lineWidth: 2))
+
+            // Right: a compact dashboard — header, recent events, and an always-present footer
+            // (today count + arm state) so it never reads empty.
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("ACTIVITY")
+                        .font(.system(size: 10, weight: .black, design: .rounded)).tracking(1.2)
+                        .foregroundStyle(WidgetTheme.accent)
+                    Spacer()
+                    if todayCount > 0 {
+                        Text("\(todayCount) today")
+                            .font(.system(size: 10, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(.white.opacity(0.10), in: Capsule())
+                    }
+                }
+                .padding(.bottom, 6)
+
+                if entry.alerts.isEmpty {
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.shield.fill").foregroundStyle(WidgetTheme.accent).font(.system(size: 18))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("All clear").font(.system(size: 15, weight: .black, design: .rounded)).foregroundStyle(.white)
+                            Text("No recent activity").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.55))
+                        }
+                    }
+                    Spacer()
+                } else {
+                    VStack(spacing: 7) {
+                        ForEach(Array(entry.alerts.prefix(3).enumerated()), id: \.offset) { _, alert in
+                            EventFeedRow(alert: alert)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                }
+
+                ArmStatusFooter()
+            }
+            .padding(.vertical, 12)
+            .padding(.trailing, 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.leading, 11)
         .widgetURL(entry.latest.flatMap { $0.id }.map { URL(string: "apex://review?id=\($0)")! })
+    }
+}
+
+/// Always-present footer strip: current arm state (read straight from the app group) — keeps the
+/// widget's right column full and glanceable even when there's no recent activity.
+private struct ArmStatusFooter: View {
+    private var armMode: String {
+        UserDefaults(suiteName: ApexAppGroup.identifier)?.string(forKey: "apex.armMode") ?? "away"
+    }
+    private var isDisarmed: Bool { armMode == "disarmed" }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isDisarmed ? "shield.slash.fill" : "shield.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isDisarmed ? .white.opacity(0.5) : WidgetTheme.accent)
+            Text(isDisarmed ? "Disarmed" : "Armed · \(armMode.capitalized)")
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            Text("APEXSIGHT")
+                .font(.system(size: 8, weight: .black, design: .rounded)).tracking(1.0)
+                .foregroundStyle(.white.opacity(0.35))
+        }
+        .padding(.top, 7)
+        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.08)).frame(height: 1) }
     }
 }
 
