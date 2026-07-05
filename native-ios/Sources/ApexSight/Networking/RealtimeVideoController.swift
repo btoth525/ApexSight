@@ -28,14 +28,14 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     private var pc: RTCPeerConnection?
     private var gatheringContinuation: CheckedContinuation<Void, Never>?
     private var startTask: Task<Void, Never>?
-    /// Fails the attempt if no decodable video frame arrives in time (e.g. an HEVC track iOS
-    /// WebRTC can't decode, or no media path) so we never sit "connected" over a black feed.
-    private var firstFrameWatchdog: Task<Void, Never>?
+    /// Resolved true by the first RENDERED frame, false by the per-attempt timeout / ICE failure.
+    private var firstFrameContinuation: CheckedContinuation<Bool, Never>?
+    private var attemptWatchdog: Task<Void, Never>?
     private var bgObserver: NSObjectProtocol?
     private(set) var isSuspendedByBackground = false
-    /// Per-source failure count — a camera that can't do WebRTC (HEVC main stream, no media
-    /// path) stops being retried after 2 attempts this session instead of hammering go2rtc
-    /// on every mute-toggle/appear. Cleared by a successful first frame.
+    /// Per-camera failure count — a camera whose sources all fail (no H264 path, no media route)
+    /// stops being retried after 2 rounds this session instead of hammering go2rtc on every
+    /// mute-toggle/appear. Cleared by a successful first frame. Keyed by the primary source.
     private var failures: [String: Int] = [:]
 
     override init() {
@@ -57,19 +57,23 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         if let bgObserver { NotificationCenter.default.removeObserver(bgObserver) }
     }
 
-    func start(source: String, client: FrigateClient) {
+    /// Try `sources` in order (e.g. `["Backyard_Wide", "Backyard_Wide_sub"]`) until one renders a
+    /// frame — so an HEVC MAIN stream (iOS can't WebRTC-decode) automatically falls to the H264
+    /// SUB stream and still gets sub-second live.
+    func start(sources: [String], client: FrigateClient) {
         guard state == .idle || state == .failed else { return }
-        guard failures[source, default: 0] < 2 else { return }   // this camera can't do WebRTC — stay on HLS
+        let key = sources.first ?? ""
+        guard failures[key, default: 0] < 2 else { return }   // exhausted — stay on HLS
         isSuspendedByBackground = false
-        currentSource = source
+        primaryKey = key
         state = .connecting
         startTask = Task { [weak self] in
-            await self?.connect(source: source, client: client)
+            await self?.cascade(sources: sources, client: client)
             self?.startTask = nil
         }
     }
 
-    private var currentSource = ""
+    private var primaryKey = ""
 
     func stop() {
         startTask?.cancel(); startTask = nil
@@ -80,34 +84,45 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// Called by the renderer when the first real frame lands — THIS is "live", not ICE state
     /// (a connection can succeed while the video codec is undecodable).
     func noteFirstFrame() {
-        guard state == .connecting else { return }
-        firstFrameWatchdog?.cancel(); firstFrameWatchdog = nil
-        failures[currentSource] = 0
-        state = .live
+        resolveAttempt(true)
     }
 
     // MARK: - Connect
 
-    private func connect(source: String, client: FrigateClient) async {
+    private func cascade(sources: [String], client: FrigateClient) async {
+        for source in sources {
+            if Task.isCancelled { return }
+            let rendered = await attempt(source: source, client: client)
+            if rendered {
+                failures[primaryKey] = 0
+                state = .live
+                return
+            }
+            teardown()   // clean up before trying the next source
+            if Task.isCancelled { return }
+        }
+        failures[primaryKey, default: 0] += 1
+        if !Task.isCancelled { state = .failed }
+    }
+
+    /// One source: negotiate, then wait for a rendered frame (true) or timeout/failure (false).
+    private func attempt(source: String, client: FrigateClient) async -> Bool {
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        config.iceServers = await TurnSettings.iceServers()   // STUN for LAN, TURN if the relay has it
+        config.iceServers = await TurnSettings.iceServers()
         config.bundlePolicy = .maxBundle
         config.iceTransportPolicy = .all
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return false }
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let pc = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
-            state = .failed; return
+            return false
         }
         self.pc = pc
-
-        // recvonly video — no audio m-line at all (see header note).
         let transceiver = RTCRtpTransceiverInit()
         transceiver.direction = .recvOnly
         pc.addTransceiver(of: .video, init: transceiver)
 
-        startFirstFrameWatchdog()
         do {
             let offerConstraints = RTCMediaConstraints(
                 mandatoryConstraints: ["OfferToReceiveVideo": "true", "OfferToReceiveAudio": "false"],
@@ -120,34 +135,39 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             }
             try Task.checkCancellation()
             try await set(local: offer, on: pc)
-            await waitForIceGathering(pc)   // non-trickle — candidates baked into the offer
+            await waitForIceGathering(pc)
             try Task.checkCancellation()
-
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
             let answerSDP = try await client.webRTCAnswer(source: source, offerSDP: localSDP)
             try Task.checkCancellation()
             try await set(remote: RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
-            // Now we wait for the first FRAME (noteFirstFrame) or the watchdog.
         } catch {
-            if !(error.isCancellation || Task.isCancelled) { state = .failed }
-            teardown()
+            return false
+        }
+
+        // Await the first RENDERED frame or a 4s timeout — an HEVC track connects but never
+        // paints, which this catches.
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            firstFrameContinuation = cont
+            attemptWatchdog = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                await MainActor.run { self?.resolveAttempt(false) }
+            }
         }
     }
 
-    private func startFirstFrameWatchdog() {
-        firstFrameWatchdog?.cancel()
-        firstFrameWatchdog = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard let self, !Task.isCancelled, self.state == .connecting else { return }
-            // Connected-but-black (or never connected): fail quietly; HLS is already on screen.
-            self.failures[self.currentSource, default: 0] += 1
-            self.state = .failed
-            self.teardown()
-        }
+    /// Resolve the in-flight attempt exactly once (first frame → true, timeout/ICE-fail → false).
+    private func resolveAttempt(_ rendered: Bool) {
+        attemptWatchdog?.cancel(); attemptWatchdog = nil
+        guard let cont = firstFrameContinuation else { return }
+        firstFrameContinuation = nil
+        cont.resume(returning: rendered)
     }
 
     private func teardown() {
-        firstFrameWatchdog?.cancel(); firstFrameWatchdog = nil
+        attemptWatchdog?.cancel(); attemptWatchdog = nil
+        // Don't strand a suspended attempt — resolve it false before tearing the pc down.
+        if let cont = firstFrameContinuation { firstFrameContinuation = nil; cont.resume(returning: false) }
         videoTrack = nil
         pc?.delegate = nil
         pc?.close()
@@ -209,10 +229,15 @@ extension RealtimeVideoController: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         if newState == .failed || newState == .closed {
             Task { @MainActor [weak self] in
-                guard let self, self.state == .live || self.state == .connecting else { return }
-                if self.state == .connecting { self.failures[self.currentSource, default: 0] += 1 }
-                self.state = .failed
-                self.teardown()
+                guard let self else { return }
+                if self.state == .connecting {
+                    // Fail THIS attempt so the cascade can try the next source (or give up).
+                    self.resolveAttempt(false)
+                } else if self.state == .live {
+                    // A live session dropped — fall back to HLS (still running underneath).
+                    self.state = .failed
+                    self.teardown()
+                }
             }
         }
     }

@@ -672,7 +672,9 @@ struct HLSLivePlayerView: View {
         guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
         if effectiveMuted {
             if realtime.state == .idle || realtime.state == .failed {
-                realtime.start(source: camera.name, client: client)
+                // Main first (full quality where it's H264), then the H264 sub-stream so even
+                // HEVC-main cameras (Front Driveway) get sub-second live at reduced resolution.
+                realtime.start(sources: [camera.name, "\(camera.name)_sub"], client: client)
             }
         } else {
             realtime.stop()
