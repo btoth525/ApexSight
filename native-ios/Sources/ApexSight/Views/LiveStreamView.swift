@@ -12,6 +12,9 @@ struct LiveStreamView: View {
     private var isLandscape: Bool { vSizeClass == .compact }
     @State private var streamMode: StreamMode = .live
     @State private var isLive = false
+    /// True while the sub-second WebRTC path is showing frames — surfaced in the status line
+    /// (not a floating badge that collided with the status bar).
+    @State private var isRealtime = false
     @State private var showPTZ = false
     /// Whether THIS camera actually reports PTZ features — resolved lazily on open (one
     /// ptz/info call), so the control only appears on cameras that can really pan/tilt and the
@@ -226,6 +229,7 @@ struct LiveStreamView: View {
                 pipController: pip,
                 onSingleTap: { toggleChrome() },
                 onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } },
+                onRealtimeChange: { rt in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isRealtime = rt } },
                 externalControls: true,
                 muted: isMutedUI,
                 dewarpModeOverride: isFisheye ? dewarpMode : nil
@@ -271,10 +275,15 @@ struct LiveStreamView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 HStack(spacing: GlassTheme.Space.xs) {
-                    statusIndicator
-                    Text(statusText)
+                    if isRealtime, streamMode == .live {
+                        Image(systemName: "bolt.fill").font(.system(size: 10, weight: .black))
+                            .foregroundStyle(GlassTheme.green)
+                    } else {
+                        statusIndicator
+                    }
+                    Text(isRealtime && streamMode == .live ? "Realtime" : statusText)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(statusColor)
+                        .foregroundStyle(isRealtime && streamMode == .live ? GlassTheme.green : statusColor)
                 }
             }
 

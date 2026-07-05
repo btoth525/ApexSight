@@ -471,6 +471,9 @@ struct HLSLivePlayerView: View {
     /// Single tap on the video (full-screen view) — used to toggle immersive chrome.
     var onSingleTap: (() -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
+    /// Fires when the sub-second WebRTC layer starts/stops showing frames, so the host can put a
+    /// "Realtime" indicator in its own chrome instead of a floating badge.
+    var onRealtimeChange: ((Bool) -> Void)? = nil
     /// Reports fit vs. fill (crop) so a host drawing a detection overlay can map boxes into the
     /// same displayed video rect. Fires on toggle and on appear.
     var onFillModeChange: ((Bool) -> Void)? = nil
@@ -807,26 +810,8 @@ struct HLSLivePlayerView: View {
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: overlayControlsVisible)
             }
 
-            // Sub-second mode indicator — you're seeing the camera essentially as it happens.
-            if showControls, realtime.state == .live {
-                VStack {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 4) {
-                            Image(systemName: "bolt.fill").font(.system(size: 9, weight: .black))
-                            Text("REALTIME").font(.system(size: 9, weight: .black)).tracking(0.8)
-                        }
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(GlassTheme.green, in: Capsule())
-                        .padding(.trailing, 14).padding(.top, 10)
-                    }
-                    Spacer()
-                }
-                .opacity(overlayControlsVisible ? 1 : 0)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: overlayControlsVisible)
-                .allowsHitTesting(false)
-            }
+            // (Realtime is surfaced by the host's status line via onRealtimeChange — no floating
+            // badge, which collided with the status bar / Dynamic Island.)
         }
         .onAppear {
             // Zero-latency handoff: borrow the wall tile's warm player immediately.
@@ -920,6 +905,7 @@ struct HLSLivePlayerView: View {
         }
         .onChange(of: realtime.state) { _, newState in
             if newState == .live { completeHandoff() }
+            onRealtimeChange?(newState == .live)
         }
         .onChange(of: mjpegFallback) { _, fellBack in
             if fellBack { realtime.stop() }
