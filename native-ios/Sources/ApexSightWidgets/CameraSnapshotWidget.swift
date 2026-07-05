@@ -268,17 +268,17 @@ private struct MediumWidgetView: View {
                 LinearGradient(colors: [.clear, .clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
                 if let latest = entry.latest {
                     HStack(spacing: 4) {
-                        Text(alertEmoji(latest.label)).font(.system(size: 12))
+                        Text(alertEmoji(latest.label)).font(.system(size: 14))
                         Text(titleizeWidget(latest.subLabel ?? latest.label))
-                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .font(.system(size: 12, weight: .black, design: .rounded))
                             .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.8)
                     }
-                    .padding(.horizontal, 7).padding(.vertical, 4)
-                    .background(.black.opacity(0.45), in: Capsule())
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.black.opacity(0.5), in: Capsule())
                     .padding(8)
                 }
             }
-            .frame(width: 132)
+            .frame(width: 158)
             .frame(maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(severityColor, lineWidth: 2))

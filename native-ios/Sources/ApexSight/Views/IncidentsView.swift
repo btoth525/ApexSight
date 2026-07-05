@@ -239,6 +239,8 @@ struct IncidentDetailView: View {
                             value: nil)
             case .downloading(let progress):
                 progressBar(label: "Downloading… \(Int(progress * 100))%", value: progress)
+            case .composing(let progress):
+                progressBar(label: "Building highlight reel… \(Int(progress * 100))%", value: progress)
             case .saving:
                 progressBar(label: "Saving to Photos…", value: nil)
             case .failed(let msg):
@@ -281,22 +283,46 @@ struct IncidentDetailView: View {
         .padding(.vertical, 2)
     }
 
+    private var exportName: String {
+        "\(prettyCamera(incident.headline).capitalized) \(incident.startDate.formatted(date: .numeric, time: .shortened))"
+    }
+
+    /// Primary: a short stitched 1080p highlight reel (small + Photos-friendly). Secondary menu:
+    /// the full-length per-camera clips (server-rendered, native resolution).
     private var exportButton: some View {
-        Button {
-            let windows = incident.exportWindows().map {
-                ExportManager.Window(camera: $0.camera, start: $0.start, end: $0.end)
+        HStack(spacing: GlassTheme.Space.s) {
+            Button {
+                Task {
+                    guard let client = appState.client else { return }
+                    Haptics.tap()
+                    await exporter.exportReel(events: incident.events, name: exportName + " Reel", client: client)
+                }
+            } label: {
+                Label("Highlight reel", systemImage: "sparkles.tv").frame(maxWidth: .infinity)
             }
-            let name = "\(prettyCamera(incident.headline).capitalized) \(incident.startDate.formatted(date: .numeric, time: .shortened))"
-            Task {
-                guard let client = appState.client else { return }
-                Haptics.tap()
-                await exporter.export(windows: windows, name: name, client: client)
+            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+
+            Menu {
+                Button {
+                    let windows = incident.exportWindows().map {
+                        ExportManager.Window(camera: $0.camera, start: $0.start, end: $0.end)
+                    }
+                    Task {
+                        guard let client = appState.client else { return }
+                        Haptics.tap()
+                        await exporter.export(windows: windows, name: exportName, client: client)
+                    }
+                } label: {
+                    Label(incident.exportCameras.count > 1 ? "Full clips (\(incident.exportCameras.count))" : "Full clip",
+                          systemImage: "film.stack")
+                }
+            } label: {
+                Image(systemName: "ellipsis").font(.headline)
+                    .frame(width: 44, height: 44)
+                    .background(GlassTheme.surfaceHigh, in: Circle())
+                    .foregroundStyle(GlassTheme.secondary)
             }
-        } label: {
-            Label(incident.exportCameras.count > 1 ? "Export \(incident.exportCameras.count) clips" : "Export clip",
-                  systemImage: "film.stack").frame(maxWidth: .infinity)
         }
-        .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
     }
 
 

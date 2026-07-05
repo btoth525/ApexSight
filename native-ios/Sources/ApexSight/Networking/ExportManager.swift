@@ -56,6 +56,7 @@ final class ExportManager: ObservableObject {
         case idle
         case rendering(done: Int, total: Int)
         case downloading(progress: Double)   // 0…1 overall across all files
+        case composing(progress: Double)     // building the highlight reel on-device
         case saving
         case finished([URL])
         case failed(String)
@@ -72,14 +73,56 @@ final class ExportManager: ObservableObject {
 
     var isBusy: Bool {
         switch phase {
-        case .rendering, .downloading, .saving: return true
+        case .rendering, .downloading, .composing, .saving: return true
         default: return false
         }
     }
 
+    /// Build a short, stitched 1080p **highlight reel** — the first few seconds of up to
+    /// `maxSegments` detections (sampled across the incident), downscaled and concatenated on-device
+    /// into ONE small Photos-friendly clip. Falls back to a server-side timelapse if the device
+    /// can't transcode any segment (e.g. a pure ultra-wide incident on a limited decoder).
+    @discardableResult
+    func exportReel(events: [FrigateEvent], name: String?, client: FrigateClient,
+                    maxSegments: Int = 8, segmentSeconds: Double = 3) async -> [URL] {
+        let usable = events.filter { $0.hasClip != false && $0.startTime != nil }
+        guard !usable.isEmpty else { phase = .failed("No clips to build a reel from."); return [] }
+        let sampled = HighlightReelBuilder.sampleEvenly(usable, max: maxSegments)
+
+        phase = .composing(progress: 0)
+        var segments: [URL] = []
+        for (i, event) in sampled.enumerated() {
+            let clipURL = client.eventClipURL(id: event.id)
+            if let local = try? await client.downloadClipFile(from: clipURL, suggestedName: event.id) {
+                if let seg = await HighlightReelBuilder.transcodeFirst(local, seconds: segmentSeconds) {
+                    segments.append(seg)
+                }
+                // Drop the source clip once we've extracted its segment — keeps disk use bounded.
+                try? FileManager.default.removeItem(at: local.deletingLastPathComponent())
+            }
+            phase = .composing(progress: Double(i + 1) / Double(sampled.count + 1))
+        }
+
+        if let reel = await HighlightReelBuilder.concat(segments, name: name ?? "Highlight") {
+            phase = .finished([reel])
+            return [reel]
+        }
+
+        // Nothing transcoded (e.g. the device couldn't decode the ultra-wide source) → let Frigate
+        // render a fast timelapse of the busiest camera server-side instead. Never dead-ends.
+        let camera = Dictionary(grouping: usable, by: { $0.camera }).max { $0.value.count < $1.value.count }?.key
+        guard let camera,
+              let start = usable.filter({ $0.camera == camera }).compactMap(\.startTime).min(),
+              let end = usable.filter({ $0.camera == camera }).map({ $0.endTime ?? ($0.startTime ?? 0) }).max() else {
+            phase = .failed("Couldn't build a reel from these clips."); return []
+        }
+        return await export(windows: [Window(camera: camera, start: start, end: end)],
+                            name: name, client: client, playback: "timelapse_25x")
+    }
+
     /// Render + download the given windows. Returns the local file URLs (also published via `phase`).
     @discardableResult
-    func export(windows: [Window], name: String?, client: FrigateClient) async -> [URL] {
+    func export(windows: [Window], name: String?, client: FrigateClient, playback: String = "realtime") async -> [URL] {
         guard !windows.isEmpty else { return [] }
         phase = .rendering(done: 0, total: windows.count)
 
@@ -87,7 +130,7 @@ final class ExportManager: ObservableObject {
         var ids: [String] = []
         do {
             for w in windows {
-                let id = try await client.startExport(camera: w.camera, start: w.start, end: w.end, name: name)
+                let id = try await client.startExport(camera: w.camera, start: w.start, end: w.end, playback: playback, name: name)
                 ids.append(id)
             }
         } catch {
