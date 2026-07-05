@@ -676,9 +676,11 @@ struct HLSLivePlayerView: View {
         guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
         if effectiveMuted {
             if realtime.state == .idle || realtime.state == .failed {
-                // Main first (full quality where it's H264), then the H264 sub-stream so even
-                // HEVC-main cameras (Front Driveway) get sub-second live at reduced resolution.
-                realtime.start(sources: [camera.name, "\(camera.name)_sub"], client: client)
+                // Realtime uses ONLY the full-resolution main stream — never a lower-res sub.
+                // So an H264-main camera gets full-quality sub-second video; an HEVC-main camera
+                // (Front Driveway — iOS can't WebRTC-decode HEVC) simply stays on its full-res
+                // HLS main. Either way the picture is always full quality — no downgrade.
+                realtime.start(sources: [camera.name], client: client)
             }
         } else {
             realtime.stop()

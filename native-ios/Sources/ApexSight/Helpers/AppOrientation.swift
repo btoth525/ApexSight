@@ -13,11 +13,17 @@ enum AppOrientation {
         allowsLandscape ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait
     }
 
-    /// Enter landscape-capable mode (full-screen video). Asks the system to re-evaluate so a
-    /// phone already held sideways rotates into landscape immediately.
+    /// Enter landscape-capable mode (full-screen video). If the phone is ALREADY held sideways,
+    /// rotate to match it immediately; otherwise just allow landscape so a later turn rotates.
     @MainActor static func enableLandscape() {
         allowsLandscape = true
-        requestGeometryUpdate(nil)   // nil = allow whatever the mask now permits (follows the device)
+        // Match the device if it's already sideways — so opening full-screen on a phone held
+        // sideways lands directly in landscape instead of needing a re-turn.
+        switch UIDevice.current.orientation {
+        case .landscapeLeft:  requestGeometryUpdate(.landscapeRight)   // device⇄interface are inverted
+        case .landscapeRight: requestGeometryUpdate(.landscapeLeft)
+        default:              requestGeometryUpdate(nil)               // portrait/flat → follow the device
+        }
     }
 
     /// Leave landscape mode and force back to portrait (full-screen viewer closing).
@@ -30,11 +36,11 @@ enum AppOrientation {
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive }) else { return }
-        if let orientation {
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation))
-        }
-        // Nudge the top view controller to adopt the new supported set (required for the
-        // portrait lock to actually take effect on dismiss).
+        // Update the supported set FIRST so the geometry request isn't rejected against a
+        // stale mask, then request the target orientation.
         scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        if let orientation {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { _ in }
+        }
     }
 }
