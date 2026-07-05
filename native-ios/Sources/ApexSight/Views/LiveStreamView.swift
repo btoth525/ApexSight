@@ -257,6 +257,9 @@ struct LiveStreamView: View {
         HStack(spacing: GlassTheme.Space.s) {
             Button {
                 Haptics.tap()
+                // Lock portrait BEFORE dismissing so the wall behind never appears in landscape
+                // (which would reflow / reset navigation) during the close transition.
+                AppOrientation.lockPortrait()
                 dismiss()
             } label: {
                 Image(systemName: "xmark")

@@ -21,7 +21,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// layout when a Plus/Max phone is held sideways.
     func application(_ application: UIApplication,
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        AppOrientation.mask
+        let mask = AppOrientation.mask
+        #if DEBUG
+        fputs("[orient] supportedInterfaceOrientationsFor → \(mask == .portrait ? "portrait" : "landscape-ok") (allowsLandscape=\(AppOrientation.allowsLandscape))\n", stderr)
+        #endif
+        return mask
     }
 
     /// Attach a window-scene delegate so Home Screen quick actions are delivered (SwiftUI's

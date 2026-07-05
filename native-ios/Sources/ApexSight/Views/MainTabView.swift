@@ -46,7 +46,11 @@ struct MainTabView: View {
 
     var body: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            // The iPad sidebar layout is ONLY for actual iPads. iPhone "Plus/Max" models report a
+            // REGULAR width class in landscape — without the idiom check, rotating one of those
+            // reflowed the whole app into the iPad sidebar and rebuilt it (losing your place —
+            // "goes to the home page"). iPhones always use the tab bar.
+            if horizontalSizeClass == .regular, UIDevice.current.userInterfaceIdiom == .pad {
                 sidebarLayout
             } else {
                 tabLayout
@@ -59,7 +63,7 @@ struct MainTabView: View {
         .sensoryFeedback(.impact(weight: .light), trigger: detailSheet?.id) { old, new in
             old == nil && new != nil
         }
-        .sheet(item: $detailSheet) { sheet in
+        .sheet(item: $detailSheet, onDismiss: { AppOrientation.lockPortrait() }) { sheet in
             NavigationStack {
                 switch sheet {
                 case .event(let event): EventDetailView(event: event)
