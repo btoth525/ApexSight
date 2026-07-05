@@ -171,6 +171,7 @@ final class HLSLiveModel: ObservableObject {
         let p = player
         player = nil
         teardownObservers(player: p)
+        if let p, !focusedSmooth { WallPlayerRegistry.shared.unregister(p, for: cameraName) }
         p?.pause()
     }
 
@@ -316,6 +317,9 @@ final class HLSLiveModel: ObservableObject {
         // playing stream (a visible black flash).
         reconnectTask?.cancel(); reconnectTask = nil
         stallGraceTask?.cancel(); stallGraceTask = nil
+        // Wall tiles publish their warm, already-decoding player so the full-screen viewer
+        // can open on it instantly (zero-latency handoff).
+        if !focusedSmooth { WallPlayerRegistry.shared.register(player, for: cameraName) }
         retryCount = 0
         totalAttempts = 0
         didTryReauth = false
@@ -482,6 +486,12 @@ struct HLSLivePlayerView: View {
     var dewarpModeOverride: DewarpMode? = nil
 
     @StateObject private var model = HLSLiveModel()
+    /// Sub-second WebRTC live for the focused viewer — overlays the HLS layer when healthy,
+    /// costs nothing when it can't connect (HLS keeps running underneath either way).
+    @StateObject private var realtime = RealtimeVideoController()
+    /// The wall tile's already-decoding player, shown INSTANTLY while this view's own
+    /// full-quality stream connects (zero-latency handoff). Cleared once handoff completes.
+    @State private var warmPlayer: AVPlayer?
     @ObservedObject private var fisheyeStore = FisheyeStore.shared
     /// Fisheye cameras open straight into virtual PTZ — the raw warped disc is never
     /// what the user wants first. Ignored (and no UI shown) for normal cameras.
@@ -511,6 +521,14 @@ struct HLSLivePlayerView: View {
     @MainActor private static var hlsUnavailable: Set<String> = []
 
     private var isPlaying: Bool { model.state == .playing }
+
+    /// Realtime (WebRTC) is attempted only for the focused viewer, on normal cameras, while
+    /// muted (unmuting switches to HLS so audio+video stay in sync from one pipeline).
+    private var realtimeEligible: Bool {
+        showControls && !mjpegFallback && camera.name != "birdseye" && !fisheyeStore.isFisheye(camera.name)
+    }
+
+    private var effectiveMuted: Bool { muted ?? model.isMuted }
 
     /// The fisheye view mode in effect — host-owned when overridden, else internal state.
     private var effectiveDewarpMode: DewarpMode { dewarpModeOverride ?? dewarpMode }
@@ -548,14 +566,24 @@ struct HLSLivePlayerView: View {
     private func playerLayer(_ player: AVPlayer) -> some View {
         if showControls {
             ZoomableScrollView(onSingleTap: onSingleTap) {
-                ZoomablePlayerView(
-                    player: player,
-                    videoGravity: fillMode ? .resizeAspectFill : .resizeAspect,
-                    pip: pip,
-                    autoPiP: true
-                )
+                ZStack {
+                    ZoomablePlayerView(
+                        player: player,
+                        videoGravity: fillMode ? .resizeAspectFill : .resizeAspect,
+                        pip: pip,
+                        autoPiP: true
+                    )
+                    // Sub-second realtime layer — INSIDE the zoom container so pinch/pan
+                    // zoom applies to it too. Fades in only once a real frame rendered.
+                    if let track = realtime.videoTrack {
+                        RealtimeVideoView(track: track) { realtime.noteFirstFrame() }
+                            .opacity(realtime.state == .live ? 1 : 0)
+                            .animation(.easeIn(duration: 0.25), value: realtime.state)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
-            .opacity(isPlaying ? 1 : 0)
+            .opacity(isPlaying || realtime.state == .live ? 1 : 0)
             .animation(.easeIn(duration: 0.3), value: isPlaying)
             .allowsHitTesting(true)
         } else {
@@ -637,6 +665,27 @@ struct HLSLivePlayerView: View {
         model.pausesOnBackground = !showControls
     }
 
+    /// Start/stop the sub-second WebRTC layer to match current conditions: focused viewer,
+    /// normal camera, muted. Unmuting stops it — HLS then carries audio+video from ONE
+    /// pipeline, so sound is never out of sync with the picture.
+    private func syncRealtime() {
+        guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
+        if effectiveMuted {
+            if realtime.state == .idle || realtime.state == .failed {
+                realtime.start(source: camera.name, client: client)
+            }
+        } else {
+            realtime.stop()
+        }
+    }
+
+    /// The real stream (HLS or realtime) is on screen — hand the borrowed wall player back.
+    private func completeHandoff() {
+        guard let warm = warmPlayer else { return }
+        warm.pause()
+        warmPlayer = nil
+    }
+
     /// Retry an offline camera from scratch: forget the "HLS unavailable" verdict, leave the
     /// MJPEG fallback, and re-run the full HLS → MJPEG cascade so a camera that just came back
     /// online recovers on tap.
@@ -665,6 +714,16 @@ struct HLSLivePlayerView: View {
                     .opacity(isPlaying ? 0 : 1)
                     .animation(.easeOut(duration: 0.3), value: isPlaying)
                     .allowsHitTesting(false)
+            }
+
+            // Zero-latency handoff: the wall tile's ALREADY-DECODING player shows moving video
+            // the instant the full-screen viewer opens, while the full-quality stream connects
+            // behind it. Skipped for fisheye (the tile renders through Metal dewarp, not a raw
+            // layer we can borrow). Removed the moment the real stream is up.
+            if showControls, !isPlaying, realtime.state != .live, let warm = warmPlayer {
+                ZoomablePlayerView(player: warm, videoGravity: .resizeAspect)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
 
             // AVPlayer layer — invisible until actually playing, then fades in cleanly.
@@ -744,8 +803,36 @@ struct HLSLivePlayerView: View {
                     .allowsHitTesting(overlayControlsVisible)
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: overlayControlsVisible)
             }
+
+            // Sub-second mode indicator — you're seeing the camera essentially as it happens.
+            if showControls, realtime.state == .live {
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.fill").font(.system(size: 9, weight: .black))
+                            Text("REALTIME").font(.system(size: 9, weight: .black)).tracking(0.8)
+                        }
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(GlassTheme.green, in: Capsule())
+                        .padding(.trailing, 14).padding(.top, 10)
+                    }
+                    Spacer()
+                }
+                .opacity(overlayControlsVisible ? 1 : 0)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: overlayControlsVisible)
+                .allowsHitTesting(false)
+            }
         }
         .onAppear {
+            // Zero-latency handoff: borrow the wall tile's warm player immediately.
+            if showControls, camera.name != "birdseye", !fisheyeStore.isFisheye(camera.name),
+               let warm = WallPlayerRegistry.shared.player(for: camera.name) {
+                warmPlayer = warm
+                warm.playImmediately(atRate: 1.0)
+            }
+            syncRealtime()
             // Host-owned mute (external control mode) applies from the first frame.
             if let muted { model.setMuted(muted) }
             // Reopen exactly how the user left this camera — saved mode rides in the pose.
@@ -793,6 +880,9 @@ struct HLSLivePlayerView: View {
         .onDisappear {
             startTask?.cancel(); startTask = nil
             releaseGate()
+            realtime.stop()
+            // Un-claimed warm player goes back to rest (the tile resumes it in its own onAppear).
+            if let warm = warmPlayer { warm.pause(); warmPlayer = nil }
             // Stop publishing to the system playback UI when the full-screen viewer closes.
             if showControls { NowPlayingController.shared.detach(player: model.player) }
             if persistent {
@@ -819,6 +909,21 @@ struct HLSLivePlayerView: View {
         }
         .onChange(of: muted) { _, newValue in
             if let newValue { model.setMuted(newValue) }
+            syncRealtime()
+        }
+        .onChange(of: model.isMuted) { _, _ in
+            // Self-managed mute (overlay button) — keep realtime in sync too.
+            syncRealtime()
+        }
+        .onChange(of: realtime.state) { _, newState in
+            if newState == .live { completeHandoff() }
+        }
+        .onChange(of: mjpegFallback) { _, fellBack in
+            if fellBack { realtime.stop() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // Realtime stops itself on background; pick it back up when we return.
+            syncRealtime()
         }
         .onChange(of: dewarpModeOverride) { _, _ in
             onDewarpChange?(dewarpActive)
@@ -839,6 +944,7 @@ struct HLSLivePlayerView: View {
             switch newState {
             case .playing:
                 fallbackTask?.cancel(); fallbackTask = nil; releaseGate()  // up — free the slot
+                completeHandoff()   // real stream is up — release the borrowed wall player
                 // Full-screen viewer publishes this camera to the system playback UI
                 // (Lock Screen / Control Center / Dynamic Island / CarPlay). Wall tiles don't.
                 if showControls, let player = model.player {

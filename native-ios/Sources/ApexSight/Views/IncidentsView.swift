@@ -14,30 +14,10 @@ private func prettyCamera(_ name: String) -> String {
 /// Clusters recent events into "incidents" (stories) and lists them. A single-camera burst becomes
 /// one incident; a subject crossing cameras shows its path. Each is one-tap exportable.
 struct IncidentsListView: View {
-    @EnvironmentObject private var appState: AppState
-
-    private var incidents: [Incident] {
-        IncidentBuilder.build(from: appState.events)
-    }
-
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: GlassTheme.Space.m) {
-                if incidents.isEmpty {
-                    ContentUnavailableView("No incidents yet",
-                        systemImage: "square.stack.3d.up.slash",
-                        description: Text("Recent activity gets grouped into stories here."))
-                        .padding(.top, 80)
-                } else {
-                    ForEach(incidents) { incident in
-                        NavigationLink(value: incident) {
-                            IncidentCard(incident: incident)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(GlassTheme.Space.m)
+            IncidentsFeed()
+                .padding(GlassTheme.Space.m)
         }
         .background(GlassTheme.background.ignoresSafeArea())
         .navigationTitle("Incidents")
@@ -48,6 +28,34 @@ struct IncidentsListView: View {
                 NavigationLink(value: MyExportsRoute()) {
                     Label("Exports", systemImage: "square.and.arrow.up.on.square")
                         .font(.subheadline.weight(.semibold))
+                }
+            }
+        }
+    }
+}
+
+/// The incidents list itself — embeddable, so it renders both as the pushed Incidents screen
+/// and inline inside the Activity tab's Incidents mode (first-class, not hidden behind an icon).
+struct IncidentsFeed: View {
+    @EnvironmentObject private var appState: AppState
+
+    private var incidents: [Incident] {
+        IncidentBuilder.build(from: appState.events)
+    }
+
+    var body: some View {
+        LazyVStack(spacing: GlassTheme.Space.m) {
+            if incidents.isEmpty {
+                ContentUnavailableView("No incidents yet",
+                    systemImage: "square.stack.3d.up.slash",
+                    description: Text("Recent activity gets grouped into stories here."))
+                    .padding(.top, 80)
+            } else {
+                ForEach(incidents) { incident in
+                    NavigationLink(value: incident) {
+                        IncidentCard(incident: incident)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

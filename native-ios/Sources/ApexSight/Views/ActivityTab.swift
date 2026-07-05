@@ -12,6 +12,8 @@ struct ActivityTab: View {
     @AppStorage("activity.selectedSubLabel") private var selectedSubLabel = "all"
     @AppStorage("activity.sortNewest") private var sortNewest = true
     @State private var path = NavigationPath()
+    private enum ViewMode { case events, incidents }
+    @State private var viewMode: ViewMode = .events
     // When a filter is active we query the server (the live `appState.events` cache is
     // only the latest ~50, so an older combo would falsely look empty).
     @State private var serverResults: [FrigateEvent] = []
@@ -95,6 +97,17 @@ struct ActivityTab: View {
                     // LazyVStack recompute offsets as async thumbnails load, which made the
                     // tiles drift/glitch while scrolling or sitting still.
                     LazyVStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                        // Events vs Incidents — first-class, not hidden behind a toolbar icon.
+                        Picker("View", selection: $viewMode) {
+                            Text("Events").tag(ViewMode.events)
+                            Text("Incidents").tag(ViewMode.incidents)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.top, GlassTheme.Space.xs)
+
+                        if viewMode == .incidents {
+                            IncidentsFeed()
+                        } else {
                         header
 
                         if displayedEvents.isEmpty {
@@ -120,6 +133,7 @@ struct ActivityTab: View {
                                         }
                                 }
                             }
+                        }
                         }
                     }
                     .padding(.horizontal, GlassTheme.Space.l)
