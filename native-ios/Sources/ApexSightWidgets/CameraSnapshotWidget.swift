@@ -278,7 +278,7 @@ private struct MediumWidgetView: View {
                     .padding(8)
                 }
             }
-            .frame(width: 158)
+            .frame(width: 174)
             .frame(maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(severityColor, lineWidth: 2))
