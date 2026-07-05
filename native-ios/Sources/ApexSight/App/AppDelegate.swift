@@ -16,6 +16,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// Portrait everywhere except the full-screen video viewer (which sets
+    /// `AppOrientation.allowsLandscape`). Keeps the whole app from reflowing into an iPad-style
+    /// layout when a Plus/Max phone is held sideways.
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        AppOrientation.mask
+    }
+
     /// Attach a window-scene delegate so Home Screen quick actions are delivered (SwiftUI's
     /// App lifecycle doesn't surface them otherwise). The delegate only forwards shortcuts —
     /// it never builds a window — so SwiftUI's WindowGroup still owns the UI.

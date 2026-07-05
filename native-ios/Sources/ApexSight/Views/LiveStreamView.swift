@@ -6,6 +6,10 @@ struct LiveStreamView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Compact in landscape on iPhone — drives the single-row control layout so the video keeps
+    /// maximum height when the phone is turned sideways.
+    @Environment(\.verticalSizeClass) private var vSizeClass
+    private var isLandscape: Bool { vSizeClass == .compact }
     @State private var streamMode: StreamMode = .live
     @State private var isLive = false
     @State private var showPTZ = false
@@ -119,7 +123,8 @@ struct LiveStreamView: View {
         .onChange(of: showPTZ) { _, on in on ? revealChrome() : scheduleHideChrome() }
         .onChange(of: talk.isActive) { _, active in active ? revealChrome() : scheduleHideChrome() }
         .onChange(of: showCameraControls) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
-        .onDisappear { hideTask?.cancel(); talk.stop() }
+        .onAppear { AppOrientation.enableLandscape() }   // allow landscape ONLY here
+        .onDisappear { hideTask?.cancel(); talk.stop(); AppOrientation.lockPortrait() }
         .sheet(isPresented: $showCameraControls) {
             CameraQuickControlsSheet(camera: camera)
                 .environmentObject(appState)
@@ -367,14 +372,16 @@ struct LiveStreamView: View {
             // five so nothing is ever clipped, scrolled, or floating off in a corner.
             actionGrid
                 .frame(maxWidth: .infinity)
-                .padding(.bottom, 40)
+                .padding(.bottom, isLandscape ? 14 : 40)
         }
     }
 
     /// Centered rows of ≤5 uniform buttons — 7 buttons → 4+3, 12 → 4+4+4, always balanced.
     private var actionGrid: some View {
         let items = actionItems
-        let perRow = 5
+        // Landscape is wide but short — pack the controls into as few rows as possible (ideally
+        // one) so the video keeps its height. Portrait stays at the balanced 5-per-row.
+        let perRow = isLandscape ? max(5, min(items.count, 9)) : 5
         let rowCount = max(1, Int(ceil(Double(items.count) / Double(perRow))))
         let base = items.count / rowCount
         let extra = items.count % rowCount   // first `extra` rows get one more

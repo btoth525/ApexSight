@@ -119,9 +119,9 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             return false
         }
         self.pc = pc
-        let transceiver = RTCRtpTransceiverInit()
-        transceiver.direction = .recvOnly
-        pc.addTransceiver(of: .video, init: transceiver)
+        let initt = RTCRtpTransceiverInit()
+        initt.direction = .recvOnly
+        let videoTransceiver = pc.addTransceiver(of: .video, init: initt)
 
         do {
             let offerConstraints = RTCMediaConstraints(
@@ -143,6 +143,14 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             try await set(remote: RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
         } catch {
             return false
+        }
+
+        // Attach the receiver's video track to the renderer directly — the transceiver we added
+        // owns it after negotiation. (Relying on the `didStartReceivingOn` delegate was the bug:
+        // it doesn't fire reliably for a pre-added recvonly transceiver, so a frame never reached
+        // the renderer and every attempt timed out.)
+        if let track = videoTransceiver?.receiver.track as? RTCVideoTrack {
+            videoTrack = track
         }
 
         // Await the first RENDERED frame or a 4s timeout — an HEVC track connects but never
@@ -222,7 +230,17 @@ extension RealtimeVideoController: RTCPeerConnectionDelegate {
         guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
             guard let self, self.state == .connecting else { return }
-            self.videoTrack = track
+            if self.videoTrack == nil { self.videoTrack = track }
+        }
+    }
+
+    // Backup track path — some negotiations surface the receiver here rather than via the
+    // transceiver we pre-added. Either way the renderer gets attached.
+    nonisolated func peerConnection(_ pc: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
+        guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.state == .connecting else { return }
+            if self.videoTrack == nil { self.videoTrack = track }
         }
     }
 

@@ -59,6 +59,8 @@ struct FullscreenMediaView: View {
             .padding(.bottom, GlassTheme.Space.xxl)
         }
         .statusBarHidden(true)
+        .onAppear { AppOrientation.enableLandscape() }     // "rotate to fill" — allow landscape here
+        .onDisappear { AppOrientation.lockPortrait() }
     }
 }
 
