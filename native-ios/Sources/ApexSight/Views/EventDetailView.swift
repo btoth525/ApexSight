@@ -87,6 +87,17 @@ struct EventDetailView: View {
         .navigationTitle("Event")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        .onAppear {
+            #if DEBUG
+            // Sim-driving hook: synthetic taps can't switch a segmented Picker, so tests inject
+            // the media tab via the app group (0=video 1=snapshot 2=history).
+            let modes: [MediaMode] = [.video, .snapshot, .history]
+            if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?.object(forKey: "apex.debug.mediaMode") as? Int,
+               modes.indices.contains(raw) {
+                mediaMode = modes[raw]
+            }
+            #endif
+        }
         .task(id: event.id) {
             // Clear the prior event's text first — otherwise, when this view is reused for a new
             // event (NavigationLink to another FrigateEvent), event A's description lingers over
