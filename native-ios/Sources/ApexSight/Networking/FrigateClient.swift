@@ -669,7 +669,10 @@ struct FrigateClient {
     /// Exchange a WebRTC offer with go2rtc for a two-way audio source and return the answer SDP.
     /// Non-trickle: the offer already carries our ICE candidates; go2rtc's answer carries its own.
     func webRTCAnswer(source: String, offerSDP: String) async throws -> String {
-        let endpoint = baseURL.appending(path: "api/go2rtc/api/webrtc")
+        // NOTE: the path is /api/go2rtc/webrtc — Frigate's nginx maps it onto go2rtc's
+        // /api/webrtc. The double-api form (/api/go2rtc/api/webrtc) is 403'd by nginx
+        // (verified live) — it silently broke BOTH realtime video and two-way talk.
+        let endpoint = baseURL.appending(path: "api/go2rtc/webrtc")
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "src", value: source)]
         guard let url = components?.url else { throw FrigateError.invalidURL }

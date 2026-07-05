@@ -669,6 +669,7 @@ struct HLSLivePlayerView: View {
     /// normal camera, muted. Unmuting stops it — HLS then carries audio+video from ONE
     /// pipeline, so sound is never out of sync with the picture.
     private func syncRealtime() {
+        RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) fisheye=\(fisheyeStore.isFisheye(camera.name)) mjpeg=\(mjpegFallback)")
         guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
         if effectiveMuted {
             if realtime.state == .idle || realtime.state == .failed {

@@ -61,9 +61,10 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// frame — so an HEVC MAIN stream (iOS can't WebRTC-decode) automatically falls to the H264
     /// SUB stream and still gets sub-second live.
     func start(sources: [String], client: FrigateClient) {
+        Self.rtLog("start requested: \(sources) (state=\(state))")
         guard state == .idle || state == .failed else { return }
         let key = sources.first ?? ""
-        guard failures[key, default: 0] < 2 else { return }   // exhausted — stay on HLS
+        guard failures[key, default: 0] < 2 else { Self.rtLog("start refused: failure cap"); return }
         isSuspendedByBackground = false
         primaryKey = key
         state = .connecting
@@ -89,10 +90,20 @@ final class RealtimeVideoController: NSObject, ObservableObject {
 
     // MARK: - Connect
 
+    /// Step-by-step diagnostics (visible in Console/`log stream`) — realtime fails SILENTLY by
+    /// design, so this is the only way to see where an attempt dies in the field.
+    nonisolated static func rtLog(_ message: String) {
+        #if DEBUG
+        fputs("[realtime] \(message)\n", stderr)   // stderr = unbuffered, always reaches the console
+        #endif
+    }
+
     private func cascade(sources: [String], client: FrigateClient) async {
         for source in sources {
             if Task.isCancelled { return }
+            Self.rtLog("attempt \(source)")
             let rendered = await attempt(source: source, client: client)
+            Self.rtLog("attempt \(source) → \(rendered ? "RENDERED ✅" : "no frame ❌")")
             if rendered {
                 failures[primaryKey] = 0
                 state = .live
@@ -138,10 +149,13 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             await waitForIceGathering(pc)
             try Task.checkCancellation()
             let localSDP = pc.localDescription?.sdp ?? offer.sdp
+            Self.rtLog("offer ready (\(localSDP.count)B, \(localSDP.components(separatedBy: "a=candidate").count - 1) candidates)")
             let answerSDP = try await client.webRTCAnswer(source: source, offerSDP: localSDP)
+            Self.rtLog("answer received (\(answerSDP.count)B, \(answerSDP.components(separatedBy: "a=candidate").count - 1) candidates, video=\(answerSDP.contains("m=video")))")
             try Task.checkCancellation()
             try await set(remote: RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
         } catch {
+            Self.rtLog("negotiation error: \(error.localizedDescription)")
             return false
         }
 
@@ -150,7 +164,10 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         // it doesn't fire reliably for a pre-added recvonly transceiver, so a frame never reached
         // the renderer and every attempt timed out.)
         if let track = videoTransceiver?.receiver.track as? RTCVideoTrack {
+            Self.rtLog("video track attached from transceiver")
             videoTrack = track
+        } else {
+            Self.rtLog("no video track on transceiver receiver (waiting on delegate)")
         }
 
         // Await the first RENDERED frame or a 4s timeout — an HEVC track connects but never
@@ -245,6 +262,7 @@ extension RealtimeVideoController: RTCPeerConnectionDelegate {
     }
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        Self.rtLog("ice state \(newState.rawValue) (0=new 1=checking 2=connected 3=completed 4=failed 5=disconnected 6=closed)")
         if newState == .failed || newState == .closed {
             Task { @MainActor [weak self] in
                 guard let self else { return }
