@@ -57,6 +57,12 @@ final class HLSLiveModel: ObservableObject {
     private nonisolated(unsafe) var stallObs: NSObjectProtocol?
     private nonisolated(unsafe) var failObs: NSObjectProtocol?
     private nonisolated(unsafe) var reconnectTask: Task<Void, Never>?
+    /// Grace timer that lets a transient stall (motion bitrate spike) rebuffer in place before we
+    /// escalate to a reconnect — so smooth playback isn't interrupted by a needless rebuild.
+    private nonisolated(unsafe) var stallGraceTask: Task<Void, Never>?
+    /// True for the focused full-screen viewer — enables the rebuffer-in-place grace instead of
+    /// reconnect-on-stall.
+    private var focusedSmooth = false
     /// True once we took the shared audio session for unmuted playback, so we deactivate it
     /// again on re-mute / stop / dealloc — otherwise one unmute would duck the user's music
     /// for the rest of the app session.
@@ -152,6 +158,8 @@ final class HLSLiveModel: ObservableObject {
         teardownLifecycle()
         reconnectTask?.cancel()
         reconnectTask = nil
+        stallGraceTask?.cancel()
+        stallGraceTask = nil
         releaseAudioSession()
         // Capture player before nilling so teardownObservers can remove the time observer.
         let p = player
@@ -204,21 +212,28 @@ final class HLSLiveModel: ObservableObject {
         let urlSource = (usingFallback ? fallback : primary) ?? makeURL
         guard !isStopped, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
         teardownObservers(player: player)
+        stallGraceTask?.cancel(); stallGraceTask = nil
         player?.pause()
         lastProgressTime = nil
         advancingConfirmed = false
 
+        // The focused full-screen viewer (single main-stream camera) biases for SMOOTH playback:
+        // a moderate forward buffer + letting AVPlayer rebuffer gracefully, so a motion bitrate
+        // spike freezes on the last frame for a beat and resumes — instead of the old behavior
+        // where any stall tore the stream down and jumped to the live edge (the visible skip).
+        // The multi-camera wall stays lean/low-latency so many feeds don't stampede memory.
+        let focused = !preferSub
+        focusedSmooth = focused
         // Patient buffering for cameras with a long keyframe interval (e.g. a doorbell
         // with a ~4s GOP). A fresh, never-stalled short-GOP stream stays low-latency;
         // once anything has stalled this session — or this camera is already known to be
-        // slow — we let AVPlayer wait for a decodable keyframe instead of failing fast
-        // into a reconnect (which is what was turning the doorbell black).
+        // slow — we let AVPlayer wait for a decodable keyframe instead of failing fast.
         let patient = totalAttempts > 0 || Self.slowStartCameras.contains(cameraName)
         connectedPatient = patient
-        item.preferredForwardBufferDuration = patient ? 6 : 2
+        item.preferredForwardBufferDuration = focused ? 5 : (patient ? 6 : 2)
 
         let newPlayer = AVPlayer(playerItem: item)
-        newPlayer.automaticallyWaitsToMinimizeStalling = patient
+        newPlayer.automaticallyWaitsToMinimizeStalling = focused ? true : patient
         newPlayer.actionAtItemEnd = .none
         newPlayer.isMuted = isMuted
         player = newPlayer
@@ -264,7 +279,7 @@ final class HLSLiveModel: ObservableObject {
         stallObs = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.scheduleReconnect(reason: "Reconnecting…") }
+            Task { @MainActor in self?.handleStall() }
         }
         failObs = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
@@ -289,6 +304,7 @@ final class HLSLiveModel: ObservableObject {
         // that pending reconnect — otherwise it fires later and needlessly rebuilds a live,
         // playing stream (a visible black flash).
         reconnectTask?.cancel(); reconnectTask = nil
+        stallGraceTask?.cancel(); stallGraceTask = nil
         retryCount = 0
         totalAttempts = 0
         didTryReauth = false
@@ -296,6 +312,31 @@ final class HLSLiveModel: ObservableObject {
         // so the next open begins patient instead of stalling first.
         if connectedPatient, !cameraName.isEmpty {
             Self.slowStartCameras.insert(cameraName)
+        }
+    }
+
+    /// A playback stall fired. In the focused viewer we do NOT immediately reconnect (that flips
+    /// state to .connecting, fades the video out, and rebuilds to the live edge — the visible
+    /// skip). Instead we hold the current frame and give AVPlayer a grace window to rebuffer.
+    /// Only if playback still hasn't advanced after the window do we escalate — so a genuinely
+    /// dead camera (unplugged) still recovers via the reconnect → MJPEG cascade.
+    private func handleStall() {
+        guard !isStopped else { return }
+        guard focusedSmooth else { scheduleReconnect(reason: "Reconnecting…"); return }
+        guard stallGraceTask == nil else { return }
+        let stalledAt = lastProgressTime ?? 0
+        stallGraceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 7_000_000_000)
+            await MainActor.run {
+                guard let self, !self.isStopped else { return }
+                self.stallGraceTask = nil
+                // Recovered on its own (time advanced, or it's playing again) → nothing to do.
+                if self.player?.timeControlStatus == .playing || (self.lastProgressTime ?? 0) > stalledAt + 0.1 {
+                    return
+                }
+                // Still stuck after grace → treat as a real failure.
+                self.scheduleReconnect(reason: "Reconnecting…")
+            }
         }
     }
 
@@ -381,6 +422,7 @@ final class HLSLiveModel: ObservableObject {
         if let failObs { NotificationCenter.default.removeObserver(failObs) }
         lifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
         reconnectTask?.cancel()
+        stallGraceTask?.cancel()
         if didActivateAudio {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
