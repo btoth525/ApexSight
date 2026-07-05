@@ -113,6 +113,9 @@ struct IncidentDetailView: View {
     @State private var sharePayload: SharePayload?
     @State private var showSavedToast = false
     @State private var saveNote: String?
+    /// The in-flight export, held so leaving the view cancels it (poll/download/transcode all
+    /// check cancellation) instead of running minutes of background work for a closed screen.
+    @State private var exportTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -132,7 +135,10 @@ struct IncidentDetailView: View {
         .onAppear {
             if let client = appState.client { stitch.configure(legs: incident.events, client: client) }
         }
-        .onDisappear { stitch.teardown() }
+        .onDisappear {
+            stitch.teardown()
+            exportTask?.cancel(); exportTask = nil
+        }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.items) }
         .overlay(alignment: .bottom) {
             if showSavedToast {
@@ -292,7 +298,7 @@ struct IncidentDetailView: View {
     private var exportButton: some View {
         HStack(spacing: GlassTheme.Space.s) {
             Button {
-                Task {
+                exportTask = Task {
                     guard let client = appState.client else { return }
                     Haptics.tap()
                     await exporter.exportReel(events: incident.events, name: exportName + " Reel", client: client)
@@ -307,7 +313,7 @@ struct IncidentDetailView: View {
                     let windows = incident.exportWindows().map {
                         ExportManager.Window(camera: $0.camera, start: $0.start, end: $0.end)
                     }
-                    Task {
+                    exportTask = Task {
                         guard let client = appState.client else { return }
                         Haptics.tap()
                         await exporter.export(windows: windows, name: exportName, client: client)

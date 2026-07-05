@@ -49,6 +49,14 @@ struct ReviewRow: View {
         .shadow(color: .black.opacity(0.22), radius: 9, y: 4)
     }
 
+    /// Frigate keeps upgrading the detection's snapshot to the best frame while the review is
+    /// live (and finalizes it at the end) — revalidate during and briefly after, so the card
+    /// doesn't forever show the first (often subject-less) fetch.
+    private var snapshotStillChanging: Bool {
+        guard let end = review.endTime else { return true }
+        return Date().timeIntervalSince1970 - end < 120
+    }
+
     @ViewBuilder
     private var hero: some View {
         if let url = appState.client?.reviewSnapshotURL(review: review)
@@ -59,7 +67,11 @@ struct ReviewRow: View {
             // while the list scrolls.
             ZStack {
                 Color.black
-                RemoteImage(url: url, contentMode: .fit, maxPixelSize: 700)
+                // Fallback: cameras with snapshots disabled 404 the full snapshot — fall back to
+                // the review's canonical thumbnail (always exists) instead of a gray placeholder.
+                RemoteImage(url: url, contentMode: .fit, maxPixelSize: 700,
+                            revalidate: snapshotStillChanging,
+                            fallbackURL: appState.client?.reviewThumbnailURL(review: review))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {

@@ -42,6 +42,11 @@ final class HLSLiveModel: ObservableObject {
     /// full-screen viewer leaves the player running so auto-Picture-in-Picture can take over on
     /// background instead of being frozen by an eager pause.
     var pausesOnBackground = true
+    /// True while this player's view is OFF-SCREEN (persistent wall tile on a hidden tab).
+    /// Foregrounding the app must NOT rebuild streams for invisible tiles — that was spinning up
+    /// all 8 wall decoders behind the Settings tab on every foreground. The tile reconnects
+    /// itself in onAppear when it actually comes back.
+    var isOffscreen = false
 
     // These observer tokens are mutated only on the main actor, but `deinit` (which is
     // nonisolated) must remove them — and their teardown APIs (KVO invalidate,
@@ -137,9 +142,10 @@ final class HLSLiveModel: ObservableObject {
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.isStopped else { return }
+                guard let self, !self.isStopped, !self.isOffscreen else { return }
                 // The live edge moved on while suspended — reconnect fresh rather than
-                // resuming a stale buffer.
+                // resuming a stale buffer. (Off-screen persistent tiles skip this and
+                // reconnect in onAppear instead.)
                 self.retryCount = 0
                 self.totalAttempts = 0
                 self.didTryReauth = false
@@ -645,7 +651,10 @@ struct HLSLivePlayerView: View {
             // Birdseye has no latest.jpg, so skip the attempt to avoid a guaranteed 404.
             if camera.name != "birdseye",
                let url = appState.client?.latestFrameURL(camera: camera.name) {
-                RemoteImage(url: url, contentMode: .fit)
+                // `latest.jpg` changes constantly — stale-while-revalidate so the placeholder
+                // behind a connecting/reconnecting stream is the CURRENT frame, not the one
+                // cached at app launch (which could be hours old).
+                RemoteImage(url: url, contentMode: .fit, revalidate: true)
                     .opacity(isPlaying ? 0 : 1)
                     .animation(.easeOut(duration: 0.3), value: isPlaying)
                     .allowsHitTesting(false)
@@ -750,9 +759,11 @@ struct HLSLivePlayerView: View {
             onDewarpChange?(dewarpActive)
             // Returning to a kept-alive player (tab switch back) — just resume, instantly.
             if started {
+                model.isOffscreen = false
                 if mjpegFallback == false { model.player?.play() }
                 return
             }
+            model.isOffscreen = false
             started = true
             // Skip the HLS wait for cameras already known to need MJPEG this session.
             if Self.hlsUnavailable.contains(camera.name) {
@@ -788,6 +799,9 @@ struct HLSLivePlayerView: View {
                 } else {
                     // Keep it loaded across tab switches — just pause decoding. The last
                     // frame stays on screen, so returning is instant with no black flash.
+                    // Marked off-screen so an app foreground doesn't rebuild this hidden
+                    // tile's stream (it reconnects itself in onAppear).
+                    model.isOffscreen = true
                     model.player?.pause()
                 }
             } else {

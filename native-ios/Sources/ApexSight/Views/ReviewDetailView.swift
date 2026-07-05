@@ -136,7 +136,11 @@ struct ReviewDetailView: View {
                     } else if let url = snapshotURL {
                         // Plain image inline (no inner scroll-zoom) so a tap flows through to
                         // `.expandableMedia`, which opens the full-screen zoomable viewer.
-                        RemoteImage(url: url, contentMode: .fit)
+                        // Falls back to the canonical review thumbnail when the full snapshot
+                        // 404s (snapshots disabled on this camera).
+                        RemoteImage(url: url, contentMode: .fit,
+                                    revalidate: review.endTime == nil,
+                                    fallbackURL: appState.client?.reviewThumbnailURL(review: review))
                             .frame(height: 300)
                             .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.latestFrameURL(camera: review.camera) {

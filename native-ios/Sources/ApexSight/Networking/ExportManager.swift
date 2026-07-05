@@ -92,6 +92,11 @@ final class ExportManager: ObservableObject {
         phase = .composing(progress: 0)
         var segments: [URL] = []
         for (i, event) in sampled.enumerated() {
+            if Task.isCancelled {
+                segments.forEach { try? FileManager.default.removeItem(at: $0) }
+                phase = .idle
+                return []
+            }
             let clipURL = client.eventClipURL(id: event.id)
             if let local = try? await client.downloadClipFile(from: clipURL, suggestedName: event.id) {
                 if let seg = await HighlightReelBuilder.transcodeFirst(local, seconds: segmentSeconds) {
@@ -138,11 +143,14 @@ final class ExportManager: ObservableObject {
         }
 
         // Poll until each id reports ready (Frigate renders in seconds, but a long window or a
-        // busy host can take longer — cap at ~2 minutes).
+        // busy host can take longer — cap at ~2 minutes). Cancellation-aware: leaving the view
+        // cancels the owning Task, and the throwing sleep exits the loop instead of spinning
+        // out the remaining ~2 minutes of polling in the background.
         var ready: [FrigateExport] = []
         let deadline = 80   // ~80 * 1.5s ≈ 2 min
         for _ in 0..<deadline {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            do { try await Task.sleep(nanoseconds: 1_500_000_000) }
+            catch { phase = .idle; return [] }   // cancelled — the render finishes server-side (My Exports)
             let current = (try? await client.exports()) ?? []
             ready = current.filter { ids.contains($0.id) && $0.isReady }
             phase = .rendering(done: ready.count, total: ids.count)
@@ -157,6 +165,7 @@ final class ExportManager: ObservableObject {
         let total = ready.count
         var urls: [URL] = []
         for (i, export) in ready.enumerated() {
+            if Task.isCancelled { phase = .idle; return [] }
             guard let filename = export.filename else { continue }
             let remote = client.exportFileURL(filename: filename)
             let base = Double(i)

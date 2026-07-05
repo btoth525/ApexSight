@@ -29,6 +29,15 @@ extension Error {
         let nsError = self as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorUserAuthenticationRequired
     }
+
+    /// True for a hard 404 — the resource doesn't exist (e.g. snapshot.jpg on a camera with
+    /// snapshots disabled), so retries won't help and a fallback should be tried instead.
+    var isNotFound: Bool {
+        if let frigate = self as? FrigateError, case .badResponse(let code) = frigate {
+            return code == 404
+        }
+        return false
+    }
 }
 
 @MainActor
@@ -111,6 +120,24 @@ final class AppState: ObservableObject {
             self?.handleStreamEvent(event)
         }
         WatchSyncManager.shared.activate()
+        // Sweep yesterday's downloaded clips / reel segments out of tmp. iOS only purges tmp
+        // opportunistically, so a regular exporter would otherwise accrue gigabytes of
+        // clip-*/reel-*/seg-*/dl-* leftovers. Age-gated (>24h) so anything still referenced by
+        // an open share sheet from THIS session is never touched.
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            let tmp = fm.temporaryDirectory
+            let prefixes = ["clip-", "reel-", "seg-", "dl-"]
+            let cutoff = Date().addingTimeInterval(-24 * 3600)
+            guard let items = try? fm.contentsOfDirectory(
+                at: tmp, includingPropertiesForKeys: [.contentModificationDateKey]
+            ) else { return }
+            for item in items where prefixes.contains(where: { item.lastPathComponent.hasPrefix($0) }) {
+                let modified = (try? item.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                if modified < cutoff { try? fm.removeItem(at: item) }
+            }
+        }
         // A Home Screen quick action stashes a pending deep link and posts this; consume it
         // now (a warm tap doesn't change scenePhase, so the .active path wouldn't fire).
         quickActionObserver = NotificationCenter.default.addObserver(

@@ -313,16 +313,41 @@ struct FrigateClient {
     /// A review's best static image: the cropped thumbnail of its first detection.
     /// Stock Frigate has no `/review/{id}/preview` JPEG — `thumb_path` is a server
     /// filesystem path that isn't served over HTTP, so we resolve via the detection.
+    /// The review's canonical thumbnail — the SAME image Frigate's own UI shows for it.
+    /// `thumb_path` is a server filesystem path (`/media/frigate/clips/review/….webp`);
+    /// the file is served at `/clips/review/…`. Falls back to the primary detection's
+    /// thumbnail for old reviews without one.
     func reviewThumbnailURL(review: FrigateReviewItem) -> URL? {
-        guard let detectionID = review.data?.detections?.first else { return nil }
+        if let thumbPath = review.thumbPath,
+           thumbPath.hasPrefix("/media/frigate/"),
+           thumbPath.hasSuffix(".webp") {
+            let served = String(thumbPath.dropFirst("/media/frigate/".count))
+            return baseURL.appending(path: served)
+        }
+        guard let detectionID = Self.primaryDetectionID(of: review) else { return nil }
         return eventThumbnailURL(id: detectionID)
     }
 
-    /// A larger snapshot for the review detail view: the first detection's full-frame
+    /// A larger snapshot for the review detail view: the primary detection's full-frame
     /// snapshot (falls back to the cropped thumbnail when snapshots are disabled).
     func reviewSnapshotURL(review: FrigateReviewItem) -> URL? {
-        guard let detectionID = review.data?.detections?.first else { return nil }
+        guard let detectionID = Self.primaryDetectionID(of: review) else { return nil }
         return eventSnapshotURL(id: detectionID)
+    }
+
+    /// The review's `detections` array is UNORDERED (verified against a live server), so
+    /// `.first` is an arbitrary event — the source of "wrong snapshot" mismatches. Pick the
+    /// EARLIEST detection (the one that triggered the review) via the epoch prefix baked into
+    /// every event id (`1783198550.714144-xxxx`).
+    static func primaryDetectionID(of review: FrigateReviewItem) -> String? {
+        let ids = review.data?.detections ?? []
+        guard !ids.isEmpty else { return nil }
+        return ids.min { eventEpoch($0) < eventEpoch($1) }
+    }
+
+    private static func eventEpoch(_ id: String) -> Double {
+        guard let dash = id.firstIndex(of: "-"), let t = Double(id[..<dash]) else { return .greatestFiniteMagnitude }
+        return t
     }
 
     /// Direct MP4 clip for a review — AVPlayer plays this progressive file reliably.
@@ -357,17 +382,32 @@ struct FrigateClient {
     /// Defensive on purpose: yields `[]` on any failure (older Frigate, previews disabled,
     /// reverse-proxy quirks) so callers can treat previews as a best-effort enhancement that
     /// never blocks or breaks scrubbing.
-    func previewFrameTimes(camera: String, start: Double, end: Double) async -> [Double] {
-        let path = "api/preview/\(camera)/start/\(Int(start))/end/\(Int(end))/frames"
-        guard let times: [Double] = try? await get(path) else { return [] }
-        return times
+    /// A continuous scrub-preview frame: when it was captured + the file Frigate serves it as.
+    struct PreviewFrame: Hashable {
+        let time: Double
+        let filename: String
     }
 
-    /// URL of a single preview frame at a given epoch time — Frigate's documented
-    /// `api/preview/<camera>/<timestamp>/thumbnail.jpg`. Pairs with `previewFrameTimes`
-    /// to drive a continuous scrub-preview strip without a heavyweight VOD load.
-    func previewFrameURL(camera: String, time: Double) -> URL {
-        baseURL.appending(path: "api/preview/\(camera)/\(Int(time))/thumbnail.jpg")
+    /// Frigate's preview-frames API returns FILENAMES (verified live:
+    /// `["preview_Front_Driveway-1783260000.061318.webp", …]`) with the capture epoch baked
+    /// into the name — NOT `[Double]` timestamps as this previously decoded (which made the
+    /// scrub-preview strip silently never work).
+    func previewFrames(camera: String, start: Double, end: Double) async -> [PreviewFrame] {
+        let path = "api/preview/\(camera)/start/\(Int(start))/end/\(Int(end))/frames"
+        guard let names: [String] = try? await get(path) else { return [] }
+        return names.compactMap { name in
+            // preview_<camera>-<epoch>.webp → epoch
+            guard let dash = name.lastIndex(of: "-") else { return nil }
+            let stamp = name[name.index(after: dash)...].replacingOccurrences(of: ".webp", with: "")
+            guard let time = Double(stamp) else { return nil }
+            return PreviewFrame(time: time, filename: name)
+        }
+    }
+
+    /// Thumbnail of one preview frame — served per-FILENAME (`api/preview/<file>/thumbnail.jpg`),
+    /// not per-timestamp. Pairs with `previewFrames` for the scrub-preview strip.
+    func previewFrameURL(filename: String) -> URL {
+        baseURL.appending(path: "api/preview/\(filename)/thumbnail.jpg")
     }
 
     // Events with full filter params
@@ -465,7 +505,12 @@ struct FrigateClient {
     }
 
     func markFalsePositive(id: String) async throws {
-        try await post("api/events/\(id)/false_positive", body: EmptyBody())
+        // Frigate documents this as PUT — POST 405s.
+        var request = URLRequest(url: baseURL.appending(path: "api/events/\(id)/false_positive"))
+        request.httpMethod = "PUT"
+        applyAuth(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
     }
 
     // MARK: - Face recognition (Frigate 0.16+)

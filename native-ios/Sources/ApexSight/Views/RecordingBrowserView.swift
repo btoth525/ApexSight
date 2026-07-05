@@ -27,7 +27,7 @@ struct RecordingBrowserView: View {
     @State private var lastTickedEventIndex: Int?
     /// Best-effort continuous preview frame timestamps for the visible range (Frigate Preview
     /// API). Empty when previews are unavailable; scrubbing degrades to event thumbnails.
-    @State private var previewTimes: [Double] = []
+    @State private var previewFrames: [FrigateClient.PreviewFrame] = []
     /// The in-flight scrub-preview fetch, held so a day-switch can cancel it — otherwise an older
     /// day's frames could resolve last and overwrite the current day's preview bubble.
     @State private var previewTask: Task<Void, Never>?
@@ -433,10 +433,10 @@ struct RecordingBrowserView: View {
     /// Best continuous preview frame for the playhead time, when the Preview API is
     /// available — used to keep the bubble live even between detections.
     private var nearestPreviewURL: URL? {
-        guard !previewTimes.isEmpty, let client = appState.client else { return nil }
+        guard !previewFrames.isEmpty, let client = appState.client else { return nil }
         let t = scrubEpoch
-        guard let frameTime = previewTimes.min(by: { abs($0 - t) < abs($1 - t) }) else { return nil }
-        return client.previewFrameURL(camera: camera.name, time: frameTime)
+        guard let frame = previewFrames.min(by: { abs($0.time - t) < abs($1.time - t) }) else { return nil }
+        return client.previewFrameURL(filename: frame.filename)
     }
 
     /// Floating preview shown above the playhead while dragging — Protect's "zoomed-in
@@ -697,7 +697,7 @@ struct RecordingBrowserView: View {
         playingTime = nil
         downloadFeedback = nil
 
-        previewTimes = []
+        previewFrames = []
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
 
@@ -735,13 +735,13 @@ struct RecordingBrowserView: View {
         // and guarded on the day so a slow fetch for a previous day can't clobber the current one.
         previewTask?.cancel()
         previewTask = Task {
-            let frames = await client.previewFrameTimes(
+            let frames = await client.previewFrames(
                 camera: camera.name,
                 start: startOfDay.timeIntervalSince1970,
                 end: endOfDay.timeIntervalSince1970
             )
             guard !Task.isCancelled, date == selectedDate, !frames.isEmpty else { return }
-            previewTimes = frames
+            previewFrames = frames
         }
     }
 

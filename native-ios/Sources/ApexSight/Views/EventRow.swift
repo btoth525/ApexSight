@@ -4,11 +4,20 @@ struct EventRow: View {
     @EnvironmentObject private var appState: AppState
     let event: FrigateEvent
 
+    /// Frigate keeps upgrading an event's thumbnail to the best frame while it's live (and
+    /// finalizes it at the end) — so revalidate the cached image during the event and for a
+    /// short window after, instead of forever showing the first (often subject-less) fetch.
+    private var thumbnailStillChanging: Bool {
+        guard let end = event.endTime else { return true }   // in progress
+        return Date().timeIntervalSince1970 - end < 120       // just finished — grab the final frame
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             if let url = appState.client?.eventThumbnailURL(id: event.id) {
                 // 110pt cell — decode to ~3x, not the 1000px default (≈9x the pixels shown).
-                RemoteImage(url: url, contentMode: .fill, maxPixelSize: 360)
+                RemoteImage(url: url, contentMode: .fill, maxPixelSize: 360,
+                            revalidate: thumbnailStillChanging)
                 .frame(width: 110, height: 110)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }

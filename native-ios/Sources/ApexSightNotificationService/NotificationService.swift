@@ -28,10 +28,10 @@ final class NotificationService: UNNotificationServiceExtension {
 
         // Refresh the widgets with the CURRENT Frigate state (same data the app shows): fetch
         // the latest un-reviewed alerts + hero thumbnail and rewrite the widget cache, then
-        // reload. This is what makes the widgets update the moment an alert arrives — and clear
-        // themselves when everything's been reviewed — without opening the app. Runs alongside
-        // the attachment download; WidgetKit is told to reload once the fresh cache is written.
-        Task {
+        // reload ONCE. Runs alongside the attachment download, but delivery WAITS for it —
+        // iOS suspends the extension the moment contentHandler runs, which was silently
+        // dropping in-flight refreshes. Both fit comfortably in the ~30s NSE budget.
+        let widgetRefresh = Task {
             await WidgetDataFetcher.refresh()
             WidgetCenter.shared.reloadAllTimelines()
         }
@@ -43,7 +43,10 @@ final class NotificationService: UNNotificationServiceExtension {
         let token = (payloadToken?.isEmpty == false) ? payloadToken : Self.appGroupToken()
         let candidates = attachmentURLs(from: request.content.userInfo)
         guard !candidates.isEmpty else {
-            contentHandler(mutableContent)
+            Task {
+                await widgetRefresh.value
+                self.contentHandler?(mutableContent)
+            }
             return
         }
 
@@ -55,7 +58,10 @@ final class NotificationService: UNNotificationServiceExtension {
             if let attachment {
                 mutableContent.attachments = [attachment]
             }
-            self.contentHandler?(mutableContent)
+            Task {
+                await widgetRefresh.value
+                self.contentHandler?(mutableContent)
+            }
         }
     }
 
@@ -69,6 +75,13 @@ final class NotificationService: UNNotificationServiceExtension {
     /// Ordered list of media URLs to try: animated GIF (snapshot_url) first, then stills.
     /// Absolute `*_url` keys are used as-is; a relative `snapshot_path` (e.g.
     /// "/api/events/<id>/preview.gif") is resolved against the app-group base URL.
+    ///
+    /// Correctness guard: Frigate builds `preview.gif` from preview frames, and for an event
+    /// only a few seconds old those frames can PREDATE the event — the notification would show
+    /// the wrong footage. The event's start time is embedded in its id (epoch prefix, part of
+    /// the URL), so when the event is younger than ~15s we demote GIFs behind the stills —
+    /// the still is always current, and the silent "final GIF" follow-up push carries the
+    /// correct animated preview once the event has actually run.
     private func attachmentURLs(from userInfo: [AnyHashable: Any]) -> [URL] {
         var urls: [URL] = []
         for key in ["snapshot_url", "thumbnail_url", "image_url"] {
@@ -81,7 +94,24 @@ final class NotificationService: UNNotificationServiceExtension {
            let url = URL(string: base.hasSuffix("/") || path.hasPrefix("/") ? base + path : base + "/" + path) {
             urls.append(url)
         }
+        if let eventStart = urls.lazy.compactMap(Self.eventStartTime(fromURL:)).first,
+           Date().timeIntervalSince1970 - eventStart < 15 {
+            let (gifs, stills) = urls.reduce(into: ([URL](), [URL]())) { acc, url in
+                if url.path.lowercased().hasSuffix(".gif") { acc.0.append(url) } else { acc.1.append(url) }
+            }
+            return stills + gifs
+        }
         return urls
+    }
+
+    /// Frigate event ids look like `1783198550.714144-fzdnog` — the prefix is the event's epoch
+    /// start. Parse it out of an `/api/events/<id>/…` URL; nil when the URL isn't event-shaped.
+    private static func eventStartTime(fromURL url: URL) -> Double? {
+        let parts = url.pathComponents
+        guard let idx = parts.firstIndex(of: "events"), parts.count > idx + 1 else { return nil }
+        let id = parts[idx + 1]
+        guard let dash = id.firstIndex(of: "-"), let start = Double(id[..<dash]), start > 1_000_000_000 else { return nil }
+        return start
     }
 
     /// Increment the shared badge counter (so the app icon updates on a closed-app push,
@@ -98,7 +128,8 @@ final class NotificationService: UNNotificationServiceExtension {
             // The silent "final GIF" follow-up stays .passive and is left untouched.
             mutable.interruptionLevel = .timeSensitive
         }
-        WidgetCenter.shared.reloadAllTimelines()
+        // (Widget reload happens once in didReceive, after the fresh data is written —
+        // reloading here too was a second full timeline rebuild per push.)
     }
 
     // MARK: - App-group fallbacks (written by the main app on login/refresh)
