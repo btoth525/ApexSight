@@ -687,9 +687,11 @@ struct HLSLivePlayerView: View {
         }
     }
 
-    /// The real stream (HLS or realtime) is on screen — hand the borrowed wall player back.
+    /// The real stream (HLS or realtime) is on screen — hand the borrowed wall player back
+    /// (paused; the tile resumes it in its own onAppear when the user returns to the wall).
     private func completeHandoff() {
         guard let warm = warmPlayer else { return }
+        WallPlayerRegistry.shared.endBorrow(camera.name)
         warm.pause()
         warmPlayer = nil
     }
@@ -816,9 +818,11 @@ struct HLSLivePlayerView: View {
             // badge, which collided with the status bar / Dynamic Island.)
         }
         .onAppear {
-            // Zero-latency handoff: borrow the wall tile's warm player immediately.
+            // Zero-latency handoff: borrow the wall tile's warm player immediately. `borrow`
+            // marks it so the tile's own pause-on-disappear (which fires right after this)
+            // leaves it RUNNING — otherwise the handoff froze on a still frame.
             if showControls, camera.name != "birdseye", !fisheyeStore.isFisheye(camera.name),
-               let warm = WallPlayerRegistry.shared.player(for: camera.name) {
+               let warm = WallPlayerRegistry.shared.borrow(camera.name) {
                 warmPlayer = warm
                 warm.playImmediately(atRate: 1.0)
             }
@@ -872,7 +876,11 @@ struct HLSLivePlayerView: View {
             releaseGate()
             realtime.stop()
             // Un-claimed warm player goes back to rest (the tile resumes it in its own onAppear).
-            if let warm = warmPlayer { warm.pause(); warmPlayer = nil }
+            if let warm = warmPlayer {
+                WallPlayerRegistry.shared.endBorrow(camera.name)
+                warm.pause()
+                warmPlayer = nil
+            }
             // Stop publishing to the system playback UI when the full-screen viewer closes.
             if showControls { NowPlayingController.shared.detach(player: model.player) }
             if persistent {
@@ -888,8 +896,13 @@ struct HLSLivePlayerView: View {
                     // frame stays on screen, so returning is instant with no black flash.
                     // Marked off-screen so an app foreground doesn't rebuild this hidden
                     // tile's stream (it reconnects itself in onAppear).
+                    // EXCEPT while the full-screen viewer is borrowing this player for the
+                    // zero-latency handoff — pausing it then would freeze the handoff video;
+                    // the viewer pauses it itself once its own stream takes over.
                     model.isOffscreen = true
-                    model.player?.pause()
+                    if !WallPlayerRegistry.shared.isBorrowed(camera.name) {
+                        model.player?.pause()
+                    }
                 }
             } else {
                 model.stop()

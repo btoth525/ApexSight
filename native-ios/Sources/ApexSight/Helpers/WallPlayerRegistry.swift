@@ -9,6 +9,11 @@ import AVFoundation
 final class WallPlayerRegistry {
     static let shared = WallPlayerRegistry()
     private var players: [String: AVPlayer] = [:]
+    /// Cameras whose player the full-screen viewer is currently SHOWING. The wall tile's
+    /// onDisappear fires right after the viewer's onAppear during the push — without this flag
+    /// its pause would freeze the very player the viewer just resumed (handoff showed a still
+    /// frame instead of moving video).
+    private var borrowed: Set<String> = []
 
     func register(_ player: AVPlayer, for camera: String) {
         guard !camera.isEmpty else { return }
@@ -20,5 +25,14 @@ final class WallPlayerRegistry {
         if players[camera] === player { players[camera] = nil }
     }
 
-    func player(for camera: String) -> AVPlayer? { players[camera] }
+    /// The full-screen viewer takes the warm player and marks it borrowed so the tile's
+    /// pause-on-disappear leaves it running. Balanced by `endBorrow`.
+    func borrow(_ camera: String) -> AVPlayer? {
+        guard let player = players[camera] else { return nil }
+        borrowed.insert(camera)
+        return player
+    }
+
+    func endBorrow(_ camera: String) { borrowed.remove(camera) }
+    func isBorrowed(_ camera: String) -> Bool { borrowed.contains(camera) }
 }
