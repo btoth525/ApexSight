@@ -295,7 +295,12 @@ final class HLSLiveModel: ObservableObject {
             Task { @MainActor in self?.handleFailure(msg) }
         }
 
-        newPlayer.play()
+        // Fast start + smooth playback: `playImmediately` begins the moment the first frames
+        // are decodable instead of waiting for the full forward buffer (the focused viewer's
+        // `automaticallyWaitsToMinimizeStalling = true` would otherwise delay first frame by
+        // seconds). If it outruns the buffer, the stall-grace path rebuffers in place — no
+        // teardown, no skip. Wall tiles keep plain play() (their lean config already starts fast).
+        if focused { newPlayer.playImmediately(atRate: 1.0) } else { newPlayer.play() }
     }
 
     /// Mark the stream live the moment it's playing AND has real video frames
@@ -349,7 +354,9 @@ final class HLSLiveModel: ObservableObject {
     private func handleStatus(_ item: AVPlayerItem) {
         switch item.status {
         case .readyToPlay:
-            player?.play()
+            // Focused viewer: start on the first decodable frame (see connect()) — the
+            // stall-grace covers any rebuffer. Wall tiles: standard start.
+            if focusedSmooth { player?.playImmediately(atRate: 1.0) } else { player?.play() }
         case .failed:
             handleFailure(item.error?.localizedDescription ?? "Stream error")
         default:

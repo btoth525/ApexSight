@@ -37,7 +37,7 @@ final class IncidentPlayerModel: ObservableObject {
         rateObs = player.observe(\.rate, options: [.new]) { [weak self] player, _ in
             Task { @MainActor in self?.isPlaying = player.rate > 0 }
         }
-        player.play()
+        player.playImmediately(atRate: 1.0)
     }
 
     /// (Re)build the queue starting at a leg — used on load and when the filmstrip jumps.
@@ -48,6 +48,8 @@ final class IncidentPlayerModel: ObservableObject {
         for i in start..<legs.count {
             let url = client.eventVodURL(id: legs[i].id)   // HLS VOD — the reliable playback path
             let item = client.playerItem(for: url)
+            // Small forward buffer per leg — clips are short + local, start on first frames.
+            item.preferredForwardBufferDuration = 2
             indexForItem[ObjectIdentifier(item)] = i
             player.insert(item, after: nil)
         }
@@ -56,7 +58,7 @@ final class IncidentPlayerModel: ObservableObject {
 
     func jump(to index: Int) {
         buildQueue(from: index)
-        player.play()
+        player.playImmediately(atRate: 1.0)
     }
 
     func togglePlay() {

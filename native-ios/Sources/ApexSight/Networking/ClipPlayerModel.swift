@@ -83,6 +83,10 @@ final class ClipPlayerModel: ObservableObject {
         lastClient = client
 
         let item = client.playerItem(for: url)
+        // Start with a small forward buffer instead of AVPlayer's generous VOD default —
+        // event clips are short and local-network, so waiting to buffer half the clip
+        // before the first frame was most of the perceived "loading" time.
+        item.preferredForwardBufferDuration = 2
         // Reuse the existing AVPlayer instance so the bound SwiftUI view swaps content
         // seamlessly when the scrubber jumps to a new time.
         let activePlayer = player ?? AVPlayer()
@@ -111,7 +115,8 @@ final class ClipPlayerModel: ObservableObject {
             }
         }
 
-        activePlayer.play()
+        // First frame the moment it's decodable — don't wait for the buffer target.
+        activePlayer.playImmediately(atRate: 1.0)
     }
 
     func play() { player?.play() }
