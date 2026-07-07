@@ -27,22 +27,13 @@ struct LiveStreamView: View {
     @State private var showDetectionOverlay = true
     /// Mirrors the player's fit/fill state so the detection overlay maps boxes into the same rect.
     @State private var playerFillMode = false
-    /// True while the fisheye dewarp owns the presentation — detection boxes are raw-frame
-    /// coordinates and would land nowhere meaningful on a dewarped image, so hide them.
-    private var playerDewarped: Bool {
-        isFisheye && (fisheyeStore.config(for: camera.name).quadEnabled || dewarpMode != .off)
-    }
-    private var isFisheye: Bool { fisheyeStore.isFisheye(camera.name) }
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
     @StateObject private var talk = TwoWayTalkController()
-    // Unified control grid: the viewer owns mute, PiP, and the fisheye view state so every
-    // control renders as ONE uniform button system (no floating overlay cluster).
+    // Unified control grid: the viewer owns mute and PiP so every control renders as ONE uniform
+    // button system (no floating overlay cluster).
     @State private var isMutedUI = true
     @StateObject private var pip = LivePiPController()
-    @ObservedObject private var fisheyeStore = FisheyeStore.shared
-    @State private var dewarpMode: DewarpMode = .ptz
-    @State private var showCalibration = false
     // iOS 27 on-device "Ask AI" — describe who/what is on this live camera right now.
     @State private var aiResult: String?
     @State private var isAnalyzingAI = false
@@ -80,35 +71,6 @@ struct LiveStreamView: View {
         // the chrome, so there's no jarring slide-in/out.)
         .toolbar(.hidden, for: .tabBar)
         .swipeBackEnabled()   // restore edge-swipe-back despite the hidden nav bar
-        .onAppear {
-            // Reopen exactly how the user left this fisheye camera (mode rides in the pose).
-            if isFisheye, let saved = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode) {
-                dewarpMode = saved
-            }
-            #if DEBUG
-            // Sim-driving hook (synthetic taps can't reach the control rows reliably).
-            if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?
-                .object(forKey: "apex.debug.dewarpMode") as? Int,
-               let injected = DewarpMode(rawValue: Int32(raw)) {
-                dewarpMode = injected
-            }
-            #endif
-        }
-        .onChange(of: dewarpMode) { _, newMode in
-            // Persist the chosen view mode (including Raw) so this camera reopens — here
-            // AND on the wall tile — exactly how the user left it.
-            if isFisheye {
-                var pose = fisheyeStore.pose(for: camera.name, pane: nil)
-                pose.mode = newMode.rawValue
-                fisheyeStore.savePose(camera.name, pane: nil, pose: pose)
-            }
-        }
-        .sheet(isPresented: $showCalibration) {
-            FisheyeCalibrationSheet(camera: camera)
-                .presentationDetents([.height(360)])
-                .presentationBackgroundInteraction(.enabled)
-                .presentationBackground(.ultraThinMaterial)
-        }
         .task {
             scheduleHideChrome()
             // Confirm real PTZ for this one camera (off the wall path, cancels if you leave).
@@ -231,12 +193,11 @@ struct LiveStreamView: View {
                 onPlaying: { playing in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isLive = playing } },
                 onRealtimeChange: { rt in withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { isRealtime = rt } },
                 externalControls: true,
-                muted: isMutedUI,
-                dewarpModeOverride: isFisheye ? dewarpMode : nil
+                muted: isMutedUI
             )
             .id(reloadToken)
 
-            if showDetectionOverlay, !playerDewarped,
+            if showDetectionOverlay,
                let dets = appState.liveDetections[camera.name], !dets.isEmpty {
                 DetectionOverlayView(detections: dets, videoAspect: camera.aspectRatio, fill: playerFillMode)
                     .allowsHitTesting(false)
@@ -379,7 +340,7 @@ struct LiveStreamView: View {
                     .padding(.horizontal, GlassTheme.Space.xxl)
             }
 
-            // ONE uniform control system: every action — stream, media, audio, PiP, fisheye —
+            // ONE uniform control system: every action — stream, media, audio, PiP —
             // renders as the same 54pt labeled button, chunked into centered rows of up to
             // five so nothing is ever clipped, scrolled, or floating off in a corner.
             actionGrid
@@ -467,51 +428,16 @@ struct LiveStreamView: View {
         ) {
             isMutedUI.toggle()
         }))
-        // PiP shows on the plain HLS presentation (not the fisheye Metal view — that has no
-        // AVPlayerLayer to float). Gated on STABLE inputs only (device support + whether this
-        // camera is dewarped), NOT on `pip.isPossible` — that flips true at connect, which was
-        // making the whole grid re-chunk and shift when the camera went connecting→connected.
-        if pip.isSupported && !playerDewarped {
+        // PiP shows on the plain HLS presentation. Gated on STABLE inputs only (device support),
+        // NOT on `pip.isPossible` — that flips true at connect, which was making the whole grid
+        // re-chunk and shift when the camera went connecting→connected.
+        if pip.isSupported {
             items.append(AnyView(actionButton(
                 icon: pip.isActive ? "pip.exit" : "pip.enter",
                 label: "PiP"
             ) {
                 pip.toggle()
             }))
-        }
-
-        // Fisheye controls (only for cameras the user marked fisheye in Settings).
-        if isFisheye {
-            let quadOn = fisheyeStore.config(for: camera.name).quadEnabled
-            let locked = fisheyeStore.config(for: camera.name).locked
-            items.append(AnyView(actionButton(
-                icon: quadOn ? "rectangle.fill" : "square.split.2x2",
-                label: quadOn ? "Single" : "Quad"
-            ) {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                    fisheyeStore.setQuadEnabled(camera.name, enabled: !quadOn)
-                }
-            }))
-            if !quadOn {
-                items.append(AnyView(actionButton(icon: dewarpMode.icon, label: "View") {
-                    let all = DewarpMode.allCases
-                    let next = all[(all.firstIndex(of: dewarpMode).map { ($0 + 1) % all.count }) ?? 0]
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { dewarpMode = next }
-                }))
-            }
-            if playerDewarped {
-                items.append(AnyView(actionButton(
-                    icon: locked ? "lock.fill" : "lock.open",
-                    label: locked ? "Locked" : "Lock"
-                ) {
-                    fisheyeStore.setLocked(camera.name, locked: !locked)
-                }))
-                if !locked {
-                    items.append(AnyView(actionButton(icon: "dial.low", label: "Tune") {
-                        showCalibration = true
-                    }))
-                }
-            }
         }
         return items
     }

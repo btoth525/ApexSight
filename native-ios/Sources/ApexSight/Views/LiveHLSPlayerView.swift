@@ -477,16 +477,11 @@ struct HLSLivePlayerView: View {
     /// Reports fit vs. fill (crop) so a host drawing a detection overlay can map boxes into the
     /// same displayed video rect. Fires on toggle and on appear.
     var onFillModeChange: ((Bool) -> Void)? = nil
-    /// Reports when the fisheye dewarp takes over the presentation, so a host can hide
-    /// overlays whose coordinates only make sense on the raw frame (detection boxes).
-    var onDewarpChange: ((Bool) -> Void)? = nil
     /// External control mode (the full-screen viewer): the HOST renders every control in
     /// its own uniform action grid, so this view shows no floating overlay buttons at all.
     var externalControls: Bool = false
     /// Host-owned mute state (external control mode). nil = self-managed.
     var muted: Bool? = nil
-    /// Host-owned fisheye view mode (external control mode). nil = self-managed.
-    var dewarpModeOverride: DewarpMode? = nil
 
     @StateObject private var model = HLSLiveModel()
     /// Sub-second WebRTC live for the focused viewer — overlays the HLS layer when healthy,
@@ -495,10 +490,6 @@ struct HLSLivePlayerView: View {
     /// The wall tile's already-decoding player, shown INSTANTLY while this view's own
     /// full-quality stream connects (zero-latency handoff). Cleared once handoff completes.
     @State private var warmPlayer: AVPlayer?
-    @ObservedObject private var fisheyeStore = FisheyeStore.shared
-    /// Fisheye cameras open straight into virtual PTZ — the raw warped disc is never
-    /// what the user wants first. Ignored (and no UI shown) for normal cameras.
-    @State private var dewarpMode: DewarpMode = .ptz
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
     @State private var fillMode = false
@@ -529,19 +520,15 @@ struct HLSLivePlayerView: View {
 
     private var isPlaying: Bool { model.state == .playing }
 
-    /// The current presentation is the plain `AVPlayerLayer` (not the Metal fisheye dewarp or the
-    /// MJPEG fallback) — the only path that exposes `isReadyForDisplay`, and the one that showed a
-    /// black frame on slow start. Mirrors the branch selection in `body`.
+    /// The current presentation is the plain `AVPlayerLayer` (not the MJPEG fallback) — the only
+    /// path that exposes `isReadyForDisplay`, and the one that showed a black frame on slow start.
+    /// Mirrors the branch selection in `body`.
     private var usesStandardAVLayer: Bool {
-        guard !mjpegFallback, model.player != nil, !dewarpActive else { return false }
-        if !showControls, fisheyeStore.isFisheye(camera.name),
-           let mode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
-           mode != .off { return false }
-        return true
+        !mjpegFallback && model.player != nil
     }
 
     /// Real live pixels are on screen for the CURRENT path — drives the snapshot cross-fade so it
-    /// only lifts once there's something to reveal. Fisheye / MJPEG / realtime keep their prior
+    /// only lifts once there's something to reveal. MJPEG / realtime keep their prior
     /// timing; only the standard AVPlayer layer waits for `isReadyForDisplay` (`videoReady`).
     private var livePixelsShown: Bool {
         if realtime.state == .live { return true }
@@ -552,38 +539,10 @@ struct HLSLivePlayerView: View {
     /// Realtime (WebRTC) is attempted only for the focused viewer, on normal cameras, while
     /// muted (unmuting switches to HLS so audio+video stay in sync from one pipeline).
     private var realtimeEligible: Bool {
-        showControls && !mjpegFallback && camera.name != "birdseye" && !fisheyeStore.isFisheye(camera.name)
+        showControls && !mjpegFallback && camera.name != "birdseye"
     }
 
     private var effectiveMuted: Bool { muted ?? model.isMuted }
-
-    /// The fisheye view mode in effect — host-owned when overridden, else internal state.
-    private var effectiveDewarpMode: DewarpMode { dewarpModeOverride ?? dewarpMode }
-
-    /// KILL SWITCH for the Metal fisheye dewarp (PTZ pan/tilt/zoom + quad multi-view). The dewarp
-    /// taps the live player via `AVPlayerItemVideoOutput` and re-renders every frame through Metal;
-    /// on a 2048×2048 fisheye that sustained per-frame work froze the app after playing a while —
-    /// and zachs_room (the ONLY dewarp camera) was the ONLY camera that ever froze, while the other
-    /// eight play comparable-resolution H.264 through the plain `AVPlayerLayer` with no trouble.
-    /// With this false, fisheye cameras render as the raw circle through that SAME proven layer
-    /// path. Flip to true to re-enable the (currently freeze-prone) dewarp as an experiment.
-    static let metalDewarpEnabled = false
-
-    /// The Metal dewarp presentation is live in the full-screen viewer: a user-marked
-    /// fisheye camera in any mode but Raw, or the quad multi-view.
-    private var dewarpActive: Bool {
-        Self.metalDewarpEnabled && showControls && fisheyeStore.isFisheye(camera.name)
-            && (quadActive || effectiveDewarpMode != .off)
-    }
-
-    /// Verkada-style four-pane multi-view, persisted per camera.
-    private var quadActive: Bool {
-        fisheyeStore.config(for: camera.name).quadEnabled
-    }
-
-    private var fisheyeLocked: Bool {
-        fisheyeStore.config(for: camera.name).locked
-    }
 
     /// Whether we already have a cached frame to show. When we do, we connect live
     /// SILENTLY behind it — no "Connecting…" pill — so the camera feels instant
@@ -716,7 +675,7 @@ struct HLSLivePlayerView: View {
     /// normal camera, muted. Unmuting stops it — HLS then carries audio+video from ONE
     /// pipeline, so sound is never out of sync with the picture.
     private func syncRealtime() {
-        RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) fisheye=\(fisheyeStore.isFisheye(camera.name)) mjpeg=\(mjpegFallback)")
+        RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) mjpeg=\(mjpegFallback)")
         guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
         if effectiveMuted {
             if realtime.state == .idle || realtime.state == .failed {
@@ -772,8 +731,7 @@ struct HLSLivePlayerView: View {
 
             // Zero-latency handoff: the wall tile's ALREADY-DECODING player shows moving video
             // the instant the full-screen viewer opens, while the full-quality stream connects
-            // behind it. Skipped for fisheye (the tile renders through Metal dewarp, not a raw
-            // layer we can borrow). Removed the moment the real stream is up.
+            // behind it. Removed the moment the real stream is up.
             if showControls, !isPlaying, realtime.state != .live, let warm = warmPlayer {
                 ZoomablePlayerView(player: warm, videoGravity: .resizeAspect)
                     .allowsHitTesting(false)
@@ -786,42 +744,7 @@ struct HLSLivePlayerView: View {
             if mjpegFallback, let client = appState.client {
                 mjpegPlayer(client)
             } else if let player = model.player {
-                if dewarpActive {
-                    // Metal fisheye dewarp replaces the AVPlayerLayer; the player keeps
-                    // decoding (the renderer taps its frames via AVPlayerItemVideoOutput)
-                    // and all reconnect/fallback logic stays live underneath.
-                    Group {
-                        if quadActive {
-                            FisheyeQuadView(player: player, camera: camera, onSingleTap: onSingleTap)
-                        } else {
-                            FisheyeDewarpView(
-                                player: player,
-                                camera: camera,
-                                mode: effectiveDewarpMode,
-                                onSingleTap: onSingleTap
-                            )
-                        }
-                    }
-                    .opacity(isPlaying ? 1 : 0)
-                    .animation(.easeIn(duration: 0.3), value: isPlaying)
-                } else if Self.metalDewarpEnabled, !showControls, fisheyeStore.isFisheye(camera.name),
-                          let savedMode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
-                          savedMode != .off {
-                    // Wall tile: show the SAME saved dewarped view the viewer uses —
-                    // Verkada-style — instead of the raw warped disc. Gestures off
-                    // (the tile's tap/long-press behaviors stay with the cell).
-                    FisheyeDewarpView(
-                        player: player,
-                        camera: camera,
-                        mode: savedMode,
-                        interactive: false
-                    )
-                    .opacity(isPlaying ? 1 : 0)
-                    .animation(.easeIn(duration: 0.3), value: isPlaying)
-                    .allowsHitTesting(false)
-                } else {
-                    playerLayer(player)
-                }
+                playerLayer(player)
             }
 
             // Subtle connecting pill — only when there's no frame to show yet. If a
@@ -865,7 +788,7 @@ struct HLSLivePlayerView: View {
             // Zero-latency handoff: borrow the wall tile's warm player immediately. `borrow`
             // marks it so the tile's own pause-on-disappear (which fires right after this)
             // leaves it RUNNING — otherwise the handoff froze on a still frame.
-            if showControls, camera.name != "birdseye", !fisheyeStore.isFisheye(camera.name),
+            if showControls, camera.name != "birdseye",
                let warm = WallPlayerRegistry.shared.borrow(camera.name) {
                 warmPlayer = warm
                 warm.playImmediately(atRate: 1.0)
@@ -873,22 +796,6 @@ struct HLSLivePlayerView: View {
             syncRealtime()
             // Host-owned mute (external control mode) applies from the first frame.
             if let muted { model.setMuted(muted) }
-            // Reopen exactly how the user left this camera — saved mode rides in the pose.
-            // (Skipped when the host owns the mode — it restores/persists itself.)
-            if dewarpModeOverride == nil, fisheyeStore.isFisheye(camera.name),
-               let saved = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode) {
-                dewarpMode = saved
-            }
-            #if DEBUG
-            // Sim-driving hook: synthetic taps can't reliably reach the bottom control row
-            // (home-indicator gesture band), so tests inject the dewarp mode via the app group.
-            if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?
-                .object(forKey: "apex.debug.dewarpMode") as? Int,
-               let injected = DewarpMode(rawValue: Int32(raw)) {
-                dewarpMode = injected
-            }
-            #endif
-            onDewarpChange?(dewarpActive)
             // Returning to a kept-alive player (tab switch back) — just resume, instantly.
             if started {
                 model.isOffscreen = false
@@ -972,20 +879,6 @@ struct HLSLivePlayerView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             // Realtime stops itself on background; pick it back up when we return.
             syncRealtime()
-        }
-        .onChange(of: dewarpModeOverride) { _, _ in
-            onDewarpChange?(dewarpActive)
-        }
-        .onChange(of: dewarpMode) { _, newMode in
-            // Persist the chosen view mode (including Raw) so the camera reopens —
-            // in the viewer AND on the wall tile — exactly how the user left it.
-            // (Host-owned mode persists in the host.)
-            if dewarpModeOverride == nil, fisheyeStore.isFisheye(camera.name) {
-                var pose = fisheyeStore.pose(for: camera.name, pane: nil)
-                pose.mode = newMode.rawValue
-                fisheyeStore.savePose(camera.name, pane: nil, pose: pose)
-            }
-            onDewarpChange?(dewarpActive)
         }
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
