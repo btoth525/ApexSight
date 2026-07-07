@@ -48,34 +48,26 @@ final class DewarpRenderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         if let fresh = frameSource?.latest { lastPixelBuffer = fresh }
 
-        guard let commandQueue,
+        guard let buffer = lastPixelBuffer,
+              let pipeline,
+              let commandQueue,
               let drawable = view.currentDrawable,
               let passDesc = view.currentRenderPassDescriptor,
-              let cmd = commandQueue.makeCommandBuffer() else { return }
+              let yTex = makeTexture(buffer, plane: 0, format: .r8Unorm),
+              let cbcrTex = makeTexture(buffer, plane: 1, format: .rg8Unorm),
+              let cmd = commandQueue.makeCommandBuffer(),
+              let enc = cmd.makeRenderCommandEncoder(descriptor: passDesc) else { return }
 
-        if let buffer = lastPixelBuffer,
-           let pipeline,
-           let yTex = makeTexture(buffer, plane: 0, format: .r8Unorm),
-           let cbcrTex = makeTexture(buffer, plane: 1, format: .rg8Unorm),
-           let enc = cmd.makeRenderCommandEncoder(descriptor: passDesc) {
-            var u = uniforms
-            u.texAspect = Float(CVPixelBufferGetWidth(buffer)) / Float(max(CVPixelBufferGetHeight(buffer), 1))
-            u.viewAspect = Float(view.drawableSize.width / max(view.drawableSize.height, 1))
+        var u = uniforms
+        u.texAspect = Float(CVPixelBufferGetWidth(buffer)) / Float(max(CVPixelBufferGetHeight(buffer), 1))
+        u.viewAspect = Float(view.drawableSize.width / max(view.drawableSize.height, 1))
 
-            enc.setRenderPipelineState(pipeline)
-            enc.setFragmentTexture(yTex, index: 0)
-            enc.setFragmentTexture(cbcrTex, index: 1)
-            enc.setFragmentBytes(&u, length: MemoryLayout<DewarpUniformsData>.stride, index: 0)
-            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-            enc.endEncoding()
-        } else {
-            // No decoded frame yet — clear to transparent (alpha 0) instead of bailing, so the
-            // MTKView (isOpaque = false) shows the camera snapshot BEHIND it rather than opaque
-            // black. This is the whole no-black-on-open mechanism; it needs no overlay on top.
-            passDesc.colorAttachments[0].loadAction = .clear
-            passDesc.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-            if let enc = cmd.makeRenderCommandEncoder(descriptor: passDesc) { enc.endEncoding() }
-        }
+        enc.setRenderPipelineState(pipeline)
+        enc.setFragmentTexture(yTex, index: 0)
+        enc.setFragmentTexture(cbcrTex, index: 1)
+        enc.setFragmentBytes(&u, length: MemoryLayout<DewarpUniformsData>.stride, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        enc.endEncoding()
         cmd.present(drawable)
         cmd.commit()
     }

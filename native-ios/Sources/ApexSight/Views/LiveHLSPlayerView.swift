@@ -576,19 +576,6 @@ struct HLSLivePlayerView: View {
         fisheyeStore.config(for: camera.name).locked
     }
 
-    /// True when the CURRENT presentation is the Metal dewarp (full-screen fisheye viewer OR the
-    /// wall tile's saved dewarped view). The dewarp renders transparent until it has a decoded
-    /// frame, so for these paths the snapshot BEHIND it must stay visible (it shows through until
-    /// the dewarp draws content, then the opaque dewarp covers it) — that's the no-black mechanism.
-    private var dewarpPath: Bool {
-        guard !mjpegFallback, model.player != nil else { return false }
-        if dewarpActive { return true }
-        if !showControls, fisheyeStore.isFisheye(camera.name),
-           let mode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
-           mode != .off { return true }
-        return false
-    }
-
     /// Whether we already have a cached frame to show. When we do, we connect live
     /// SILENTLY behind it — no "Connecting…" pill — so the camera feels instant
     /// instead of looking like it's loading over an image that's right there.
@@ -764,10 +751,7 @@ struct HLSLivePlayerView: View {
                 // behind a connecting/reconnecting stream is the CURRENT frame, not the one
                 // cached at app launch (which could be hours old).
                 RemoteImage(url: url, contentMode: .fit, revalidate: true)
-                    // For the Metal dewarp paths the snapshot stays put (opacity 1) — the dewarp
-                    // is transparent until it has a frame and then covers this opaquely, so there's
-                    // no black gap and no overlay needed. Other paths fade it out once live.
-                    .opacity(dewarpPath ? 1 : (livePixelsShown ? 0 : 1))
+                    .opacity(livePixelsShown ? 0 : 1)
                     .animation(.easeOut(duration: 0.3), value: livePixelsShown)
                     .allowsHitTesting(false)
             }
