@@ -87,6 +87,15 @@ final class AppState: ObservableObject {
     @Published var hasBirdseye = false
     /// Camera names with a `<name>_twoway` go2rtc stream — eligible for push-to-talk.
     @Published var twoWayCameras: Set<String> = []
+    /// Camera names that actually have a `<name>_sub` go2rtc stream. Cameras WITHOUT one (e.g. a
+    /// doorbell exposed as a single stream) must NOT be offered a sub URL — otherwise the live
+    /// model wastes retries on a 404 `<name>_sub` and collapses to low-quality MJPEG instead of
+    /// just playing the full-quality main. Only meaningful once `subStreamsKnown` is true.
+    @Published var subStreamCameras: Set<String> = []
+    /// True once the go2rtc stream list has loaded at least once, so `subStreamCameras` is
+    /// authoritative. Before then, callers assume a sub MAY exist (old behavior) rather than
+    /// forcing every camera onto its heavy main stream during the initial load.
+    @Published var subStreamsKnown = false
     /// Whether the user is signed into their ApexSight cloud account.
     @Published var accountSignedIn: Bool = false
 
@@ -830,6 +839,9 @@ final class AppState: ObservableObject {
             hasBirdseye = streams["birdseye"] != nil
             twoWayCameras = Set(streams.keys.filter { $0.hasSuffix("_twoway") }
                 .map { String($0.dropLast("_twoway".count)) })
+            subStreamCameras = Set(streams.keys.filter { $0.hasSuffix("_sub") }
+                .map { String($0.dropLast("_sub".count)) })
+            subStreamsKnown = true
             // Fire-and-forget so refresh() (and the launch spinner) doesn't block on an extra
             // image round-trip for the widget snapshot.
             Task { await cacheWidgetSnapshot(from: loadedCameras) }

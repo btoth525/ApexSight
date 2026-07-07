@@ -560,10 +560,19 @@ struct HLSLivePlayerView: View {
     /// The fisheye view mode in effect — host-owned when overridden, else internal state.
     private var effectiveDewarpMode: DewarpMode { dewarpModeOverride ?? dewarpMode }
 
+    /// KILL SWITCH for the Metal fisheye dewarp (PTZ pan/tilt/zoom + quad multi-view). The dewarp
+    /// taps the live player via `AVPlayerItemVideoOutput` and re-renders every frame through Metal;
+    /// on a 2048×2048 fisheye that sustained per-frame work froze the app after playing a while —
+    /// and zachs_room (the ONLY dewarp camera) was the ONLY camera that ever froze, while the other
+    /// eight play comparable-resolution H.264 through the plain `AVPlayerLayer` with no trouble.
+    /// With this false, fisheye cameras render as the raw circle through that SAME proven layer
+    /// path. Flip to true to re-enable the (currently freeze-prone) dewarp as an experiment.
+    static let metalDewarpEnabled = false
+
     /// The Metal dewarp presentation is live in the full-screen viewer: a user-marked
     /// fisheye camera in any mode but Raw, or the quad multi-view.
     private var dewarpActive: Bool {
-        showControls && fisheyeStore.isFisheye(camera.name)
+        Self.metalDewarpEnabled && showControls && fisheyeStore.isFisheye(camera.name)
             && (quadActive || effectiveDewarpMode != .off)
     }
 
@@ -685,11 +694,16 @@ struct HLSLivePlayerView: View {
     /// Point the model at this camera's HLS endpoints. Idempotent — just installs closures —
     /// so it's safe to call from both first appearance and a retry after teardown.
     private func configureModel() {
+        // Only offer a sub URL when a real `<camera>_sub` go2rtc stream exists. A camera without
+        // one (e.g. the doorbell, a single-stream feed) must never chase a 404 sub — that's what
+        // was dropping it to low-quality MJPEG instead of its full-res main. Until the stream list
+        // is known, assume a sub may exist (old behavior) so first-launch tiles keep using subs.
+        let hasSub = !appState.subStreamsKnown || appState.subStreamCameras.contains(camera.name)
         model.configure(
             cameraName: camera.name,
-            preferSub: preferSub,
+            preferSub: preferSub && hasSub,
             makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
-            makeSubURL: { appState.client?.liveHLSURL(camera: camera.name, sub: true) },
+            makeSubURL: hasSub ? { appState.client?.liveHLSURL(camera: camera.name, sub: true) } : nil,
             makeItem: { url in appState.client?.playerItem(for: url) },
             reauth: { await appState.reauthenticate() }
         )
@@ -790,7 +804,7 @@ struct HLSLivePlayerView: View {
                     }
                     .opacity(isPlaying ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: isPlaying)
-                } else if !showControls, fisheyeStore.isFisheye(camera.name),
+                } else if Self.metalDewarpEnabled, !showControls, fisheyeStore.isFisheye(camera.name),
                           let savedMode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
                           savedMode != .off {
                     // Wall tile: show the SAME saved dewarped view the viewer uses —
