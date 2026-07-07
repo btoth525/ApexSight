@@ -518,12 +518,36 @@ struct HLSLivePlayerView: View {
     /// negotiating + decoding at once on launch.
     @State private var startTask: Task<Void, Never>?
     @State private var gateHeld = false
+    /// True once the standard AVPlayer layer actually has a frame on screen (`isReadyForDisplay`).
+    /// The snapshot cross-fades to live only when this is set, so a slow-starting stream that
+    /// reports "playing" before its first frame renders keeps showing its snapshot, never black.
+    @State private var videoReady = false
 
     /// Cameras whose HLS proved unavailable this session — reopened straight on MJPEG so
     /// they don't sit black waiting for HLS to fail every single time.
     @MainActor private static var hlsUnavailable: Set<String> = []
 
     private var isPlaying: Bool { model.state == .playing }
+
+    /// The current presentation is the plain `AVPlayerLayer` (not the Metal fisheye dewarp or the
+    /// MJPEG fallback) — the only path that exposes `isReadyForDisplay`, and the one that showed a
+    /// black frame on slow start. Mirrors the branch selection in `body`.
+    private var usesStandardAVLayer: Bool {
+        guard !mjpegFallback, model.player != nil, !dewarpActive else { return false }
+        if !showControls, fisheyeStore.isFisheye(camera.name),
+           let mode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
+           mode != .off { return false }
+        return true
+    }
+
+    /// Real live pixels are on screen for the CURRENT path — drives the snapshot cross-fade so it
+    /// only lifts once there's something to reveal. Fisheye / MJPEG / realtime keep their prior
+    /// timing; only the standard AVPlayer layer waits for `isReadyForDisplay` (`videoReady`).
+    private var livePixelsShown: Bool {
+        if realtime.state == .live { return true }
+        if usesStandardAVLayer { return isPlaying && videoReady }
+        return isPlaying
+    }
 
     /// Realtime (WebRTC) is attempted only for the focused viewer, on normal cameras, while
     /// muted (unmuting switches to HLS so audio+video stay in sync from one pipeline).
@@ -574,7 +598,8 @@ struct HLSLivePlayerView: View {
                         player: player,
                         videoGravity: fillMode ? .resizeAspectFill : .resizeAspect,
                         pip: pip,
-                        autoPiP: true
+                        autoPiP: true,
+                        onReadyForDisplay: { videoReady = $0 }
                     )
                     // Sub-second realtime layer — INSIDE the zoom container so pinch/pan
                     // zoom applies to it too. Fades in only once a real frame rendered.
@@ -586,15 +611,20 @@ struct HLSLivePlayerView: View {
                     }
                 }
             }
-            .opacity(isPlaying || realtime.state == .live ? 1 : 0)
-            .animation(.easeIn(duration: 0.3), value: isPlaying)
+            .opacity(livePixelsShown ? 1 : 0)
+            .animation(.easeIn(duration: 0.3), value: livePixelsShown)
             .allowsHitTesting(true)
         } else {
             // Wall cells: wire PiP only when a controller was provided (long-press menu).
-            ZoomablePlayerView(player: player, pip: pipController, autoPiP: false)
-                .opacity(isPlaying ? 1 : 0)
-                .animation(.easeIn(duration: 0.3), value: isPlaying)
-                .allowsHitTesting(false)
+            ZoomablePlayerView(
+                player: player,
+                pip: pipController,
+                autoPiP: false,
+                onReadyForDisplay: { videoReady = $0 }
+            )
+            .opacity(livePixelsShown ? 1 : 0)
+            .animation(.easeIn(duration: 0.3), value: livePixelsShown)
+            .allowsHitTesting(false)
         }
     }
 
@@ -721,8 +751,8 @@ struct HLSLivePlayerView: View {
                 // behind a connecting/reconnecting stream is the CURRENT frame, not the one
                 // cached at app launch (which could be hours old).
                 RemoteImage(url: url, contentMode: .fit, revalidate: true)
-                    .opacity(isPlaying ? 0 : 1)
-                    .animation(.easeOut(duration: 0.3), value: isPlaying)
+                    .opacity(livePixelsShown ? 0 : 1)
+                    .animation(.easeOut(duration: 0.3), value: livePixelsShown)
                     .allowsHitTesting(false)
             }
 
@@ -949,6 +979,9 @@ struct HLSLivePlayerView: View {
             case .playing:
                 fallbackTask?.cancel(); fallbackTask = nil; releaseGate()  // up — free the slot
                 completeHandoff()   // real stream is up — release the borrowed wall player
+                // Note: `videoReady` (which lifts the snapshot) is driven purely by the layer's
+                // isReadyForDisplay — NOT by "playing" — so a slow stream that reports playing
+                // seconds before its first frame renders keeps showing its snapshot, never black.
                 // Full-screen viewer publishes this camera to the system playback UI
                 // (Lock Screen / Control Center / Dynamic Island / CarPlay). Wall tiles don't.
                 if showControls, let player = model.player {
@@ -956,8 +989,12 @@ struct HLSLivePlayerView: View {
                         player: player, title: titleize(camera.name), subtitle: "Live", isLive: true
                     )
                 }
-            case .failed: releaseGate(); fallToMJPEG()                                 // gave up — free + MJPEG
-            default: break
+            case .failed:
+                releaseGate(); fallToMJPEG()                                          // gave up — free + MJPEG
+                videoReady = false
+            default:
+                // Reconnecting → drop back to the snapshot until the fresh stream paints.
+                videoReady = false
             }
         }
     }
@@ -1053,6 +1090,10 @@ struct ZoomablePlayerView: UIViewRepresentable {
     var pip: LivePiPController? = nil
     /// Float into PiP automatically when the app backgrounds while this is playing inline.
     var autoPiP: Bool = false
+    /// Reports `AVPlayerLayer.isReadyForDisplay` — true only once the layer actually has a frame
+    /// to draw. The host holds the snapshot until this fires so a stream that reports "playing"
+    /// before its first frame renders (e.g. the ultra-wide Front Driveway) never shows black.
+    var onReadyForDisplay: ((Bool) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(pip: pip, autoPiP: autoPiP) }
 
@@ -1061,12 +1102,18 @@ struct ZoomablePlayerView: UIViewRepresentable {
         view.playerLayer.player = player
         view.playerLayer.videoGravity = videoGravity
         context.coordinator.attach(to: view.playerLayer)
+        context.coordinator.onReady = onReadyForDisplay
+        context.coordinator.observeReady(view.playerLayer)
         return view
     }
 
     func updateUIView(_ view: PlayerLayerUIView, context: Context) {
+        context.coordinator.onReady = onReadyForDisplay
         if view.playerLayer.player !== player {
             view.playerLayer.player = player
+            // New player → the layer has no frame yet; re-observe so readiness resets to false
+            // and the snapshot re-covers until the fresh stream paints (reconnect never flashes).
+            context.coordinator.observeReady(view.playerLayer)
         }
         view.playerLayer.videoGravity = videoGravity
     }
@@ -1076,10 +1123,25 @@ struct ZoomablePlayerView: UIViewRepresentable {
         private let autoPiP: Bool
         private var controller: AVPictureInPictureController?
         private var possibleObs: NSKeyValueObservation?
+        var onReady: ((Bool) -> Void)?
+        private var readyObs: NSKeyValueObservation?
 
         init(pip: LivePiPController?, autoPiP: Bool) {
             self.pip = pip
             self.autoPiP = autoPiP
+        }
+
+        /// KVO the layer's `isReadyForDisplay` and surface it on the main actor. Reports the
+        /// current value immediately so a layer that's already displaying (warm reuse) doesn't
+        /// wait for the next change.
+        func observeReady(_ layer: AVPlayerLayer) {
+            readyObs?.invalidate()
+            let current = layer.isReadyForDisplay
+            Task { @MainActor in self.onReady?(current) }
+            readyObs = layer.observe(\.isReadyForDisplay, options: [.new]) { [weak self] layer, _ in
+                let value = layer.isReadyForDisplay
+                Task { @MainActor in self?.onReady?(value) }
+            }
         }
 
         // Called from makeUIView (main thread). State is pushed to the @MainActor

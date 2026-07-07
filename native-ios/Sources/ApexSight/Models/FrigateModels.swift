@@ -51,7 +51,7 @@ struct FrigateSession: Codable, Equatable {
     }
 }
 
-struct FrigateCamera: Identifiable, Hashable {
+struct FrigateCamera: Identifiable, Hashable, Codable {
     var id: String { name }
     let name: String
     let zones: [String]

@@ -116,6 +116,13 @@ final class AppState: ObservableObject {
 
     init() {
         session = keychain.loadSession()
+        // Paint the camera wall the instant the app launches: restore the last-known camera list
+        // so real tiles render immediately (the network refresh replaces it moments later).
+        // Together with the on-disk snapshot cache this means a cold launch shows real cameras
+        // with their last-known frames right away instead of an empty/black grid.
+        if session != nil {
+            cameras = Self.loadPersistedCameras()
+        }
         eventStream.onEvent = { [weak self] event in
             self?.handleStreamEvent(event)
         }
@@ -149,6 +156,28 @@ final class AppState: ObservableObject {
 
     deinit {
         if let quickActionObserver { NotificationCenter.default.removeObserver(quickActionObserver) }
+    }
+
+    // MARK: Camera-list persistence
+
+    /// The last-known camera list is cached in the app group so a cold launch can render the
+    /// wall immediately instead of waiting on the network refresh. Versioned so a future model
+    /// change can invalidate cleanly.
+    private static let savedCamerasKey = "apex.savedCameras.v1"
+
+    private static func persistCameras(_ cameras: [FrigateCamera]) {
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        if cameras.isEmpty {
+            defaults?.removeObject(forKey: savedCamerasKey)
+        } else if let data = try? JSONEncoder().encode(cameras) {
+            defaults?.set(data, forKey: savedCamerasKey)
+        }
+    }
+
+    private static func loadPersistedCameras() -> [FrigateCamera] {
+        guard let data = UserDefaults(suiteName: ApexAppGroup.identifier)?.data(forKey: savedCamerasKey),
+              let cameras = try? JSONDecoder().decode([FrigateCamera].self, from: data) else { return [] }
+        return cameras
     }
 
     /// Mirrors the active Frigate base URL + token into the app group so the
@@ -763,6 +792,7 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             cameras = loadedCameras
+            Self.persistCameras(loadedCameras)
             prewarmSnapshots()
             // refresh() runs on every foreground / pull / poll, so only re-publish the camera
             // list to the system when it actually changed — donating App Intents parameters and
@@ -965,6 +995,9 @@ final class AppState: ObservableObject {
         self.session = session
         keychain.save(session: session)
         cameras = []
+        // Drop the previous server's cached camera list so the next cold launch can't briefly
+        // show its cameras before this server's refresh lands.
+        Self.persistCameras([])
         pendingEvents = nil
         events = []
         reviews = []
@@ -991,6 +1024,7 @@ final class AppState: ObservableObject {
         WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
         session = nil
         cameras = []
+        Self.persistCameras([])
         pendingEvents = nil
         events = []
         reviews = []

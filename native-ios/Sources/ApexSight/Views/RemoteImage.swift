@@ -64,6 +64,15 @@ struct RemoteImage: View {
             // one-shot refresh right after it completes) → fall through and refetch behind
             // the cached picture, then swap in the newer frame.
             if !revalidate { return }
+        } else if let disk = await Task.detached(priority: .utility, operation: {
+            ImageCache.shared.diskImage(for: url)
+        }).value {
+            // Cold-launch: the memory tier is empty, but the last-known camera frame is on disk.
+            // Paint it instantly so the wall is never black, then revalidate to the live frame
+            // behind it (snapshot placeholders pass `revalidate: true`).
+            image = Image(uiImage: disk)
+            isFailed = false
+            if !revalidate { return }
         } else {
             image = nil
             isFailed = false
