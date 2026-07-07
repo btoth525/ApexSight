@@ -514,10 +514,6 @@ struct HLSLivePlayerView: View {
     /// reports "playing" before its first frame renders keeps showing its snapshot, never black.
     @State private var videoReady = false
 
-    /// Cameras whose HLS proved unavailable this session — reopened straight on MJPEG so
-    /// they don't sit black waiting for HLS to fail every single time.
-    @MainActor private static var hlsUnavailable: Set<String> = []
-
     private var isPlaying: Bool { model.state == .playing }
 
     /// The current presentation is the plain `AVPlayerLayer` (not the MJPEG fallback) — the only
@@ -632,7 +628,13 @@ struct HLSLivePlayerView: View {
     private func startFallbackTimer() {
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            // Give HLS a grace period to reach playback before dropping to MJPEG. Sized for the
+            // slowest legitimate start: a camera whose go2rtc stream is an ON-DEMAND ffmpeg/NVENC
+            // re-encode (the doorbell) has a cold-start of several seconds the first time it's
+            // watched, so too short a wait would flash low-res MJPEG on a stream that's about to
+            // come up full-quality. The cached snapshot covers the wait, and — since the trap is
+            // gone — every reopen re-attempts HLS, so any premature fallback self-heals.
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
             guard !Task.isCancelled, !isPlaying else { return }
             fallToMJPEG()
         }
@@ -644,7 +646,6 @@ struct HLSLivePlayerView: View {
         // Free the startup slot now — model.stop() doesn't change model.state, so the
         // onChange(.playing/.failed) release won't fire for the timer-driven fallback path.
         releaseGate()
-        Self.hlsUnavailable.insert(camera.name)
         model.stop()
         mjpegFailed = false
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = true }
@@ -704,7 +705,6 @@ struct HLSLivePlayerView: View {
     /// online recovers on tap.
     private func retry() {
         mjpegFailed = false
-        Self.hlsUnavailable.remove(camera.name)
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { mjpegFallback = false }
         configureModel()
         model.start()
@@ -804,11 +804,14 @@ struct HLSLivePlayerView: View {
             }
             model.isOffscreen = false
             started = true
-            // Skip the HLS wait for cameras already known to need MJPEG this session.
-            if Self.hlsUnavailable.contains(camera.name) {
-                mjpegFallback = true
-                return
-            }
+            // Fresh open (or a reused persistent tile that had fallen back): always re-run the
+            // full HLS → MJPEG cascade so a camera that dropped to low-res MJPEG once — a slow
+            // start, a long keyframe interval, a transient hiccup — gets another shot at its
+            // full-res HLS every time it's opened. The snapshot covers the connect wait, so
+            // there's no black gap. Reset the fallback flags here (mirrors retry()) so a reused
+            // tile doesn't reopen *showing* MJPEG while HLS is starting underneath it.
+            mjpegFallback = false
+            mjpegFailed = false
             configureModel()
             // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
             startTask = Task { @MainActor in
