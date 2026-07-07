@@ -47,9 +47,6 @@ struct FisheyeDewarpView: View {
     var sharedSource: FisheyeFrameSource? = nil
     /// Single tap toggles the host's immersive chrome, same as the flat player.
     var onSingleTap: (() -> Void)? = nil
-    /// Fires once when the Metal surface first draws a real frame — the host lifts the snapshot
-    /// only then, so opening the dewarped viewer never flashes black.
-    var onFirstFrame: (() -> Void)? = nil
 
     @ObservedObject private var store = FisheyeStore.shared
     @State private var renderer: DewarpRenderer?
@@ -144,7 +141,6 @@ struct FisheyeDewarpView: View {
 
             let r = DewarpRenderer()
             r.frameSource = source
-            r.onFirstFrame = onFirstFrame
             apply(config: store.config(for: camera.name), to: r)
             applyPose(store.pose(for: camera.name, pane: paneIndex), to: r)
             r.uniforms.mode = mode.rawValue
@@ -222,19 +218,15 @@ struct FisheyeQuadView: View {
     let player: AVPlayer
     let camera: FrigateCamera
     var onSingleTap: (() -> Void)? = nil
-    /// Fires once when any pane first draws — lets the host lift the snapshot only when the
-    /// quad has real pixels, so it never opens black.
-    var onFirstFrame: (() -> Void)? = nil
 
     /// ONE frame tap shared by all four panes — four separate outputs on one item starve
     /// on device (that was the frozen-pane bug). Created before the panes render.
     @StateObject private var source: FisheyeFrameSource
 
-    init(player: AVPlayer, camera: FrigateCamera, onSingleTap: (() -> Void)? = nil, onFirstFrame: (() -> Void)? = nil) {
+    init(player: AVPlayer, camera: FrigateCamera, onSingleTap: (() -> Void)? = nil) {
         self.player = player
         self.camera = camera
         self.onSingleTap = onSingleTap
-        self.onFirstFrame = onFirstFrame
         _source = StateObject(wrappedValue: FisheyeFrameSource(player: player))
     }
 
@@ -266,8 +258,7 @@ struct FisheyeQuadView: View {
             mode: .ptz,
             paneIndex: index,
             sharedSource: source,
-            onSingleTap: onSingleTap,
-            onFirstFrame: onFirstFrame
+            onSingleTap: onSingleTap
         )
         .frame(width: width, height: height)
         .clipped()
