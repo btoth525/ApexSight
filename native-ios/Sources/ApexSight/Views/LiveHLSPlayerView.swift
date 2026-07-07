@@ -541,12 +541,28 @@ struct HLSLivePlayerView: View {
     }
 
     /// Real live pixels are on screen for the CURRENT path — drives the snapshot cross-fade so it
-    /// only lifts once there's something to reveal. Fisheye / MJPEG / realtime keep their prior
-    /// timing; only the standard AVPlayer layer waits for `isReadyForDisplay` (`videoReady`).
+    /// only lifts once there's something to reveal. Only the standard AVPlayer layer waits for
+    /// `isReadyForDisplay` here; the Metal dewarp keeps rendering and instead carries its own
+    /// snapshot overlay (see `body`), so it never has to be hidden. Realtime uses its own live
+    /// signal; MJPEG paints its own frames on top.
     private var livePixelsShown: Bool {
         if realtime.state == .live { return true }
         if usesStandardAVLayer { return isPlaying && videoReady }
         return isPlaying
+    }
+
+    /// Snapshot held ON TOP of the Metal dewarp until it draws its first frame. The dewarp layer
+    /// keeps rendering underneath (it is never hidden, so the MTKView always draws and reliably
+    /// fires `onFirstFrame`); this cover simply fades out when `videoReady` flips — so the
+    /// dewarped viewer opens on the last-known frame instead of black, with no way to get stuck.
+    @ViewBuilder
+    private var dewarpSnapshotCover: some View {
+        if camera.name != "birdseye", let url = appState.client?.latestFrameURL(camera: camera.name) {
+            RemoteImage(url: url, contentMode: .fit, revalidate: true)
+                .opacity(videoReady ? 0 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: videoReady)
+                .allowsHitTesting(false)
+        }
     }
 
     /// Realtime (WebRTC) is attempted only for the focused viewer, on normal cameras, while
@@ -778,18 +794,28 @@ struct HLSLivePlayerView: View {
                     // and all reconnect/fallback logic stays live underneath.
                     Group {
                         if quadActive {
-                            FisheyeQuadView(player: player, camera: camera, onSingleTap: onSingleTap)
+                            FisheyeQuadView(
+                                player: player,
+                                camera: camera,
+                                onSingleTap: onSingleTap,
+                                onFirstFrame: { videoReady = true }
+                            )
                         } else {
                             FisheyeDewarpView(
                                 player: player,
                                 camera: camera,
                                 mode: effectiveDewarpMode,
-                                onSingleTap: onSingleTap
+                                onSingleTap: onSingleTap,
+                                onFirstFrame: { videoReady = true }
                             )
                         }
                     }
+                    // Keep the dewarp rendering whenever playing (never hidden → the MTKView always
+                    // draws → onFirstFrame reliably fires). The snapshot rides on TOP and lifts on
+                    // the first drawn frame, so the viewer opens on the last frame, never black.
                     .opacity(isPlaying ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: isPlaying)
+                    .overlay { dewarpSnapshotCover }
                 } else if !showControls, fisheyeStore.isFisheye(camera.name),
                           let savedMode = DewarpMode(rawValue: fisheyeStore.pose(for: camera.name, pane: nil).mode),
                           savedMode != .off {
@@ -800,10 +826,14 @@ struct HLSLivePlayerView: View {
                         player: player,
                         camera: camera,
                         mode: savedMode,
-                        interactive: false
+                        interactive: false,
+                        onFirstFrame: { videoReady = true }
                     )
+                    // Same as the viewer: dewarp always renders; the snapshot cover on top lifts
+                    // on the first drawn frame so the tile never shows black.
                     .opacity(isPlaying ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: isPlaying)
+                    .overlay { dewarpSnapshotCover }
                     .allowsHitTesting(false)
                 } else {
                     playerLayer(player)
@@ -991,11 +1021,13 @@ struct HLSLivePlayerView: View {
                 }
             case .failed:
                 releaseGate(); fallToMJPEG()                                          // gave up — free + MJPEG
-                videoReady = false
             default:
-                // Reconnecting → drop back to the snapshot until the fresh stream paints.
-                videoReady = false
+                break
             }
+            // NOTE: `videoReady` is intentionally NOT reset here. The standard AVPlayer layer
+            // resets it via the isReadyForDisplay KVO when its item is replaced; the Metal dewarp
+            // keeps its last frame across a reconnect and won't re-fire onFirstFrame, so clearing
+            // it here would strand the fisheye viewer on its snapshot.
         }
     }
 

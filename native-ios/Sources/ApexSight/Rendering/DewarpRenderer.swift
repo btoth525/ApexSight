@@ -16,6 +16,12 @@ final class DewarpRenderer: NSObject, MTKViewDelegate {
     /// The frame tap this renderer samples. Set by the host view; shared across quad panes.
     weak var frameSource: FisheyeFrameSource?
 
+    /// Fires ONCE, on the main queue, the first time a real frame is actually drawn to screen.
+    /// Lets the host lift the snapshot only when the Metal surface has pixels — the fisheye
+    /// analogue of `AVPlayerLayer.isReadyForDisplay`, so opening the viewer never flashes black.
+    var onFirstFrame: (() -> Void)?
+    private var didReportFirstFrame = false
+
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
@@ -70,6 +76,12 @@ final class DewarpRenderer: NSObject, MTKViewDelegate {
         enc.endEncoding()
         cmd.present(drawable)
         cmd.commit()
+
+        // First real frame is on screen → tell the host it can cross-fade off the snapshot.
+        if !didReportFirstFrame {
+            didReportFirstFrame = true
+            if let onFirstFrame { DispatchQueue.main.async(execute: onFirstFrame) }
+        }
     }
 
     /// Zero-copy: wraps one plane of the NV12 pixel buffer as a Metal texture —
