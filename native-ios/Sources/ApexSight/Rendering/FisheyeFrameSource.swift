@@ -88,7 +88,57 @@ final class FisheyeFrameSource: NSObject, ObservableObject, AVPlayerItemOutputPu
                 output.requestNotificationOfMediaDataChange(withAdvanceInterval: 0.03)
             }
         }
+
+        #if DEBUG && targetEnvironment(simulator)
+        // SIM TEST HARNESS: the simulator's AVPlayerItemVideoOutput tap never delivers a pixel
+        // buffer for these HLS streams, so the dewarp can't be exercised on the sim at all — which
+        // is exactly why fisheye regressions (black, freeze) shipped unseen. When no real frame has
+        // arrived, publish a synthetic moving test frame so the Metal render path (and any UI
+        // layered over it) actually runs and can be verified here. Compiled out of Release/device.
+        // Deliberately delayed a few seconds so the "no frame yet" startup state (snapshot showing
+        // through the transparent dewarp) is observable before synthetic content takes over.
+        if harnessStartAt == 0 { harnessStartAt = now }
+        if lastFreshAt == 0, now - harnessStartAt > 3 { publishSyntheticFrame(now) }
+        #endif
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+    private var harnessStartAt: CFTimeInterval = 0
+    private var syntheticPool: CVPixelBufferPool?
+    /// Fills `buffer` with a moving grayscale band pattern (visibly live so liveness is obvious;
+    /// neutral chroma so the dewarp geometry is legible). Sim-debug only.
+    private func publishSyntheticFrame(_ now: CFTimeInterval) {
+        let w = 720, h = 720
+        if syntheticPool == nil {
+            let attrs: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                kCVPixelBufferWidthKey as String: w,
+                kCVPixelBufferHeightKey as String: h,
+                kCVPixelBufferMetalCompatibilityKey as String: true
+            ]
+            CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &syntheticPool)
+        }
+        guard let pool = syntheticPool else { return }
+        var pb: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb)
+        guard let pb else { return }
+        CVPixelBufferLockBaseAddress(pb, [])
+        let phase = Int(now * 90)
+        if let yBase = CVPixelBufferGetBaseAddressOfPlane(pb, 0) {
+            let stride = CVPixelBufferGetBytesPerRowOfPlane(pb, 0)
+            let y = yBase.assumingMemoryBound(to: UInt8.self)
+            for row in 0..<h { memset(y + row * stride, Int32((row + phase) & 0xFF), w) }
+        }
+        if let cbcr = CVPixelBufferGetBaseAddressOfPlane(pb, 1) {
+            let stride = CVPixelBufferGetBytesPerRowOfPlane(pb, 1)
+            memset(cbcr, 128, stride * (h / 2))  // neutral chroma → grayscale
+        }
+        CVPixelBufferUnlockBaseAddress(pb, [])
+        os_unfair_lock_lock(&lock)
+        buffer = pb
+        os_unfair_lock_unlock(&lock)
+    }
+    #endif
 
     private func attachIfNeeded() {
         guard let item = player?.currentItem, item !== attachedItem else { return }

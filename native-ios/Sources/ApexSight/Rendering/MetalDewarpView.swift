@@ -16,8 +16,14 @@ struct MetalDewarpView: UIViewRepresentable {
         view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = true
         view.preferredFramesPerSecond = 60
-        view.backgroundColor = .black
-        view.isOpaque = true
+        // Transparent until the renderer draws a real frame: before the first decoded frame the
+        // renderer clears to clear-alpha (see DewarpRenderer.draw), so the camera snapshot BEHIND
+        // this view shows through instead of an opaque black surface. Once frames arrive the shader
+        // writes alpha = 1, so the dewarp is fully opaque and covers the snapshot. This is what
+        // keeps the dewarped viewer from opening black — without any overlay on top (an opaque
+        // image composited over the live Metal view every frame is what froze build 152).
+        view.backgroundColor = .clear
+        view.isOpaque = false
         return view
     }
 
