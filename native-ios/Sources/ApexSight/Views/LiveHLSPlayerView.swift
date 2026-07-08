@@ -400,6 +400,10 @@ final class HLSLiveModel: ObservableObject {
             state = .connecting
             reconnectTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+                // `try?` swallows the CancellationError, so without this a cancel() (the stream
+                // recovered, or the view tore down) would still fall through to connect() and
+                // needlessly rebuild a live player — and clobber a newer reconnectTask's ref.
+                guard !Task.isCancelled else { return }
                 await MainActor.run { self?.reconnectTask = nil; self?.connect() }
             }
             return
@@ -409,6 +413,7 @@ final class HLSLiveModel: ObservableObject {
         let delay = min(pow(2.0, Double(retryCount - 1)), 16)
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }   // same as above — a cancelled backoff must not reconnect
             await MainActor.run { self?.reconnectTask = nil; self?.connect() }
         }
     }
@@ -709,6 +714,9 @@ struct HLSLivePlayerView: View {
         configureModel()
         model.start()
         startFallbackTimer()
+        // A recovered camera should get its sub-second overlay back too — retry() runs outside
+        // the onAppear/mute paths that normally (re)start realtime, so kick it here.
+        syncRealtime()
     }
 
     var body: some View {

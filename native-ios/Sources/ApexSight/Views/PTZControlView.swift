@@ -129,7 +129,7 @@ struct PTZControlView: View {
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 withAnimation { feedback = nil }
             } catch {
-                withAnimation { feedback = "Error" }
+                withAnimation { feedback = "Move failed" }
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 withAnimation { feedback = nil }
             }

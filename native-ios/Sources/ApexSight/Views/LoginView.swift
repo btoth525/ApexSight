@@ -96,8 +96,8 @@ struct LoginView: View {
                         .buttonStyle(PillButtonStyle())
                         .disabled(appState.isLoading || baseURL.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.errorMessage)
-                    .animation(.easeInOut(duration: 0.2), value: appState.isLoading)
+                    .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85), value: appState.errorMessage)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: appState.isLoading)
                 }
                 .padding(.horizontal, GlassTheme.Space.l)
                 .opacity(appeared ? 1 : 0)

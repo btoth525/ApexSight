@@ -243,6 +243,10 @@ extension TwoWayTalkController: RTCPeerConnectionDelegate {
             Task { @MainActor [weak self] in
                 guard let self, self.status == .talking else { return }
                 self.status = .failed("Connection lost")
+                // Free the mic + `.playAndRecord` session immediately — don't leave a hot mic and
+                // ducked audio live until the user happens to lift the press-hold button.
+                // teardown() is idempotent, so the release-driven stop() is still safe.
+                self.teardown()
             }
         }
     }
