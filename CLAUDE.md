@@ -13,8 +13,9 @@ pass 3, do a pass 4. Keep going until 3 consecutive passes find nothing to fix.
 test it against the real Frigate on the simulator (see "Testing" below) → **build + upload to
 TestFlight** (`scratchpad/ship.sh` pattern: bump `CURRENT_PROJECT_VERSION`, archive, upload via
 `xcodebuild -exportArchive` with `destination=upload` + `-allowProvisioningUpdates`, which auth's
-off the signed-in Xcode session — no API key needed) → commit + push to `Main-Build` → next.
-Never run two archives at once. Bump the build number every TestFlight upload.
+off the signed-in Xcode session — no API key needed) → commit + push to `feature/ios27-platform` →
+next. Always `xcodegen generate` after bumping `CURRENT_PROJECT_VERSION` (else the archive ships the
+old build number). Never run two archives at once. Bump the build number every TestFlight upload.
 
 ---
 
@@ -78,12 +79,26 @@ a WebSocket for live events. Auth is Basic HTTP (username + password).
 
 ## Stream Architecture
 
-Cameras load via **HLS → MJPEG cascade** (WebRTC was removed — too flaky).
+Cameras load via **HLS → MJPEG cascade**, with an optional **sub-second WebRTC overlay** on top.
 
 - **Primary**: `HLSLivePlayerView` (AVPlayer, exponential-backoff reconnect, main↔sub stream toggle)
-- **Fallback**: `MJPEGStreamView` (frame-by-frame MJPEG, off-main decode)
+- **Sub-second overlay**: `RealtimeVideoController` (recvonly go2rtc WebRTC; fullscreen + muted only;
+  renders OVER the HLS layer when it gets a frame, HLS keeps running underneath as the fallback). NOT
+  removed — it's the low-latency path. Cannot be render-tested on the simulator (the sim can't HW-decode
+  WebRTC video for ANY camera — even a known-good one logs `no frame ❌`); confirm on a real device.
+- **Fallback**: `MJPEGStreamView` (frame-by-frame MJPEG, off-main decode — Frigate's LOW-RES detect
+  stream, so this is a quality downgrade; it should be a genuine last resort, never a hair-trigger)
 - **Static**: `CameraSnapshotView` / `RemoteImage` (latest.jpg from Frigate)
 - **Full-screen viewer**: `LiveStreamView` (wraps HLSLivePlayerView with chrome overlay, PTZ, timeline)
+
+**go2rtc source gotcha (cost several builds — do not rediscover):** iOS AVPlayer can only decode go2rtc
+HLS whose stream is routed through ffmpeg (`ffmpeg:<src>#video=copy#audio=aac`). A **raw RTSP passthrough**
+go2rtc stream (`- rtsp://…`) makes AVPlayer report `.playing` but **never paint a frame** (presentationSize
+stuck ~128×96, `isReadyForDisplay`/`videoReady` never true — you see the snapshot placeholder, not live),
+so the app silently drops to low-res MJPEG. A camera with a long keyframe interval (the Scrypted-bridged
+doorbell, ~4s GOP) needs an actual short-GOP re-encode, not just a copy-repackage. The verification signal
+is `videoReady==true` + a real `presentationSize` — a sharp screenshot is the snapshot and proves nothing.
+See `[[apexsight-ios]]` memory for the exact per-camera go2rtc config.
 
 The cached snapshot should be visible **immediately** behind the HLS player so the camera
 tile never looks empty. The live stream fades in over it when AVPlayer reports `.playing`.
@@ -236,14 +251,22 @@ work against it, then **ship to TestFlight** per the workflow at the top.
 
 ## Known Issues to Fix (Start Here)
 
-1. **Camera tile black flash** — snapshot should be visible instantly; HLS fades in over it
-2. **`project.yml` still references WebRTC package** — remove it since WebRTCLivePlayerView is deleted
-3. **Audit every view for missing `.onDisappear` cleanup** — Task cancellation, observer removal
-4. **Tab bar badge on Review** — verify `appState.unreviewedCount` updates correctly
-5. **LoginView field borders** — subtle border on inactive fields (`.white.opacity(0.12)`)
-6. **CamerasTab empty state** — needs a polished "No cameras found" UI, not a raw error string
-7. **Settings scroll** — verify all cards render correctly without the AI card
-8. **`project.yml` WebRTC package** — dead dependency, remove it
+This app is well past its initial bring-up (build 158+, user-verified working). The original
+start-here list is done: camera black-flash (fixed build 151 via `isReadyForDisplay`), empty
+states, badge counts, etc. **The `stasel/WebRTC` package is NOT dead — do NOT remove it**; it
+powers both two-way talk (`TwoWayTalkController`) and the sub-second live overlay
+(`RealtimeVideoController`). Any earlier note to strip it is stale.
+
+Current watch-items (from the build-158 streaming work):
+- **Doorbell first-open cold-start (~8s)** — its go2rtc stream is an ON-DEMAND NVENC re-encode,
+  so the very first watch per session spins up ffmpeg before it paints (the 10s fallback timer
+  covers it). Could be smoothed by pre-warming the stream when the wall loads.
+- **MJPEG fallback keys off `.playing`, not real frames** — a stream that reports `.playing` but
+  never renders (the pre-fix doorbell failure mode) would sit on a frozen snapshot with a long
+  timer. The server-side ffmpeg fix removed the trigger, but keying the fallback off `videoReady`
+  would harden it against any future recurrence.
+- **Wall uses full `main` for sub-less cameras** (doorbell/movie_room have no `_sub`) — heavier
+  than needed; real `_sub` streams would lighten the grid.
 
 ---
 
@@ -264,13 +287,16 @@ work against it, then **ship to TestFlight** per the workflow at the top.
 
 ## Git
 
-Branch: `Main-Build` (default), `beta`
-Push to beta for experiments, Main-Build for stable.
+Active development branch: **`feature/ios27-platform`** (all recent builds, incl. 158, ship from here;
+merged to `main` via PR). Repo root is `~/apexsight` (NOT `native-ios`), remote `btoth525/ApexSight`.
+
+**Never `git add -A`** — the tree has large untracked dirs (`node_modules/`, `.expo/`, `ios/`, an embedded
+`native-ios/apexsight-ha-addon/`) that make it stall. Stage explicit paths only:
 
 ```bash
-git add -A
+git add native-ios/Sources/... native-ios/project.yml   # explicit paths, never -A
 git commit -m "descriptive message"
-git push origin beta           # or Main-Build
+git push origin feature/ios27-platform
 ```
 
 ---
