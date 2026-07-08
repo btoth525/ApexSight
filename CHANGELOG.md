@@ -20,6 +20,19 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   `utils/`, and the Expo/Metro/NativeWind tooling). The native SwiftUI app fully
   supersedes it; the repository is now Swift + the Python push companions only.
 
+## Build 159
+### Fixed
+- **Live camera no longer black-flashes after recovering from a stall** — a stalled stream that
+  rebuffered on its own could still get torn down and rebuilt a few seconds later; the stale
+  reconnect is now correctly cancelled.
+- **Incident reels stop when the app backgrounds** — the stitched-clip player no longer keeps
+  playing audio behind the lock screen; it pauses on background and resumes on return.
+- **Two-way talk releases the mic immediately if the connection drops** mid-talk (previously the
+  mic stayed live until you released the button).
+- **Retry on an offline camera restores the sub-second live path**, not just standard playback.
+### Changed
+- Clearer PTZ error feedback; login screen animations respect Reduce Motion.
+
 ## Build 158
 ### Fixed
 - **Live cameras no longer get stuck in low quality.** Removed a bug that could permanently pin a
