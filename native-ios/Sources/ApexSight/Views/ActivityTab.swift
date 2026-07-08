@@ -136,6 +136,10 @@ struct ActivityTab: View {
                         }
                         }
                     }
+                    // A new event inserts at the top (index 0); without this the whole feed
+                    // jumps down by a row. Animate on the top id so rows slide down smoothly
+                    // instead of jolting. Keyed to `first?.id` (cheap) — fires only on a top insert.
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: displayedEvents.first?.id)
                     .padding(.horizontal, GlassTheme.Space.l)
                     .padding(.bottom, GlassTheme.Space.xl)
                 }

@@ -300,9 +300,10 @@ struct FrigateClient {
         baseURL.appending(path: "api/events/\(id)/preview.gif")
     }
 
-    /// Animated GIF for a review (its first detection). Rich-notification attachment.
+    /// Animated GIF for a review — the detection at its thumbnail moment (NOT the unordered
+    /// `.first`, which mismatched the title/subject). Rich-notification attachment.
     func reviewGifURL(review: FrigateReviewItem) -> URL? {
-        guard let detectionID = review.data?.detections?.first else { return nil }
+        guard let detectionID = Self.primaryDetectionID(of: review) else { return nil }
         return eventPreviewGifURL(id: detectionID)
     }
 
@@ -318,14 +319,21 @@ struct FrigateClient {
     /// the file is served at `/clips/review/…`. Falls back to the primary detection's
     /// thumbnail for old reviews without one.
     func reviewThumbnailURL(review: FrigateReviewItem) -> URL? {
+        // Prefer the chosen detection's own thumbnail — higher-res than the ~318x180 canonical
+        // review `.webp`, right subject (thumb_time-selected), and present even when snapshots are
+        // disabled. Fall back to the low-res canonical webp only when there's no detection to
+        // resolve (build 140 pinned this to the webp for canonical-match; the user wants the
+        // higher-res image back).
+        if let detectionID = Self.primaryDetectionID(of: review) {
+            return eventThumbnailURL(id: detectionID)
+        }
         if let thumbPath = review.thumbPath,
            thumbPath.hasPrefix("/media/frigate/"),
            thumbPath.hasSuffix(".webp") {
             let served = String(thumbPath.dropFirst("/media/frigate/".count))
             return baseURL.appending(path: served)
         }
-        guard let detectionID = Self.primaryDetectionID(of: review) else { return nil }
-        return eventThumbnailURL(id: detectionID)
+        return nil
     }
 
     /// A larger snapshot for the review detail view: the primary detection's full-frame
@@ -335,13 +343,24 @@ struct FrigateClient {
         return eventSnapshotURL(id: detectionID)
     }
 
-    /// The review's `detections` array is UNORDERED (verified against a live server), so
-    /// `.first` is an arbitrary event — the source of "wrong snapshot" mismatches. Pick the
-    /// EARLIEST detection (the one that triggered the review) via the epoch prefix baked into
-    /// every event id (`1783198550.714144-xxxx`).
+    /// The review's `detections` array is UNORDERED (verified against a live server), so `.first`
+    /// is an arbitrary event — a source of "wrong snapshot" mismatches. Pick the detection that
+    /// was active at the review's canonical thumbnail moment (`thumb_time`): the latest detection
+    /// whose start epoch is at/just before `thumb_time`. Frigate re-links long-lived parked tracks
+    /// into fresh reviews, so the *earliest* detection is frequently a stale, wrong moment — but on
+    /// a multi-detection review the one nearest `thumb_time` is what Frigate's own UI shows.
+    /// (Verified against live data: multi-detection reviews went from ~60–90s off to ~1–6s off.)
+    /// Every event id carries its start epoch as a prefix (`1783198550.714144-xxxx`).
     static func primaryDetectionID(of review: FrigateReviewItem) -> String? {
         let ids = review.data?.detections ?? []
         guard !ids.isEmpty else { return nil }
+        if let tt = review.data?.thumbTime {
+            let atOrBefore = ids.filter { eventEpoch($0) <= tt + 1 }
+            if let best = atOrBefore.max(by: { eventEpoch($0) < eventEpoch($1) }) { return best }
+            // thumb_time precedes every detection (rare) → the closest one.
+            return ids.min(by: { abs(eventEpoch($0) - tt) < abs(eventEpoch($1) - tt) })
+        }
+        // No thumb_time yet (in-progress review) → earliest = the trigger detection (old behavior).
         return ids.min { eventEpoch($0) < eventEpoch($1) }
     }
 

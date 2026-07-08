@@ -215,6 +215,10 @@ struct ReviewData: Codable, Hashable {
     let subLabels: [String]?
     let zones: [String]?
     let audio: [String]?
+    /// Epoch of the frame Frigate chose as this review's canonical thumbnail — the moment the
+    /// review is "about". Used to pick which detection's snapshot to show (a review re-links
+    /// long-lived parked tracks, so the earliest detection is often the wrong moment).
+    let thumbTime: Double?
 
     enum CodingKeys: String, CodingKey {
         case detections
@@ -222,6 +226,7 @@ struct ReviewData: Codable, Hashable {
         case subLabels = "sub_labels"
         case zones
         case audio
+        case thumbTime = "thumb_time"
     }
 }
 
