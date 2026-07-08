@@ -20,6 +20,14 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   `utils/`, and the Expo/Metro/NativeWind tooling). The native SwiftUI app fully
   supersedes it; the repository is now Swift + the Python push companions only.
 
+## Build 161
+### Fixed
+- **Per-camera notification mute now applies when the app is closed.** The app now syncs which
+  cameras you've turned notifications OFF for to the push relay, so a disabled camera stays quiet
+  even on remote pushes — previously the per-camera toggle only silenced foreground alerts.
+  (Requires the paired ApexSight Push add-on 1.4.2, which enforces it and also fixes the
+  notification image + a dropped-alert-on-escalation bug.)
+
 ## Build 160
 ### Fixed
 - **Review snapshots now show the right moment.** The app was picking the earliest detection in a

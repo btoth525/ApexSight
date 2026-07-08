@@ -41,6 +41,10 @@ enum RelayClient {
         let pairing_code: String
         let disabled: [String]
     }
+    private struct MutedCamerasBody: Encodable {
+        let pairing_code: String
+        let muted: [String]
+    }
 
     private struct GateBody: Encodable {
         let pairing_code: String
@@ -105,6 +109,14 @@ enum RelayClient {
     static func syncAICameras(relayURL: String, pairingCode: String, disabled: [String]) async throws {
         try await post(relayURL: relayURL, path: "/v1/ai-cameras",
                        body: AICamerasBody(pairing_code: pairingCode, disabled: disabled))
+    }
+
+    /// Tell the relay which cameras have notifications turned OFF entirely, so app-closed pushes
+    /// for those cameras are suppressed at the relay — the in-app per-camera toggle otherwise only
+    /// gates foreground delivery, letting closed-app pushes for a muted camera slip through.
+    static func syncMutedCameras(relayURL: String, pairingCode: String, muted: [String]) async throws {
+        try await post(relayURL: relayURL, path: "/v1/muted-cameras",
+                       body: MutedCamerasBody(pairing_code: pairingCode, muted: muted))
     }
 
     /// Asks the relay to send a test push to this device.

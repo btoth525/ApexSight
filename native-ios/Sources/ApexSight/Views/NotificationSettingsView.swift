@@ -52,6 +52,9 @@ struct NotificationSettingsView: View {
         .task {
             status = await NativeNotificationManager.status()
             didLoadStatus = true
+            // Propagate any existing per-camera mutes to the relay so app-closed pushes honor
+            // them (e.g. after updating to a build that supports relay-side per-camera muting).
+            syncMutedCamerasToRelay()
         }
         // Re-check when returning from iOS Settings — the user may have just toggled
         // notification permission there, and the card should reflect it immediately.
@@ -148,12 +151,27 @@ struct NotificationSettingsView: View {
                         subtitle: "\(camera.zones.count) zones · \(camera.objects.count) objects",
                         isOn: Binding(
                             get: { prefsStore.preferences.isCameraEnabled(camera.name) },
-                            set: { prefsStore.preferences.cameraEnabled[camera.name] = $0; prefsStore.save() }
+                            set: {
+                                prefsStore.preferences.cameraEnabled[camera.name] = $0
+                                prefsStore.save()
+                                syncMutedCamerasToRelay()
+                            }
                         )
                     )
                 }
             }
         }
+    }
+
+    /// Push the per-camera notification on/off choice to the relay so app-closed pushes honor it —
+    /// the in-app gate only covers foreground delivery. Muted = every camera the user switched OFF.
+    /// Fire-and-forget; harmless if the relay/pairing isn't set up.
+    private func syncMutedCamerasToRelay() {
+        let relayURL = DeviceTokenStore.relayURL
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard !relayURL.isEmpty, !pairing.isEmpty else { return }
+        let muted = prefsStore.preferences.cameraEnabled.filter { !$0.value }.map(\.key)
+        Task { try? await RelayClient.syncMutedCameras(relayURL: relayURL, pairingCode: pairing, muted: muted) }
     }
 
     // MARK: - Objects Card
