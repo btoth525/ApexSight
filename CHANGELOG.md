@@ -20,6 +20,17 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   `utils/`, and the Expo/Metro/NativeWind tooling). The native SwiftUI app fully
   supersedes it; the repository is now Swift + the Python push companions only.
 
+## Build 160
+### Fixed
+- **Review snapshots now show the right moment.** The app was picking the earliest detection in a
+  review, but Frigate re-links long-running (parked-car) tracks into new reviews, so that was often
+  the wrong frame. It now uses the review's own thumbnail moment to choose the image (and the same
+  fix applies to the notification GIF/snapshot).
+- **High-resolution review images restored** — the thumbnail fallback and the widget/CarPlay image
+  no longer drop to the small canonical review thumbnail.
+- **Activity feed no longer jumps** when a new event arrives — the list now animates the insert
+  instead of jolting everything down a row (respects Reduce Motion).
+
 ## Build 159
 ### Fixed
 - **Live camera no longer black-flashes after recovering from a stall** — a stalled stream that
