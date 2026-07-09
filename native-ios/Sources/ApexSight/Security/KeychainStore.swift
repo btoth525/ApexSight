@@ -48,6 +48,23 @@ final class KeychainStore {
         keychainDelete(key: allSessionsKey)
     }
 
+    // MARK: - Alarm (Alarmo) disarm code
+
+    private var alarmCodeKey: String { "com.brandontoth.apexsight.native.alarmCode" }
+
+    /// The Alarmo code used to disarm the house from the app. Stored in the Keychain (not the app
+    /// group / UserDefaults) because it's a security credential; the app only sends it after Face ID.
+    @discardableResult
+    func saveAlarmCode(_ code: String) -> Bool {
+        keychainSet(key: alarmCodeKey, data: Data(code.utf8))
+    }
+
+    var alarmCode: String? {
+        keychainGet(key: alarmCodeKey).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    func clearAlarmCode() { keychainDelete(key: alarmCodeKey) }
+
     /// Writes a value, updating an existing item in place rather than delete-then-add.
     /// This both checks the result (the old code ignored `SecItemAdd`'s status, so a
     /// failed write silently logged the user out on next launch) and closes the brief

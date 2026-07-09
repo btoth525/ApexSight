@@ -239,6 +239,7 @@ final class AppState: ObservableObject {
                 self?.syncRelayGateIfChanged()
                 self?.syncRecapIfChanged()
                 self?.syncDevicePrefs()
+                await self?.refreshHouseMode()
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
@@ -327,6 +328,44 @@ final class AppState: ObservableObject {
                 deviceName: deviceName, preferences: prefs, triggers: triggers
             )
         }
+    }
+
+    // MARK: - House mode (Alarmo, via the relay) — arm/disarm from the app
+
+    /// Current house mode as the relay mirrors it from Alarmo: "home" / "away" / "night" / "" unknown.
+    /// A partner's app reflects a change here within one 15s poll — no friction, no confirmation.
+    @Published var houseMode: String = ""
+    /// Who last changed the mode (device name), for display. Empty when unknown.
+    @Published var houseModeArmedBy: String = ""
+    /// True while a set-mode request is in flight, so the UI can show progress + disable the buttons.
+    @Published var houseModeBusy = false
+
+    /// Pull the current house mode from the relay so the app reflects the real Alarmo state. Called
+    /// on the 15s foreground poll (and right after a change) — this is how a partner's app follows.
+    func refreshHouseMode() async {
+        let relayURL = DeviceTokenStore.relayURL
+        guard !relayURL.isEmpty else { return }
+        guard let status = await RelayClient.getMode(relayURL: relayURL) else { return }
+        if status.mode != houseMode { houseMode = status.mode }
+        let by = status.armed_by?.by ?? ""
+        if by != houseModeArmedBy { houseModeArmedBy = by }
+    }
+
+    /// Request an arm/disarm. Arming ("away"/"night") rides the pairing code; disarming ("home")
+    /// must carry the Alarmo code (validated by Alarmo). On success we re-poll shortly so the UI
+    /// reflects the resulting Alarmo state quickly. Throws on a relay-level rejection.
+    func requestHouseMode(_ mode: String, code: String = "") async throws {
+        let relayURL = DeviceTokenStore.relayURL
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        let token = DeviceTokenStore.deviceTokenHex ?? ""
+        guard !relayURL.isEmpty, !pairing.isEmpty else { throw RelayClient.RelayError.invalidURL }
+        houseModeBusy = true
+        defer { houseModeBusy = false }
+        try await RelayClient.setMode(relayURL: relayURL, deviceToken: token,
+                                      pairingCode: pairing, mode: mode, code: code)
+        // Give HA → Alarmo a moment to change state, then reflect it.
+        try? await Task.sleep(nanoseconds: 1_800_000_000)
+        await refreshHouseMode()
     }
 
     /// Lightweight refresh of just the things that need to feel live: reviews + events.

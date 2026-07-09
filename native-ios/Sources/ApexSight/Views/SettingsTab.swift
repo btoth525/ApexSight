@@ -31,6 +31,7 @@ struct SettingsTab: View {
                 GlassBackground()
                 ScrollView {
                     VStack(spacing: GlassTheme.Space.l) {
+                        houseModeCard
                         serverCard
                         securityCard
                         spotlightCard
@@ -71,8 +72,46 @@ struct SettingsTab: View {
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
                 else if value == "recap" { DailyRecapView().environmentObject(appState) }
+                else if value == "house" { HouseModeView().environmentObject(appState) }
             }
         }
+    }
+
+    // MARK: - House Mode
+
+    /// Headline control: current arm stage + a tap into the full arm/disarm screen. Mirrors Alarmo
+    /// via the relay, so it also shows what a partner set.
+    private var houseModeCard: some View {
+        let opt = HouseModeOption.forKey(appState.houseMode)
+        let unknown = appState.houseMode.isEmpty
+        return NavigationLink(value: "house") {
+            GlassCard {
+                HStack(spacing: GlassTheme.Space.m) {
+                    ZStack {
+                        Circle().fill((unknown ? GlassTheme.accent : opt.color).opacity(0.18))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: unknown ? "shield.lefthalf.filled" : opt.icon)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(unknown ? GlassTheme.accent : opt.color)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("House Mode")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text(unknown ? "Tap to arm or disarm" : opt.title)
+                            .font(.subheadline)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                }
+                .animation(.easeInOut(duration: 0.25), value: appState.houseMode)
+            }
+        }
+        .buttonStyle(.plain)
+        .task { await appState.refreshHouseMode() }
     }
 
     // MARK: - Server

@@ -96,6 +96,21 @@ enum RelayClient {
         let kind: String   // "start" = push-to-start token
     }
 
+    private struct SetModeBody: Encodable {
+        let mode: String            // "home" (disarm) | "away" | "night"
+        let device_token: String    // → who armed
+        let pairing_code: String
+        let code: String            // Alarmo code; required to disarm, empty to arm
+    }
+
+    /// Current house mode as the relay mirrors it from Alarmo, for the app to reflect. `armedBy`
+    /// is who last requested a change (for display). nil if the relay is unreachable.
+    struct HouseModeStatus: Decodable {
+        let mode: String
+        let armed_by: ArmedBy?
+        struct ArmedBy: Decodable { let by: String?; let mode: String?; let ts: Double? }
+    }
+
     /// Result of a `/healthz` probe used for the green/red status dot.
     struct Health: Decodable {
         let ok: Bool
@@ -213,6 +228,33 @@ enum RelayClient {
     static func registerActivity(relayURL: String, pairingCode: String, token: String, environment: String, kind: String = "start") async throws {
         try await post(relayURL: relayURL, path: "/v1/activity/register",
                        body: ActivityBody(pairing_code: pairingCode, token: token, environment: environment, kind: kind))
+    }
+
+    /// Requests a house-mode change. Arming rides the pairing code; disarming (mode "home") must
+    /// carry the Alarmo `code`, which HA/Alarmo validates server-side. Throws RelayError.server on a
+    /// relay-level rejection (e.g. 403 when a disarm arrives with no code).
+    static func setMode(relayURL: String, deviceToken: String, pairingCode: String,
+                        mode: String, code: String = "") async throws {
+        try await post(relayURL: relayURL, path: "/v1/set-mode",
+                       body: SetModeBody(mode: mode, device_token: deviceToken,
+                                         pairing_code: pairingCode, code: code))
+    }
+
+    /// Reads the current house mode from the relay so the app (and a partner's app) reflect it.
+    static func getMode(relayURL: String) async -> HouseModeStatus? {
+        var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard let url = URL(string: trimmed + "/v1/mode") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
+            guard ok else { return nil }
+            return try? JSONDecoder().decode(HouseModeStatus.self, from: data)
+        } catch {
+            return nil
+        }
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {
