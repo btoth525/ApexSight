@@ -15,7 +15,6 @@ struct HouseModeView: View {
     @State private var pendingCodeEntry = ""
     @State private var confirmArm: HouseModeOption?
     @State private var errorText: String?
-    @State private var showChangeCode = false
 
     private let keychain = KeychainStore()
 
@@ -50,7 +49,6 @@ struct HouseModeView: View {
             Text(confirmArm?.armConfirmation ?? "")
         }
         .sheet(isPresented: $showCodeEntry) { codeEntrySheet }
-        .sheet(isPresented: $showChangeCode) { codeEntrySheet }
         .alert("Couldn't change mode", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -132,24 +130,14 @@ struct HouseModeView: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
-            if keychain.alarmCode?.isEmpty == false {
-                Button {
-                    Haptics.tap()
-                    pendingCodeEntry = ""
-                    showChangeCode = true
-                } label: {
-                    Label("Change alarm code", systemImage: "key.fill")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(GlassTheme.accent)
-                }
-                .buttonStyle(.plain)
-            }
-            Text("Arming rides your pairing. Disarming asks for \(BiometricLock.label) and your alarm code — the code is checked by Home Assistant, so it never leaves your control.")
-                .font(.caption)
-                .foregroundStyle(GlassTheme.tertiary)
-        }
-        .padding(.top, GlassTheme.Space.s)
+        // No "change code" control on purpose: your alarm code lives in Home Assistant / Alarmo —
+        // the app can't and shouldn't change it. It only *remembers* the code (in this phone's
+        // Keychain) so disarm is one Face ID tap. If you change the code in HA, the next disarm just
+        // asks for it again.
+        Text("Arming rides your pairing. Disarming asks for \(BiometricLock.label), then sends your Alarmo code so Home Assistant can verify it — set the code in Alarmo; ApexSight just remembers it on this phone.")
+            .font(.caption)
+            .foregroundStyle(GlassTheme.tertiary)
+            .padding(.top, GlassTheme.Space.s)
     }
 
     private var codeEntrySheet: some View {
@@ -169,16 +157,14 @@ struct HouseModeView: View {
                         .padding(GlassTheme.Space.m)
                         .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
                         .cardStroke(GlassTheme.Radius.chip)
-                    Button("Save") {
+                    Button("Save & Disarm") {
                         let code = pendingCodeEntry.trimmingCharacters(in: .whitespaces)
                         guard !code.isEmpty else { return }
                         keychain.saveAlarmCode(code)
                         Haptics.success()
-                        let wasDisarm = showCodeEntry
                         showCodeEntry = false
-                        showChangeCode = false
-                        // If this entry was to unblock a disarm, proceed with it now.
-                        if wasDisarm { submit("home", code: code) }
+                        // The sheet only ever opens to unblock a disarm, so proceed with it now.
+                        submit("home", code: code)
                     }
                     .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                     .disabled(pendingCodeEntry.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -190,7 +176,7 @@ struct HouseModeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showCodeEntry = false; showChangeCode = false }
+                    Button("Cancel") { showCodeEntry = false }
                 }
             }
         }
@@ -227,7 +213,10 @@ struct HouseModeView: View {
                 if !converged {
                     switch key {
                     case "home":
-                        errorText = "Disarm didn't take — check your alarm code and try again."
+                        // Disarm is instant, so non-convergence means Alarmo rejected the code (or it
+                        // was changed in HA). Forget the saved code → the next disarm re-asks for it.
+                        keychain.clearAlarmCode()
+                        errorText = "That code didn't disarm the house. Check your Alarmo code — the app will ask for it again next time."
                     case "night":
                         errorText = "Night mode isn't set up in Alarmo yet. In Home Assistant → Settings → Alarmo → Arm modes, turn on Night and pick which sensors stay active overnight. Then this works instantly."
                     default:
