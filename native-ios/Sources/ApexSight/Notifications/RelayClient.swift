@@ -21,6 +21,7 @@ enum RelayClient {
         let pairing_code: String
         let environment: String
         let platform: String
+        let device_name: String   // user-set phone name → per-phone HA entity (relay ≥ 1.7.0)
     }
 
     private struct UnregisterBody: Encodable {
@@ -70,6 +71,7 @@ enum RelayClient {
     private struct DevicePrefsBody: Encodable {
         let device_token: String
         let pairing_code: String
+        let device_name: String   // keeps the per-phone HA entity name fresh on the foreground sync
         let prefs: DevicePrefsBlob
     }
 
@@ -117,12 +119,14 @@ enum RelayClient {
         }
     }
 
-    static func register(relayURL: String, deviceToken: String, pairingCode: String, environment: String) async throws {
+    static func register(relayURL: String, deviceToken: String, pairingCode: String,
+                         environment: String, deviceName: String = "") async throws {
         let body = RegisterBody(
             device_token: deviceToken,
             pairing_code: pairingCode,
             environment: environment,
-            platform: "ios"
+            platform: "ios",
+            device_name: deviceName
         )
         try await post(relayURL: relayURL, path: "/v1/register", body: body)
     }
@@ -151,6 +155,7 @@ enum RelayClient {
     /// gated per device exactly as the foreground app. Soft-only — Disarm/Snooze-all stay household
     /// via `syncGate`. Converts the app's `*Enabled` allow-maps to the relay's disabled-lists.
     static func syncDevicePrefs(relayURL: String, deviceToken: String, pairingCode: String,
+                                deviceName: String = "",
                                 preferences: NotificationPreferences,
                                 triggers: [NotificationTrigger]) async throws {
         let blob = DevicePrefsBlob(
@@ -173,7 +178,8 @@ enum RelayClient {
             }
         )
         try await post(relayURL: relayURL, path: "/v1/device-prefs",
-                       body: DevicePrefsBody(device_token: deviceToken, pairing_code: pairingCode, prefs: blob))
+                       body: DevicePrefsBody(device_token: deviceToken, pairing_code: pairingCode,
+                                             device_name: deviceName, prefs: blob))
     }
 
     /// Asks the relay to send a test push to this device.

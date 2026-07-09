@@ -8,6 +8,8 @@ import UserNotifications
 /// connection status (green/red) and a Test button to verify the pipeline.
 struct PushCompanionSettingsView: View {
     @State private var pairingCode = DeviceTokenStore.ensurePairingCode()
+    @State private var deviceName = DeviceTokenStore.deviceName
+    @FocusState private var deviceNameFocused: Bool
     @State private var token = DeviceTokenStore.deviceTokenHex
     @State private var registerStatus: RegisterStatus = .idle
     @State private var connection: ConnectionState = .checking
@@ -40,6 +42,7 @@ struct PushCompanionSettingsView: View {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     explainerCard
                     connectionCard
+                    deviceNameCard
                     testCard
                     advancedCard
                 }
@@ -136,6 +139,40 @@ struct PushCompanionSettingsView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: s.title)
+        }
+    }
+
+    /// Names THIS phone so it shows up by name in Home Assistant (and, next, so the household can
+    /// see who armed). Saved to the app group + synced to the relay, which publishes the per-phone
+    /// HA entity. Blank falls back to a per-device "iPhone …" so two phones never collide on a name.
+    private var deviceNameCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("This iPhone", subtitle: "How it shows up in Home Assistant")
+                HStack(spacing: GlassTheme.Space.s) {
+                    Image(systemName: "iphone")
+                        .foregroundStyle(GlassTheme.secondary)
+                    TextField(UIDevice.current.name, text: $deviceName)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .focused($deviceNameFocused)
+                        .submitLabel(.done)
+                        .onSubmit { saveDeviceName() }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.primary)
+                        .padding(GlassTheme.Space.m)
+                        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                        .cardStroke(GlassTheme.Radius.chip)
+                    if deviceNameFocused || deviceName != DeviceTokenStore.deviceName {
+                        Button("Save") { saveDeviceName() }
+                            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                    }
+                }
+                Text("Name this phone (e.g. “Brandon's iPhone”) so Home Assistant can tell each family member's phone apart — the first step toward seeing who armed the house.")
+                    .font(.footnote)
+                    .foregroundStyle(GlassTheme.secondary)
+            }
+            .animation(.easeInOut(duration: 0.2), value: deviceNameFocused)
         }
     }
 
@@ -293,6 +330,18 @@ struct PushCompanionSettingsView: View {
         connection = health.map { .online(apnsConfigured: $0.apns_configured ?? false) } ?? .offline
     }
 
+    private func saveDeviceName() {
+        let trimmed = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        deviceName = trimmed
+        deviceNameFocused = false
+        guard trimmed != DeviceTokenStore.deviceName else { return }
+        DeviceTokenStore.deviceName = trimmed
+        Haptics.success()
+        // Re-register so the new name reaches the relay (→ the per-phone HA entity) right away
+        // rather than waiting for the next foreground device-prefs sync.
+        Task { await registerWithRelay() }
+    }
+
     private func registerWithRelay() async {
         guard let token = DeviceTokenStore.deviceTokenHex, !token.isEmpty else { return }
         registerStatus = .registering
@@ -301,7 +350,8 @@ struct PushCompanionSettingsView: View {
                 relayURL: relayURL,
                 deviceToken: token,
                 pairingCode: pairingCode,
-                environment: APNSEnvironment.current
+                environment: APNSEnvironment.current,
+                deviceName: DeviceTokenStore.deviceName
             )
             lastRegisteredToken = token
             registerStatus = .registered

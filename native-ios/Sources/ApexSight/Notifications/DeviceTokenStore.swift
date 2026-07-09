@@ -12,6 +12,7 @@ enum DeviceTokenStore {
     private static let pairingOverriddenKey = "apex.pairingOverridden"
     private static let accountTokenKey = "apex.accountToken"
     private static let accountEmailKey = "apex.accountEmail"
+    private static let deviceNameKey = "apex.deviceName"
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: ApexAppGroup.identifier)
@@ -77,6 +78,15 @@ enum DeviceTokenStore {
             return RelayConfig.defaultURL
         }
         set { defaults?.set(newValue.trimmingCharacters(in: .whitespaces), forKey: relayKey) }
+    }
+
+    /// User-set friendly name for THIS phone (e.g. "Brandon's iPhone"). Synced to the relay and
+    /// published to Home Assistant as this phone's entity, so the household can see who's who and
+    /// (next) who armed. Empty until the user sets one — the relay then falls back to a per-token
+    /// "iPhone …" so two un-named phones stay distinct rather than colliding on one name.
+    static var deviceName: String {
+        get { defaults?.string(forKey: deviceNameKey) ?? "" }
+        set { defaults?.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceNameKey) }
     }
 
     /// The household pairing code shared with the Home Assistant bridge addon.

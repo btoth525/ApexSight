@@ -81,7 +81,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                         relayURL: relayURL,
                         deviceToken: hex,
                         pairingCode: pairing,
-                        environment: APNSEnvironment.current
+                        environment: APNSEnvironment.current,
+                        deviceName: DeviceTokenStore.deviceName
                     )
                     guard generation == Self.registerGeneration else { return }
                     DeviceTokenStore.relayConfirmed = true

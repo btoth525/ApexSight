@@ -310,18 +310,21 @@ final class AppState: ObservableObject {
               let token = DeviceTokenStore.deviceTokenHex, !token.isEmpty else { return }
         let prefs = notificationPrefs.preferences
         let triggers = triggerStore.triggers
+        let deviceName = DeviceTokenStore.deviceName
         // Only POST when something actually changed — this is also called from the 15s foreground
-        // poll. Signature covers the prefs, triggers, and tz offset (so a DST shift re-syncs).
+        // poll. Signature covers the prefs, triggers, tz offset (so a DST shift re-syncs), and the
+        // device name (so a rename propagates to the per-phone HA entity on the next sync).
         let enc = JSONEncoder()
         let sig = [(try? enc.encode(prefs))?.base64EncodedString(),
                    (try? enc.encode(triggers))?.base64EncodedString(),
-                   String(TimeZone.current.secondsFromGMT())].compactMap { $0 }.joined(separator: "|")
+                   String(TimeZone.current.secondsFromGMT()),
+                   deviceName].compactMap { $0 }.joined(separator: "|")
         guard sig != lastSyncedDevicePrefs else { return }
         lastSyncedDevicePrefs = sig
         Task {
             try? await RelayClient.syncDevicePrefs(
                 relayURL: relayURL, deviceToken: token, pairingCode: pairing,
-                preferences: prefs, triggers: triggers
+                deviceName: deviceName, preferences: prefs, triggers: triggers
             )
         }
     }
