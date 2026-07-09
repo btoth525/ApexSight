@@ -34,7 +34,10 @@ struct ActivityTab: View {
     }
 
     private var displayedEvents: [FrigateEvent] {
-        isFilterActive ? serverResults : appState.events
+        let base = isFilterActive ? serverResults : appState.events
+        // Match the notification rule: hide cameras the current house mode silences
+        // (Home = Front Driveway + Doorbell). Fail-open + overridable via Show All.
+        return base.filter { appState.cameraVisibleInFeeds($0.camera) }
     }
 
     // MARK: - Grouping into day sections
@@ -109,6 +112,8 @@ struct ActivityTab: View {
                             IncidentsFeed()
                         } else {
                         header
+
+                        FeedModeFilterBanner()
 
                         if displayedEvents.isEmpty {
                             emptyOrLoading

@@ -339,6 +339,27 @@ final class AppState: ObservableObject {
     @Published var houseModeArmedBy: String = ""
     /// True while a set-mode request is in flight, so the UI can show progress + disable the buttons.
     @Published var houseModeBusy = false
+    /// Cameras the CURRENT house mode silences (from the relay). Used to filter the Review/Activity
+    /// feeds to match the notification rule — Home shows only Front Driveway + Doorbell, etc.
+    @Published var houseModeMutedCameras: [String] = []
+    /// User escape hatch: when true, the feeds ignore the house-mode filter and show every camera.
+    /// @Published (not @AppStorage — that doesn't emit objectWillChange from an ObservableObject, so
+    /// the feeds wouldn't re-filter on toggle); persisted by hand so the choice survives relaunch.
+    @Published var showAllCamerasInFeeds: Bool =
+        UserDefaults(suiteName: ApexAppGroup.identifier)?.bool(forKey: "apex.showAllCamerasInFeeds") ?? false {
+        didSet {
+            UserDefaults(suiteName: ApexAppGroup.identifier)?.set(showAllCamerasInFeeds, forKey: "apex.showAllCamerasInFeeds")
+        }
+    }
+
+    /// Whether a camera's activity should surface in the Review/Activity feeds right now: hidden only
+    /// when the current mode affirmatively mutes it AND the user hasn't chosen to show all. FAIL-OPEN:
+    /// unknown mode / empty mute list / a camera not in the list all show (mirrors the relay gate).
+    func cameraVisibleInFeeds(_ camera: String) -> Bool {
+        if showAllCamerasInFeeds { return true }
+        guard !camera.isEmpty, !houseModeMutedCameras.isEmpty else { return true }
+        return !houseModeMutedCameras.contains(camera)
+    }
 
     /// Pull the current house mode from the relay so the app reflects the real Alarmo state. Called
     /// on the 15s foreground poll (and right after a change) — this is how a partner's app follows.
@@ -349,6 +370,8 @@ final class AppState: ObservableObject {
         if status.mode != houseMode { houseMode = status.mode }
         let by = status.armed_by?.by ?? ""
         if by != houseModeArmedBy { houseModeArmedBy = by }
+        let mutes = status.mutes ?? []
+        if mutes != houseModeMutedCameras { houseModeMutedCameras = mutes }
     }
 
     /// Request an arm/disarm. Arming ("away"/"night") rides the pairing code; disarming ("home")

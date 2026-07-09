@@ -29,7 +29,12 @@ struct ReviewTab: View {
         }
         // Exclude anything just marked viewed (e.g. from the detail screen) so it can't
         // linger — detectionItems is owned here and isn't pruned by AppState's refresh.
-        let visible = base.filter { !appState.locallyViewedIDs.contains($0.id) && !hiddenIDs.contains($0.id) }
+        // Also hide cameras the current house mode silences, so the feed matches the
+        // notification rule (Home = Front Driveway + Doorbell). Fail-open + user-overridable.
+        let visible = base.filter {
+            !appState.locallyViewedIDs.contains($0.id) && !hiddenIDs.contains($0.id)
+                && appState.cameraVisibleInFeeds($0.camera)
+        }
         return sortNewest
             ? visible.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
             : visible.sorted { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
@@ -164,6 +169,10 @@ struct ReviewTab: View {
                         .padding(.horizontal, GlassTheme.Space.l)
                     }
                     .padding(.vertical, GlassTheme.Space.s)
+
+                    FeedModeFilterBanner()
+                        .padding(.horizontal, GlassTheme.Space.l)
+                        .padding(.bottom, GlassTheme.Space.s)
 
                     Group {
                         if showErrorState {

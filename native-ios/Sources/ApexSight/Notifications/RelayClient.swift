@@ -107,6 +107,7 @@ enum RelayClient {
     /// is who last requested a change (for display). nil if the relay is unreachable.
     struct HouseModeStatus: Decodable {
         let mode: String
+        let mutes: [String]?           // cameras this mode silences — used to filter the app feeds
         let armed_by: ArmedBy?
         struct ArmedBy: Decodable { let by: String?; let mode: String?; let ts: Double? }
     }
