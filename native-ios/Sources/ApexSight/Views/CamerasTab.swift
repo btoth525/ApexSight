@@ -67,6 +67,9 @@ struct CamerasTab: View {
                 if value == "groups" {
                     CameraGroupsView(store: groupStore)
                         .environmentObject(appState)
+                } else if value == "house" {
+                    HouseModeView()
+                        .environmentObject(appState)
                 }
             }
         }
@@ -81,6 +84,8 @@ struct CamerasTab: View {
     private var liveScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                houseModeBar
+
                 if let error = appState.errorMessage {
                     errorCard(error)
                 }
@@ -125,6 +130,8 @@ struct CamerasTab: View {
             if appState.cameras.isEmpty { await appState.refresh() }
             // Warm snapshots so every tile shows a frame instantly (never black).
             else { appState.prewarmSnapshots() }
+            // Populate the House Mode bar promptly (the 15s poll refreshes it thereafter).
+            await appState.refreshHouseMode()
         }
     }
 
@@ -241,6 +248,45 @@ struct CamerasTab: View {
             .accessibilityLabel(isHidden ? "Show \(titleize(camera.name)) on wall" : "Hide \(titleize(camera.name)) from wall")
         }
         .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - House Mode bar
+
+    /// Compact glance-and-tap arm status at the top of the wall: current mode (mirrored from Alarmo
+    /// via the relay, so it reflects what anyone set from any phone / HA / the keypad) + who set it,
+    /// tapping into the full House Mode controls. Hidden until the relay reports a mode.
+    @ViewBuilder
+    private var houseModeBar: some View {
+        if !isEditing, !appState.houseMode.isEmpty {
+            let opt = HouseModeOption.forKey(appState.houseMode)
+            NavigationLink(value: "house") {
+                HStack(spacing: 10) {
+                    Image(systemName: opt.icon)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(opt.color)
+                    Text("House: \(opt.title)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.primary)
+                    if !appState.houseModeArmedBy.isEmpty {
+                        Text("· \(appState.houseModeArmedBy)")
+                            .font(.caption)
+                            .foregroundStyle(GlassTheme.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Spacer(minLength: GlassTheme.Space.s)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(GlassTheme.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .animation(.easeInOut(duration: 0.25), value: appState.houseMode)
+        }
     }
 
     // MARK: - Toolbar
