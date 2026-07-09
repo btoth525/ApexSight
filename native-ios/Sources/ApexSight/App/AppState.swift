@@ -405,13 +405,13 @@ final class AppState: ObservableObject {
         try await RelayClient.setMode(relayURL: relayURL, deviceToken: token,
                                       pairingCode: pairing, mode: mode, code: code)
         // Lock Screen / Dynamic Island arm banner: countdown on Away arm, "Armed" for Night,
-        // cleared on disarm. Away's ~exit delay drives the countdown (30s default — Alarmo's own).
+        // cleared on disarm. 60s matches the Alarmo Away exit delay (Night has none → instant).
         if #available(iOS 16.1, *) {
             if mode == "home" {
                 HouseModeActivityController.disarm()
             } else {
                 HouseModeActivityController.startArm(
-                    mode: mode, by: DeviceTokenStore.deviceName, exitDelay: mode == "away" ? 30 : 0)
+                    mode: mode, by: DeviceTokenStore.deviceName, exitDelay: mode == "away" ? 60 : 0)
             }
         }
         for _ in 0..<9 {   // ~1.3s × 9 ≈ 12s
