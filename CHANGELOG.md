@@ -20,6 +20,15 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   `utils/`, and the Expo/Metro/NativeWind tooling). The native SwiftUI app fully
   supersedes it; the repository is now Swift + the Python push companions only.
 
+## Build 163
+### Added
+- **All notification settings now apply when the app is closed.** Each device syncs its own
+  notification preferences to the push relay — per-camera, per-object, and per-zone mutes, quiet
+  hours, per-camera snoozes, and custom triggers — so remote pushes are filtered per device exactly
+  like foreground alerts. Previously only Disarm, Snooze-all, and whole-camera mutes carried over.
+  Syncs the moment a setting changes and on every foreground. (Requires ApexSight Push add-on 1.5.0.)
+  Disarm and Snooze-all remain system-wide across your devices.
+
 ## Build 162
 ### Fixed
 - **Review/Activity thumbnails no longer flicker or re-flash when you scroll.** Finished events

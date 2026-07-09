@@ -45,6 +45,33 @@ enum RelayClient {
         let pairing_code: String
         let muted: [String]
     }
+    // Per-device SOFT prefs wire format. Field names MUST match the relay's gate.would_deliver
+    // reads exactly — a mismatch fails open (mutes nothing) and the feature silently no-ops.
+    // Soft-only: NO `disarmed` / `snoozed_until` here (those stay household via the gate).
+    private struct DevicePrefsBlob: Encodable {
+        let cameras_disabled: [String]
+        let objects_disabled: [String]
+        let zones_disabled: [String]
+        let camera_snoozes: [String: Double]
+        let quiet_hours: QuietHours
+        let tz_offset: Int
+        let triggers: [TriggerBlob]
+        struct QuietHours: Encodable { let enabled: Bool; let start: Int; let end: Int }
+        struct TriggerBlob: Encodable {
+            let name: String
+            let cameras: [String]
+            let labels: [String]
+            let required_zones: [String]
+            let min_confidence: Double
+            let respect_quiet_hours: Bool
+            let enabled: Bool
+        }
+    }
+    private struct DevicePrefsBody: Encodable {
+        let device_token: String
+        let pairing_code: String
+        let prefs: DevicePrefsBlob
+    }
 
     private struct GateBody: Encodable {
         let pairing_code: String
@@ -117,6 +144,36 @@ enum RelayClient {
     static func syncMutedCameras(relayURL: String, pairingCode: String, muted: [String]) async throws {
         try await post(relayURL: relayURL, path: "/v1/muted-cameras",
                        body: MutedCamerasBody(pairing_code: pairingCode, muted: muted))
+    }
+
+    /// Sync THIS device's soft notification prefs (per-camera/object/zone mutes, quiet hours,
+    /// per-camera snoozes, triggers) to the relay keyed by device token, so app-closed pushes are
+    /// gated per device exactly as the foreground app. Soft-only — Disarm/Snooze-all stay household
+    /// via `syncGate`. Converts the app's `*Enabled` allow-maps to the relay's disabled-lists.
+    static func syncDevicePrefs(relayURL: String, deviceToken: String, pairingCode: String,
+                                preferences: NotificationPreferences,
+                                triggers: [NotificationTrigger]) async throws {
+        let blob = DevicePrefsBlob(
+            cameras_disabled: preferences.cameraEnabled.filter { !$0.value }.map(\.key),
+            objects_disabled: preferences.objectEnabled.filter { !$0.value }.map(\.key),
+            zones_disabled: preferences.zoneEnabled.filter { !$0.value }.map(\.key),
+            camera_snoozes: preferences.snoozedUntil,
+            quiet_hours: .init(
+                enabled: preferences.quietHoursEnabled,
+                start: preferences.quietHoursStartHour * 60 + preferences.quietHoursStartMinute,
+                end: preferences.quietHoursEndHour * 60 + preferences.quietHoursEndMinute
+            ),
+            tz_offset: TimeZone.current.secondsFromGMT(),
+            triggers: triggers.map {
+                DevicePrefsBlob.TriggerBlob(
+                    name: $0.name, cameras: $0.cameras, labels: $0.labels,
+                    required_zones: $0.requiredZones, min_confidence: $0.minConfidence,
+                    respect_quiet_hours: $0.respectQuietHours, enabled: $0.enabled
+                )
+            }
+        )
+        try await post(relayURL: relayURL, path: "/v1/device-prefs",
+                       body: DevicePrefsBody(device_token: deviceToken, pairing_code: pairingCode, prefs: blob))
     }
 
     /// Asks the relay to send a test push to this device.

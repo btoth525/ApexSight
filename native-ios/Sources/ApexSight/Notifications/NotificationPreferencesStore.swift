@@ -1,7 +1,7 @@
 import Foundation
 import UserNotifications
 
-struct NotificationPreferences: Codable {
+struct NotificationPreferences: Codable, Equatable {
     var cameraEnabled: [String: Bool] = [:]
     var objectEnabled: [String: Bool] = [:]
     var zoneEnabled: [String: Bool] = [:]

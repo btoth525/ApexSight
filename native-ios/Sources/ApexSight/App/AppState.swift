@@ -238,6 +238,7 @@ final class AppState: ObservableObject {
                 }
                 self?.syncRelayGateIfChanged()
                 self?.syncRecapIfChanged()
+                self?.syncDevicePrefs()
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
@@ -252,6 +253,8 @@ final class AppState: ObservableObject {
     private var lastSyncedGate: String?
     /// Last recap schedule we pushed to the relay, so we only POST when it changes.
     private var lastSyncedRecap: String?
+    /// Last device-prefs blob signature we pushed, so the 15s foreground poll only POSTs on change.
+    private var lastSyncedDevicePrefs: String?
 
     /// Mirrors the Daily Recap schedule to the relay so the summary fires at the chosen
     /// local time with the app closed. Idempotent — only POSTs when the schedule changes.
@@ -291,6 +294,34 @@ final class AppState: ObservableObject {
             try? await RelayClient.syncGate(
                 relayURL: relayURL, pairingCode: pairing,
                 disarmed: disarmed, snoozedUntil: snoozedUntil
+            )
+        }
+    }
+
+    /// Sync THIS device's soft notification prefs (per-camera/object/zone mutes, quiet hours,
+    /// per-camera snoozes, triggers) to the relay so app-closed pushes are gated per device exactly
+    /// as the foreground app. Soft-only — Disarm/Snooze-all stay household via `syncRelayGateIfChanged`.
+    /// Fire-and-forget; no-op until pairing + a device token exist. Call on any notification-setting
+    /// change and on foreground (foreground heals any drift between the synced blob and reality).
+    func syncDevicePrefs() {
+        let relayURL = DeviceTokenStore.relayURL
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard !relayURL.isEmpty, !pairing.isEmpty,
+              let token = DeviceTokenStore.deviceTokenHex, !token.isEmpty else { return }
+        let prefs = notificationPrefs.preferences
+        let triggers = triggerStore.triggers
+        // Only POST when something actually changed — this is also called from the 15s foreground
+        // poll. Signature covers the prefs, triggers, and tz offset (so a DST shift re-syncs).
+        let enc = JSONEncoder()
+        let sig = [(try? enc.encode(prefs))?.base64EncodedString(),
+                   (try? enc.encode(triggers))?.base64EncodedString(),
+                   String(TimeZone.current.secondsFromGMT())].compactMap { $0 }.joined(separator: "|")
+        guard sig != lastSyncedDevicePrefs else { return }
+        lastSyncedDevicePrefs = sig
+        Task {
+            try? await RelayClient.syncDevicePrefs(
+                relayURL: relayURL, deviceToken: token, pairingCode: pairing,
+                preferences: prefs, triggers: triggers
             )
         }
     }
