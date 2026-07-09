@@ -225,9 +225,14 @@ struct HouseModeView: View {
                 // rejected by Alarmo → never converges → we surface it; a correct one lands quickly.
                 let converged = try await appState.requestHouseMode(key, code: code)
                 if !converged {
-                    errorText = key == "home"
-                        ? "Disarm didn't take — check your alarm code and try again."
-                        : "That didn't take — the house may not have changed. Try again."
+                    switch key {
+                    case "home":
+                        errorText = "Disarm didn't take — check your alarm code and try again."
+                    case "night":
+                        errorText = "Night mode isn't set up in Alarmo yet. In Home Assistant → Settings → Alarmo → Arm modes, turn on Night and pick which sensors stay active overnight. Then this works instantly."
+                    default:
+                        errorText = "That didn't take — the house may not have changed. Try again."
+                    }
                 }
             } catch {
                 errorText = (error as? LocalizedError)?.errorDescription ?? "The relay couldn't be reached. Try again."
@@ -268,7 +273,7 @@ struct HouseModeOption: Identifiable {
         HouseModeOption(key: "home", title: "Home", subtitle: "Disarm — you're here. Only front cameras alert.",
                         icon: "house.fill", color: GlassTheme.green, available: true),
         HouseModeOption(key: "night", title: "Night", subtitle: "Arm the perimeter overnight.",
-                        icon: "moon.stars.fill", color: .indigo, available: false),
+                        icon: "moon.stars.fill", color: .indigo, available: true),
         HouseModeOption(key: "away", title: "Away", subtitle: "Arm everything — every camera alerts.",
                         icon: "shield.lefthalf.filled", color: GlassTheme.accent, available: true),
     ]

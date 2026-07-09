@@ -9,8 +9,6 @@ struct SettingsTab: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("spotlightEventsEnabled") private var spotlightEventsEnabled = true
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
-    @AppStorage("apex.armMode", store: UserDefaults(suiteName: ApexAppGroup.identifier))
-    private var armModeRaw = ArmMode.away.rawValue
     @State private var showSignOutConfirm = false
     @State private var showConfigEditor = false
     @State private var showMyExports = false
@@ -23,8 +21,6 @@ struct SettingsTab: View {
         return "\(v) (\(b))"
     }
 
-    private var isDisarmed: Bool { armModeRaw == ArmMode.disarmed.rawValue }
-
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
@@ -33,7 +29,6 @@ struct SettingsTab: View {
                     VStack(spacing: GlassTheme.Space.l) {
                         houseModeCard
                         serverCard
-                        securityCard
                         spotlightCard
 
                         // Apple Intelligence — only on devices that can actually run the model.
@@ -177,42 +172,6 @@ struct SettingsTab: View {
     }
 
     // MARK: - Security / Arm
-
-    private var securityCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                SectionHeader("Security") {
-                    Image(systemName: (ArmMode(rawValue: armModeRaw) ?? .away).systemImage)
-                        .font(.headline)
-                        .foregroundStyle(isDisarmed ? GlassTheme.red : GlassTheme.green)
-                }
-
-                Picker("Mode", selection: $armModeRaw) {
-                    ForEach(ArmMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: armModeRaw) { _, newValue in
-                    // Route through ArmStateStore so the home/Lock-Screen
-                    // widgets + Control Center toggle refresh immediately,
-                    // and push the arm/snooze gate to the relay now (not on
-                    // the next 15s poll).
-                    let mode = ArmMode(rawValue: newValue) ?? .away
-                    ArmStateStore.mode = mode
-                    appState.syncRelayGateIfChanged()
-                    // Feel the change: a firm "armed" success vs a softer "disarmed" warning.
-                    if mode == .disarmed { Haptics.warning() } else { Haptics.success() }
-                }
-
-                Text(isDisarmed
-                     ? "Disarmed — all alerts are silenced."
-                     : "Armed — alerts are on. Change from here, Control Center, or “Hey Siri, disarm ApexSight.”")
-                    .font(.footnote)
-                    .foregroundStyle(isDisarmed ? GlassTheme.orange : GlassTheme.secondary)
-            }
-        }
-    }
 
     // MARK: - Appearance
 
