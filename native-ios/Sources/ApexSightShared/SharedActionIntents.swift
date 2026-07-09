@@ -101,6 +101,38 @@ struct ApexArmToggleIntent: SetValueIntent {
     }
 }
 
+// MARK: - House Mode (Alarmo) — arm from a control/widget; open the app for the secure disarm
+
+/// Arms the house to Away from a Control Center control / widget button / Live Activity, without
+/// opening the app. Arming raises security, so it's allowed directly; disarming is never done here
+/// (it needs Face ID + the Alarmo code, which live in the app — see ApexHouseModeIntent).
+@available(iOS 17.0, *)
+struct ApexArmAwayIntent: AppIntent {
+    static var title: LocalizedStringResource = "Arm Away"
+    static var description = IntentDescription("Arm the house to Away mode.")
+
+    func perform() async throws -> some IntentResult {
+        await SharedRelayGate.setHouseMode("away")
+        ApexSurfaceRefresh.reload()
+        return .result()
+    }
+}
+
+/// Opens the app to the House Mode control — used for anything needing the secure flow (disarm =
+/// Face ID + Alarmo code) or the full switcher.
+@available(iOS 17.0, *)
+struct ApexHouseModeIntent: AppIntent {
+    static var title: LocalizedStringResource = "House Mode"
+    static var description = IntentDescription("Open ApexSight House Mode to arm or disarm.")
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult {
+        UserDefaults(suiteName: ApexAppGroup.identifier)?
+            .set("apex://house", forKey: "apex.pendingIntentLink")
+        return .result()
+    }
+}
+
 // MARK: - Focus filter (mute alerts while a Focus is active)
 
 @available(iOS 16.0, *)

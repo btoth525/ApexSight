@@ -39,6 +39,36 @@ public enum SharedRelayGate {
         _ = try? await URLSession.shared.data(for: request)
     }
 
+    /// Request a house-mode change from OUTSIDE the app (Control Center control, widget button,
+    /// Live Activity action). Mirrors RelayClient.setMode: arming rides the pairing code; disarming
+    /// ("home") must carry `code`, which Alarmo validates server-side. Best-effort.
+    static func setHouseMode(_ mode: String, code: String = "") async {
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        let relayURL = nonEmpty(defaults?.string(forKey: "apex.relayURL")) ?? RelayConfig.defaultURL
+        guard let pairing = nonEmpty(defaults?.string(forKey: "apex.pairingCode")) ?? nonEmpty(RelayConfig.defaultPairingCode) else { return }
+        var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard let url = URL(string: trimmed + "/v1/set-mode"), url.scheme != nil, url.host != nil else { return }
+
+        let token = defaults?.string(forKey: "apex.apnsDeviceToken") ?? ""
+        // Keys must match the main app's RelayClient SetModeBody (snake_case).
+        let body: [String: Any] = [
+            "mode": mode,
+            "device_token": token,
+            "pairing_code": pairing,
+            "code": code
+        ]
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = httpBody
+        request.timeoutInterval = 15
+        _ = try? await URLSession.shared.data(for: request)
+        // Optimistically reflect the arm locally so the widgets/controls update before the next poll.
+        if !mode.isEmpty { SharedHouseMode.mode = mode }
+    }
+
     private static func nonEmpty(_ s: String?) -> String? {
         guard let s, !s.isEmpty else { return nil }
         return s

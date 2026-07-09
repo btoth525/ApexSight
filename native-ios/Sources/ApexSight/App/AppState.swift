@@ -10,6 +10,7 @@ enum AppDeepLink: Hashable {
     case event(String)
     case camera(String)
     case cameras   // jump to the Cameras tab (e.g. Siri "Show my cameras")
+    case house     // open the House Mode control (Lock Screen widget / Control Center / Live Activity)
 }
 
 extension Error {
@@ -372,11 +373,17 @@ final class AppState: ObservableObject {
         let relayURL = DeviceTokenStore.relayURL
         guard !relayURL.isEmpty else { return }
         guard let status = await RelayClient.getMode(relayURL: relayURL) else { return }
-        if status.mode != houseMode { houseMode = status.mode }
+        let modeChanged = status.mode != houseMode
+        if modeChanged { houseMode = status.mode }
         let by = status.armed_by?.by ?? ""
         if by != houseModeArmedBy { houseModeArmedBy = by }
         let mutes = status.mutes ?? []
         if mutes != houseModeMutedCameras { houseModeMutedCameras = mutes }
+        // Mirror to the app group so the Lock Screen widgets + Control Center controls can show it,
+        // and refresh those surfaces the moment the mode actually changes.
+        SharedHouseMode.mode = status.mode
+        SharedHouseMode.armedBy = by
+        if modeChanged { ApexSurfaceRefresh.reload() }
     }
 
     /// Request an arm/disarm. Arming ("away"/"night") rides the pairing code; disarming ("home")
@@ -397,6 +404,16 @@ final class AppState: ObservableObject {
         defer { houseModeBusy = false }
         try await RelayClient.setMode(relayURL: relayURL, deviceToken: token,
                                       pairingCode: pairing, mode: mode, code: code)
+        // Lock Screen / Dynamic Island arm banner: countdown on Away arm, "Armed" for Night,
+        // cleared on disarm. Away's ~exit delay drives the countdown (30s default — Alarmo's own).
+        if #available(iOS 16.1, *) {
+            if mode == "home" {
+                HouseModeActivityController.disarm()
+            } else {
+                HouseModeActivityController.startArm(
+                    mode: mode, by: DeviceTokenStore.deviceName, exitDelay: mode == "away" ? 30 : 0)
+            }
+        }
         for _ in 0..<9 {   // ~1.3s × 9 ≈ 12s
             try? await Task.sleep(nanoseconds: 1_300_000_000)
             await refreshHouseMode()
@@ -1219,6 +1236,8 @@ final class AppState: ObservableObject {
             }
         case "cameras":
             deepLink = .cameras
+        case "house":
+            deepLink = .house
         case "latest":
             // Home Screen quick action / Control Center: jump to the most recent alert,
             // else just open the camera wall.

@@ -31,6 +31,33 @@ struct ApexOpenControl: ControlWidget {
 }
 
 @available(iOS 18.0, *)
+struct ApexArmAwayControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.brandontoth.apexsight.control.armaway") {
+            ControlWidgetButton(action: ApexArmAwayIntent()) {
+                Label("Arm Away", systemImage: "shield.lefthalf.filled")
+            }
+        }
+        .displayName("Arm House — Away")
+        .description("Arm the whole house to Away mode.")
+    }
+}
+
+@available(iOS 18.0, *)
+struct ApexHouseModeControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.brandontoth.apexsight.control.housemode") {
+            ControlWidgetButton(action: ApexHouseModeIntent()) {
+                Label("House: \(SharedHouseMode.title(SharedHouseMode.mode))",
+                      systemImage: SharedHouseMode.symbol(SharedHouseMode.mode))
+            }
+        }
+        .displayName("House Mode")
+        .description("Open House Mode to arm or disarm.")
+    }
+}
+
+@available(iOS 18.0, *)
 struct ApexArmControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.brandontoth.apexsight.control.arm") {
