@@ -221,11 +221,13 @@ struct HouseModeView: View {
     private func submit(_ key: String, code: String = "") {
         Task {
             do {
-                try await appState.requestHouseMode(key, code: code)
-                // Disarm is the one case where a wrong code fails silently at Alarmo (the relay
-                // returns OK; Alarmo rejects). If we didn't land on Home, tell the user.
-                if key == "home" && appState.houseMode != "home" {
-                    errorText = "Disarm didn't take — check your alarm code and try again."
+                // Waits for the house to actually reach `key` (up to ~12s). A wrong disarm code is
+                // rejected by Alarmo → never converges → we surface it; a correct one lands quickly.
+                let converged = try await appState.requestHouseMode(key, code: code)
+                if !converged {
+                    errorText = key == "home"
+                        ? "Disarm didn't take — check your alarm code and try again."
+                        : "That didn't take — the house may not have changed. Try again."
                 }
             } catch {
                 errorText = (error as? LocalizedError)?.errorDescription ?? "The relay couldn't be reached. Try again."

@@ -352,9 +352,15 @@ final class AppState: ObservableObject {
     }
 
     /// Request an arm/disarm. Arming ("away"/"night") rides the pairing code; disarming ("home")
-    /// must carry the Alarmo code (validated by Alarmo). On success we re-poll shortly so the UI
-    /// reflects the resulting Alarmo state quickly. Throws on a relay-level rejection.
-    func requestHouseMode(_ mode: String, code: String = "") async throws {
+    /// must carry the Alarmo code (validated by Alarmo). Returns true once the house actually
+    /// reaches `mode`. Throws on a relay-level rejection (e.g. a code-less disarm).
+    ///
+    /// The round trip is real work — relay → bridge (≤1s poll) → MQTT → HA → Alarmo → publish-back
+    /// → relay → us — so ~3–6s, not instant. We poll for convergence up to ~12s instead of checking
+    /// once too early (which would flag a *successful* disarm as failed). A wrong disarm code never
+    /// converges → the caller shows the error; a correct one lands within a couple of polls.
+    @discardableResult
+    func requestHouseMode(_ mode: String, code: String = "") async throws -> Bool {
         let relayURL = DeviceTokenStore.relayURL
         let pairing = DeviceTokenStore.ensurePairingCode()
         let token = DeviceTokenStore.deviceTokenHex ?? ""
@@ -363,9 +369,12 @@ final class AppState: ObservableObject {
         defer { houseModeBusy = false }
         try await RelayClient.setMode(relayURL: relayURL, deviceToken: token,
                                       pairingCode: pairing, mode: mode, code: code)
-        // Give HA → Alarmo a moment to change state, then reflect it.
-        try? await Task.sleep(nanoseconds: 1_800_000_000)
-        await refreshHouseMode()
+        for _ in 0..<9 {   // ~1.3s × 9 ≈ 12s
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+            await refreshHouseMode()
+            if houseMode == mode { return true }
+        }
+        return false
     }
 
     /// Lightweight refresh of just the things that need to feel live: reviews + events.
