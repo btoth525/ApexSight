@@ -239,7 +239,9 @@ final class AppState: ObservableObject {
                 self?.syncRelayGateIfChanged()
                 self?.syncRecapIfChanged()
                 self?.syncDevicePrefs()
-                await self?.refreshHouseMode()
+                // Fire-and-forget (like the syncs above) so a slow/black-holed relay's house-mode
+                // fetch (8s timeout) can't stretch the 15s alert-poll cadence when Frigate is fine.
+                Task { [weak self] in await self?.refreshHouseMode() }
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
@@ -358,7 +360,10 @@ final class AppState: ObservableObject {
     func cameraVisibleInFeeds(_ camera: String) -> Bool {
         if showAllCamerasInFeeds { return true }
         guard !camera.isEmpty, !houseModeMutedCameras.isEmpty else { return true }
-        return !houseModeMutedCameras.contains(camera)
+        // Case-insensitive so an intended mute still applies even if the relay ever returns a
+        // differently-cased camera name; a miss only ever fails OPEN (shows the camera), never hides.
+        let key = camera.lowercased()
+        return !houseModeMutedCameras.contains { $0.lowercased() == key }
     }
 
     /// Pull the current house mode from the relay so the app reflects the real Alarmo state. Called
@@ -404,8 +409,8 @@ final class AppState: ObservableObject {
     func refreshAlerts(retryOnAuthFailure: Bool = true) async {
         guard let client else { return }
         do {
-            async let nextReviews = client.reviews(limit: 30, reviewed: false)
-            async let nextEvents = client.events(limit: 50)
+            async let nextReviews = client.reviews(limit: 100, reviewed: false)
+            async let nextEvents = client.events(limit: 100)
             let r = try await nextReviews
             let e = try await nextEvents
             // Reassign only when something actually changed — but compare CONTENT
@@ -426,7 +431,9 @@ final class AppState: ObservableObject {
             // view holding AppState) even when re-assigning an identical value, and
             // unreviewedCount's didSet also writes the app-group plist + a setBadgeCount system
             // call. On the 15s foreground poll that was churning the whole app every tick.
-            let newUnreviewed = visible.filter { $0.severity == "alert" }.count
+            // Count only cameras the current house mode shows in the feed, so the tab badge
+            // matches the Review list — a muted-camera alert can't bump a badge you can't clear.
+            let newUnreviewed = visible.filter { $0.severity == "alert" && cameraVisibleInFeeds($0.camera) }.count
             if newUnreviewed != unreviewedCount { unreviewedCount = newUnreviewed }
             if !isReachable { isReachable = true }
         } catch {
@@ -642,7 +649,7 @@ final class AppState: ObservableObject {
             list[idx] = item
         } else {
             list.insert(item, at: 0)
-            if list.count > 50 { list = Array(list.prefix(50)) }
+            if list.count > 100 { list = Array(list.prefix(100)) }
         }
         pendingEvents = list
         scheduleEventFlush()
@@ -668,7 +675,7 @@ final class AppState: ObservableObject {
         // Keep the Review tab + app-icon badge instant on EVERY WebSocket-delivered
         // change — including the removal-only paths (review ended, marked reviewed
         // elsewhere), which used to leave the badge stale for up to 15s of poller lag.
-        defer { unreviewedCount = reviews.filter { $0.severity == "alert" }.count }
+        defer { unreviewedCount = reviews.filter { $0.severity == "alert" && cameraVisibleInFeeds($0.camera) }.count }
 
         // Already handled on the server (e.g. marked reviewed elsewhere) → keep it gone.
         if item.hasBeenReviewed == true { return }
@@ -682,12 +689,12 @@ final class AppState: ObservableObject {
             // it made the row + badge vanish, then flap back on the next 15s poll (which
             // fetches reviewed:false and re-adds it).
             reviews.insert(item, at: 0)
-            if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
+            if reviews.count > 100 { reviews = Array(reviews.prefix(100)) }
             return
         }
 
         reviews.insert(item, at: 0)
-        if reviews.count > 30 { reviews = Array(reviews.prefix(30)) }
+        if reviews.count > 100 { reviews = Array(reviews.prefix(100)) }
 
         let label = item.data?.objects?.first ?? "object"
         let zones = item.data?.zones ?? []
@@ -894,8 +901,8 @@ final class AppState: ObservableObject {
         errorMessage = nil
         do {
             async let nextCameras = client.cameras()
-            async let nextEvents = client.events(limit: 50)
-            async let nextReviews = client.reviews(limit: 30, reviewed: false)
+            async let nextEvents = client.events(limit: 100)
+            async let nextReviews = client.reviews(limit: 100, reviewed: false)
             async let nextLabels = client.labels()
             async let nextSubLabels = client.subLabels()
             async let nextStreams = client.go2rtcStreams()

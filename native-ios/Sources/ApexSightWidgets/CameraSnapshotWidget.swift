@@ -327,7 +327,10 @@ private struct MediumWidgetView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, 11)
-        .widgetURL(entry.latest.flatMap { $0.id }.map { URL(string: "apex://review?id=\($0)")! })
+        // Percent-encode + no force-unwrap (repo rule). `latest.id` is a review id → apex://review.
+        .widgetURL(entry.latest.flatMap { $0.id }
+            .flatMap { $0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) }
+            .flatMap { URL(string: "apex://review?id=\($0)") })
     }
 }
 

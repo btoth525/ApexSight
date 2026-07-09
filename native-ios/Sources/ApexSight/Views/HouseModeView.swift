@@ -213,10 +213,15 @@ struct HouseModeView: View {
                 if !converged {
                     switch key {
                     case "home":
-                        // Disarm is instant, so non-convergence means Alarmo rejected the code (or it
-                        // was changed in HA). Forget the saved code → the next disarm re-asks for it.
-                        keychain.clearAlarmCode()
-                        errorText = "That code didn't disarm the house. Check your Alarmo code — the app will ask for it again next time."
+                        if !appState.houseMode.isEmpty && appState.houseMode != "home" {
+                            // Alarmo is definitively still armed → the code was wrong (or changed in
+                            // HA). Forget the saved code so the next disarm re-asks for it.
+                            keychain.clearAlarmCode()
+                            errorText = "That code didn't disarm the house. Check your Alarmo code — the app will ask for it again next time."
+                        } else {
+                            // Couldn't confirm (relay slow/unreachable) — keep the saved code, just retry.
+                            errorText = "Couldn't confirm the disarm. Check your connection and try again."
+                        }
                     case "night":
                         errorText = "Night mode isn't set up in Alarmo yet. In Home Assistant → Settings → Alarmo → Arm modes, turn on Night and pick which sensors stay active overnight. Then this works instantly."
                     default:

@@ -198,7 +198,12 @@ struct SelectedCameraWidgetView: View {
 
     private var deepLink: URL? {
         guard let name = entry.cameraName else { return URL(string: "apex://") }
-        if let id = entry.latest?.id { return URL(string: "apex://event?id=\(id)") }
+        // `latest.id` is a REVIEW id, so route to apex://review (apex://event does an event-id
+        // lookup that fails for a review id → dead tap + wrong tab). Percent-encode it.
+        if let id = entry.latest?.id {
+            let eid = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+            return URL(string: "apex://review?id=\(eid)")
+        }
         let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         return URL(string: "apex://camera?name=\(encoded)")
     }

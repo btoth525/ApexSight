@@ -146,7 +146,13 @@ struct HouseModeSwitcher: View {
                 let converged = try await appState.requestHouseMode(key, code: code)
                 if !converged {
                     switch key {
-                    case "home": errorText = "That code didn't disarm the house. Open House Mode to re-enter it."
+                    case "home":
+                        if !appState.houseMode.isEmpty && appState.houseMode != "home" {
+                            keychain.clearAlarmCode()
+                            errorText = "That code didn't disarm the house. Check your Alarmo code and try again."
+                        } else {
+                            errorText = "Couldn't confirm the disarm. Check your connection and try again."
+                        }
                     case "night": errorText = "Night mode isn't set up in Alarmo yet. Enable it in Home Assistant → Alarmo → Arm modes."
                     default: errorText = "That didn't take — the house may not have changed. Try again."
                     }
