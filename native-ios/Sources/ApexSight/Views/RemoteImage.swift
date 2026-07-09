@@ -74,7 +74,11 @@ struct RemoteImage: View {
             isFailed = false
             if !revalidate { return }
         } else {
-            image = nil
+            // Cache miss. Keep whatever we're already showing (e.g. this row's prior frame after
+            // its URL changed while the event is in progress) rather than blanking to a
+            // placeholder — the fetch below swaps in the new frame when it lands, so the tile
+            // updates smoothly instead of flashing empty. A fresh cell (image == nil) still shows
+            // the placeholder + spinner until the first fetch completes.
             isFailed = false
         }
 

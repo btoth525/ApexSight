@@ -20,6 +20,14 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   `utils/`, and the Expo/Metro/NativeWind tooling). The native SwiftUI app fully
   supersedes it; the repository is now Swift + the Python push companions only.
 
+## Build 162
+### Fixed
+- **Review/Activity thumbnails no longer flicker or re-flash when you scroll.** Finished events
+  and reviews now load their image once and keep it — previously the app kept re-downloading a
+  settled snapshot for two minutes after the event ended, so tiles flashed every time they scrolled
+  back into view. Images that are still being captured (live events) still update to the best frame,
+  and a tile whose image is refreshing keeps showing the current frame instead of blanking.
+
 ## Build 161
 ### Fixed
 - **Per-camera notification mute now applies when the app is closed.** The app now syncs which

@@ -50,12 +50,10 @@ struct ReviewRow: View {
     }
 
     /// Frigate keeps upgrading the detection's snapshot to the best frame while the review is
-    /// live (and finalizes it at the end) — revalidate during and briefly after, so the card
-    /// doesn't forever show the first (often subject-less) fetch.
-    private var snapshotStillChanging: Bool {
-        guard let end = review.endTime else { return true }
-        return Date().timeIntervalSince1970 - end < 120
-    }
+    /// live, then finalizes it at the end — so revalidate ONLY while in progress. A completed
+    /// review's snapshot is fixed; re-fetching it every time the card scrolls back into view just
+    /// re-downloaded the same image and flashed the card. (Matches ReviewDetailView.)
+    private var snapshotStillChanging: Bool { review.endTime == nil }
 
     @ViewBuilder
     private var hero: some View {

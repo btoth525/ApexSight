@@ -4,13 +4,11 @@ struct EventRow: View {
     @EnvironmentObject private var appState: AppState
     let event: FrigateEvent
 
-    /// Frigate keeps upgrading an event's thumbnail to the best frame while it's live (and
-    /// finalizes it at the end) — so revalidate the cached image during the event and for a
-    /// short window after, instead of forever showing the first (often subject-less) fetch.
-    private var thumbnailStillChanging: Bool {
-        guard let end = event.endTime else { return true }   // in progress
-        return Date().timeIntervalSince1970 - end < 120       // just finished — grab the final frame
-    }
+    /// Frigate keeps upgrading an event's thumbnail to the best frame while it's live, then
+    /// finalizes it at the end — so revalidate ONLY while in progress. A finished event's
+    /// thumbnail is fixed; re-fetching it every time the row scrolls back into view just
+    /// re-downloaded the same image and flashed the cell. (Matches ReviewDetailView.)
+    private var thumbnailStillChanging: Bool { event.endTime == nil }
 
     var body: some View {
         HStack(spacing: 12) {
