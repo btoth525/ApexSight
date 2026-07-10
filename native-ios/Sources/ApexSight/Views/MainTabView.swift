@@ -5,6 +5,7 @@ struct MainTabView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTab: Tab? = .cameras
     @State private var detailSheet: DetailSheet?
+    @State private var showDoorbellCall = false
     @State private var deepLinkTask: Task<Void, Never>?
 
     enum Tab: Int, Hashable, CaseIterable, Identifiable {
@@ -78,6 +79,9 @@ struct MainTabView: View {
             .preferredColorScheme(.dark)
             // Native grabber on the detail sheets; the live player is immersive, so no grabber.
             .presentationDragIndicator({ if case .camera = sheet { return .hidden } else { return .visible } }())
+        }
+        .fullScreenCover(isPresented: $showDoorbellCall, onDismiss: { AppOrientation.lockPortrait() }) {
+            DoorbellCallView().environmentObject(appState)
         }
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)
@@ -182,6 +186,8 @@ struct MainTabView: View {
             }
         case .house:
             detailSheet = .house
+        case .doorbell:
+            showDoorbellCall = true
         }
         appState.deepLink = nil
     }

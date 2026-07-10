@@ -11,6 +11,7 @@ enum AppDeepLink: Hashable {
     case camera(String)
     case cameras   // jump to the Cameras tab (e.g. Siri "Show my cameras")
     case house     // open the House Mode control (Lock Screen widget / Control Center / Live Activity)
+    case doorbell  // present the full-screen doorbell call (doorbell-ring push)
 }
 
 extension Error {
@@ -1238,6 +1239,8 @@ final class AppState: ObservableObject {
             deepLink = .cameras
         case "house":
             deepLink = .house
+        case "doorbell":
+            deepLink = .doorbell
         case "latest":
             // Home Screen quick action / Control Center: jump to the most recent alert,
             // else just open the camera wall.
