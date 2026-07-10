@@ -4,6 +4,9 @@ import SwiftUI
 /// Watch, and Decline, styled like a FaceTime/phone call but that actually shows the feed (unlike
 /// the video-less Ring call). Presented from the `apex://doorbell` deep link (doorbell-ring push).
 struct DoorbellCallView: View {
+    /// When presented from the native CallKit answer, connect immediately (skip the in-app ring).
+    var autoAnswer: Bool = false
+
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -68,7 +71,7 @@ struct DoorbellCallView: View {
             .padding(.bottom, GlassTheme.Space.xl)
         }
         .preferredColorScheme(.dark)
-        .task { startRinging() }
+        .task { if autoAnswer { answer() } else { startRinging() } }
         .onDisappear { ringTask?.cancel(); talk.stop() }
     }
 
@@ -174,6 +177,8 @@ struct DoorbellCallView: View {
     private func end() {
         ringTask?.cancel()
         talk.stop()
+        // Clear the CallKit call too (if this ring came in as a VoIP call).
+        DoorbellCallManager.shared.endCurrentCall()
         dismiss()
     }
 }

@@ -28,6 +28,12 @@ enum RelayClient {
         let device_token: String
     }
 
+    private struct RegisterVoIPBody: Encodable {
+        let voip_token: String
+        let pairing_code: String
+        let environment: String
+    }
+
     private struct TestBody: Encodable {
         let device_token: String
         let environment: String
@@ -149,6 +155,12 @@ enum RelayClient {
 
     static func unregister(relayURL: String, deviceToken: String) async throws {
         try await post(relayURL: relayURL, path: "/v1/unregister", body: UnregisterBody(device_token: deviceToken))
+    }
+
+    /// Register this device's PushKit VoIP token so the relay can ring it (CallKit) on a doorbell press.
+    static func registerVoIP(relayURL: String, voipToken: String, pairingCode: String, environment: String) async throws {
+        try await post(relayURL: relayURL, path: "/v1/register-voip",
+                       body: RegisterVoIPBody(voip_token: voipToken, pairing_code: pairingCode.uppercased(), environment: environment))
     }
 
     /// Tell the relay which cameras have AI descriptions in notifications turned OFF, so the

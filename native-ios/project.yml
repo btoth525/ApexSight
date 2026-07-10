@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 175
+    CURRENT_PROJECT_VERSION: 176
     SWIFT_VERSION: 5.10
     DEVELOPMENT_TEAM: 3Q9ZUDN4QZ
     CODE_SIGN_STYLE: Automatic
@@ -72,6 +72,7 @@ targets:
           - audio
           - fetch
           - remote-notification
+          - voip
         BGTaskSchedulerPermittedIdentifiers:
           - com.brandontoth.apexsight.refresh
         # ATS: arbitrary loads stay ON because the Frigate base URL is user-supplied and the

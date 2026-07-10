@@ -13,6 +13,7 @@ enum DeviceTokenStore {
     private static let accountTokenKey = "apex.accountToken"
     private static let accountEmailKey = "apex.accountEmail"
     private static let deviceNameKey = "apex.deviceName"
+    private static let voipTokenKey = "apex.voipToken"
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: ApexAppGroup.identifier)
@@ -87,6 +88,13 @@ enum DeviceTokenStore {
     static var deviceName: String {
         get { defaults?.string(forKey: deviceNameKey) ?? "" }
         set { defaults?.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceNameKey) }
+    }
+
+    /// PushKit VoIP token (separate from the APNs token) — the relay uses it to ring this phone
+    /// via CallKit when the doorbell button is pressed.
+    static var voipToken: String? {
+        get { defaults?.string(forKey: voipTokenKey) }
+        set { defaults?.set(newValue, forKey: voipTokenKey) }
     }
 
     /// The household pairing code shared with the Home Assistant bridge addon.

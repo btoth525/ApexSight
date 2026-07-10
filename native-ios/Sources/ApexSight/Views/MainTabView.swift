@@ -6,6 +6,7 @@ struct MainTabView: View {
     @State private var selectedTab: Tab? = .cameras
     @State private var detailSheet: DetailSheet?
     @State private var showDoorbellCall = false
+    @State private var doorbellAutoAnswer = false
     @State private var deepLinkTask: Task<Void, Never>?
 
     enum Tab: Int, Hashable, CaseIterable, Identifiable {
@@ -81,7 +82,15 @@ struct MainTabView: View {
             .presentationDragIndicator({ if case .camera = sheet { return .hidden } else { return .visible } }())
         }
         .fullScreenCover(isPresented: $showDoorbellCall, onDismiss: { AppOrientation.lockPortrait() }) {
-            DoorbellCallView().environmentObject(appState)
+            DoorbellCallView(autoAnswer: doorbellAutoAnswer).environmentObject(appState)
+        }
+        // Answered on the native CallKit screen → open the live doorbell view already connected.
+        .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellAnswered)) { _ in
+            doorbellAutoAnswer = true
+            showDoorbellCall = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellEnded)) { _ in
+            showDoorbellCall = false
         }
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)
@@ -187,6 +196,7 @@ struct MainTabView: View {
         case .house:
             detailSheet = .house
         case .doorbell:
+            doorbellAutoAnswer = false   // notification tap → show the in-app call UI with choices
             showDoorbellCall = true
         }
         appState.deepLink = nil

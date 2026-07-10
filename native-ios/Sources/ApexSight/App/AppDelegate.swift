@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         BackgroundRefreshManager.register()
+        // Register for VoIP (PushKit) so a doorbell press can ring this phone via CallKit even when
+        // the app is fully closed — iOS wakes the app to report the incoming call.
+        DoorbellCallManager.shared.start()
         // Show the base Home Screen quick actions from the first long-press; AppState adds
         // per-camera actions once the camera list loads.
         UIApplication.shared.shortcutItems = QuickActions.baseItems()
