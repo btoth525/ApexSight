@@ -487,6 +487,11 @@ struct HLSLivePlayerView: View {
     var externalControls: Bool = false
     /// Host-owned mute state (external control mode). nil = self-managed.
     var muted: Bool? = nil
+    /// Allow dropping to Frigate's low-res MJPEG when HLS is slow/unavailable. On for the wall and
+    /// full-screen viewer (never sit on black). OFF for the doorbell call view, which is pre-warmed
+    /// and premium: it keeps the cached snapshot up during any brief cold-start and reveals the
+    /// full-res HLS on top — it must never flash the low-res stream mid-call.
+    var allowMJPEGFallback: Bool = true
 
     @StateObject private var model = HLSLiveModel()
     /// Sub-second WebRTC live for the focused viewer — overlays the HLS layer when healthy,
@@ -631,6 +636,9 @@ struct HLSLivePlayerView: View {
     }
 
     private func startFallbackTimer() {
+        // The doorbell call view opts out — it waits for full-res HLS on the snapshot rather than
+        // ever dropping to low-res MJPEG mid-call.
+        guard allowMJPEGFallback else { return }
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
             // Give HLS a grace period to reach playback before dropping to MJPEG. Sized for the
@@ -646,6 +654,9 @@ struct HLSLivePlayerView: View {
     }
 
     private func fallToMJPEG() {
+        // Opted out (doorbell call): stay on HLS + snapshot and let the model keep reattempting,
+        // rather than presenting the low-res stream.
+        guard allowMJPEGFallback else { return }
         guard !mjpegFallback else { return }
         fallbackTask?.cancel(); fallbackTask = nil
         // Free the startup slot now — model.stop() doesn't change model.state, so the

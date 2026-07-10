@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// A full-screen "someone's at the door" call — live doorbell video with Answer (two-way talk),
-/// Watch, and Decline, styled like a FaceTime/phone call but that actually shows the feed (unlike
-/// the video-less Ring call). Presented from the `apex://doorbell` deep link (doorbell-ring push).
+/// A full-screen "someone's at the door" call, styled like FaceTime but showing the real feed.
+/// Answering (native CallKit or the in-app ring) drops you straight into the **live** doorbell
+/// video, unmuted so you hear the visitor — a second **Talk** button opens two-way audio (shown
+/// only once the doorbell supports it). Presented from the `apex://doorbell` deep link / VoIP call.
 struct DoorbellCallView: View {
     /// When presented from the native CallKit answer, connect immediately (skip the in-app ring).
     var autoAnswer: Bool = false
@@ -26,11 +27,11 @@ struct DoorbellCallView: View {
             switch talk.status {
             case .connecting: return "Connecting…"
             case .talking:    return "Connected — speak"
-            case .failed:     return "Mic issue — they can still hear you knock"
+            case .failed:     return "Mic issue — you can still hear them"
             default:          return "Connecting…"
             }
         }
-        return "Listening"   // watching / one-way (you hear them)
+        return "Live"   // answered: you see + hear the visitor
     }
 
     var body: some View {
@@ -48,7 +49,8 @@ struct DoorbellCallView: View {
                     onPlaying: { _ in },
                     onRealtimeChange: { _ in },
                     externalControls: true,
-                    muted: !answered
+                    muted: !answered,
+                    allowMJPEGFallback: false   // stay on full-res HLS; never flash low-res mid-call
                 )
                 .ignoresSafeArea()
             } else {
@@ -71,7 +73,7 @@ struct DoorbellCallView: View {
             .padding(.bottom, GlassTheme.Space.xl)
         }
         .preferredColorScheme(.dark)
-        .task { if autoAnswer { answer() } else { startRinging() } }
+        .task { if autoAnswer { beginListening() } else { startRinging() } }
         .onDisappear { ringTask?.cancel(); talk.stop() }
     }
 
@@ -104,23 +106,30 @@ struct DoorbellCallView: View {
     private var controls: some View {
         Group {
             if answered {
-                HStack {
+                // Stage 2: watching live + hearing the visitor. Offer Talk (two-way) when supported,
+                // plus End. Talk only appears once the doorbell has a working two-way audio path.
+                HStack(alignment: .top, spacing: 0) {
                     Spacer()
                     callButton(system: "phone.down.fill", tint: .red, label: "End") { end() }
+                    if canTalk && !talking {
+                        Spacer()
+                        callButton(system: "mic.fill", tint: .green, label: "Talk") { startTalk() }
+                    }
                     Spacer()
                 }
+                .padding(.horizontal, GlassTheme.Space.m)
             } else {
+                // Stage 1: ringing. Answer drops into the live view (stage 2).
                 HStack(alignment: .top, spacing: 0) {
                     callButton(system: "xmark", tint: .red, label: "Decline") { end() }
                     Spacer()
-                    callButton(system: "phone.fill", tint: .green, label: "Answer") { answer() }
-                    Spacer()
-                    callButton(system: "video.fill", tint: .white.opacity(0.25), label: "Watch") { watch() }
+                    callButton(system: "phone.fill", tint: .green, label: "Answer") { beginListening() }
                 }
-                .padding(.horizontal, GlassTheme.Space.m)
+                .padding(.horizontal, GlassTheme.Space.xl)
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: answered)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: talking)
     }
 
     private func callButton(system: String, tint: Color, label: String, action: @escaping () -> Void) -> some View {
@@ -155,23 +164,21 @@ struct DoorbellCallView: View {
         }
     }
 
-    /// Answer = connect, unmute (hear the visitor), and open the mic for two-way if the doorbell
-    /// supports it. Even without two-way you still hear them — that's most of the value.
-    private func answer() {
-        ringTask?.cancel()
-        answered = true
-        Haptics.success()
-        if canTalk, let client = appState.client {
-            talking = true
-            talk.begin(cameraTwoWaySource: "doorbell_twoway", client: client)
-        }
-    }
-
-    /// Watch = see + hear the visitor, but keep your mic off.
-    private func watch() {
+    /// Stage 1 → 2: answering the ring drops you into the live view, unmuted so you hear the
+    /// visitor. You're watching + listening; your mic stays off until you tap Talk.
+    private func beginListening() {
         ringTask?.cancel()
         answered = true
         talking = false
+        Haptics.success()
+    }
+
+    /// Stage 2 → talk: open the mic for two-way audio. Only reachable when the doorbell exposes a
+    /// working two-way path (`canTalk`); a no-op otherwise.
+    private func startTalk() {
+        guard canTalk, let client = appState.client else { return }
+        talking = true
+        talk.begin(cameraTwoWaySource: "doorbell_twoway", client: client)
     }
 
     private func end() {
