@@ -1,0 +1,333 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+// MARK: - Call strip (compact soundboard shown inside the doorbell call)
+
+/// A compact talkback bar for the answered doorbell call: quick spoken replies, a Say… composer,
+/// and a hold-to-talk button — all speak through the door via the relay.
+struct DoorbellSoundboardStrip: View {
+    @ObservedObject var soundboard: DoorbellSoundboard
+    @StateObject private var recorder = DoorbellVoiceRecorder()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showSay = false
+    @State private var talkPulse = false
+
+    var body: some View {
+        VStack(spacing: GlassTheme.Space.s) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: GlassTheme.Space.s) {
+                    chip(icon: "text.bubble.fill", label: "Say…") { showSay = true }
+                    ForEach(soundboard.clips) { clip in
+                        chip(icon: "bullhorn.fill", label: clip.name) {
+                            Task { await soundboard.playClip(clip.slug) }
+                        }
+                    }
+                    ForEach(DoorbellSmartReplies.presets.prefix(4), id: \.self) { reply in
+                        chip(icon: "quote.bubble", label: reply) {
+                            Task { await soundboard.say(reply) }
+                        }
+                    }
+                }
+                .padding(.horizontal, GlassTheme.Space.m)
+            }
+
+            talkButton
+                .padding(.bottom, GlassTheme.Space.xs)
+        }
+        .opacity(soundboard.busy ? 0.7 : 1)
+        .sheet(isPresented: $showSay) {
+            DoorbellSayView(soundboard: soundboard)
+        }
+    }
+
+    private var talkButton: some View {
+        let recording = recorder.isRecording
+        return VStack(spacing: 4) {
+            Image(systemName: recording ? "waveform" : "mic.fill")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 68, height: 68)
+                .background(recording ? GlassTheme.red : GlassTheme.accent, in: Circle())
+                .scaleEffect(recording && !reduceMotion ? (talkPulse ? 1.08 : 1) : 1)
+                .animation(recording && !reduceMotion ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
+                           value: talkPulse)
+            Text(recording ? "Release to send" : "Hold to Talk")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !recorder.isRecording {
+                        Haptics.tap()
+                        recorder.start()
+                        talkPulse = true
+                    }
+                }
+                .onEnded { _ in
+                    talkPulse = false
+                    guard let clip = recorder.stopAndData() else { return }
+                    Haptics.success()
+                    Task {
+                        await soundboard.sendData(clip.data, filename: "talk.m4a")
+                        try? FileManager.default.removeItem(at: clip.url)
+                    }
+                }
+        )
+        .task { DoorbellVoiceRecorder.requestPermission() }
+    }
+
+    private func chip(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: { Haptics.tap(); action() }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.footnote.weight(.semibold))
+                Text(label).font(.subheadline.weight(.medium)).lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, GlassTheme.Space.m)
+            .padding(.vertical, GlassTheme.Space.s)
+            .background(.white.opacity(0.16), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Say composer (type + on-device smart replies → speak)
+
+/// Type text (or tap an AI/preset suggestion) and speak it at the door in an on-device voice.
+struct DoorbellSayView: View {
+    @ObservedObject var soundboard: DoorbellSoundboard
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var saveIt = false
+    @State private var saveName = ""
+    @State private var suggestions: [String] = DoorbellSmartReplies.presets
+    @State private var loadingSuggestions = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                    TextField("Type what to say at the door…", text: $text, axis: .vertical)
+                        .lineLimit(2...5)
+                        .font(.title3)
+                        .focused($focused)
+                        .padding()
+                        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card))
+
+                    HStack {
+                        SectionHeader(DoorbellSmartReplies.modelAvailable ? "Smart replies" : "Quick replies")
+                        Spacer()
+                        if loadingSuggestions { ProgressView().controlSize(.small) }
+                        if DoorbellSmartReplies.modelAvailable {
+                            Button { Task { await loadSuggestions() } } label: {
+                                Image(systemName: "sparkles")
+                            }
+                        }
+                    }
+
+                    FlowChips(items: suggestions) { s in
+                        text = s
+                    }
+
+                    Toggle("Save as a soundboard button", isOn: $saveIt)
+                        .tint(GlassTheme.accent)
+                    if saveIt {
+                        TextField("Button name (e.g. \"Leave package\")", text: $saveName)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    if let status = soundboard.status {
+                        Text(status).font(.footnote).foregroundStyle(GlassTheme.red)
+                    }
+                }
+                .padding()
+            }
+            .background(GlassTheme.background.ignoresSafeArea())
+            .navigationTitle("Say at the Door")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Speak") {
+                        let toSay = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let name = saveIt ? saveName.trimmingCharacters(in: .whitespaces) : ""
+                        Task { await soundboard.say(toSay, saveAs: name) }
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || soundboard.busy)
+                }
+            }
+            .task {
+                focused = true
+                if DoorbellSmartReplies.modelAvailable { await loadSuggestions() }
+            }
+        }
+    }
+
+    private func loadSuggestions() async {
+        loadingSuggestions = true
+        defer { loadingSuggestions = false }
+        suggestions = await DoorbellSmartReplies.suggestions()
+    }
+}
+
+// MARK: - Management screen (Settings → Doorbell Talkback)
+
+/// Manage the doorbell soundboard: see reachability, play/delete saved clips, add new ones by
+/// speaking text, recording, or importing an audio file.
+struct DoorbellSoundboardView: View {
+    @StateObject private var soundboard = DoorbellSoundboard()
+    @StateObject private var recorder = DoorbellVoiceRecorder()
+    @State private var showSay = false
+    @State private var importing = false
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    Label("Doorbell speaker", systemImage: "bullhorn.fill")
+                    Spacer()
+                    if !soundboard.checked {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(soundboard.available ? "Ready" : "Not reachable")
+                            .foregroundStyle(soundboard.available ? GlassTheme.green : GlassTheme.secondary)
+                    }
+                }
+                if soundboard.checked && !soundboard.available {
+                    Text("Set `doorbell_ip` in the ApexSight Push add-on (1.10.0+) and make sure the doorbell is on the same network.")
+                        .font(.footnote).foregroundStyle(GlassTheme.secondary)
+                }
+            }
+
+            Section("Add") {
+                Button { showSay = true } label: {
+                    Label("Speak text (on-device voice)", systemImage: "text.bubble.fill")
+                }
+                Button { importing = true } label: {
+                    Label("Import an audio file / MP3", systemImage: "square.and.arrow.down")
+                }
+                RecordRow(recorder: recorder, soundboard: soundboard)
+            }
+
+            if !soundboard.clips.isEmpty {
+                Section("Soundboard") {
+                    ForEach(soundboard.clips) { clip in
+                        HStack {
+                            Button { Task { await soundboard.playClip(clip.slug) } } label: {
+                                Label(clip.name, systemImage: "play.circle.fill")
+                            }
+                            Spacer()
+                        }
+                        .swipeActions {
+                            Button(role: .destructive) { Task { await soundboard.delete(clip.slug) } } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let status = soundboard.status {
+                Section { Text(status).font(.footnote).foregroundStyle(GlassTheme.red) }
+            }
+        }
+        .navigationTitle("Doorbell Talkback")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showSay) { DoorbellSayView(soundboard: soundboard) }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio, .mpeg4Audio, .mp3, .wav],
+                      allowsMultipleSelection: false) { result in
+            guard case let .success(urls) = result, let url = urls.first else { return }
+            let name = url.deletingPathExtension().lastPathComponent
+            Task {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+                if let data = try? Data(contentsOf: url) {
+                    await soundboard.sendData(data, filename: url.lastPathComponent, saveAs: name)
+                }
+            }
+        }
+        .task { await soundboard.refresh() }
+    }
+}
+
+/// A hold-to-record row that saves the recording as a named preset.
+private struct RecordRow: View {
+    @ObservedObject var recorder: DoorbellVoiceRecorder
+    @ObservedObject var soundboard: DoorbellSoundboard
+
+    var body: some View {
+        HStack {
+            Label(recorder.isRecording ? "Recording… release to save" : "Hold to record a clip",
+                  systemImage: recorder.isRecording ? "waveform" : "mic.circle.fill")
+                .foregroundStyle(recorder.isRecording ? GlassTheme.red : GlassTheme.primary)
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !recorder.isRecording { Haptics.tap(); recorder.start() } }
+                .onEnded { _ in
+                    guard let clip = recorder.stopAndData() else { return }
+                    Haptics.success()
+                    Task {
+                        let stamp = Int(Date().timeIntervalSince1970) % 100000
+                        await soundboard.sendData(clip.data, filename: "rec.m4a", saveAs: "Clip \(stamp)")
+                        try? FileManager.default.removeItem(at: clip.url)
+                    }
+                }
+        )
+        .task { DoorbellVoiceRecorder.requestPermission() }
+    }
+}
+
+// MARK: - Small wrapping chip layout
+
+/// A simple wrapping row of tappable suggestion chips.
+private struct FlowChips: View {
+    let items: [String]
+    let onTap: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+            ForEach(rows(), id: \.self) { row in
+                HStack(spacing: GlassTheme.Space.s) {
+                    ForEach(row, id: \.self) { item in
+                        Button { Haptics.tap(); onTap(item) } label: {
+                            Text(item)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                                .padding(.horizontal, GlassTheme.Space.m)
+                                .padding(.vertical, GlassTheme.Space.s)
+                                .background(GlassTheme.surfaceHigh, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    /// Naive greedy wrap by character count — good enough for short reply chips.
+    private func rows() -> [[String]] {
+        var rows: [[String]] = []
+        var current: [String] = []
+        var width = 0
+        for item in items {
+            let w = item.count + 4
+            if width + w > 42, !current.isEmpty {
+                rows.append(current); current = []; width = 0
+            }
+            current.append(item); width += w
+        }
+        if !current.isEmpty { rows.append(current) }
+        return rows
+    }
+}

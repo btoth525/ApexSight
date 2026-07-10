@@ -288,4 +288,94 @@ enum RelayClient {
             throw RelayError.server(code, msg)
         }
     }
+
+    // MARK: - Doorbell talkback (play audio to the Aqara doorbell speaker)
+
+    /// A saved talkback preset ("soundboard" clip) stored on the relay.
+    struct DoorbellClip: Decodable, Identifiable, Hashable {
+        let slug: String
+        let name: String
+        var id: String { slug }
+    }
+
+    private struct DoorbellSlugBody: Encodable { let pairing_code: String; let slug: String }
+
+    private static func base(_ relayURL: String) -> String {
+        var t = relayURL.trimmingCharacters(in: .whitespaces)
+        while t.hasSuffix("/") { t.removeLast() }
+        return t
+    }
+
+    /// Whether talkback is configured on the relay and the doorbell is reachable. NB: this opens a
+    /// voice session on the camera to probe — call it once (on view appear), never poll, and never
+    /// during active playback (one voice session at a time). Returns nil on network failure.
+    static func doorbellStatus(relayURL: String, pairingCode: String) async -> (configured: Bool, reachable: Bool)? {
+        struct Status: Decodable { let configured: Bool; let reachable: Bool }
+        var comps = URLComponents(string: base(relayURL) + "/v1/doorbell/status")
+        comps?.queryItems = [URLQueryItem(name: "pairing_code", value: pairingCode)]
+        guard let url = comps?.url else { return nil }
+        var req = URLRequest(url: url); req.timeoutInterval = 12
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
+              let s = try? JSONDecoder().decode(Status.self, from: data) else { return nil }
+        return (s.configured, s.reachable)
+    }
+
+    /// List the saved talkback presets.
+    static func listDoorbellClips(relayURL: String, pairingCode: String) async -> [DoorbellClip] {
+        struct Resp: Decodable { let clips: [DoorbellClip] }
+        var comps = URLComponents(string: base(relayURL) + "/v1/doorbell/clips")
+        comps?.queryItems = [URLQueryItem(name: "pairing_code", value: pairingCode)]
+        guard let url = comps?.url else { return [] }
+        var req = URLRequest(url: url); req.timeoutInterval = 10
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
+              let r = try? JSONDecoder().decode(Resp.self, from: data) else { return [] }
+        return r.clips
+    }
+
+    /// Play a saved preset at the door.
+    static func playSavedDoorbellClip(relayURL: String, pairingCode: String, slug: String) async throws {
+        try await post(relayURL: relayURL, path: "/v1/doorbell/play",
+                       body: DoorbellSlugBody(pairing_code: pairingCode, slug: slug))
+    }
+
+    /// Delete a saved preset.
+    static func deleteDoorbellClip(relayURL: String, pairingCode: String, slug: String) async throws {
+        try await post(relayURL: relayURL, path: "/v1/doorbell/delete",
+                       body: DoorbellSlugBody(pairing_code: pairingCode, slug: slug))
+    }
+
+    /// Upload an audio clip and play it at the door immediately; optionally save it as a preset
+    /// (pass a non-empty `saveAs` name). Any format ffmpeg reads works — the relay transcodes.
+    static func uploadDoorbellClip(relayURL: String, pairingCode: String, audio: Data,
+                                   filename: String, saveAs: String = "") async throws {
+        guard let url = URL(string: base(relayURL) + "/v1/doorbell/clip") else { throw RelayError.invalidURL }
+        let boundary = "apex-\(UUID().uuidString)"
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 45
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        func field(_ name: String, _ value: String) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        field("pairing_code", pairingCode)
+        if !saveAs.isEmpty { field("save_as", saveAs) }
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        body.append(audio)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw RelayError.server(code, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
 }

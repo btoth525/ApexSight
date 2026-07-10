@@ -28,6 +28,7 @@ struct SettingsTab: View {
                 ScrollView {
                     VStack(spacing: GlassTheme.Space.l) {
                         houseModeCard
+                        doorbellTalkCard
                         serverCard
                         spotlightCard
 
@@ -68,6 +69,7 @@ struct SettingsTab: View {
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
                 else if value == "recap" { DailyRecapView().environmentObject(appState) }
                 else if value == "house" { HouseModeView().environmentObject(appState) }
+                else if value == "doorbell_talk" { DoorbellSoundboardView() }
             }
         }
     }
@@ -107,6 +109,35 @@ struct SettingsTab: View {
         }
         .buttonStyle(.plain)
         .task { await appState.refreshHouseMode() }
+    }
+
+    /// Doorbell talkback: speak at the door with quick replies, on-device TTS, recordings, or MP3s.
+    private var doorbellTalkCard: some View {
+        NavigationLink(value: "doorbell_talk") {
+            GlassCard {
+                HStack(spacing: GlassTheme.Space.m) {
+                    ZStack {
+                        Circle().fill(GlassTheme.accent.opacity(0.18)).frame(width: 46, height: 46)
+                        Image(systemName: "bullhorn.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(GlassTheme.accent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Doorbell Talkback")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("Speak at the door · soundboard · MP3")
+                            .font(.subheadline)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Server
