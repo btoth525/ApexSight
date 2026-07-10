@@ -28,7 +28,6 @@ struct SettingsTab: View {
                 ScrollView {
                     VStack(spacing: GlassTheme.Space.l) {
                         houseModeCard
-                        doorbellTalkCard
                         serverCard
                         spotlightCard
 
@@ -42,6 +41,7 @@ struct SettingsTab: View {
                             privacyCard
                         }
 
+                        doorbellTalkCard
                         configurationSection
                         serverToolsCard
                         aboutCard
@@ -118,7 +118,7 @@ struct SettingsTab: View {
                 HStack(spacing: GlassTheme.Space.m) {
                     ZStack {
                         Circle().fill(GlassTheme.accent.opacity(0.18)).frame(width: 46, height: 46)
-                        Image(systemName: "bullhorn.fill")
+                        Image(systemName: "megaphone.fill")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(GlassTheme.accent)
                     }

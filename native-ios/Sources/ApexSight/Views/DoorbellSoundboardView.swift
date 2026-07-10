@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -18,7 +19,7 @@ struct DoorbellSoundboardStrip: View {
                 HStack(spacing: GlassTheme.Space.s) {
                     chip(icon: "text.bubble.fill", label: "Say…") { showSay = true }
                     ForEach(soundboard.clips) { clip in
-                        chip(icon: "bullhorn.fill", label: clip.name) {
+                        chip(icon: "megaphone.fill", label: clip.name) {
                             Task { await soundboard.playClip(clip.slug) }
                         }
                     }
@@ -95,16 +96,19 @@ struct DoorbellSoundboardStrip: View {
 
 // MARK: - Say composer (type + on-device smart replies → speak)
 
-/// Type text (or tap an AI/preset suggestion) and speak it at the door in an on-device voice.
+/// Type text (or tap a preset / AI idea) and speak it at the door in an on-device voice.
 struct DoorbellSayView: View {
     @ObservedObject var soundboard: DoorbellSoundboard
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("doorbellVoiceID") private var voiceID = ""
     @State private var text = ""
     @State private var saveIt = false
     @State private var saveName = ""
-    @State private var suggestions: [String] = DoorbellSmartReplies.presets
-    @State private var loadingSuggestions = false
+    @State private var aiSuggestions: [String] = []
+    @State private var loadingAI = false
     @FocusState private var focused: Bool
+
+    private let voices = DoorbellSpeech.selectableVoices()
 
     var body: some View {
         NavigationStack {
@@ -117,19 +121,30 @@ struct DoorbellSayView: View {
                         .padding()
                         .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card))
 
-                    HStack {
-                        SectionHeader(DoorbellSmartReplies.modelAvailable ? "Smart replies" : "Quick replies")
-                        Spacer()
-                        if loadingSuggestions { ProgressView().controlSize(.small) }
-                        if DoorbellSmartReplies.modelAvailable {
-                            Button { Task { await loadSuggestions() } } label: {
-                                Image(systemName: "sparkles")
+                    voicePicker
+
+                    // Quick replies stay put — never mutated, so nothing shifts under your finger.
+                    SectionHeader("Quick replies")
+                    FlowChips(items: DoorbellSmartReplies.presets) { text = $0 }
+
+                    // AI ideas load only when you ask, into their own section (no surprise reflow).
+                    if DoorbellSmartReplies.modelAvailable {
+                        HStack {
+                            SectionHeader("AI ideas")
+                            Spacer()
+                            if loadingAI {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Button { Task { await generateAI() } } label: {
+                                    Label(aiSuggestions.isEmpty ? "Generate" : "Regenerate", systemImage: "sparkles")
+                                        .font(.subheadline.weight(.semibold))
+                                }
                             }
                         }
-                    }
-
-                    FlowChips(items: suggestions) { s in
-                        text = s
+                        if !aiSuggestions.isEmpty {
+                            FlowChips(items: aiSuggestions) { text = $0 }
+                                .transition(.opacity)
+                        }
                     }
 
                     Toggle("Save as a soundboard button", isOn: $saveIt)
@@ -144,6 +159,7 @@ struct DoorbellSayView: View {
                     }
                 }
                 .padding()
+                .animation(.easeInOut(duration: 0.2), value: aiSuggestions)
             }
             .background(GlassTheme.background.ignoresSafeArea())
             .navigationTitle("Say at the Door")
@@ -156,24 +172,49 @@ struct DoorbellSayView: View {
                     Button("Speak") {
                         let toSay = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         let name = saveIt ? saveName.trimmingCharacters(in: .whitespaces) : ""
-                        Task { await soundboard.say(toSay, saveAs: name) }
+                        Task { await soundboard.say(toSay, voiceID: voiceID.isEmpty ? nil : voiceID, saveAs: name) }
                         dismiss()
                     }
                     .fontWeight(.semibold)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || soundboard.busy)
                 }
             }
-            .task {
-                focused = true
-                if DoorbellSmartReplies.modelAvailable { await loadSuggestions() }
+            .task { focused = true }
+        }
+    }
+
+    @ViewBuilder private var voicePicker: some View {
+        if !voices.isEmpty {
+            let current = DoorbellSpeech.voice(id: voiceID)
+            HStack {
+                Label("Voice", systemImage: "waveform")
+                    .font(.subheadline).foregroundStyle(GlassTheme.secondary)
+                Spacer()
+                Menu {
+                    ForEach(voices, id: \.identifier) { v in
+                        Button {
+                            voiceID = v.identifier
+                        } label: {
+                            if v.identifier == current?.identifier { Label("\(v.name) · \(DoorbellSpeech.qualityName(v.quality))", systemImage: "checkmark") }
+                            else { Text("\(v.name) · \(DoorbellSpeech.qualityName(v.quality))") }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(current.map { "\($0.name) · \(DoorbellSpeech.qualityName($0.quality))" } ?? "Default")
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                    }
+                    .foregroundStyle(GlassTheme.accent)
+                }
             }
         }
     }
 
-    private func loadSuggestions() async {
-        loadingSuggestions = true
-        defer { loadingSuggestions = false }
-        suggestions = await DoorbellSmartReplies.suggestions()
+    private func generateAI() async {
+        loadingAI = true
+        defer { loadingAI = false }
+        aiSuggestions = await DoorbellSmartReplies.suggestions()
     }
 }
 
@@ -191,7 +232,7 @@ struct DoorbellSoundboardView: View {
         List {
             Section {
                 HStack {
-                    Label("Doorbell speaker", systemImage: "bullhorn.fill")
+                    Label("Doorbell speaker", systemImage: "megaphone.fill")
                     Spacer()
                     if !soundboard.checked {
                         ProgressView().controlSize(.small)

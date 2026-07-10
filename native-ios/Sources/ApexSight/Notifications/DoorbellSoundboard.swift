@@ -40,9 +40,11 @@ final class DoorbellSoundboard: ObservableObject {
         clips = await RelayClient.listDoorbellClips(relayURL: relayURL, pairingCode: pairing)
     }
 
-    /// Speak typed text at the door via on-device TTS. Optionally save it as a named preset.
-    func say(_ text: String, saveAs: String = "") async {
-        guard ready, let url = await DoorbellSpeech.synthesize(text) else { return }
+    /// Speak typed text at the door via on-device TTS. Optionally choose a voice + save as a preset.
+    func say(_ text: String, voiceID: String? = nil, saveAs: String = "") async {
+        guard ready,
+              let url = await DoorbellSpeech.synthesize(text, voice: DoorbellSpeech.voice(id: voiceID))
+        else { return }
         defer { try? FileManager.default.removeItem(at: url) }
         await sendData((try? Data(contentsOf: url)) ?? Data(), filename: "say.caf", saveAs: saveAs)
     }

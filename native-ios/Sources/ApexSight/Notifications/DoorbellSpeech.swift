@@ -14,6 +14,32 @@ enum DoorbellSpeech {
             ?? AVSpeechSynthesisVoice(language: lang)
     }
 
+    /// Voices the user can pick from — same language family, best (neural premium/enhanced) first.
+    static func selectableVoices() -> [AVSpeechSynthesisVoice] {
+        let prefix = String(AVSpeechSynthesisVoice.currentLanguageCode().prefix(2))
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix(prefix) }
+            .sorted { a, b in
+                a.quality.rawValue != b.quality.rawValue
+                    ? a.quality.rawValue > b.quality.rawValue
+                    : a.name < b.name
+            }
+    }
+
+    /// Resolve a stored voice identifier, falling back to the best available voice.
+    static func voice(id: String?) -> AVSpeechSynthesisVoice? {
+        if let id, !id.isEmpty, let v = AVSpeechSynthesisVoice(identifier: id) { return v }
+        return preferredVoice()
+    }
+
+    static func qualityName(_ q: AVSpeechSynthesisVoiceQuality) -> String {
+        switch q {
+        case .premium:  return "Premium"
+        case .enhanced: return "Enhanced"
+        default:        return "Standard"
+        }
+    }
+
     /// Synthesize `text` to a CAF file and return its URL (the caller deletes it after upload).
     /// Returns nil on empty text or synthesis failure.
     static func synthesize(_ text: String, voice: AVSpeechSynthesisVoice? = nil) async -> URL? {
