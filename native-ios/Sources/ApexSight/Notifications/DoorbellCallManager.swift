@@ -100,6 +100,9 @@ extension DoorbellCallManager: PKPushRegistryDelegate {
         guard type == .voIP else { completion(); return }
         // Report to CallKit immediately — required, or the app is killed for swallowing a VoIP push.
         reportIncomingDoorbell(completion: completion)
+        // Kick the on-demand doorbell encoder awake now, while the phone rings — so the live video
+        // is already flowing by the time you answer instead of spinning up cold on tap.
+        DoorbellPrewarmer.warm()
     }
 }
 

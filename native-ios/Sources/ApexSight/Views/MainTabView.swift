@@ -197,6 +197,7 @@ struct MainTabView: View {
             detailSheet = .house
         case .doorbell:
             doorbellAutoAnswer = false   // notification tap → show the in-app call UI with choices
+            DoorbellPrewarmer.warm()     // start the encoder now so the live view paints instantly
             showDoorbellCall = true
         }
         appState.deepLink = nil
