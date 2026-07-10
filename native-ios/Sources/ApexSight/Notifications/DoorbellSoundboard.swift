@@ -5,30 +5,24 @@ import Foundation
 /// pairing code from the shared token store, so it works anywhere the app is paired.
 @MainActor
 final class DoorbellSoundboard: ObservableObject {
-    /// Talkback is configured on the relay AND the doorbell answered a probe. Probed at most once
-    /// per launch (the probe opens a brief voice session on the camera — we never poll it).
+    /// Talkback is configured on the relay AND the doorbell answered a reachability check (a plain
+    /// TCP probe on the relay side — non-invasive, safe to re-run on every view appear, so fixing
+    /// the add-on config shows up without relaunching the app).
     @Published var available = false
     @Published var checked = false
     @Published var clips: [RelayClient.DoorbellClip] = []
     @Published var busy = false
     @Published var status: String?
 
-    private static var probedThisLaunch = false
-    private static var cachedAvailable = false
-
     private var relayURL: String { DeviceTokenStore.relayURL }
     private var pairing: String { DeviceTokenStore.ensurePairingCode() }
     private var ready: Bool { !relayURL.isEmpty && !pairing.isEmpty }
 
-    /// Probe availability once per launch, and (re)load the preset list. Call on view appear only.
+    /// Check availability and (re)load the preset list. Call on view appear.
     func refresh() async {
         guard ready else { checked = true; return }
-        if DoorbellSoundboard.probedThisLaunch {
-            available = DoorbellSoundboard.cachedAvailable
-        } else if let s = await RelayClient.doorbellStatus(relayURL: relayURL, pairingCode: pairing) {
+        if let s = await RelayClient.doorbellStatus(relayURL: relayURL, pairingCode: pairing) {
             available = s.configured && s.reachable
-            DoorbellSoundboard.cachedAvailable = available
-            DoorbellSoundboard.probedThisLaunch = true
         }
         clips = await RelayClient.listDoorbellClips(relayURL: relayURL, pairingCode: pairing)
         checked = true
@@ -41,12 +35,24 @@ final class DoorbellSoundboard: ObservableObject {
     }
 
     /// Speak typed text at the door via on-device TTS. Optionally choose a voice + save as a preset.
+    /// Every failure surfaces in `status` — a tap that makes no sound must never be silent in the UI.
     func say(_ text: String, voiceID: String? = nil, saveAs: String = "") async {
-        guard ready,
-              let url = await DoorbellSpeech.synthesize(text, voice: DoorbellSpeech.voice(id: voiceID))
-        else { return }
+        guard ready else { return }
+        busy = true
+        status = nil
+        guard let url = await DoorbellSpeech.synthesize(text, voice: DoorbellSpeech.voice(id: voiceID)) else {
+            busy = false
+            status = "Couldn't synthesize speech — try a different voice."
+            return
+        }
         defer { try? FileManager.default.removeItem(at: url) }
-        await sendData((try? Data(contentsOf: url)) ?? Data(), filename: "say.caf", saveAs: saveAs)
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+            busy = false
+            status = "Couldn't read the synthesized audio."
+            return
+        }
+        busy = false
+        await sendData(data, filename: "say.caf", saveAs: saveAs)
     }
 
     /// Play a saved preset at the door.

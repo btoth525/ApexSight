@@ -357,16 +357,22 @@ enum RelayClient {
         req.timeoutInterval = 45
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
+        // Quotes/CR/LF in a filename or preset name would corrupt the multipart framing — strip
+        // them (the value itself, sent in the body, keeps its normal characters otherwise).
+        func headerSafe(_ s: String) -> String {
+            s.replacingOccurrences(of: "\"", with: "'")
+                .components(separatedBy: .newlines).joined(separator: " ")
+        }
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
-            body.append("\(value)\r\n".data(using: .utf8)!)
+            body.append("\(value.components(separatedBy: .newlines).joined(separator: " "))\r\n".data(using: .utf8)!)
         }
         field("pairing_code", pairingCode)
         if !saveAs.isEmpty { field("save_as", saveAs) }
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"\(headerSafe(filename))\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
         body.append(audio)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)

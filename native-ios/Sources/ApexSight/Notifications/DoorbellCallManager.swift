@@ -21,6 +21,17 @@ final class DoorbellCallManager: NSObject {
     private let callController = CXCallController()
     private var voipRegistry: PKPushRegistry?
     private var currentCallID: UUID?
+    /// Set when the user answers from CallKit before the SwiftUI scene exists (cold launch from a
+    /// VoIP push on the Lock Screen) — NotificationCenter posts aren't buffered, so MainTabView
+    /// consumes this on appear to replay the answer into the call UI.
+    private(set) var pendingAnswer = false
+
+    /// One-shot: MainTabView calls this on appear to catch an answer that happened pre-UI.
+    func consumePendingAnswer() -> Bool {
+        let had = pendingAnswer
+        pendingAnswer = false
+        return had
+    }
 
     private override init() {
         let config = CXProviderConfiguration()
@@ -48,6 +59,10 @@ final class DoorbellCallManager: NSObject {
     /// Report an incoming doorbell call to CallKit (must happen synchronously in the push handler,
     /// or iOS terminates the app for not surfacing the VoIP push).
     private func reportIncomingDoorbell(completion: @escaping () -> Void) {
+        // A second press while a call is already ringing/active (visitor double-tap) must not
+        // clobber the live call's ID — reporting a second call fails under maximumCallGroups=1,
+        // and endCurrentCall would then target a dead UUID and never clear the real call.
+        guard currentCallID == nil else { completion(); return }
         let id = UUID()
         currentCallID = id
         let update = CXCallUpdate()
@@ -58,7 +73,18 @@ final class DoorbellCallManager: NSObject {
         update.supportsGrouping = false
         update.supportsUngrouping = false
         update.supportsDTMF = false
-        provider.reportNewIncomingCall(with: id, update: update) { _ in completion() }
+        provider.reportNewIncomingCall(with: id, update: update) { [weak self] error in
+            // A failed report (e.g. another call raced us) must not leave a dead ID behind.
+            if error != nil { self?.currentCallID = nil }
+            completion()
+        }
+    }
+
+    /// Answer the current CallKit call from the app side (the in-app Answer button) so the native
+    /// call UI reflects the answered state instead of ringing on over the live view.
+    func answerCurrentCall() {
+        guard let id = currentCallID else { return }
+        callController.request(CXTransaction(action: CXAnswerCallAction(call: id))) { _ in }
     }
 
     /// End the current call from the app side (the in-app Decline/End button) so the CallKit call
@@ -115,13 +141,18 @@ extension DoorbellCallManager: CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        // Foreground the app into the live doorbell view + two-way talk.
+        // Foreground the app into the live doorbell view. Also record the answer: on a cold launch
+        // (app terminated, answered from the Lock Screen) this fires before any SwiftUI scene is
+        // observing, and NotificationCenter posts aren't buffered — MainTabView consumes the flag
+        // on appear and replays the answer.
+        pendingAnswer = true
         NotificationCenter.default.post(name: .apexDoorbellAnswered, object: nil)
         action.fulfill()
     }
 
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         currentCallID = nil
+        pendingAnswer = false
         NotificationCenter.default.post(name: .apexDoorbellEnded, object: nil)
         action.fulfill()
     }

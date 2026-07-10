@@ -492,6 +492,11 @@ struct HLSLivePlayerView: View {
     /// and premium: it keeps the cached snapshot up during any brief cold-start and reveals the
     /// full-res HLS on top — it must never flash the low-res stream mid-call.
     var allowMJPEGFallback: Bool = true
+    /// Real-time A/V mode (the doorbell call): run the WebRTC layer with AUDIO receive, regardless
+    /// of mute state. While WebRTC is live it carries both picture and sound sub-second and the
+    /// HLS layer stays muted underneath (else the same audio arrives twice, seconds apart); if
+    /// WebRTC can't connect, HLS carries audio+video exactly as before — nothing lost.
+    var realtimeAudio: Bool = false
 
     @StateObject private var model = HLSLiveModel()
     /// Sub-second WebRTC live for the focused viewer — overlays the HLS layer when healthy,
@@ -543,9 +548,10 @@ struct HLSLivePlayerView: View {
     }
 
     /// Realtime (WebRTC) is attempted only for the focused viewer, on normal cameras, while
-    /// muted (unmuting switches to HLS so audio+video stay in sync from one pipeline).
+    /// muted (unmuting switches to HLS so audio+video stay in sync from one pipeline) — or
+    /// whenever the host opted into real-time A/V (the doorbell call, which has no controls).
     private var realtimeEligible: Bool {
-        showControls && !mjpegFallback && camera.name != "birdseye"
+        (showControls || realtimeAudio) && !mjpegFallback && camera.name != "birdseye"
     }
 
     private var effectiveMuted: Bool { muted ?? model.isMuted }
@@ -590,12 +596,22 @@ struct HLSLivePlayerView: View {
             .allowsHitTesting(true)
         } else {
             // Wall cells: wire PiP only when a controller was provided (long-press menu).
-            ZoomablePlayerView(
-                player: player,
-                pip: pipController,
-                autoPiP: false,
-                onReadyForDisplay: { videoReady = $0 }
-            )
+            ZStack {
+                ZoomablePlayerView(
+                    player: player,
+                    pip: pipController,
+                    autoPiP: false,
+                    onReadyForDisplay: { videoReady = $0 }
+                )
+                // Real-time A/V mode (doorbell call, which runs without controls): the WebRTC
+                // layer renders here too, over the HLS layer, exactly like the focused viewer.
+                if realtimeAudio, let track = realtime.videoTrack {
+                    RealtimeVideoView(track: track) { realtime.noteFirstFrame() }
+                        .opacity(realtime.state == .live ? 1 : 0)
+                        .animation(.easeIn(duration: 0.25), value: realtime.state)
+                        .allowsHitTesting(false)
+                }
+            }
             .opacity(livePixelsShown ? 1 : 0)
             .animation(.easeIn(duration: 0.3), value: livePixelsShown)
             .allowsHitTesting(false)
@@ -692,9 +708,17 @@ struct HLSLivePlayerView: View {
     /// normal camera, muted. Unmuting stops it — HLS then carries audio+video from ONE
     /// pipeline, so sound is never out of sync with the picture.
     private func syncRealtime() {
-        RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) mjpeg=\(mjpegFallback)")
+        RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) mjpeg=\(mjpegFallback) rtAudio=\(realtimeAudio)")
         guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
-        if effectiveMuted {
+        if realtimeAudio {
+            // Doorbell call: WebRTC carries A/V regardless of mute; mute just gates the audio
+            // track (ring = silent, answered = hear the visitor sub-second).
+            if realtime.state == .idle || realtime.state == .failed {
+                realtime.start(sources: [camera.name], client: client, withAudio: true)
+            }
+            realtime.setAudioEnabled(!effectiveMuted)
+            syncHLSMuteForRealtimeAudio()
+        } else if effectiveMuted {
             if realtime.state == .idle || realtime.state == .failed {
                 // Realtime uses ONLY the full-resolution main stream — never a lower-res sub.
                 // So an H264-main camera gets full-quality sub-second video; an HEVC-main camera
@@ -705,6 +729,15 @@ struct HLSLivePlayerView: View {
         } else {
             realtime.stop()
         }
+    }
+
+    /// Real-time A/V mode: exactly one pipeline may voice at a time. While the WebRTC audio track
+    /// is live, the HLS layer stays muted (the same audio would otherwise arrive twice, seconds
+    /// apart); if WebRTC never got audio or dropped, HLS honors the host's mute state as usual.
+    private func syncHLSMuteForRealtimeAudio() {
+        guard realtimeAudio else { return }
+        let webRTCAudioLive = realtime.state == .live && realtime.audioTrack != nil
+        model.setMuted(webRTCAudioLive ? true : (muted ?? true))
     }
 
     /// The real stream (HLS or realtime) is on screen — hand the borrowed wall player back
@@ -813,8 +846,9 @@ struct HLSLivePlayerView: View {
                 warm.playImmediately(atRate: 1.0)
             }
             syncRealtime()
-            // Host-owned mute (external control mode) applies from the first frame.
-            if let muted { model.setMuted(muted) }
+            // Host-owned mute (external control mode) applies from the first frame. In real-time
+            // A/V mode the sync above owns the HLS mute (WebRTC may be carrying the audio).
+            if !realtimeAudio, let muted { model.setMuted(muted) }
             // Returning to a kept-alive player (tab switch back) — just resume, instantly.
             if started {
                 model.isOffscreen = false
@@ -884,16 +918,20 @@ struct HLSLivePlayerView: View {
             }
         }
         .onChange(of: muted) { _, newValue in
-            if let newValue { model.setMuted(newValue) }
+            // Real-time A/V mode: syncRealtime owns the HLS mute (WebRTC may carry the audio).
+            if !realtimeAudio, let newValue { model.setMuted(newValue) }
             syncRealtime()
         }
         .onChange(of: model.isMuted) { _, _ in
-            // Self-managed mute (overlay button) — keep realtime in sync too.
-            syncRealtime()
+            // Self-managed mute (overlay button) — keep realtime in sync too. (Not in real-time
+            // A/V mode: there syncRealtime SETS model mute, and reacting here would loop.)
+            if !realtimeAudio { syncRealtime() }
         }
         .onChange(of: realtime.state) { _, newState in
             if newState == .live { completeHandoff() }
             onRealtimeChange?(newState == .live)
+            // WebRTC went live (audio may now carry) or dropped (HLS takes audio back).
+            syncHLSMuteForRealtimeAudio()
         }
         .onChange(of: mjpegFallback) { _, fellBack in
             if fellBack { realtime.stop() }

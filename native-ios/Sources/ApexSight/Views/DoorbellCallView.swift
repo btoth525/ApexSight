@@ -40,7 +40,8 @@ struct DoorbellCallView: View {
                     onRealtimeChange: { _ in },
                     externalControls: true,
                     muted: !answered,
-                    allowMJPEGFallback: false   // stay on full-res HLS; never flash low-res mid-call
+                    allowMJPEGFallback: false,  // stay on full-res HLS; never flash low-res mid-call
+                    realtimeAudio: true         // sub-second WebRTC picture + hearing on answer
                 )
                 .ignoresSafeArea()
             } else {
@@ -151,12 +152,14 @@ struct DoorbellCallView: View {
     }
 
     /// Stage 1 → 2: answering the ring drops you into the live view, unmuted so you hear the
-    /// visitor. You're watching + listening; the soundboard lets you speak back. Probe talkback
-    /// availability once here (never during playback).
+    /// visitor. You're watching + listening; the soundboard lets you speak back. Also answers the
+    /// CallKit call if this ring arrived as one — otherwise the native ringtone keeps playing over
+    /// the live audio.
     private func beginListening() {
         ringTask?.cancel()
         answered = true
         Haptics.success()
+        DoorbellCallManager.shared.answerCurrentCall()
         Task { await soundboard.refresh() }
     }
 

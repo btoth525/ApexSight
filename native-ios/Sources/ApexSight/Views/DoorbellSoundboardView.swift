@@ -15,6 +15,18 @@ struct DoorbellSoundboardStrip: View {
 
     var body: some View {
         VStack(spacing: GlassTheme.Space.s) {
+            // Relay/talkback failures surface right in the call — a tap that made no sound at the
+            // door must never be silent in the UI.
+            if let status = soundboard.status {
+                Text(status)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, GlassTheme.Space.m)
+                    .padding(.vertical, GlassTheme.Space.s)
+                    .background(GlassTheme.red.opacity(0.8), in: Capsule())
+                    .transition(.opacity)
+            }
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: GlassTheme.Space.s) {
                     chip(icon: "text.bubble.fill", label: "Say…") { showSay = true }
@@ -36,9 +48,12 @@ struct DoorbellSoundboardStrip: View {
                 .padding(.bottom, GlassTheme.Space.xs)
         }
         .opacity(soundboard.busy ? 0.7 : 1)
+        .animation(.easeInOut(duration: 0.2), value: soundboard.status)
         .sheet(isPresented: $showSay) {
             DoorbellSayView(soundboard: soundboard)
         }
+        // Call ended (remotely or locally) mid-hold: never leave a hot mic or a hijacked session.
+        .onDisappear { recorder.stop() }
     }
 
     private var talkButton: some View {
@@ -57,25 +72,23 @@ struct DoorbellSoundboardStrip: View {
                 .foregroundStyle(.white.opacity(0.85))
         }
         .contentShape(Circle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !recorder.isRecording {
-                        Haptics.tap()
-                        recorder.start()
-                        talkPulse = true
-                    }
+        // `pressing:` (unlike a DragGesture) is ALSO called with false when the system cancels the
+        // gesture (scroll steal, view teardown) — so the mic can never be left hot on a cancel.
+        .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 60) {} onPressingChanged: { pressing in
+            if pressing {
+                Haptics.tap()
+                recorder.start()
+                talkPulse = true
+            } else {
+                talkPulse = false
+                guard let clip = recorder.stopAndData() else { return }
+                Haptics.success()
+                Task {
+                    await soundboard.sendData(clip.data, filename: "talk.m4a")
+                    try? FileManager.default.removeItem(at: clip.url)
                 }
-                .onEnded { _ in
-                    talkPulse = false
-                    guard let clip = recorder.stopAndData() else { return }
-                    Haptics.success()
-                    Task {
-                        await soundboard.sendData(clip.data, filename: "talk.m4a")
-                        try? FileManager.default.removeItem(at: clip.url)
-                    }
-                }
-        )
+            }
+        }
         .task { DoorbellVoiceRecorder.requestPermission() }
     }
 
@@ -291,6 +304,9 @@ struct DoorbellSoundboardView: View {
                 defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
                 if let data = try? Data(contentsOf: url) {
                     await soundboard.sendData(data, filename: url.lastPathComponent, saveAs: name)
+                } else {
+                    // iCloud Drive file not downloaded locally, or unreadable — say so.
+                    soundboard.status = "Couldn't read that file — if it's in iCloud, download it in Files first."
                 }
             }
         }
@@ -311,19 +327,24 @@ private struct RecordRow: View {
             Spacer()
         }
         .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in if !recorder.isRecording { Haptics.tap(); recorder.start() } }
-                .onEnded { _ in
-                    guard let clip = recorder.stopAndData() else { return }
-                    Haptics.success()
-                    Task {
-                        let stamp = Int(Date().timeIntervalSince1970) % 100000
-                        await soundboard.sendData(clip.data, filename: "rec.m4a", saveAs: "Clip \(stamp)")
-                        try? FileManager.default.removeItem(at: clip.url)
-                    }
+        // `pressing:` gets false even when the List's scroll pan CANCELS the gesture — a plain
+        // DragGesture's onEnded doesn't fire on cancel, which left the mic hot (and the eventual
+        // release would have played the whole ambient recording at the front door).
+        .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 40) {} onPressingChanged: { pressing in
+            if pressing {
+                Haptics.tap()
+                recorder.start()
+            } else {
+                guard let clip = recorder.stopAndData() else { return }
+                Haptics.success()
+                Task {
+                    let stamp = Int(Date().timeIntervalSince1970) % 100000
+                    await soundboard.sendData(clip.data, filename: "rec.m4a", saveAs: "Clip \(stamp)")
+                    try? FileManager.default.removeItem(at: clip.url)
                 }
-        )
+            }
+        }
+        .onDisappear { recorder.stop() }
         .task { DoorbellVoiceRecorder.requestPermission() }
     }
 }

@@ -6,15 +6,21 @@ import WebRTC
 /// uses, receiving the camera's VIDEO instead of sending mic audio. Tries fast and fails
 /// quietly: the HLS player keeps running underneath, so a camera that can't do WebRTC (HEVC
 /// main stream, remote with no media path through the tunnel) just stays on HLS with zero
-/// user-visible cost. Video-only by design — unmuting switches the viewer back to HLS for
+/// user-visible cost. Video-only by default — unmuting switches the viewer back to HLS for
 /// audio, which keeps WebRTC's audio-session machinery entirely out of the picture (and away
-/// from the talk feature's).
+/// from the talk feature's). The DOORBELL CALL opts into `withAudio` so hearing the visitor is
+/// sub-second too (the stream must expose an OPUS audio track; without one, video still works
+/// and audio quietly stays on HLS).
 @MainActor
 final class RealtimeVideoController: NSObject, ObservableObject {
     enum State: Equatable { case idle, connecting, live, failed }
 
     @Published private(set) var state: State = .idle
     @Published private(set) var videoTrack: RTCVideoTrack?
+    /// Non-nil when `withAudio` was requested AND the answer carried a live audio track — the
+    /// signal that real-time hearing is available (host then mutes its HLS layer to avoid the
+    /// same audio arriving twice, seconds apart).
+    @Published private(set) var audioTrack: RTCAudioTrack?
 
     // One factory per process (shared pattern with TwoWayTalkController).
     private static let factory: RTCPeerConnectionFactory = {
@@ -59,14 +65,16 @@ final class RealtimeVideoController: NSObject, ObservableObject {
 
     /// Try `sources` in order (e.g. `["Backyard_Wide", "Backyard_Wide_sub"]`) until one renders a
     /// frame — so an HEVC MAIN stream (iOS can't WebRTC-decode) automatically falls to the H264
-    /// SUB stream and still gets sub-second live.
-    func start(sources: [String], client: FrigateClient) {
-        Self.rtLog("start requested: \(sources) (state=\(state))")
+    /// SUB stream and still gets sub-second live. `withAudio` also negotiates a recvonly audio
+    /// track (doorbell call) — starts muted; the host enables it via `setAudioEnabled`.
+    func start(sources: [String], client: FrigateClient, withAudio: Bool = false) {
+        Self.rtLog("start requested: \(sources) (state=\(state), audio=\(withAudio))")
         guard state == .idle || state == .failed else { return }
         let key = sources.first ?? ""
         guard failures[key, default: 0] < 2 else { Self.rtLog("start refused: failure cap"); return }
         isSuspendedByBackground = false
         primaryKey = key
+        wantAudio = withAudio
         state = .connecting
         startTask = Task { [weak self] in
             await self?.cascade(sources: sources, client: client)
@@ -75,6 +83,23 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     }
 
     private var primaryKey = ""
+    private var wantAudio = false
+    private var audioEnabled = false
+
+    /// Turn real-time hearing on/off (doorbell call answer/mute). Idempotent; a no-op until the
+    /// audio track exists. Enabling routes playback to the loudspeaker — WebRTC's voice pipeline
+    /// otherwise defaults to the tiny earpiece.
+    func setAudioEnabled(_ on: Bool) {
+        audioEnabled = on
+        guard let audioTrack else { return }
+        audioTrack.isEnabled = on
+        if on {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playAndRecord, mode: .videoChat,
+                                     options: [.defaultToSpeaker, .allowBluetoothA2DP])
+            try? session.setActive(true)
+        }
+    }
 
     func stop() {
         startTask?.cancel(); startTask = nil
@@ -133,10 +158,17 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         let initt = RTCRtpTransceiverInit()
         initt.direction = .recvOnly
         let videoTransceiver = pc.addTransceiver(of: .video, init: initt)
+        var audioTransceiver: RTCRtpTransceiver?
+        if wantAudio {
+            let ainit = RTCRtpTransceiverInit()
+            ainit.direction = .recvOnly
+            audioTransceiver = pc.addTransceiver(of: .audio, init: ainit)
+        }
 
         do {
             let offerConstraints = RTCMediaConstraints(
-                mandatoryConstraints: ["OfferToReceiveVideo": "true", "OfferToReceiveAudio": "false"],
+                mandatoryConstraints: ["OfferToReceiveVideo": "true",
+                                       "OfferToReceiveAudio": wantAudio ? "true" : "false"],
                 optionalConstraints: nil
             )
             let offer = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<RTCSessionDescription, Error>) in
@@ -169,6 +201,18 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         } else {
             Self.rtLog("no video track on transceiver receiver (waiting on delegate)")
         }
+        // Audio (doorbell call): grab the received track, muted until the host answers. A stream
+        // with no OPUS audio simply yields no track — video still goes live, hearing stays on HLS.
+        if wantAudio {
+            if let track = audioTransceiver?.receiver.track as? RTCAudioTrack {
+                Self.rtLog("audio track attached (enabled=\(audioEnabled))")
+                track.isEnabled = audioEnabled
+                audioTrack = track
+                if audioEnabled { setAudioEnabled(true) }   // re-apply the speaker route
+            } else {
+                Self.rtLog("no audio track in answer (stream has no OPUS?) — HLS carries audio")
+            }
+        }
 
         // Await the first RENDERED frame or a 4s timeout — an HEVC track connects but never
         // paints, which this catches.
@@ -194,6 +238,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         // Don't strand a suspended attempt — resolve it false before tearing the pc down.
         if let cont = firstFrameContinuation { firstFrameContinuation = nil; cont.resume(returning: false) }
         videoTrack = nil
+        audioTrack = nil
         pc?.delegate = nil
         pc?.close()
         pc = nil

@@ -86,11 +86,21 @@ struct MainTabView: View {
         }
         // Answered on the native CallKit screen → open the live doorbell view already connected.
         .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellAnswered)) { _ in
+            _ = DoorbellCallManager.shared.consumePendingAnswer()   // observed live — clear the replay flag
             doorbellAutoAnswer = true
             showDoorbellCall = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellEnded)) { _ in
             showDoorbellCall = false
+        }
+        .onAppear {
+            // Cold launch from a Lock Screen answer: the CXAnswerCallAction fired before this view
+            // existed (NotificationCenter posts aren't buffered) — replay it now so answering from
+            // a terminated app still lands in the live doorbell view, not the camera wall.
+            if DoorbellCallManager.shared.consumePendingAnswer() {
+                doorbellAutoAnswer = true
+                showDoorbellCall = true
+            }
         }
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)

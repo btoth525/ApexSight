@@ -83,7 +83,17 @@ private final class SpeechWriter: @unchecked Sendable {
     private func handle(_ buffer: AVAudioBuffer) {
         guard let pcm = buffer as? AVAudioPCMBuffer else { return }
         if pcm.frameLength == 0 {
-            if wroteFrames { finish(url) }   // trailing empty buffer = done
+            if wroteFrames {
+                finish(url)   // trailing empty buffer = done
+            } else {
+                // Empty with nothing written: either the LEADING empty buffer (real audio follows)
+                // or a failed synthesis that will never produce frames. Give it a short grace
+                // window instead of stalling out the full 15s timeout.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                    guard let self, !self.wroteFrames else { return }
+                    self.finish(nil)
+                }
+            }
             return
         }
         if file == nil {
