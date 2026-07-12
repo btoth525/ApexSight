@@ -126,6 +126,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // Synchronous, main-actor witness for a @MainActor protocol requirement — UIKit
         // delivers on the main actor, so the non-Sendable userInfo never crosses an
         // isolation boundary (the async variant warns under Swift 6 strict concurrency).
+        // House-mode wake (fast path): the relay silent-pushes every phone when the house mode
+        // changes so the Lock Screen widget + Control Center follow within seconds even with the
+        // app closed. Just refresh the mode mirror + repaint surfaces — no review sweep needed.
+        if userInfo["house_mode"] != nil {
+            Task {
+                await SharedHouseModeFetch.refresh()
+                completionHandler(.newData)
+            }
+            return
+        }
         Task {
             await BackgroundRefreshManager.performRefresh()
             completionHandler(.newData)

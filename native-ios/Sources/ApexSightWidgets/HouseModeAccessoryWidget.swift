@@ -21,9 +21,17 @@ struct HouseModeProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<HouseModeEntry>) -> Void) {
-        let entry = HouseModeEntry(date: Date(), mode: SharedHouseMode.mode, armedBy: SharedHouseMode.armedBy)
-        // A safety refresh; the app also force-reloads this the instant the mode actually changes.
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60))))
+        // Verify against the relay on every timeline build — the app-group mirror is only written
+        // while the APP runs, so without this a mode armed from HA/the keypad while the app was
+        // closed left the widget stale until the next app open. Best-effort with a short timeout;
+        // the cached mirror stands on failure. (The relay also silent-pushes every phone on a mode
+        // change, which triggers this reload within seconds — this fetch is what makes it correct.)
+        Task {
+            let fresh = await SharedHouseModeFetch.refresh(reloadingSurfaces: false)
+            let mode = fresh.isEmpty ? SharedHouseMode.mode : fresh
+            let entry = HouseModeEntry(date: Date(), mode: mode, armedBy: SharedHouseMode.armedBy)
+            completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60))))
+        }
     }
 }
 
