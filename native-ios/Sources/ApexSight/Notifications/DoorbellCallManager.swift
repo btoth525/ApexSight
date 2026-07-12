@@ -46,6 +46,9 @@ final class DoorbellCallManager: NSObject {
         config.maximumCallGroups = 1
         config.maximumCallsPerCallGroup = 1
         config.supportedHandleTypes = [.generic]
+        // Doorbell rings are not phone calls — keep them out of the Phone app's Recents list
+        // (what Ring/Nest do; otherwise every visitor press clutters call history).
+        config.includesCallsInRecents = false
         // Ringtone-style incoming call; the ApexSight icon shows on the CallKit screen.
         if let icon = UIImage(named: "AppIcon")?.pngData() { config.iconTemplateImageData = icon }
         provider = CXProvider(configuration: config)
