@@ -107,13 +107,20 @@ final class DoorbellCallManager: NSObject {
 
     /// End an unanswered ring after 45s so a missed call can never wedge `currentCallID` (which
     /// would drop every future ring). Cancelled on answer/end; never touches an answered call.
+    /// The check+end hops to the MAIN actor: every PushKit/CXProvider callback in this class runs
+    /// on the main queue (PKPushRegistry(queue: .main), setDelegate(queue: nil)), so state reads
+    /// off-main would race an answer landing at the ~45s mark — the timeout could tear down a
+    /// just-answered live call as "unanswered".
     private func scheduleRingTimeout(for id: UUID) {
         ringTimeoutTask?.cancel()
         ringTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 45_000_000_000)
-            guard !Task.isCancelled, let self, self.currentCallID == id, !self.callAnswered else { return }
-            self.provider.reportCall(with: id, endedAt: nil, reason: .unanswered)
-            self.currentCallID = nil
+            guard !Task.isCancelled, let self else { return }
+            await MainActor.run {
+                guard self.currentCallID == id, !self.callAnswered else { return }
+                self.provider.reportCall(with: id, endedAt: nil, reason: .unanswered)
+                self.currentCallID = nil
+            }
         }
     }
 
@@ -176,6 +183,9 @@ extension DoorbellCallManager: CXProviderDelegate {
         currentCallID = nil
         callAnswered = false
         ringTimeoutTask?.cancel()
+        // Clear the cold-launch answer flag too — a stale one would make MainTabView replay a
+        // phantom "answered" into a full-screen call UI for a call that no longer exists.
+        pendingAnswer = false
         NotificationCenter.default.post(name: .apexDoorbellEnded, object: nil)
     }
 

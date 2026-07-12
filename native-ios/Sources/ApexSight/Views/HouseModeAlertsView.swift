@@ -16,6 +16,10 @@ struct HouseModeAlertsView: View {
     @State private var seeded = false
     @State private var syncState: SyncState = .idle
     @State private var showResetConfirm = false
+    /// Save serialization: rapid toggles coalesce into ONE debounced save of the LATEST state, and
+    /// a superseded save never posts — so an older matrix can never land after (and overwrite) a
+    /// newer one on the relay, and the sync badge always reflects the newest save's outcome.
+    @State private var saveGeneration = 0
 
     private enum SyncState: Equatable { case idle, saving, synced, failed }
 
@@ -201,11 +205,13 @@ struct HouseModeAlertsView: View {
 
     // MARK: - Data plumbing
 
-    /// Every camera the app knows (live Frigate list), falling back to any camera named in the
-    /// relay map so the editor still renders before the camera list loads.
+    /// Every camera the app knows (live Frigate list), falling back to the relay's roster and then
+    /// to cameras named in the map — so the editor renders the FULL matrix (including never-muted
+    /// cameras like the doorbell, which appear in no mute list) even before Frigate loads.
     private var roster: [String] {
         let live = appState.cameras.map(\.name)
         if !live.isEmpty { return live }
+        if !appState.houseModeCameraRoster.isEmpty { return appState.houseModeCameraRoster }
         var seen: [String] = []
         for (_, cams) in appState.houseModeMap {
             for c in cams where !seen.contains(c) { seen.append(c) }
@@ -243,30 +249,47 @@ struct HouseModeAlertsView: View {
                     list.append(camera)
                 }
                 mutes[mode] = list
-                Task { await save() }
+                scheduleSave()
             }
         )
     }
 
-    private func save() async {
+    /// Debounced, latest-wins save. Each toggle bumps the generation; only the newest scheduled
+    /// save actually posts (after a short quiet period), capturing `mutes` at post time — so a
+    /// burst of toggles becomes one POST of the final state, never an out-of-order overwrite.
+    private func scheduleSave() {
+        saveGeneration += 1
+        let gen = saveGeneration
         syncState = .saving
-        do {
-            try await appState.saveHouseModeMap(mutes)
-            syncState = .synced
-        } catch {
-            syncState = .failed
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard gen == saveGeneration else { return }   // superseded by a newer toggle
+            await save(generation: gen)
         }
     }
 
+    @MainActor
+    private func save(generation: Int) async {
+        do {
+            try await appState.saveHouseModeMap(mutes)
+            if generation == saveGeneration { syncState = .synced }
+        } catch {
+            if generation == saveGeneration { syncState = .failed }
+        }
+    }
+
+    @MainActor
     private func reset() async {
+        saveGeneration += 1           // invalidate any in-flight toggle save
+        let gen = saveGeneration
         syncState = .saving
         do {
             try await appState.saveHouseModeMap([:], reset: true)
             seeded = false
             seedIfNeeded()
-            syncState = .synced
+            if gen == saveGeneration { syncState = .synced }
         } catch {
-            syncState = .failed
+            if gen == saveGeneration { syncState = .failed }
         }
     }
 

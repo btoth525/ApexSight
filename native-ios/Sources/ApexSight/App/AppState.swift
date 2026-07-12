@@ -352,6 +352,10 @@ final class AppState: ObservableObject {
     @Published var houseModeMap: [String: [String]] = [:]
     /// True when the household has customized the matrix (vs. built-in defaults).
     @Published var houseModeMapIsCustom = false
+    /// Camera roster the relay knows for the matrix (last synced with a save, or the relay's
+    /// fallback) — lets the House Mode Alerts editor list EVERY camera (including never-muted
+    /// ones) even before the live Frigate camera list has loaded.
+    @Published var houseModeCameraRoster: [String] = []
     /// Household notification gate, surfaced so the app can SHOW that alerts are silenced instead
     /// of dropping them invisibly (the "why am I not getting notifications" fix). Epoch; 0 = off.
     @Published var householdSnoozedUntil: Double = 0
@@ -395,6 +399,8 @@ final class AppState: ObservableObject {
         if map != houseModeMap { houseModeMap = map }
         let custom = status.map_custom ?? false
         if custom != houseModeMapIsCustom { houseModeMapIsCustom = custom }
+        let roster = status.cameras ?? []
+        if roster != houseModeCameraRoster { houseModeCameraRoster = roster }
         // Household gate visibility: only meaningful when the relay recognized our pairing code
         // (fields absent otherwise). An active snooze/disarm surfaces as a banner, never silently.
         let snoozed = status.snoozed_until ?? 0
@@ -415,9 +421,12 @@ final class AppState: ObservableObject {
         let relayURL = DeviceTokenStore.relayURL
         let pairing = DeviceTokenStore.ensurePairingCode()
         guard !relayURL.isEmpty, !pairing.isEmpty else { throw RelayClient.RelayError.invalidURL }
+        // Prefer the live Frigate list; fall back to the relay's stored roster so a save made
+        // before cameras load never posts an empty roster (which would shrink the editor's rows).
+        let roster = cameras.isEmpty ? houseModeCameraRoster : cameras.map(\.name)
         try await RelayClient.setModeMap(
             relayURL: relayURL, pairingCode: pairing, mutes: mutes,
-            cameras: cameras.map(\.name), by: DeviceTokenStore.deviceName, reset: reset
+            cameras: roster, by: DeviceTokenStore.deviceName, reset: reset
         )
         await refreshHouseMode()
     }
