@@ -36,6 +36,19 @@ struct HouseModeAlertsView: View {
               blurb: "Nobody home — everything alerts"),
     ]
 
+    /// The relay's built-in per-mode mute defaults — MUST mirror the add-on's gate.MODE_MUTES.
+    /// Used to seed the editor when the relay doesn't return a map yet (add-on older than 1.10.5),
+    /// so the toggles show the TRUE behavior instead of a misleading everything-on.
+    private static let defaultMutes: [String: [String]] = [
+        "home":  ["Backyard_Wide", "Garage", "Living_Room_Wide", "Ryleighs_Rm",
+                  "Side_Gate", "movie_room", "zachs_room"],
+        "night": ["Living_Room_Wide", "Ryleighs_Rm", "movie_room", "zachs_room"],
+        "away":  [],
+    ]
+
+    /// True when the relay hasn't reported a matrix — the add-on needs updating for edits to stick.
+    private var relaySupportsMap: Bool { !appState.houseModeMap.isEmpty }
+
     var body: some View {
         ScrollView {
             VStack(spacing: GlassTheme.Space.l) {
@@ -70,20 +83,35 @@ struct HouseModeAlertsView: View {
     // MARK: - Cards
 
     private var headerCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
-                HStack(spacing: GlassTheme.Space.s) {
-                    Image(systemName: "person.3.fill")
+        VStack(spacing: GlassTheme.Space.m) {
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                    HStack(spacing: GlassTheme.Space.s) {
+                        Image(systemName: "person.3.fill")
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.accent)
+                        Text("Applies to everyone in the household")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GlassTheme.primary)
+                    }
+                    Text("A camera with its switch ON sends alerts to every phone while the house is in that mode. Changes sync to all phones, the relay, and Home Assistant / Frigate.")
                         .font(.footnote)
-                        .foregroundStyle(GlassTheme.accent)
-                    Text("Applies to everyone in the household")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GlassTheme.primary)
+                        .foregroundStyle(GlassTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("A camera with its switch ON sends alerts to every phone while the house is in that mode. Changes sync to all phones, the relay, and Home Assistant / Frigate.")
-                    .font(.footnote)
-                    .foregroundStyle(GlassTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !relaySupportsMap {
+                HStack(spacing: GlassTheme.Space.s) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .foregroundStyle(GlassTheme.orange)
+                    Text("Showing the current behavior. To EDIT it, update the ApexSight Push add-on to 1.10.5 in Home Assistant.")
+                        .font(.caption)
+                        .foregroundStyle(GlassTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(GlassTheme.Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(GlassTheme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip))
             }
         }
     }
@@ -122,6 +150,9 @@ struct HouseModeAlertsView: View {
                             .foregroundStyle(GlassTheme.primary)
                     }
                     .tint(spec.tint)
+                    // Read-only until the relay can store edits (add-on 1.10.5+) — a toggle that
+                    // silently reverts is worse than one that's visibly locked.
+                    .disabled(!relaySupportsMap)
                 }
             }
         }
@@ -188,8 +219,16 @@ struct HouseModeAlertsView: View {
     }
 
     private func seedIfNeeded() {
-        guard !seeded, !appState.houseModeMap.isEmpty else { return }
-        mutes = appState.houseModeMap
+        guard !seeded else {
+            // Upgrade the seed in place if the relay map arrives after we fell back to defaults.
+            if relaySupportsMap, mutes == Self.defaultMutes, appState.houseModeMap != mutes {
+                mutes = appState.houseModeMap
+            }
+            return
+        }
+        // Relay map when available; otherwise the built-in defaults — the toggles must always show
+        // the TRUE per-mode behavior, never a misleading everything-on.
+        mutes = relaySupportsMap ? appState.houseModeMap : Self.defaultMutes
         seeded = true
     }
 

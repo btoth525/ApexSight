@@ -224,7 +224,7 @@ struct NotificationSettingsView: View {
     private var camerasCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                SectionHeader("Cameras")
+                SectionHeader("Cameras", subtitle: "This iPhone only — mute a camera just for you. Household rules live in House Mode Alerts above.")
                 if appState.cameras.isEmpty {
                     placeholderText("No cameras loaded.")
                 }
@@ -250,7 +250,7 @@ struct NotificationSettingsView: View {
     private var objectsCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                SectionHeader("Object Types")
+                SectionHeader("Object Types", subtitle: "This iPhone only")
                 if appState.labels.isEmpty {
                     placeholderText("No labels loaded.")
                 }
@@ -274,7 +274,7 @@ struct NotificationSettingsView: View {
         let allZones = Array(Set(appState.cameras.flatMap(\.zones))).sorted()
         return GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                SectionHeader("Zones")
+                SectionHeader("Zones", subtitle: "This iPhone only")
                 if allZones.isEmpty {
                     placeholderText("No zones configured.")
                 }
@@ -297,7 +297,7 @@ struct NotificationSettingsView: View {
     private var quietHoursCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                SectionHeader("Quiet Hours")
+                SectionHeader("Quiet Hours", subtitle: "This iPhone only")
                 toggleRow(
                     title: "Enable quiet hours",
                     subtitle: "Suppress notifications during set hours",
