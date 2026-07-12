@@ -38,6 +38,10 @@ struct LiveStreamView: View {
     @State private var aiResult: String?
     @State private var isAnalyzingAI = false
     @State private var showAIResult = false
+    // Doorbell "Responses" — quick spoken replies at the door (each also flips the matching
+    // Doorpanel screen via the relay). Usable any time from the full-screen viewer, no ring needed.
+    @StateObject private var soundboard = DoorbellSoundboard()
+    @State private var showResponses = false
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
@@ -45,6 +49,7 @@ struct LiveStreamView: View {
     }
 
     private var isBirdseye: Bool { camera.name == "birdseye" }
+    private var isDoorbell: Bool { camera.name == "doorbell" }
 
     var body: some View {
         ZStack {
@@ -103,6 +108,10 @@ struct LiveStreamView: View {
                 .presentationBackground(.ultraThinMaterial)
         }
         .onChange(of: showAIResult) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
+        .sheet(isPresented: $showResponses) {
+            DoorbellResponsesSheet(soundboard: soundboard)
+        }
+        .onChange(of: showResponses) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
     }
 
     /// On-device "Ask AI": describe who/what is on this live camera using the current snapshot,
@@ -419,6 +428,13 @@ struct LiveStreamView: View {
         }))
         if appState.twoWayCameras.contains(camera.name) {
             items.append(AnyView(talkButton))
+        }
+        // Doorbell only: a scrollable menu of spoken responses (No Soliciting, Be Right There,
+        // Leave the Package, …) — each speaks at the door AND flips the matching Doorpanel screen.
+        if isDoorbell {
+            items.append(AnyView(actionButton(icon: "megaphone.fill", label: "Responses") {
+                showResponses = true
+            }))
         }
 
         // Player controls — same uniform buttons, no separate floating cluster.

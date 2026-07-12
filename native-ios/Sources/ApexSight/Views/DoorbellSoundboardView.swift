@@ -393,3 +393,93 @@ private struct FlowChips: View {
         return rows
     }
 }
+
+// MARK: - Responses menu (opened from the full-screen doorbell viewer)
+
+/// A scrollable menu of one-tap doorbell responses. Tap one to speak it at the door — it also
+/// flips the matching Doorpanel screen (the relay presses the panel button when the clip plays).
+/// Usable any time from the live viewer, no active call required.
+struct DoorbellResponsesSheet: View {
+    @ObservedObject var soundboard: DoorbellSoundboard
+    @Environment(\.dismiss) private var dismiss
+
+    // Known response clips, grouped for a tidy menu; anything else the user saved lands in "More".
+    private static let friendly = ["be-right-there", "leave-it-at-the-door-please", "thanks-delivery", "cant-come-now"]
+    private static let deterrents = ["recorded-warning", "not-interested", "you-were-warned", "nice-try"]
+
+    private func clips(_ slugs: [String]) -> [RelayClient.DoorbellClip] {
+        slugs.compactMap { slug in soundboard.clips.first { $0.slug == slug } }
+    }
+    private var otherClips: [RelayClient.DoorbellClip] {
+        let known = Set(Self.friendly + Self.deterrents)
+        return soundboard.clips.filter { !known.contains($0.slug) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
+                    if !soundboard.checked && soundboard.clips.isEmpty {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                            .padding(.vertical, GlassTheme.Space.xl)
+                    } else if soundboard.clips.isEmpty {
+                        Text("No saved responses yet. Add some in Settings → Doorbell Talkback.")
+                            .font(.footnote).foregroundStyle(GlassTheme.secondary)
+                            .padding(.top, GlassTheme.Space.l)
+                    } else {
+                        section("Say hi 👋", clips(Self.friendly), tint: GlassTheme.green)
+                        section("Send them off ✋", clips(Self.deterrents), tint: GlassTheme.red)
+                        section("More", otherClips, tint: GlassTheme.accent)
+                    }
+                    if let status = soundboard.status {
+                        Text(status).font(.footnote).foregroundStyle(GlassTheme.red)
+                    }
+                }
+                .padding()
+            }
+            .background(GlassTheme.background.ignoresSafeArea())
+            .navigationTitle("Speak at the Door")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(.ultraThinMaterial)
+        .task { await soundboard.refresh() }
+    }
+
+    @ViewBuilder private func section(_ title: String, _ clips: [RelayClient.DoorbellClip], tint: Color) -> some View {
+        if !clips.isEmpty {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                SectionHeader(title)
+                ForEach(clips) { clip in
+                    Button {
+                        Haptics.tap()
+                        Task { await soundboard.playClip(clip.slug) }
+                    } label: {
+                        HStack(spacing: GlassTheme.Space.m) {
+                            Image(systemName: "megaphone.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(tint)
+                                .frame(width: 28)
+                            Text(clip.name)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(GlassTheme.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: GlassTheme.Space.s)
+                            Image(systemName: "play.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(tint)
+                        }
+                        .padding(.horizontal, GlassTheme.Space.m)
+                        .padding(.vertical, GlassTheme.Space.m)
+                        .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(soundboard.busy)
+                }
+            }
+        }
+    }
+}
