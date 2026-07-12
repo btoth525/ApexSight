@@ -20,6 +20,33 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   `utils/`, and the Expo/Metro/NativeWind tooling). The native SwiftUI app fully
   supersedes it; the repository is now Swift + the Python push companions only.
 
+## Builds 183–187 (2026-07-12) — house-mode notifications, CallKit revival, widgets
+### Added
+- **House Mode Alerts editor** (Settings → Notifications): per-mode (Home/Night/Away) ×
+  per-camera alert matrix, household-wide via the relay's new `/v1/mode-map`; current-mode
+  "NOW" chip, reset-to-defaults, live sync badge. (Add-on 1.10.5+)
+- **Household snooze/disarm banner** on the camera wall + Notifications settings — a snooze
+  set from Siri/a widget/a partner's phone used to silence every push invisibly; now it's
+  loud and one tap resumes alerts for everyone.
+- **Widgets follow house mode with the app closed** (build 187): the relay silent-pushes
+  every phone on a mode change and the Lock Screen widget verifies against the relay on
+  every timeline build. (Add-on 1.10.8)
+- Per-device notification sections labeled "This iPhone only" to distinguish them from the
+  household matrix.
+### Fixed
+- **Doorbell CallKit rings dying permanently** (build 184): a duplicate-press guard swallowed
+  VoIP pushes without reporting a call — iOS blacklists the app from VoIP delivery for that
+  (delete + reinstall required once). Every push is now always reported; unanswered rings
+  time out after 45s; answer-vs-timeout race fixed; doorbell calls no longer clutter Phone
+  Recents (build 185).
+- House Mode editor no longer shows everything-ON when the relay predates the matrix —
+  seeds the true built-in defaults and locks editing with an update notice.
+- Editor saves serialized (debounced latest-wins) so rapid toggling can't land out of order;
+  camera roster always includes never-muted cameras.
+
+(Builds 164–182 shipped without changelog entries — see git log for the doorbell call/talkback,
+house-mode arm/disarm, per-phone HA entities, and streaming work.)
+
 ## Build 163
 ### Added
 - **All notification settings now apply when the app is closed.** Each device syncs its own
