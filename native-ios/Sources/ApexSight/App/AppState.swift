@@ -98,6 +98,13 @@ final class AppState: ObservableObject {
     /// authoritative. Before then, callers assume a sub MAY exist (old behavior) rather than
     /// forcing every camera onto its heavy main stream during the initial load.
     @Published var subStreamsKnown = false
+    /// Whether go2rtc HLS live streaming exists on this Frigate. 0.18 removed the nginx route
+    /// serving it (live view is WebRTC-only there); 0.17 has it. Probed once per session — until
+    /// (and unless) the probe says otherwise, the proven HLS-first pipeline is used. When false,
+    /// LiveHLSPlayerView promotes the WebRTC layer from "overlay" to the PRIMARY live renderer.
+    @Published var liveHLSAvailable = true
+    /// One probe per session (re-armed on sign-out/server switch).
+    private var liveHLSProbed = false
     /// Whether the user is signed into their ApexSight cloud account.
     @Published var accountSignedIn: Bool = false
 
@@ -241,6 +248,7 @@ final class AppState: ObservableObject {
                 self?.syncRelayGateIfChanged()
                 self?.syncRecapIfChanged()
                 self?.syncDevicePrefs()
+                self?.probeLiveHLSIfNeeded()
                 // Fire-and-forget (like the syncs above) so a slow/black-holed relay's house-mode
                 // fetch (8s timeout) can't stretch the 15s alert-poll cadence when Frigate is fine.
                 Task { [weak self] in await self?.refreshHouseMode() }
@@ -969,6 +977,22 @@ final class AppState: ObservableObject {
         if serverGeneration == gen { refreshTask = nil }
     }
 
+    /// One-shot per session: detect whether go2rtc HLS live exists on this Frigate (0.18 removed
+    /// it — live view is WebRTC-primary there). Runs from the 15s poll (which always runs) rather
+    /// than the full refresh (which is skipped when a persisted camera wall exists at launch).
+    func probeLiveHLSIfNeeded() {
+        guard !liveHLSProbed, let client, let cam = cameras.first?.name else { return }
+        liveHLSProbed = true
+        Task { [weak self] in
+            let available = await client.probeLiveHLS(camera: cam)
+            FputsLog.log("[live] HLS probe (\(cam)) → \(available ? "available (0.17 pipeline)" : "ABSENT (0.18 → WebRTC-primary)")")
+            await MainActor.run {
+                guard let self else { return }
+                if available != self.liveHLSAvailable { self.liveHLSAvailable = available }
+            }
+        }
+    }
+
     private func refresh(retryOnAuthFailure: Bool) async {
         guard let client else { return }
         isLoading = true
@@ -1028,6 +1052,7 @@ final class AppState: ObservableObject {
             subStreamCameras = Set(streams.keys.filter { $0.hasSuffix("_sub") }
                 .map { String($0.dropLast("_sub".count)) })
             subStreamsKnown = true
+            probeLiveHLSIfNeeded()
             // Fire-and-forget so refresh() (and the launch spinner) doesn't block on an extra
             // image round-trip for the widget snapshot.
             Task { await cacheWidgetSnapshot(from: loadedCameras) }
@@ -1327,5 +1352,16 @@ final class AppState: ObservableObject {
         default:
             break
         }
+    }
+}
+
+
+/// Unbuffered stderr logging (mirrors RealtimeVideoController.rtLog) — `print()` can be swallowed
+/// depending on how the process was launched; stderr always reaches the console/log capture.
+enum FputsLog {
+    static func log(_ message: String) {
+        #if DEBUG
+        fputs(message + "\n", stderr)
+        #endif
     }
 }

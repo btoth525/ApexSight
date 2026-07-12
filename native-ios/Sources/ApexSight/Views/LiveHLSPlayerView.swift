@@ -547,11 +547,17 @@ struct HLSLivePlayerView: View {
         return isPlaying
     }
 
-    /// Realtime (WebRTC) is attempted only for the focused viewer, on normal cameras, while
-    /// muted (unmuting switches to HLS so audio+video stay in sync from one pipeline) — or
-    /// whenever the host opted into real-time A/V (the doorbell call, which has no controls).
+    /// Frigate 0.18 removed go2rtc HLS live — WebRTC is the ONLY live path there. When the
+    /// session probe says HLS is gone, the realtime layer stops being a focused-viewer overlay
+    /// and becomes the PRIMARY renderer for every tile (with MJPEG as the last resort).
+    private var hlsDead: Bool { !appState.liveHLSAvailable }
+
+    /// Realtime (WebRTC) is attempted for the focused viewer, on normal cameras, while muted
+    /// (unmuting switches to HLS so audio+video stay in sync from one pipeline) — or whenever the
+    /// host opted into real-time A/V (the doorbell call), or when HLS doesn't exist on this
+    /// Frigate at all (0.18+), where realtime carries every tile.
     private var realtimeEligible: Bool {
-        (showControls || realtimeAudio) && !mjpegFallback && camera.name != "birdseye"
+        (showControls || realtimeAudio || hlsDead) && !mjpegFallback && camera.name != "birdseye"
     }
 
     private var effectiveMuted: Bool { muted ?? model.isMuted }
@@ -603,9 +609,9 @@ struct HLSLivePlayerView: View {
                     autoPiP: false,
                     onReadyForDisplay: { videoReady = $0 }
                 )
-                // Real-time A/V mode (doorbell call, which runs without controls): the WebRTC
-                // layer renders here too, over the HLS layer, exactly like the focused viewer.
-                if realtimeAudio, let track = realtime.videoTrack {
+                // Real-time A/V mode (doorbell call) and WebRTC-primary mode (Frigate 0.18,
+                // no HLS): the WebRTC layer renders here too, exactly like the focused viewer.
+                if realtimeAudio || hlsDead, let track = realtime.videoTrack {
                     RealtimeVideoView(track: track) { realtime.noteFirstFrame() }
                         .opacity(realtime.state == .live ? 1 : 0)
                         .animation(.easeIn(duration: 0.25), value: realtime.state)
@@ -649,6 +655,18 @@ struct HLSLivePlayerView: View {
         guard gateHeld else { return }
         gateHeld = false
         Task { await StreamGate.shared.release() }
+    }
+
+    /// WebRTC-primary safety net: if realtime hasn't rendered within its own connect budget,
+    /// fall to MJPEG (Frigate serves that itself — independent of go2rtc) so no tile sits on a
+    /// frozen snapshot. Generous window: cold NVENC streams take several seconds to spin up.
+    private func startRealtimeFallbackTimer() {
+        fallbackTask?.cancel()
+        fallbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            guard !Task.isCancelled, realtime.state != .live else { return }
+            fallToMJPEG()
+        }
     }
 
     private func startFallbackTimer() {
@@ -710,6 +728,25 @@ struct HLSLivePlayerView: View {
     private func syncRealtime() {
         RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) mjpeg=\(mjpegFallback) rtAudio=\(realtimeAudio)")
         guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
+        if hlsDead && !realtimeAudio {
+            // WebRTC-primary (Frigate 0.18): realtime carries the picture for every tile — and
+            // the sound for the focused viewer — because there is no HLS to fall back on for
+            // audio. Mute doesn't stop the stream (there's nothing else to show); it just gates
+            // the audio track. Wall tiles prefer the lighter sub stream, exactly like HLS did.
+            if realtime.state == .idle || realtime.state == .failed {
+                let hasSub = !appState.subStreamsKnown || appState.subStreamCameras.contains(camera.name)
+                let sub = "\(camera.name)_sub"
+                let sources: [String]
+                if showControls {
+                    sources = hasSub ? [camera.name, sub] : [camera.name]   // quality first
+                } else {
+                    sources = (preferSub && hasSub) ? [sub, camera.name] : [camera.name]
+                }
+                realtime.start(sources: sources, client: client, withAudio: showControls)
+            }
+            if showControls { realtime.setAudioEnabled(!effectiveMuted) }
+            return
+        }
         if realtimeAudio {
             // Doorbell call: WebRTC carries A/V regardless of mute; mute just gates the audio
             // track (ring = silent, answered = hear the visitor sub-second).
@@ -755,6 +792,12 @@ struct HLSLivePlayerView: View {
     private func retry() {
         mjpegFailed = false
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { mjpegFallback = false }
+        if hlsDead {
+            // WebRTC-primary: re-attempt realtime (mjpegFallback is false again so it's eligible).
+            syncRealtime()
+            startRealtimeFallbackTimer()
+            return
+        }
         configureModel()
         model.start()
         startFallbackTimer()
@@ -866,6 +909,14 @@ struct HLSLivePlayerView: View {
             mjpegFallback = false
             mjpegFailed = false
             configureModel()
+            // WebRTC-primary (no HLS on this Frigate): don't start the HLS model at all — it
+            // would only spin retries against a 404. syncRealtime above already started the
+            // WebRTC layer; arm the safety net so a tile whose realtime can't connect still
+            // lands on MJPEG instead of its snapshot forever.
+            if hlsDead {
+                startRealtimeFallbackTimer()
+                return
+            }
             // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
             startTask = Task { @MainActor in
                 await StreamGate.shared.acquire()
@@ -932,6 +983,23 @@ struct HLSLivePlayerView: View {
             onRealtimeChange?(newState == .live)
             // WebRTC went live (audio may now carry) or dropped (HLS takes audio back).
             syncHLSMuteForRealtimeAudio()
+            // WebRTC-primary: realtime IS the stream — landing cancels the MJPEG safety net;
+            // exhausting its source cascade drops to MJPEG right away (no need to wait it out).
+            if hlsDead {
+                if newState == .live { fallbackTask?.cancel(); fallbackTask = nil; onPlaying?(true) }
+                if newState == .failed { fallToMJPEG() }
+            }
+        }
+        .onChange(of: appState.liveHLSAvailable) { _, available in
+            // The session probe can land AFTER tiles started (first launch): a 0.18 tile that
+            // began the doomed HLS cascade switches to WebRTC-primary the moment we know.
+            guard !available, !mjpegFallback else { return }
+            fallbackTask?.cancel(); fallbackTask = nil
+            startTask?.cancel(); startTask = nil
+            releaseGate()
+            model.stop()
+            syncRealtime()
+            startRealtimeFallbackTimer()
         }
         .onChange(of: mjpegFallback) { _, fellBack in
             if fellBack { realtime.stop() }

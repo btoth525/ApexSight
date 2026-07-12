@@ -217,6 +217,21 @@ struct FrigateClient {
         try await get("api/go2rtc/streams")
     }
 
+    /// Whether go2rtc HLS live streaming exists on this Frigate. 0.18 removed the nginx route
+    /// (`/api/go2rtc/api/...`) that served it — live viewing there is WebRTC-only. A 404 on the
+    /// playlist is the definitive signal; any other outcome (200, auth hiccup, timeout) reports
+    /// available, so 0.17 setups and transient failures keep the proven HLS-first pipeline.
+    func probeLiveHLS(camera: String) async -> Bool {
+        let url = liveHLSURL(camera: camera)
+        _ = seedCookie(for: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        authHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return true }
+        return http.statusCode != 404
+    }
+
     func ptzInfo(camera: String) async throws -> JSONValue {
         try await get("api/\(camera)/ptz/info")
     }
