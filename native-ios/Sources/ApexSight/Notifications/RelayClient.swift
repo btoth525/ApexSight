@@ -115,7 +115,20 @@ enum RelayClient {
         let mode: String
         let mutes: [String]?           // cameras this mode silences — used to filter the app feeds
         let armed_by: ArmedBy?
+        let map: [String: [String]]?   // full per-mode mute matrix (household custom map or defaults)
+        let map_custom: Bool?          // true when the household edited the matrix in-app
+        let cameras: [String]?         // camera roster last synced with the map
+        let snoozed_until: Double?     // household snooze (epoch; present when pairing_code sent)
+        let disarmed: Bool?            // household notifications disarmed (present when pairing_code sent)
         struct ArmedBy: Decodable { let by: String?; let mode: String?; let ts: Double? }
+    }
+
+    private struct ModeMapBody: Encodable {
+        let pairing_code: String
+        let mutes: [String: [String]]  // mode → cameras muted in that mode (household-wide)
+        let cameras: [String]          // full roster so the relay/bridge can flip unmuted cams ON
+        let by: String                 // this phone's name, for the "last edited by" trail
+        let reset: Bool
     }
 
     /// Result of a `/healthz` probe used for the green/red status dot.
@@ -254,10 +267,17 @@ enum RelayClient {
     }
 
     /// Reads the current house mode from the relay so the app (and a partner's app) reflect it.
-    static func getMode(relayURL: String) async -> HouseModeStatus? {
+    /// Passing the household `pairingCode` also returns the household gate (snooze/disarm) so the
+    /// app can SHOW when notifications are silenced instead of dropping them invisibly.
+    static func getMode(relayURL: String, pairingCode: String = "") async -> HouseModeStatus? {
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed + "/v1/mode") else { return nil }
+        var path = "/v1/mode"
+        if !pairingCode.isEmpty,
+           let encoded = pairingCode.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "?pairing_code=\(encoded)"
+        }
+        guard let url = URL(string: trimmed + path) else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         do {
@@ -268,6 +288,16 @@ enum RelayClient {
         } catch {
             return nil
         }
+    }
+
+    /// Save the household's per-mode camera alert matrix (Settings → Notifications → House Mode
+    /// Alerts). Household-wide: every phone on the pairing code follows the same map, and the
+    /// bridge mirrors it into Frigate's per-camera alert switches so HA agrees too.
+    static func setModeMap(relayURL: String, pairingCode: String, mutes: [String: [String]],
+                           cameras: [String], by: String, reset: Bool = false) async throws {
+        try await post(relayURL: relayURL, path: "/v1/mode-map",
+                       body: ModeMapBody(pairing_code: pairingCode, mutes: mutes,
+                                         cameras: cameras, by: by, reset: reset))
     }
 
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {

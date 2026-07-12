@@ -346,6 +346,16 @@ final class AppState: ObservableObject {
     /// Cameras the CURRENT house mode silences (from the relay). Used to filter the Review/Activity
     /// feeds to match the notification rule — Home shows only Front Driveway + Doorbell, etc.
     @Published var houseModeMutedCameras: [String] = []
+    /// The full household per-mode mute matrix (mode → muted cameras) that the House Mode Alerts
+    /// editor shows and edits. From the relay: the household's custom map when one was saved, else
+    /// the built-in defaults. ONE map for every phone on the pairing code.
+    @Published var houseModeMap: [String: [String]] = [:]
+    /// True when the household has customized the matrix (vs. built-in defaults).
+    @Published var houseModeMapIsCustom = false
+    /// Household notification gate, surfaced so the app can SHOW that alerts are silenced instead
+    /// of dropping them invisibly (the "why am I not getting notifications" fix). Epoch; 0 = off.
+    @Published var householdSnoozedUntil: Double = 0
+    @Published var householdDisarmed = false
     /// User escape hatch: when true, the feeds ignore the house-mode filter and show every camera.
     /// @Published (not @AppStorage — that doesn't emit objectWillChange from an ObservableObject, so
     /// the feeds wouldn't re-filter on toggle); persisted by hand so the choice survives relaunch.
@@ -373,18 +383,55 @@ final class AppState: ObservableObject {
     func refreshHouseMode() async {
         let relayURL = DeviceTokenStore.relayURL
         guard !relayURL.isEmpty else { return }
-        guard let status = await RelayClient.getMode(relayURL: relayURL) else { return }
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard let status = await RelayClient.getMode(relayURL: relayURL, pairingCode: pairing) else { return }
         let modeChanged = status.mode != houseMode
         if modeChanged { houseMode = status.mode }
         let by = status.armed_by?.by ?? ""
         if by != houseModeArmedBy { houseModeArmedBy = by }
         let mutes = status.mutes ?? []
         if mutes != houseModeMutedCameras { houseModeMutedCameras = mutes }
+        let map = status.map ?? [:]
+        if map != houseModeMap { houseModeMap = map }
+        let custom = status.map_custom ?? false
+        if custom != houseModeMapIsCustom { houseModeMapIsCustom = custom }
+        // Household gate visibility: only meaningful when the relay recognized our pairing code
+        // (fields absent otherwise). An active snooze/disarm surfaces as a banner, never silently.
+        let snoozed = status.snoozed_until ?? 0
+        if snoozed != householdSnoozedUntil { householdSnoozedUntil = snoozed }
+        let disarmed = status.disarmed ?? false
+        if disarmed != householdDisarmed { householdDisarmed = disarmed }
         // Mirror to the app group so the Lock Screen widgets + Control Center controls can show it,
         // and refresh those surfaces the moment the mode actually changes.
         SharedHouseMode.mode = status.mode
         SharedHouseMode.armedBy = by
         if modeChanged { ApexSurfaceRefresh.reload() }
+    }
+
+    /// Save the household per-mode alert matrix (from the House Mode Alerts editor). Household-wide:
+    /// the relay stores ONE map per pairing code, the bridge mirrors it into Frigate's per-camera
+    /// alert switches, and every phone (and HA) follows. Refreshes local state on success.
+    func saveHouseModeMap(_ mutes: [String: [String]], reset: Bool = false) async throws {
+        let relayURL = DeviceTokenStore.relayURL
+        let pairing = DeviceTokenStore.ensurePairingCode()
+        guard !relayURL.isEmpty, !pairing.isEmpty else { throw RelayClient.RelayError.invalidURL }
+        try await RelayClient.setModeMap(
+            relayURL: relayURL, pairingCode: pairing, mutes: mutes,
+            cameras: cameras.map(\.name), by: DeviceTokenStore.deviceName, reset: reset
+        )
+        await refreshHouseMode()
+    }
+
+    /// Clear the household snooze/disarm gate so notifications resume for EVERYONE — the action
+    /// behind the "notifications snoozed" banner. Clears the local mirrors too so the next
+    /// foreground gate sync doesn't re-impose a stale local snooze.
+    func resumeHouseholdNotifications() async {
+        GlobalSnooze.clear()
+        if ArmStateStore.mode == .disarmed { ArmStateStore.mode = .away }
+        lastSyncedGate = ""             // force the next syncRelayGateIfChanged through
+        await RelayGate.syncCurrent()
+        syncRelayGateIfChanged()
+        await refreshHouseMode()
     }
 
     /// Request an arm/disarm. Arming ("away"/"night") rides the pairing code; disarming ("home")

@@ -32,6 +32,8 @@ struct NotificationSettingsView: View {
                     } else {
                         permissionCard
                         if status.isAuthorized {
+                            householdGateBanner
+                            houseModeAlertsCard
                             camerasCard
                             objectsCard
                             zonesCard
@@ -139,6 +141,82 @@ struct NotificationSettingsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Household gate banner (snooze/disarm visibility)
+
+    /// Loud, tappable banner when the HOUSEHOLD gate is silencing every push — the fix for
+    /// "why am I not getting notifications": a snooze/disarm can be set from Siri, a widget, or a
+    /// partner's phone, and used to be completely invisible. One tap resumes for everyone.
+    @ViewBuilder
+    private var householdGateBanner: some View {
+        if appState.householdDisarmed || appState.householdSnoozedUntil > Date().timeIntervalSince1970 {
+            Button {
+                Haptics.tap()
+                Task { await appState.resumeHouseholdNotifications() }
+            } label: {
+                HStack(spacing: GlassTheme.Space.m) {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(GlassTheme.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(appState.householdDisarmed
+                             ? "All notifications are OFF (disarmed)"
+                             : "All notifications snoozed until \(snoozeTimeText)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("For every phone in the household — tap to resume")
+                            .font(.caption)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(GlassTheme.orange)
+                }
+                .padding(GlassTheme.Space.l)
+                .background(GlassTheme.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card))
+                .overlay(RoundedRectangle(cornerRadius: GlassTheme.Radius.card)
+                    .stroke(GlassTheme.orange.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var snoozeTimeText: String {
+        Date(timeIntervalSince1970: appState.householdSnoozedUntil)
+            .formatted(date: .omitted, time: .shortened)
+    }
+
+    // MARK: - House Mode Alerts entry
+
+    private var houseModeAlertsCard: some View {
+        NavigationLink {
+            HouseModeAlertsView()
+        } label: {
+            GlassCard {
+                HStack(spacing: GlassTheme.Space.m) {
+                    Image(systemName: "house.and.flag.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(GlassTheme.accent)
+                        .frame(width: 38, height: 38)
+                        .background(GlassTheme.accent.opacity(0.14), in: Circle())
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
+                        Text("House Mode Alerts")
+                            .font(.headline)
+                            .foregroundStyle(GlassTheme.primary)
+                        Text("Which cameras alert in Home, Night & Away — for the whole household")
+                            .font(.caption)
+                            .foregroundStyle(GlassTheme.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GlassTheme.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Cameras Card
