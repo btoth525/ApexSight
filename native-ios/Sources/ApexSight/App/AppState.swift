@@ -884,8 +884,14 @@ final class AppState: ObservableObject {
     private func startLocalNetworkMonitor() {
         guard !localMonitorStarted else { return }
         localMonitorStarted = true
-        pathMonitor.pathUpdateHandler = { [weak self] _ in
-            Task { @MainActor in self?.scheduleLocalProbe(debounce: 0.7) }
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            // Metered? (cellular, personal hotspot, or Low Data Mode) — used to gate pre-warming,
+            // which holds continuous video and would otherwise quietly eat mobile data.
+            let expensive = path.isExpensive || path.isConstrained
+            Task { @MainActor in
+                self?.pathIsExpensive = expensive
+                self?.scheduleLocalProbe(debounce: 0.7)
+            }
         }
         pathMonitor.start(queue: DispatchQueue(label: "com.brandontoth.apexsight.pathmonitor"))
     }
@@ -927,6 +933,7 @@ final class AppState: ObservableObject {
     private func evaluateLocalNetwork() async {
         guard let session, let local = session.localBaseURL else {
             if onLocalNetwork { onLocalNetwork = false }
+            updatePrewarm()   // away pre-warm still applies even with no local URL set
             return
         }
         let probe = FrigateClient(baseURL: local, token: session.token)
@@ -953,6 +960,11 @@ final class AppState: ObservableObject {
     /// Whether the app is foregrounded — pre-warming only runs while it is (holding live consumers
     /// in the background would just burn battery for nothing). Set from the scene phase.
     private var appActive = true
+    /// Whether the current network is metered (cellular / hotspot / Low Data Mode). Defaults true
+    /// so we never pre-warm before the path monitor confirms we're on cheap WiFi. Pre-warming holds
+    /// continuous video streams, so it runs on WiFi (home or away — free + fast via the port) but
+    /// never on cellular, where it would silently burn mobile data.
+    private var pathIsExpensive = true
 
     /// Called from the scene phase. Foreground → (re)evaluate whether to pre-warm; background →
     /// tear the held consumers down so nothing streams while the app is away.
@@ -961,12 +973,13 @@ final class AppState: ObservableObject {
         updatePrewarm()
     }
 
-    /// Keep the learned slow-start cameras HOT while we're home and foregrounded, so opening one
-    /// (doorbell / 4K driveway) paints instantly instead of cold-starting the server encoder. Only
-    /// on the LAN — pre-warming over the remote tunnel would stream those feeds continuously across
-    /// TURN for cameras you're not even watching. Idempotent; safe to call often.
+    /// Keep the learned slow-start cameras HOT while foregrounded on a non-metered network, so
+    /// opening one (doorbell / 4K driveway) paints instantly instead of cold-starting the server
+    /// encoder — home OR away. On the LAN it connects host-only; away it goes over the remote URL
+    /// (a direct WAN candidate wins when a port-forward exists, so the relay isn't used). Gated to
+    /// WiFi (`!pathIsExpensive`) so it never streams continuous video over cellular. Idempotent.
     private func updatePrewarm() {
-        guard appActive, onLocalNetwork, let client else {
+        guard appActive, !pathIsExpensive, let client else {
             StreamPrewarmer.shared.stopAll()
             return
         }
@@ -975,7 +988,7 @@ final class AppState: ObservableObject {
         // foreground, before the timing learner would catch it, whenever this server has one.
         if cameras.contains(where: { $0.name == "doorbell" }) { targets.insert("doorbell") }
         guard !targets.isEmpty else { StreamPrewarmer.shared.stopAll(); return }
-        StreamPrewarmer.shared.warm(cameras: Array(targets), client: client, directLAN: true)
+        StreamPrewarmer.shared.warm(cameras: Array(targets), client: client, directLAN: onLocalNetwork)
     }
 
     /// Sets (or clears, when empty) the optional home-network URL for the current server, persists
