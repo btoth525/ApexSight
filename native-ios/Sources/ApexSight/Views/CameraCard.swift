@@ -51,7 +51,6 @@ struct CameraCard: View {
             .frame(maxWidth: .infinity)
             .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
-            .overlay(alignment: .topLeading) { liveBadge.padding(11) }
             .overlay(alignment: .topTrailing) { capabilityChips.padding(11) }
             .cardStroke(GlassTheme.Radius.tile)
             .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
@@ -102,24 +101,6 @@ struct CameraCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
-    }
-
-    /// Broadcast-style LIVE pill once the stream is playing. Nothing is shown while it spins
-    /// up — the snapshot is already on screen, so there's no "Connecting" clutter.
-    @ViewBuilder
-    private var liveBadge: some View {
-        if isLive {
-            HStack(spacing: 5) {
-                Circle().fill(.white).frame(width: 6, height: 6)
-                Text("LIVE")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(.white)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(GlassTheme.red, in: Capsule())
-            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
-        }
     }
 
     @ViewBuilder

@@ -624,6 +624,35 @@ struct HLSLivePlayerView: View {
         }
     }
 
+    /// WebRTC-primary live layer (Frigate 0.18) — the `RealtimeVideoView` mounted on its own,
+    /// because there is no AVPlayer to host it. Fullscreen wraps it in the zoom container so
+    /// pinch/pan/double-tap zoom works; wall/other cells show it plain. Fades in on the first
+    /// rendered frame; the cached snapshot behind it covers the connect wait.
+    @ViewBuilder
+    private var realtimeLayer: some View {
+        if showControls {
+            // Always mount the zoom container (even before the first frame) so single-tap toggles
+            // the fullscreen chrome and the close button is always reachable — otherwise a
+            // still-connecting view has no tap target and reads as frozen.
+            ZoomableScrollView(onSingleTap: onSingleTap) {
+                ZStack {
+                    Color.black.opacity(0.001)   // invisible but hit-testable tap surface
+                    if let track = realtime.videoTrack {
+                        RealtimeVideoView(track: track) { realtime.noteFirstFrame() }
+                            .opacity(realtime.state == .live ? 1 : 0)
+                            .animation(.easeIn(duration: 0.25), value: realtime.state)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+        } else if let track = realtime.videoTrack {
+            RealtimeVideoView(track: track) { realtime.noteFirstFrame() }
+                .opacity(realtime.state == .live ? 1 : 0)
+                .animation(.easeIn(duration: 0.25), value: realtime.state)
+                .allowsHitTesting(false)
+        }
+    }
+
     /// MJPEG fallback view — shown when HLS is unavailable for this camera.
     @ViewBuilder
     private func mjpegPlayer(_ client: FrigateClient) -> some View {
@@ -869,11 +898,19 @@ struct HLSLivePlayerView: View {
                 mjpegPlayer(client)
             } else if let player = model.player {
                 playerLayer(player)
+            } else if hlsDead {
+                // Frigate 0.18 (WebRTC-primary): there is NO HLS AVPlayer, so the WebRTC track is
+                // the only live layer. Render it directly here — the realtime overlay used to live
+                // inside playerLayer(), which never mounts when model.player is nil, so a connected
+                // WebRTC stream was invisible and the view sat on "Connecting…" then fell to MJPEG.
+                realtimeLayer
             }
 
-            // Subtle connecting pill — only when there's no frame to show yet. If a
-            // snapshot is already on screen, we connect silently for an instant feel.
-            if model.state == .connecting, !mjpegFallback, !hasSnapshot {
+            // Subtle connecting pill — only when there's no frame to show yet. If a snapshot is
+            // already on screen, we connect silently for an instant feel. On 0.18 the driver is the
+            // WebRTC layer (model has no state), so key the pill off realtime instead.
+            let stillConnecting = hlsDead ? (realtime.state != .live) : (model.state == .connecting)
+            if stillConnecting, !mjpegFallback, !hasSnapshot {
                 VStack {
                     Spacer()
                     HStack(spacing: 6) {
