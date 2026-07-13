@@ -884,14 +884,8 @@ final class AppState: ObservableObject {
     private func startLocalNetworkMonitor() {
         guard !localMonitorStarted else { return }
         localMonitorStarted = true
-        pathMonitor.pathUpdateHandler = { [weak self] path in
-            // Metered? (cellular, personal hotspot, or Low Data Mode) — used to gate pre-warming,
-            // which holds continuous video and would otherwise quietly eat mobile data.
-            let expensive = path.isExpensive || path.isConstrained
-            Task { @MainActor in
-                self?.pathIsExpensive = expensive
-                self?.scheduleLocalProbe(debounce: 0.7)
-            }
+        pathMonitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor in self?.scheduleLocalProbe(debounce: 0.7) }
         }
         pathMonitor.start(queue: DispatchQueue(label: "com.brandontoth.apexsight.pathmonitor"))
     }
@@ -933,7 +927,6 @@ final class AppState: ObservableObject {
     private func evaluateLocalNetwork() async {
         guard let session, let local = session.localBaseURL else {
             if onLocalNetwork { onLocalNetwork = false }
-            updatePrewarm()   // away pre-warm still applies even with no local URL set
             return
         }
         let probe = FrigateClient(baseURL: local, token: session.token)
@@ -953,66 +946,6 @@ final class AppState: ObservableObject {
         // Repaint promptly against the new base URL. Snapshots would follow on their own loop
         // within a few seconds; this makes the switch feel instant.
         if changed { await refresh() }
-        // Keep the slow-start cameras warm whenever we're on the LAN (and drop them off it).
-        updatePrewarm()
-    }
-
-    /// Whether the app is foregrounded — pre-warming only runs while it is (holding live consumers
-    /// in the background would just burn battery for nothing). Set from the scene phase.
-    private var appActive = true
-    /// Whether the current network is metered (cellular / hotspot / Low Data Mode). Defaults true
-    /// so we never pre-warm before the path monitor confirms we're on cheap WiFi. Pre-warming holds
-    /// continuous video streams, so it runs on WiFi (home or away — free + fast via the port) but
-    /// never on cellular, where it would silently burn mobile data.
-    private var pathIsExpensive = true
-
-    /// Called from the scene phase. Foreground → (re)evaluate whether to pre-warm; background →
-    /// tear the held consumers down so nothing streams while the app is away.
-    func setForegroundActive(_ active: Bool) {
-        appActive = active
-        updatePrewarm()
-    }
-
-    /// Tracks the last pre-warm context ("home" / "away") so a home↔away transition re-establishes
-    /// the held consumers instead of leaving stale ones (a LAN host-only warm is useless off-LAN).
-    private var prewarmMode: String?
-
-    /// Keep the slow-start cameras (doorbell / 4K driveway) HOT while foregrounded on a non-metered
-    /// (WiFi) network so opening one paints instantly — home OR away. The hold differs by location
-    /// because the cost does:
-    ///   • Home (LAN): host-only, held continuously — the streams stay on the LAN, effectively free.
-    ///   • Away (WiFi): over the remote URL (a direct WAN candidate wins over the relay when a
-    ///     port-forward exists), held for a BOUNDED ~90s window. Away the feeds leave the house over
-    ///     the home uplink, so parking two of them all day would contend with the one you actually
-    ///     tap — a 90s window covers the real open-glance-tap moment without that cost.
-    /// Never on cellular/hotspot/Low Data Mode (`pathIsExpensive`) — no continuous video over data.
-    private func updatePrewarm() {
-        guard appActive, !pathIsExpensive, let client else {
-            if prewarmMode != nil { StreamPrewarmer.shared.stopAll(); prewarmMode = nil }
-            return
-        }
-        var targets = SlowStartCameraStore.all
-        // Seed the known on-demand cameras so they're warm on the first foreground, before the
-        // timing learner would catch them — matched by name against this server's actual cameras.
-        if let doorbell = cameras.first(where: { $0.name.lowercased().contains("doorbell") }) {
-            targets.insert(doorbell.name)
-        }
-        if let driveway = cameras.first(where: { $0.name.lowercased().contains("driveway") }) {
-            targets.insert(driveway.name)
-        }
-        guard !targets.isEmpty else {
-            if prewarmMode != nil { StreamPrewarmer.shared.stopAll(); prewarmMode = nil }
-            return
-        }
-        let mode = onLocalNetwork ? "home" : "away"
-        if prewarmMode != mode {
-            // Context switched — drop the old connections so we re-establish with the right path.
-            StreamPrewarmer.shared.stopAll()
-            prewarmMode = mode
-        }
-        StreamPrewarmer.shared.warm(cameras: Array(targets), client: client,
-                                    directLAN: onLocalNetwork,
-                                    ttl: onLocalNetwork ? nil : 90)
     }
 
     /// Sets (or clears, when empty) the optional home-network URL for the current server, persists
@@ -1415,11 +1348,9 @@ final class AppState: ObservableObject {
         stopForegroundPolling()
         cancelInFlightServerWork()
         locallyViewedIDs.removeAll()
-        // New server ⇒ re-evaluate its (possibly different / absent) local URL from scratch, and
-        // drop the previous server's warm consumers + learned slow-camera list.
+        // New server ⇒ re-evaluate its (possibly different / absent) local URL from scratch.
         onLocalNetwork = false
         StreamPrewarmer.shared.stopAll()
-        SlowStartCameraStore.reset()
         self.session = session
         keychain.save(session: session)
         scheduleLocalProbe()
@@ -1451,7 +1382,6 @@ final class AppState: ObservableObject {
         keychain.clear()
         onLocalNetwork = false
         StreamPrewarmer.shared.stopAll()
-        SlowStartCameraStore.reset()
         // Clear the Watch so it doesn't keep showing the last household's alerts after sign-out.
         WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
         session = nil

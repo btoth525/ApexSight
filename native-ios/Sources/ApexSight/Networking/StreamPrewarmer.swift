@@ -1,44 +1,22 @@
 import Foundation
 import WebRTC
 
-/// The set of cameras whose live stream cold-starts slowly (an on-demand server-side re-encode —
-/// the Scrypted-bridged doorbell, a 4K-HEVC camera iOS can't WebRTC-decode directly). Learned at
-/// runtime from real first-frame timings (see `RealtimeVideoController.resolveAttempt`) rather than
-/// hard-coded, so it adapts if cameras are added/renamed. Stored in the App Group so a VoIP-woken
-/// launch could read it too. Sticky within a server; reset when the server changes / on sign-out.
-enum SlowStartCameraStore {
-    private static let key = "apex.slowStartCameras"
-    private static var defaults: UserDefaults? { UserDefaults(suiteName: ApexAppGroup.identifier) }
-
-    static var all: Set<String> {
-        Set(defaults?.stringArray(forKey: key) ?? [])
-    }
-
-    static func record(_ camera: String) {
-        var set = all
-        guard !set.contains(camera) else { return }
-        set.insert(camera)
-        defaults?.set(Array(set), forKey: key)
-        RealtimeVideoController.rtLog("slow-start learned: \(camera) (warm list = \(set.sorted()))")
-    }
-
-    static func reset() {
-        defaults?.removeObject(forKey: key)
-    }
-}
-
-/// Keeps go2rtc's on-demand `ffmpeg` re-encode HOT for specific cameras by holding a minimal,
-/// **video-only**, recvonly WebRTC consumer open. go2rtc runs ONE producer per stream and fans it
-/// out to every consumer, lingering only briefly after the last leaves — so a held consumer keeps
-/// the encoder running, and the real tap/answer then joins an already-running producer and paints
-/// in a fraction of the cold-start time.
+/// One job: when the doorbell RINGS, start the doorbell's on-demand go2rtc encoder so the video is
+/// already flowing by the time the call is answered. go2rtc runs one producer per stream and fans it
+/// out to every consumer — so holding a minimal, **video-only**, recvonly WebRTC consumer during the
+/// ring means the answer joins an already-running producer instead of cold-starting it.
 ///
-/// Deliberately SEPARATE from `RealtimeVideoController`: success here is "negotiated + ICE trying"
-/// (a consumer is subscribed → the producer stays up), NOT "frame rendered". It renders nothing,
-/// **never touches `AVAudioSession`** (activating audio here would court the `AURemoteIO` crash and
-/// fight CallKit), and **never touches the controller's per-camera failure cap** — so it can't
-/// block, slow, or interfere with the real connection it's warming. Reuses the one shared
-/// `RealtimeVideoController.factory` so there's a single heavy WebRTC factory per process.
+/// Deliberately SEPARATE from `RealtimeVideoController`: it renders nothing, **never touches
+/// `AVAudioSession`** (CallKit owns audio during a ring; touching it would court the `AURemoteIO`
+/// crash), and never touches the controller's per-camera failure cap — so it can't block, slow, or
+/// interfere with the real connection it warms. Fire-and-forget and fully guarded: worst case it
+/// no-ops and the answer cold-starts exactly as before. Auto-tears-down after `ttl` (unanswered
+/// ring), on answer/foreground it simply coexists for its few remaining seconds (one extra consumer
+/// on an already-running producer is negligible). Reuses the one shared WebRTC factory.
+///
+/// This is intentionally the ONLY pre-warming in the app. Wall/away "keep-warm" was tried (builds
+/// 196-199) and REMOVED: holding extra live streams competed with the camera actually being watched
+/// and made opens SLOWER, especially away from home where everything shares the home uplink.
 @MainActor
 final class StreamPrewarmer: NSObject {
     static let shared = StreamPrewarmer()
@@ -53,31 +31,17 @@ final class StreamPrewarmer: NSObject {
 
     private enum PrewarmError: Error { case noOffer }
 
-    /// Warm each of `cameras` (idempotent — one already warm is left alone). `directLAN` mirrors the
-    /// real path: host-only on the LAN (no TURN fetch/relay), full ICE off it. `ttl` bounds each
-    /// warm: `nil` holds it until `stopAll` (home, LAN — free); a value auto-releases it after that
-    /// many seconds (away — a bounded window so two streams don't sit on the home uplink all day).
-    func warm(cameras: [String], client: FrigateClient, directLAN: Bool, ttl: TimeInterval? = nil) {
-        for cam in cameras where warms[cam] == nil {
-            connect(camera: cam, client: client, directLAN: directLAN, ttl: ttl)
-        }
-        // Drop warms no longer wanted (e.g. the slow-set shrank on a server switch).
-        for cam in warms.keys where !cameras.contains(cam) { stop(camera: cam) }
-    }
-
     /// One-shot warm for an incoming doorbell ring. Reads the server from the App Group (so it works
-    /// from a VoIP-woken background launch where `AppState` isn't up), warms over the remote URL with
-    /// the full ICE path — we can't know or probe home-vs-away inside the ring window, and ANY
-    /// consumer warms the same producer — and auto-tears-down after `ttl` if the call is never
-    /// answered. Fire-and-forget and fully guarded: worst case it no-ops and the answer cold-starts
-    /// exactly as before, so it can never harm the (required) CallKit reporting that already ran.
+    /// from a VoIP-woken background launch where `AppState` isn't up) and warms over the stored base
+    /// URL with the full ICE path — any consumer warms the same producer. Auto-tears-down after
+    /// `ttl` seconds.
     func warmForCall(camera: String, ttl: TimeInterval = 30) {
         guard warms[camera] == nil else { return }
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
         guard let base = defaults?.string(forKey: "apex.frigateBaseURL"),
               let baseURL = URL(string: base) else { return }
         let client = FrigateClient(baseURL: baseURL, token: SharedTokenStore.load())
-        connect(camera: camera, client: client, directLAN: false, ttl: ttl)
+        connect(camera: camera, client: client, ttl: ttl)
     }
 
     func stopAll() {
@@ -86,14 +50,12 @@ final class StreamPrewarmer: NSObject {
         RealtimeVideoController.rtLog("prewarm: stopAll")
     }
 
-    var warmedCameras: [String] { Array(warms.keys).sorted() }
-
-    private func connect(camera: String, client: FrigateClient, directLAN: Bool, ttl: TimeInterval?) {
+    private func connect(camera: String, client: FrigateClient, ttl: TimeInterval) {
         Task { [weak self] in
             guard let self else { return }
             let config = RTCConfiguration()
             config.sdpSemantics = .unifiedPlan
-            config.iceServers = directLAN ? [] : await TurnSettings.iceServers()
+            config.iceServers = await TurnSettings.iceServers()
             config.bundlePolicy = .maxBundle
             // Re-check after the await: a stopAll / duplicate could have landed in between.
             guard self.warms[camera] == nil else { return }
@@ -115,8 +77,7 @@ final class StreamPrewarmer: NSObject {
                 try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
                     pc.setLocalDescription(offer) { err in if let err { c.resume(throwing: err) } else { c.resume() } }
                 }
-                // go2rtc's answer is non-trickle — the offer we POST must already carry candidates,
-                // so wait for gathering (host candidates land in ms on the LAN; capped for TURN).
+                // go2rtc's answer is non-trickle — the offer we POST must already carry candidates.
                 await self.waitForGathering(warm)
                 guard self.warms[camera] != nil else { pc.close(); return }
                 let answerSDP = try await client.webRTCAnswer(source: camera, offerSDP: pc.localDescription?.sdp ?? offer.sdp)
@@ -125,8 +86,8 @@ final class StreamPrewarmer: NSObject {
                         if let err { c.resume(throwing: err) } else { c.resume() }
                     }
                 }
-                RealtimeVideoController.rtLog("prewarm: \(camera) negotiated (held\(ttl != nil ? ", ttl \(Int(ttl!))s" : ""))")
-                if let ttl, let held = self.warms[camera] {
+                RealtimeVideoController.rtLog("prewarm: \(camera) negotiated (held, ttl \(Int(ttl))s)")
+                if let held = self.warms[camera] {
                     held.ttlTask = Task { [weak self] in
                         try? await Task.sleep(nanoseconds: UInt64(ttl * 1_000_000_000))
                         await MainActor.run { self?.stop(camera: camera) }
