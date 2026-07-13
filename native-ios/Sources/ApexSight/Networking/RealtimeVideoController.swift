@@ -85,6 +85,11 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     private var primaryKey = ""
     private var wantAudio = false
     private var audioEnabled = false
+    /// Set true when the current attempt died from a HARD failure (ICE failed/closed, or a
+    /// negotiation error) — as opposed to a first-frame TIMEOUT. Only hard failures count toward
+    /// the per-camera lockout: a cold on-demand NVENC stream that simply hasn't painted yet must
+    /// stay retryable, or two slow launches would permanently pin the camera to low-res MJPEG.
+    private var attemptHardFailure = false
 
     /// Turn real-time hearing on/off (doorbell call answer/mute). Idempotent; a no-op until the
     /// audio track exists. Enabling routes playback to the loudspeaker — WebRTC's voice pipeline
@@ -107,6 +112,12 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         state = .idle
     }
 
+    /// Clear the per-camera hard-failure lockout so an explicit user Retry gets a fresh attempt
+    /// even for a camera that hard-failed twice earlier (e.g. it was briefly offline).
+    func resetFailures() {
+        failures.removeAll()
+    }
+
     /// Called by the renderer when the first real frame lands — THIS is "live", not ICE state
     /// (a connection can succeed while the video codec is undecodable).
     func noteFirstFrame() {
@@ -124,20 +135,27 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     }
 
     private func cascade(sources: [String], client: FrigateClient) async {
+        var anyHardFailure = false
         for source in sources {
             if Task.isCancelled { return }
             Self.rtLog("attempt \(source)")
+            attemptHardFailure = false
             let rendered = await attempt(source: source, client: client)
-            Self.rtLog("attempt \(source) → \(rendered ? "RENDERED ✅" : "no frame ❌")")
+            Self.rtLog("attempt \(source) → \(rendered ? "RENDERED ✅" : (attemptHardFailure ? "HARD FAIL ❌" : "timeout ⏱"))")
             if rendered {
                 failures[primaryKey] = 0
                 state = .live
                 return
             }
+            if attemptHardFailure { anyHardFailure = true }
             teardown()   // clean up before trying the next source
             if Task.isCancelled { return }
         }
-        failures[primaryKey, default: 0] += 1
+        // Only a hard failure (no media route / ICE dead) counts toward the lockout. An
+        // all-timeout cascade is almost always a cold stream that hasn't spun up yet — keep it
+        // retryable so the tile lands full-res the moment the stream warms, instead of being
+        // pinned to MJPEG for the rest of the session.
+        if anyHardFailure { failures[primaryKey, default: 0] += 1 }
         if !Task.isCancelled { state = .failed }
     }
 
@@ -188,6 +206,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             try await set(remote: RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
         } catch {
             Self.rtLog("negotiation error: \(error.localizedDescription)")
+            attemptHardFailure = true   // couldn't even negotiate — a real failure, not a cold start
             return false
         }
 
@@ -214,12 +233,15 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             }
         }
 
-        // Await the first RENDERED frame or a 4s timeout — an HEVC track connects but never
-        // paints, which this catches.
+        // Await the first RENDERED frame or a timeout. Sized for the slowest legitimate start: an
+        // on-demand NVENC re-encode (doorbell / Front Driveway) cold-starts ~8s the first time it's
+        // watched, so a short timeout would abandon a stream that's about to paint full-res. A track
+        // that connects but never paints (undecodable codec) is still caught here — as a soft
+        // timeout, so it stays retryable rather than locking the camera to MJPEG.
         return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             firstFrameContinuation = cont
             attemptWatchdog = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                try? await Task.sleep(nanoseconds: 9_000_000_000)
                 await MainActor.run { self?.resolveAttempt(false) }
             }
         }
@@ -312,7 +334,9 @@ extension RealtimeVideoController: RTCPeerConnectionDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if self.state == .connecting {
-                    // Fail THIS attempt so the cascade can try the next source (or give up).
+                    // ICE genuinely died (no media route) — a hard failure, not a cold-start
+                    // timeout. Fail THIS attempt so the cascade can try the next source (or give up).
+                    self.attemptHardFailure = true
                     self.resolveAttempt(false)
                 } else if self.state == .live {
                     // A live session dropped — fall back to HLS (still running underneath).

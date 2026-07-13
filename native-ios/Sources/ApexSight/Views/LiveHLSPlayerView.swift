@@ -663,9 +663,36 @@ struct HLSLivePlayerView: View {
     private func startRealtimeFallbackTimer() {
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            // Longer than the realtime per-source watchdog (9s) so a cold NVENC stream that's about
+            // to paint full-res isn't yanked to low-res MJPEG a hair before it lands.
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
             guard !Task.isCancelled, realtime.state != .live else { return }
             fallToMJPEG()
+        }
+    }
+
+    /// Start WebRTC-primary live (Frigate 0.18, no HLS). The single focused viewer / doorbell call
+    /// starts immediately (no stampede — there's only one). A WALL tile instead waits for a
+    /// StreamGate slot so a full grid doesn't fire all its WebRTC negotiations at once (which
+    /// overwhelmed go2rtc and tripped every tile's cold-start watchdog → low-res MJPEG). Mirrors how
+    /// the HLS wall staggered its startups. Idempotent-ish: cancels any prior startTask first.
+    private func startWebRTCPrimary() {
+        if showControls || realtimeAudio {
+            syncRealtime()
+            startRealtimeFallbackTimer()
+            return
+        }
+        startTask?.cancel()
+        startTask = Task { @MainActor in
+            await StreamGate.shared.acquire()
+            gateHeld = true
+            guard !Task.isCancelled, started else { releaseGate(); return }
+            syncRealtime()
+            startRealtimeFallbackTimer()
+            // Hold the slot until this tile's realtime resolves (or a budget passes), so the next
+            // tile negotiates only after this one is off the critical path — then free it.
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            releaseGate()
         }
     }
 
@@ -793,7 +820,9 @@ struct HLSLivePlayerView: View {
         mjpegFailed = false
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) { mjpegFallback = false }
         if hlsDead {
-            // WebRTC-primary: re-attempt realtime (mjpegFallback is false again so it's eligible).
+            // WebRTC-primary: clear any lockout and re-attempt (mjpegFallback is false again so
+            // it's eligible). Single tile on an explicit tap → start immediately, no gate needed.
+            realtime.resetFailures()
             syncRealtime()
             startRealtimeFallbackTimer()
             return
@@ -888,7 +917,11 @@ struct HLSLivePlayerView: View {
                 warmPlayer = warm
                 warm.playImmediately(atRate: 1.0)
             }
-            syncRealtime()
+            // A FRESH wall tile on WebRTC-primary (0.18) must NOT start realtime here — it starts
+            // gated below so a full grid doesn't negotiate all at once. Every other case (resume,
+            // focused viewer overlay, doorbell A/V) starts/refreshes realtime immediately.
+            let freshWallWebRTC = !started && hlsDead && !showControls && !realtimeAudio
+            if !freshWallWebRTC { syncRealtime() }
             // Host-owned mute (external control mode) applies from the first frame. In real-time
             // A/V mode the sync above owns the HLS mute (WebRTC may be carrying the audio).
             if !realtimeAudio, let muted { model.setMuted(muted) }
@@ -914,7 +947,7 @@ struct HLSLivePlayerView: View {
             // WebRTC layer; arm the safety net so a tile whose realtime can't connect still
             // lands on MJPEG instead of its snapshot forever.
             if hlsDead {
-                startRealtimeFallbackTimer()
+                startWebRTCPrimary()
                 return
             }
             // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
@@ -998,8 +1031,9 @@ struct HLSLivePlayerView: View {
             startTask?.cancel(); startTask = nil
             releaseGate()
             model.stop()
-            syncRealtime()
-            startRealtimeFallbackTimer()
+            // The probe just flipped this Frigate to WebRTC-only, likely for the WHOLE wall at once
+            // (first launch). Start gated so all tiles don't stampede go2rtc simultaneously.
+            startWebRTCPrimary()
         }
         .onChange(of: mjpegFallback) { _, fellBack in
             if fellBack { realtime.stop() }
