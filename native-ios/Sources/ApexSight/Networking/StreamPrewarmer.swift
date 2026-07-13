@@ -46,6 +46,7 @@ final class StreamPrewarmer: NSObject {
     private final class Warm {
         let pc: RTCPeerConnection
         var gatherCont: CheckedContinuation<Void, Never>?
+        var ttlTask: Task<Void, Never>?
         init(pc: RTCPeerConnection) { self.pc = pc }
     }
     private var warms: [String: Warm] = [:]
@@ -56,10 +57,25 @@ final class StreamPrewarmer: NSObject {
     /// `directLAN` mirrors the real path: host-only on the LAN (no TURN fetch/relay), full ICE off it.
     func warm(cameras: [String], client: FrigateClient, directLAN: Bool) {
         for cam in cameras where warms[cam] == nil {
-            connect(camera: cam, client: client, directLAN: directLAN)
+            connect(camera: cam, client: client, directLAN: directLAN, ttl: nil)
         }
         // Drop warms no longer wanted (e.g. the slow-set shrank on a server switch).
         for cam in warms.keys where !cameras.contains(cam) { stop(camera: cam) }
+    }
+
+    /// One-shot warm for an incoming doorbell ring. Reads the server from the App Group (so it works
+    /// from a VoIP-woken background launch where `AppState` isn't up), warms over the remote URL with
+    /// the full ICE path — we can't know or probe home-vs-away inside the ring window, and ANY
+    /// consumer warms the same producer — and auto-tears-down after `ttl` if the call is never
+    /// answered. Fire-and-forget and fully guarded: worst case it no-ops and the answer cold-starts
+    /// exactly as before, so it can never harm the (required) CallKit reporting that already ran.
+    func warmForCall(camera: String, ttl: TimeInterval = 30) {
+        guard warms[camera] == nil else { return }
+        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        guard let base = defaults?.string(forKey: "apex.frigateBaseURL"),
+              let baseURL = URL(string: base) else { return }
+        let client = FrigateClient(baseURL: baseURL, token: SharedTokenStore.load())
+        connect(camera: camera, client: client, directLAN: false, ttl: ttl)
     }
 
     func stopAll() {
@@ -70,7 +86,7 @@ final class StreamPrewarmer: NSObject {
 
     var warmedCameras: [String] { Array(warms.keys).sorted() }
 
-    private func connect(camera: String, client: FrigateClient, directLAN: Bool) {
+    private func connect(camera: String, client: FrigateClient, directLAN: Bool, ttl: TimeInterval?) {
         Task { [weak self] in
             guard let self else { return }
             let config = RTCConfiguration()
@@ -107,7 +123,13 @@ final class StreamPrewarmer: NSObject {
                         if let err { c.resume(throwing: err) } else { c.resume() }
                     }
                 }
-                RealtimeVideoController.rtLog("prewarm: \(camera) negotiated (held)")
+                RealtimeVideoController.rtLog("prewarm: \(camera) negotiated (held\(ttl != nil ? ", ttl \(Int(ttl!))s" : ""))")
+                if let ttl, let held = self.warms[camera] {
+                    held.ttlTask = Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: UInt64(ttl * 1_000_000_000))
+                        await MainActor.run { self?.stop(camera: camera) }
+                    }
+                }
             } catch {
                 RealtimeVideoController.rtLog("prewarm: \(camera) failed — \(error.localizedDescription)")
                 self.stop(camera: camera)
@@ -130,6 +152,7 @@ final class StreamPrewarmer: NSObject {
 
     private func stop(camera: String) {
         guard let warm = warms.removeValue(forKey: camera) else { return }
+        warm.ttlTask?.cancel()
         warm.gatherCont?.resume(); warm.gatherCont = nil
         warm.pc.delegate = nil
         warm.pc.close()

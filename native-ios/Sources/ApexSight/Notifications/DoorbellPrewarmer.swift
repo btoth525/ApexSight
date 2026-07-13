@@ -2,27 +2,17 @@ import Foundation
 
 /// Best-effort warm of the doorbell live stream so the video is already flowing by the time you
 /// answer — the go2rtc doorbell stream is an on-demand encoder that takes a beat to spin up. Fired
-/// the instant the ring push arrives (before you answer). Reads Frigate config from the app group so
-/// it works even from a background / VoIP-woken launch when AppState isn't up yet.
+/// the instant the ring push arrives (before you answer), while the phone is still ringing.
+///
+/// Frigate 0.18 removed the `/api/go2rtc/api/...` HLS proxy this used to hit (a plain GET no longer
+/// warms anything there), so warming now goes through the SAME proven WebRTC path the live view
+/// uses (`/api/go2rtc/webrtc`) via `StreamPrewarmer` — a video-only consumer that keeps the encoder
+/// hot for the ring window, then tears itself down. Fire-and-forget and fully guarded: if anything
+/// is missing it simply no-ops and the answer cold-starts as before.
 enum DoorbellPrewarmer {
     static func warm() {
-        let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
-        guard let base = defaults?.string(forKey: "apex.frigateBaseURL"),
-              let baseURL = URL(string: base) else { return }
-        // <base>/api/go2rtc/api/stream.m3u8?src=doorbell&mp4 — hitting it starts the encoder.
-        var comps = URLComponents(url: baseURL.appending(path: "api/go2rtc/api/stream.m3u8"),
-                                  resolvingAgainstBaseURL: false)
-        comps?.queryItems = [URLQueryItem(name: "src", value: "doorbell"),
-                             URLQueryItem(name: "mp4", value: nil)]
-        guard let url = comps?.url else { return }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 8
-        // The baseURL may carry Basic-auth credentials; add the Bearer token too if we have one, so
-        // the warm request authenticates whichever way this Frigate is fronted.
-        if let token = SharedTokenStore.load(), !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        Task { @MainActor in
+            StreamPrewarmer.shared.warmForCall(camera: "doorbell")
         }
-        // Fire-and-forget — we only need to nudge go2rtc; the answer's player then paints instantly.
-        URLSession.shared.dataTask(with: req).resume()
     }
 }
