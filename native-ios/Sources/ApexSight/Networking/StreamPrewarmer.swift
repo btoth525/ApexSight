@@ -53,11 +53,13 @@ final class StreamPrewarmer: NSObject {
 
     private enum PrewarmError: Error { case noOffer }
 
-    /// Warm each of `cameras` (idempotent — one already warm is left alone). Held until `stopAll`.
-    /// `directLAN` mirrors the real path: host-only on the LAN (no TURN fetch/relay), full ICE off it.
-    func warm(cameras: [String], client: FrigateClient, directLAN: Bool) {
+    /// Warm each of `cameras` (idempotent — one already warm is left alone). `directLAN` mirrors the
+    /// real path: host-only on the LAN (no TURN fetch/relay), full ICE off it. `ttl` bounds each
+    /// warm: `nil` holds it until `stopAll` (home, LAN — free); a value auto-releases it after that
+    /// many seconds (away — a bounded window so two streams don't sit on the home uplink all day).
+    func warm(cameras: [String], client: FrigateClient, directLAN: Bool, ttl: TimeInterval? = nil) {
         for cam in cameras where warms[cam] == nil {
-            connect(camera: cam, client: client, directLAN: directLAN, ttl: nil)
+            connect(camera: cam, client: client, directLAN: directLAN, ttl: ttl)
         }
         // Drop warms no longer wanted (e.g. the slow-set shrank on a server switch).
         for cam in warms.keys where !cameras.contains(cam) { stop(camera: cam) }

@@ -973,22 +973,46 @@ final class AppState: ObservableObject {
         updatePrewarm()
     }
 
-    /// Keep the learned slow-start cameras HOT while foregrounded on a non-metered network, so
-    /// opening one (doorbell / 4K driveway) paints instantly instead of cold-starting the server
-    /// encoder — home OR away. On the LAN it connects host-only; away it goes over the remote URL
-    /// (a direct WAN candidate wins when a port-forward exists, so the relay isn't used). Gated to
-    /// WiFi (`!pathIsExpensive`) so it never streams continuous video over cellular. Idempotent.
+    /// Tracks the last pre-warm context ("home" / "away") so a home↔away transition re-establishes
+    /// the held consumers instead of leaving stale ones (a LAN host-only warm is useless off-LAN).
+    private var prewarmMode: String?
+
+    /// Keep the slow-start cameras (doorbell / 4K driveway) HOT while foregrounded on a non-metered
+    /// (WiFi) network so opening one paints instantly — home OR away. The hold differs by location
+    /// because the cost does:
+    ///   • Home (LAN): host-only, held continuously — the streams stay on the LAN, effectively free.
+    ///   • Away (WiFi): over the remote URL (a direct WAN candidate wins over the relay when a
+    ///     port-forward exists), held for a BOUNDED ~90s window. Away the feeds leave the house over
+    ///     the home uplink, so parking two of them all day would contend with the one you actually
+    ///     tap — a 90s window covers the real open-glance-tap moment without that cost.
+    /// Never on cellular/hotspot/Low Data Mode (`pathIsExpensive`) — no continuous video over data.
     private func updatePrewarm() {
         guard appActive, !pathIsExpensive, let client else {
-            StreamPrewarmer.shared.stopAll()
+            if prewarmMode != nil { StreamPrewarmer.shared.stopAll(); prewarmMode = nil }
             return
         }
         var targets = SlowStartCameraStore.all
-        // The doorbell is a known on-demand (Scrypted-bridged) camera — warm it from the first
-        // foreground, before the timing learner would catch it, whenever this server has one.
-        if cameras.contains(where: { $0.name == "doorbell" }) { targets.insert("doorbell") }
-        guard !targets.isEmpty else { StreamPrewarmer.shared.stopAll(); return }
-        StreamPrewarmer.shared.warm(cameras: Array(targets), client: client, directLAN: onLocalNetwork)
+        // Seed the known on-demand cameras so they're warm on the first foreground, before the
+        // timing learner would catch them — matched by name against this server's actual cameras.
+        if let doorbell = cameras.first(where: { $0.name.lowercased().contains("doorbell") }) {
+            targets.insert(doorbell.name)
+        }
+        if let driveway = cameras.first(where: { $0.name.lowercased().contains("driveway") }) {
+            targets.insert(driveway.name)
+        }
+        guard !targets.isEmpty else {
+            if prewarmMode != nil { StreamPrewarmer.shared.stopAll(); prewarmMode = nil }
+            return
+        }
+        let mode = onLocalNetwork ? "home" : "away"
+        if prewarmMode != mode {
+            // Context switched — drop the old connections so we re-establish with the right path.
+            StreamPrewarmer.shared.stopAll()
+            prewarmMode = mode
+        }
+        StreamPrewarmer.shared.warm(cameras: Array(targets), client: client,
+                                    directLAN: onLocalNetwork,
+                                    ttl: onLocalNetwork ? nil : 90)
     }
 
     /// Sets (or clears, when empty) the optional home-network URL for the current server, persists
