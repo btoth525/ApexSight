@@ -261,15 +261,14 @@ private struct MultiCameraCell: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.black
-            // Live HLS on the lighter sub-stream (with an MJPEG fallback per camera) so a
-            // dense grid of feeds stays smooth on real hardware — the device's hardware
-            // decoders can't sustain many simultaneous full-res streams. The connection
-            // limiter staggers how many spin up at once so the wall stays fast.
-            HLSLivePlayerView(
+            // Auto-refreshing snapshot (current frame every few seconds) rather than many
+            // simultaneous live streams — a dense grid of live WebRTC feeds spins up slowly and
+            // stampedes the server. Tapping a tile opens that camera full-quality LIVE. Matches
+            // the main wall (CameraCard) and the Ring/Nest/UniFi grid model.
+            LiveSnapshotView(
                 camera: camera,
-                preferSub: true,
-                onPlaying: { playing in
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
+                onFrame: { hasFrame in
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = hasFrame }
                 }
             )
             .allowsHitTesting(false)

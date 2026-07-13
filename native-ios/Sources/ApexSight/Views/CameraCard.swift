@@ -17,18 +17,15 @@ struct CameraCard: View {
             LiveStreamView(camera: camera)
         } label: {
             ZStack(alignment: .bottom) {
-                // Live HLS on the lighter sub-stream so the whole wall stays smooth with
-                // many feeds at once (tapping a camera opens it full-quality on the main
-                // stream). Always on (persistent) for every camera; the connection limiter
-                // staggers how many spin up at once so load stays fast; the cached snapshot
-                // sits behind so it's never black, and it's letterboxed so ultra-wide
-                // cameras show the whole scene.
-                HLSLivePlayerView(
+                // The wall shows an auto-refreshing snapshot (current frame every few seconds) —
+                // instant, reliable, and light — instead of many simultaneous live streams, which
+                // spin up slowly and stampede the server. Tapping the tile opens the camera
+                // full-quality LIVE (WebRTC) in LiveStreamView. This is the Ring/Nest/UniFi grid
+                // model. Letterboxed so ultra-wide cameras show the whole scene.
+                LiveSnapshotView(
                     camera: camera,
-                    preferSub: true,
-                    persistent: true,
-                    onPlaying: { playing in
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
+                    onFrame: { hasFrame in
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = hasFrame }
                     }
                 )
 
