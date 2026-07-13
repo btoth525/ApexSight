@@ -8,12 +8,19 @@ struct FrigateSession: Codable, Equatable {
     /// `frigate_token` JWT on a 401 (e.g. mid-stream token expiry) by re-running the
     /// existing login. Optional so previously-stored sessions still decode.
     let password: String?
+    /// Optional home-network URL for the *same* Frigate (e.g. `http://192.168.1.204:5000`).
+    /// When set and currently reachable, the app talks to Frigate directly over the LAN —
+    /// fast, no reverse-proxy/tunnel hop — and falls back to `baseURL` (the remote URL) when
+    /// away from home. Same server ⇒ the same JWT works for both hosts, so switching needs no
+    /// re-auth. Optional so previously-stored sessions still decode (defaults to nil = remote-only).
+    let localBaseURL: URL?
 
-    init(baseURL: URL, username: String, token: String, password: String? = nil) {
+    init(baseURL: URL, username: String, token: String, password: String? = nil, localBaseURL: URL? = nil) {
         self.baseURL = baseURL
         self.username = username
         self.token = token
         self.password = password
+        self.localBaseURL = localBaseURL
     }
 
     static func normalizedBaseURL(_ rawValue: String) throws -> URL {

@@ -14,6 +14,9 @@ struct SettingsTab: View {
     @State private var showMyExports = false
     @State private var showRestartConfirm = false
     @State private var restartToast: String?
+    /// Draft text for the optional home-network URL field (seeded from the saved session).
+    @State private var localURLDraft = ""
+    @FocusState private var localURLFocused: Bool
 
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -29,6 +32,7 @@ struct SettingsTab: View {
                     VStack(spacing: GlassTheme.Space.l) {
                         houseModeCard
                         serverCard
+                        connectionCard
                         spotlightCard
 
                         // Apple Intelligence — only on devices that can actually run the model.
@@ -186,6 +190,103 @@ struct SettingsTab: View {
             Button("Sign Out", role: .destructive) { appState.signOut() }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    // MARK: - Home Network (local ↔ remote fast path)
+
+    private var connectionCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                HStack {
+                    SectionHeader("Home Network")
+                    Spacer(minLength: 0)
+                    connectionModeChip
+                }
+
+                Text("Add your Frigate's address on your home Wi-Fi. When you're home, ApexSight talks to it directly for the fastest, lowest-latency video — and automatically falls back to your remote address when you're away.")
+                    .font(.footnote)
+                    .foregroundStyle(GlassTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: GlassTheme.Space.s) {
+                    Image(systemName: "house.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(GlassTheme.tertiary)
+                        .frame(width: 22)
+                    TextField("192.168.1.204:5000", text: $localURLDraft)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .keyboardType(.URL)
+                        .submitLabel(.done)
+                        .focused($localURLFocused)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(GlassTheme.primary)
+                        .onSubmit { saveLocalURL() }
+                }
+                .padding(.horizontal, GlassTheme.Space.m)
+                .padding(.vertical, GlassTheme.Space.s + 2)
+                .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                )
+
+                if let error = appState.localURLError {
+                    Text(error)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(GlassTheme.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: GlassTheme.Space.m) {
+                    Button {
+                        Haptics.tap()
+                        saveLocalURL()
+                    } label: {
+                        Label("Save", systemImage: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+
+                    if appState.session?.localBaseURL != nil {
+                        Button(role: .destructive) {
+                            Haptics.tap()
+                            localURLDraft = ""
+                            appState.setLocalURL("")
+                        } label: {
+                            Label("Remove", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(PillButtonStyle(tint: GlassTheme.secondary))
+                    }
+                }
+                .padding(.top, GlassTheme.Space.xs)
+            }
+        }
+        // Seed the field from the saved session whenever the card appears or the server changes.
+        .onAppear { localURLDraft = appState.session?.localBaseURL?.absoluteString ?? "" }
+        .onChange(of: appState.session?.localBaseURL) { _, url in
+            if !localURLFocused { localURLDraft = url?.absoluteString ?? "" }
+        }
+    }
+
+    private var connectionModeChip: some View {
+        let onLocal = appState.onLocalNetwork
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(onLocal ? GlassTheme.green : GlassTheme.secondary)
+                .frame(width: 7, height: 7)
+            Text(appState.connectionModeLabel)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(onLocal ? GlassTheme.green : GlassTheme.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(GlassTheme.separator, lineWidth: 0.5))
+    }
+
+    private func saveLocalURL() {
+        localURLFocused = false
+        appState.setLocalURL(localURLDraft)
     }
 
     private func infoRow(icon: String, text: String) -> some View {

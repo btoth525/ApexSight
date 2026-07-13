@@ -4,6 +4,7 @@ import WidgetKit
 import CoreSpotlight
 import AppIntents
 import UserNotifications
+import Network
 
 enum AppDeepLink: Hashable {
     case review(String)
@@ -124,9 +125,32 @@ final class AppState: ObservableObject {
     /// even when the WebSocket can't be established through the user's reverse proxy.
     private var pollTask: Task<Void, Never>?
 
+    /// True when the optional home-network URL (`session.localBaseURL`) is currently reachable
+    /// AND confirmed to be this Frigate. Drives which base URL `client` builds. Defaults `false`
+    /// (remote) and only flips `true` on a positive, identity-checked probe — so a stuck or
+    /// permission-denied probe never blocks the app on an unreachable LAN address; it just stays
+    /// on the remote URL. HA-Companion-style local↔remote auto-switching.
+    @Published private(set) var onLocalNetwork = false
+    /// Validation message for the Settings "Home Network URL" field (nil = no error).
+    @Published var localURLError: String?
+
+    /// Watches for network changes (WiFi↔cellular, joining/leaving home) so the local probe
+    /// re-runs at the moments that matter, instead of on a wasteful timer.
+    private let pathMonitor = NWPathMonitor()
+    private var localProbeTask: Task<Void, Never>?
+    private var localMonitorStarted = false
+
     var client: FrigateClient? {
         guard let session else { return nil }
-        return FrigateClient(session: session)
+        let base = (onLocalNetwork && session.localBaseURL != nil) ? session.localBaseURL! : session.baseURL
+        return FrigateClient(baseURL: base, token: session.token)
+    }
+
+    /// Short label for the Settings connection indicator. "Home network" only when a local URL is
+    /// configured and currently confirmed reachable; otherwise "Remote".
+    var connectionModeLabel: String {
+        guard session?.localBaseURL != nil else { return "Remote" }
+        return onLocalNetwork ? "Home network" : "Remote"
     }
 
     // Removed in the nonisolated deinit; removeObserver is thread-safe.
@@ -144,6 +168,7 @@ final class AppState: ObservableObject {
         eventStream.onEvent = { [weak self] event in
             self?.handleStreamEvent(event)
         }
+        startLocalNetworkMonitor()
         WatchSyncManager.shared.activate()
         // Sweep yesterday's downloaded clips / reel segments out of tmp. iOS only purges tmp
         // opportunistically, so a regular exporter would otherwise accrue gigabytes of
@@ -851,6 +876,93 @@ final class AppState: ObservableObject {
         cacheLatestAlertForWidget()
     }
 
+    // MARK: - Home-network fast path (local ↔ remote auto-switch)
+
+    /// Starts the NWPathMonitor once. Every network change (WiFi↔cellular, joining/leaving the
+    /// home LAN) schedules a debounced probe, so the app upgrades to the local URL the moment
+    /// home is reachable and drops back to remote the moment it isn't — no polling.
+    private func startLocalNetworkMonitor() {
+        guard !localMonitorStarted else { return }
+        localMonitorStarted = true
+        pathMonitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor in self?.scheduleLocalProbe(debounce: 0.7) }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "com.brandontoth.apexsight.pathmonitor"))
+    }
+
+    /// Coalesces bursty path updates (a WiFi↔cellular handoff fires several in a row) into a
+    /// single probe. Callable directly with no debounce for an immediate check (foreground, or
+    /// right after the user saves a local URL — so the Local Network permission prompt appears
+    /// in context).
+    func scheduleLocalProbe(debounce: TimeInterval = 0) {
+        localProbeTask?.cancel()
+        localProbeTask = Task { [weak self] in
+            if debounce > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(debounce * 1_000_000_000))
+                if Task.isCancelled { return }
+            }
+            await self?.evaluateLocalNetwork()
+        }
+    }
+
+    /// Probes the configured local URL and flips `onLocalNetwork`. Default-remote, confirm-to-local:
+    /// only a positive, identity-checked probe turns the fast path on; any failure (unreachable,
+    /// permission denied, foreign device) leaves us on remote. The snapshot wall re-reads `client`
+    /// on its refresh loop and follows the swapped base URL within a few seconds — no manual
+    /// reconnect needed — and a flip triggers a `refresh()` so the change feels immediate.
+    private func evaluateLocalNetwork() async {
+        guard let session, let local = session.localBaseURL else {
+            if onLocalNetwork { onLocalNetwork = false }
+            return
+        }
+        let probe = FrigateClient(baseURL: local, token: session.token)
+        var reachable = await probe.probeReachableFrigate()
+        // One quick retry before *demoting* home→remote, so a single transient blip (a roaming
+        // handoff, a momentary drop) doesn't bounce everyone onto the slower tunnel.
+        if !reachable && onLocalNetwork {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            reachable = await probe.probeReachableFrigate()
+        }
+        guard onLocalNetwork != reachable else { return }
+        onLocalNetwork = reachable
+        // Repaint promptly against the new base URL. Snapshots would follow on their own loop
+        // within a few seconds; this makes the switch feel instant.
+        await refresh()
+    }
+
+    /// Sets (or clears, when empty) the optional home-network URL for the current server, persists
+    /// it to the Keychain, and immediately probes — so the iOS Local Network permission prompt
+    /// surfaces here, in context, right after the user saves, rather than at some random later
+    /// moment. Same server ⇒ same JWT, so no re-auth is needed; only the base URL changes.
+    func setLocalURL(_ raw: String) {
+        guard let session else { return }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let local: URL?
+        if trimmed.isEmpty {
+            local = nil
+        } else if let url = try? FrigateSession.normalizedBaseURL(trimmed) {
+            local = url
+        } else {
+            localURLError = "That address doesn't look right — include the LAN IP, e.g. 192.168.1.204:5000."
+            return
+        }
+        localURLError = nil
+        let next = FrigateSession(
+            baseURL: session.baseURL,
+            username: session.username,
+            token: session.token,
+            password: session.password,
+            localBaseURL: local
+        )
+        keychain.save(session: next)
+        self.session = next
+        if local == nil {
+            onLocalNetwork = false
+        } else {
+            scheduleLocalProbe()   // in-context permission prompt + immediate evaluate
+        }
+    }
+
     func signIn(baseURL: String, username: String, password: String) async {
         isLoading = true
         errorMessage = nil
@@ -920,13 +1032,16 @@ final class AppState: ObservableObject {
         let gen = serverGeneration
         let task = Task { [weak self] () -> Bool in
             do {
+                // Log in against the remote URL — it's reachable everywhere (via the tunnel),
+                // so a token refresh works even when away from home / before the local probe.
                 let client = FrigateClient(baseURL: session.baseURL)
                 let token = try await client.login(username: session.username, password: password)
                 let next = FrigateSession(
                     baseURL: session.baseURL,
                     username: session.username,
                     token: token,
-                    password: password
+                    password: password,
+                    localBaseURL: session.localBaseURL
                 )
                 self?.keychain.save(session: next)
                 self?.session = next
@@ -1215,8 +1330,11 @@ final class AppState: ObservableObject {
         stopForegroundPolling()
         cancelInFlightServerWork()
         locallyViewedIDs.removeAll()
+        // New server ⇒ re-evaluate its (possibly different / absent) local URL from scratch.
+        onLocalNetwork = false
         self.session = session
         keychain.save(session: session)
+        scheduleLocalProbe()
         cameras = []
         // Drop the previous server's cached camera list so the next cold launch can't briefly
         // show its cameras before this server's refresh lands.
@@ -1243,6 +1361,7 @@ final class AppState: ObservableObject {
         locallyViewedIDs.removeAll()
         unreviewedCount = 0
         keychain.clear()
+        onLocalNetwork = false
         // Clear the Watch so it doesn't keep showing the last household's alerts after sign-out.
         WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
         session = nil

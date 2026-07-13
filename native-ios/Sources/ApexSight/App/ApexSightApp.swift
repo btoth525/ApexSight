@@ -103,6 +103,9 @@ struct ApexSightApp: App {
                         appLock.markRevealed()
                         appState.startRealtime()
                         appState.startForegroundPolling()
+                        // Re-check the home-network fast path on every foreground — you may have
+                        // walked in or out the door while the app was away.
+                        appState.scheduleLocalProbe()
                         appState.consumePendingIntentLink()
                         // Re-assert push registration each time the app comes forward (signed in only).
                         if appState.session != nil { PushRegistrar.ensureRegistered() }
