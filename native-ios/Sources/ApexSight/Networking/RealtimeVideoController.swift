@@ -288,7 +288,12 @@ final class RealtimeVideoController: NSObject, ObservableObject {
                     self.gatheringContinuation = cont
                 }
             }
-            group.addTask { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+            // Cap the wait short: host (LAN) candidates gather in a few ms, and a STUN/TURN
+            // server-reflexive/relay candidate normally fires `.complete` well under this. The cap
+            // only truncates a STALLED gather (e.g. an unreachable/slow STUN) — which was silently
+            // costing ~2s on every local connect, the gap between "fast" and Reolink-instant. Once
+            // gathering completes it proceeds immediately regardless of this ceiling.
+            group.addTask { try? await Task.sleep(nanoseconds: 600_000_000) }
             await group.next()
             gatheringContinuation?.resume()
             gatheringContinuation = nil

@@ -37,6 +37,23 @@ struct CameraCard: View {
                         .transition(.opacity)
                 }
 
+                // "Tap to go live" affordance — a frosted play button centered over the snapshot,
+                // the way Ring/Nest/Unifi signal a still that opens a live view. Purely decorative
+                // (the whole tile is the tap target), so it never intercepts the tap.
+                if isLive {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundStyle(.white)
+                        .offset(x: 1)   // optical-center the triangle in the circle
+                        .frame(width: 54, height: 54)
+                        .liquidGlass(in: Circle(), fallbackMaterial: .ultraThinMaterial)
+                        .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+
                 LinearGradient(
                     colors: [.clear, .clear, .black.opacity(0.8)],
                     startPoint: .top, endPoint: .bottom
