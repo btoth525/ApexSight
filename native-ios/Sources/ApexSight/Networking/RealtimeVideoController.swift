@@ -67,8 +67,13 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// frame — so an HEVC MAIN stream (iOS can't WebRTC-decode) automatically falls to the H264
     /// SUB stream and still gets sub-second live. `withAudio` also negotiates a recvonly audio
     /// track (doorbell call) — starts muted; the host enables it via `setAudioEnabled`.
-    func start(sources: [String], client: FrigateClient, withAudio: Bool = false) {
-        Self.rtLog("start requested: \(sources) (state=\(state), audio=\(withAudio))")
+    /// `directLAN`: the app is on the home network and this `client` points at the LAN, so the
+    /// phone and go2rtc (`…:8555`) share a subnet. Connect host-only — no TURN credential fetch,
+    /// no STUN, no relay-candidate gathering — which is the difference between "fast" and
+    /// Reolink-instant. Away from home (or if the host-only attempt hard-fails), the cascade uses
+    /// the full STUN+TURN path so the picture never drops to low-res.
+    func start(sources: [String], client: FrigateClient, withAudio: Bool = false, directLAN: Bool = false) {
+        Self.rtLog("start requested: \(sources) (state=\(state), audio=\(withAudio), directLAN=\(directLAN))")
         guard state == .idle || state == .failed else { return }
         let key = sources.first ?? ""
         guard failures[key, default: 0] < 2 else { Self.rtLog("start refused: failure cap"); return }
@@ -77,7 +82,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         wantAudio = withAudio
         state = .connecting
         startTask = Task { [weak self] in
-            await self?.cascade(sources: sources, client: client)
+            await self?.cascade(sources: sources, client: client, directLAN: directLAN)
             self?.startTask = nil
         }
     }
@@ -134,14 +139,27 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         #endif
     }
 
-    private func cascade(sources: [String], client: FrigateClient) async {
+    private func cascade(sources: [String], client: FrigateClient, directLAN: Bool) async {
         var anyHardFailure = false
         for source in sources {
             if Task.isCancelled { return }
-            Self.rtLog("attempt \(source)")
+            Self.rtLog("attempt \(source) (directLAN=\(directLAN))")
             attemptHardFailure = false
-            let rendered = await attempt(source: source, client: client)
+            var rendered = await attempt(source: source, client: client, directLAN: directLAN)
             Self.rtLog("attempt \(source) → \(rendered ? "RENDERED ✅" : (attemptHardFailure ? "HARD FAIL ❌" : "timeout ⏱"))")
+            // Quality guard: a host-only LAN attempt can HARD-fail if the camera's WebRTC media
+            // port (:8555) is firewalled while its HTTP (:5000) is reachable. Rather than let the
+            // cascade drop to low-res MJPEG, retry the SAME source once with the full STUN+TURN
+            // path — so the speed optimization never costs picture quality. (A timeout, i.e. a
+            // cold stream still warming, is NOT retried here — TURN wouldn't help it.)
+            if !rendered && attemptHardFailure && directLAN {
+                Self.rtLog("host-only hard-fail → retry \(source) with STUN+TURN")
+                teardown()
+                if Task.isCancelled { return }
+                attemptHardFailure = false
+                rendered = await attempt(source: source, client: client, directLAN: false)
+                Self.rtLog("retry \(source) → \(rendered ? "RENDERED ✅" : (attemptHardFailure ? "HARD FAIL ❌" : "timeout ⏱"))")
+            }
             if rendered {
                 failures[primaryKey] = 0
                 state = .live
@@ -160,10 +178,14 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     }
 
     /// One source: negotiate, then wait for a rendered frame (true) or timeout/failure (false).
-    private func attempt(source: String, client: FrigateClient) async -> Bool {
+    private func attempt(source: String, client: FrigateClient, directLAN: Bool) async -> Bool {
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        config.iceServers = await TurnSettings.iceServers()
+        // On the LAN, host candidates alone connect the phone straight to go2rtc's `…:8555` in a
+        // few ms. Skipping the TURN credential fetch (a relay + Cloudflare round-trip) AND STUN
+        // gathering removes the biggest chunk of connect latency at home. Off-LAN, media can't
+        // cross the tunnel, so the full STUN+TURN set is required.
+        config.iceServers = directLAN ? [] : await TurnSettings.iceServers()
         config.bundlePolicy = .maxBundle
         config.iceTransportPolicy = .all
         guard !Task.isCancelled else { return false }

@@ -891,9 +891,7 @@ final class AppState: ObservableObject {
     }
 
     /// Coalesces bursty path updates (a WiFi↔cellular handoff fires several in a row) into a
-    /// single probe. Callable directly with no debounce for an immediate check (foreground, or
-    /// right after the user saves a local URL — so the Local Network permission prompt appears
-    /// in context).
+    /// single probe. Callable directly with no debounce for an immediate check (foreground).
     func scheduleLocalProbe(debounce: TimeInterval = 0) {
         localProbeTask?.cancel()
         localProbeTask = Task { [weak self] in
@@ -902,6 +900,22 @@ final class AppState: ObservableObject {
                 if Task.isCancelled { return }
             }
             await self?.evaluateLocalNetwork()
+        }
+    }
+
+    /// Probes now and again after short delays. Used right after the user saves a local URL: the
+    /// very first probe RAISES the iOS Local Network permission prompt and fails while it's up, so
+    /// a single probe would leave the app stuck on Remote until the next foreground. Re-probing at
+    /// ~+2s and ~+6s picks up the just-granted permission and flips to the fast path immediately.
+    private func burstLocalProbe() {
+        localProbeTask?.cancel()
+        localProbeTask = Task { [weak self] in
+            await self?.evaluateLocalNetwork()
+            for delay: UInt64 in [2_000_000_000, 4_000_000_000] {
+                try? await Task.sleep(nanoseconds: delay)
+                if Task.isCancelled { return }
+                await self?.evaluateLocalNetwork()
+            }
         }
     }
 
@@ -963,7 +977,7 @@ final class AppState: ObservableObject {
         if local == nil {
             onLocalNetwork = false
         } else {
-            scheduleLocalProbe()   // in-context permission prompt + immediate evaluate
+            burstLocalProbe()   // in-context permission prompt + re-probe once it's granted
         }
     }
 

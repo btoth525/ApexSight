@@ -798,7 +798,7 @@ struct HLSLivePlayerView: View {
                 } else {
                     sources = (preferSub && hasSub) ? [sub, camera.name] : [camera.name]
                 }
-                realtime.start(sources: sources, client: client, withAudio: showControls)
+                realtime.start(sources: sources, client: client, withAudio: showControls, directLAN: appState.onLocalNetwork)
             }
             if showControls { realtime.setAudioEnabled(!effectiveMuted) }
             return
@@ -807,7 +807,7 @@ struct HLSLivePlayerView: View {
             // Doorbell call: WebRTC carries A/V regardless of mute; mute just gates the audio
             // track (ring = silent, answered = hear the visitor sub-second).
             if realtime.state == .idle || realtime.state == .failed {
-                realtime.start(sources: [camera.name], client: client, withAudio: true)
+                realtime.start(sources: [camera.name], client: client, withAudio: true, directLAN: appState.onLocalNetwork)
             }
             realtime.setAudioEnabled(!effectiveMuted)
             syncHLSMuteForRealtimeAudio()
@@ -817,7 +817,7 @@ struct HLSLivePlayerView: View {
                 // So an H264-main camera gets full-quality sub-second video; an HEVC-main camera
                 // (Front Driveway — iOS can't WebRTC-decode HEVC) simply stays on its full-res
                 // HLS main. Either way the picture is always full quality — no downgrade.
-                realtime.start(sources: [camera.name], client: client)
+                realtime.start(sources: [camera.name], client: client, directLAN: appState.onLocalNetwork)
             }
         } else {
             realtime.stop()
