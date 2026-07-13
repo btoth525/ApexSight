@@ -916,12 +916,16 @@ final class AppState: ObservableObject {
             return
         }
         let probe = FrigateClient(baseURL: local, token: session.token)
-        var reachable = await probe.probeReachableFrigate()
+        // Identity-check against this server's known cameras so a *different* Frigate sharing the
+        // same LAN IP on a foreign network can't be mistaken for home (many home Frigates don't
+        // enforce auth on the LAN, so status alone isn't proof of identity).
+        let expected = Set(cameras.map(\.name))
+        var reachable = await probe.probeReachableFrigate(expectedCameras: expected)
         // One quick retry before *demoting* home→remote, so a single transient blip (a roaming
         // handoff, a momentary drop) doesn't bounce everyone onto the slower tunnel.
         if !reachable && onLocalNetwork {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            reachable = await probe.probeReachableFrigate()
+            reachable = await probe.probeReachableFrigate(expectedCameras: expected)
         }
         guard onLocalNetwork != reachable else { return }
         onLocalNetwork = reachable

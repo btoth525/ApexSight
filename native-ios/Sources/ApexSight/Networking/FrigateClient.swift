@@ -54,13 +54,21 @@ struct FrigateClient {
     }
 
     /// Fast reachability + identity probe for the home-network fast path. Confirms the host at
-    /// `baseURL` is *this* Frigate — our JWT is accepted and it answers `/api/version` — inside a
-    /// short timeout, so a stranger's device on the same subnet (or a captive portal answering
-    /// 200) can't be mistaken for home. Never throws: returns `false` on any failure, including
-    /// the iOS Local Network permission being denied, so the caller silently stays on remote.
-    /// Uses a one-off ephemeral session with `waitsForConnectivity = false` so an unreachable LAN
-    /// address fails fast instead of parking until the resource timeout.
-    func probeReachableFrigate(timeout: TimeInterval = 1.5) async -> Bool {
+    /// `baseURL` is *this* Frigate inside a short timeout, so a stranger's device on the same
+    /// subnet (or a captive portal answering 200) can't be mistaken for home. Never throws:
+    /// returns `false` on any failure, including the iOS Local Network permission being denied,
+    /// so the caller silently stays on remote. Uses a one-off ephemeral session with
+    /// `waitsForConnectivity = false` so an unreachable LAN address fails fast instead of parking
+    /// until the resource timeout.
+    ///
+    /// Identity is checked against `/api/config`: it must be a valid Frigate config, and — when
+    /// `expectedCameras` is non-empty — at least one of *this* server's cameras must be present.
+    /// That matters because a home Frigate often doesn't enforce auth on the LAN (verified: this
+    /// server 200s `/api/config` unauthenticated), so a bare status/shape check could false-match
+    /// a *different* Frigate that happened to share the same private IP:port on a foreign network.
+    /// Requiring a known camera closes that gap without relying on auth. Before the camera list
+    /// has loaded (`expectedCameras` empty), a valid config shape alone enables the fast path.
+    func probeReachableFrigate(expectedCameras: Set<String> = [], timeout: TimeInterval = 1.5) async -> Bool {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = timeout
         config.timeoutIntervalForResource = timeout
@@ -69,19 +77,16 @@ struct FrigateClient {
         let probeSession = URLSession(configuration: config)
         defer { probeSession.invalidateAndCancel() }
 
-        var request = URLRequest(url: baseURL.appending(path: "api/version"))
+        var request = URLRequest(url: baseURL.appending(path: "api/config"))
         request.timeoutInterval = timeout
         applyAuth(to: &request)
         do {
             let (data, response) = try await probeSession.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
-            // Frigate's /api/version is a short plain-text version string ("0.18.0"). Requiring a
-            // leading digit rejects a foreign 200 (captive-portal HTML, some other service) that
-            // happened to accept the request — belt-and-suspenders on top of the JWT check above.
-            guard let text = String(data: data, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines),
-                  let first = text.first, first.isNumber else { return false }
-            return true
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let cameras = obj["cameras"] as? [String: Any], !cameras.isEmpty else { return false }
+            if expectedCameras.isEmpty { return true }
+            return !Set(cameras.keys).isDisjoint(with: expectedCameras)
         } catch {
             return false
         }
