@@ -106,6 +106,8 @@ struct ApexSightApp: App {
                         // Re-check the home-network fast path on every foreground — you may have
                         // walked in or out the door while the app was away.
                         appState.scheduleLocalProbe()
+                        // Resume keeping the slow-start cameras warm while foregrounded.
+                        appState.setForegroundActive(true)
                         appState.consumePendingIntentLink()
                         // Re-assert push registration each time the app comes forward (signed in only).
                         if appState.session != nil { PushRegistrar.ensureRegistered() }
@@ -122,6 +124,8 @@ struct ApexSightApp: App {
                         appLock.markObscured()
                     case .background:
                         appState.stopRealtime()
+                        // Tear down the warm consumers — nothing should stream while backgrounded.
+                        appState.setForegroundActive(false)
                         appState.stopForegroundPolling()
                         BackgroundRefreshManager.schedule()
                         // Re-lock so the app-switcher snapshot and next open are private.

@@ -941,11 +941,41 @@ final class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 500_000_000)
             reachable = await probe.probeReachableFrigate(expectedCameras: expected)
         }
-        guard onLocalNetwork != reachable else { return }
+        let changed = onLocalNetwork != reachable
         onLocalNetwork = reachable
         // Repaint promptly against the new base URL. Snapshots would follow on their own loop
         // within a few seconds; this makes the switch feel instant.
-        await refresh()
+        if changed { await refresh() }
+        // Keep the slow-start cameras warm whenever we're on the LAN (and drop them off it).
+        updatePrewarm()
+    }
+
+    /// Whether the app is foregrounded — pre-warming only runs while it is (holding live consumers
+    /// in the background would just burn battery for nothing). Set from the scene phase.
+    private var appActive = true
+
+    /// Called from the scene phase. Foreground → (re)evaluate whether to pre-warm; background →
+    /// tear the held consumers down so nothing streams while the app is away.
+    func setForegroundActive(_ active: Bool) {
+        appActive = active
+        updatePrewarm()
+    }
+
+    /// Keep the learned slow-start cameras HOT while we're home and foregrounded, so opening one
+    /// (doorbell / 4K driveway) paints instantly instead of cold-starting the server encoder. Only
+    /// on the LAN — pre-warming over the remote tunnel would stream those feeds continuously across
+    /// TURN for cameras you're not even watching. Idempotent; safe to call often.
+    private func updatePrewarm() {
+        guard appActive, onLocalNetwork, let client else {
+            StreamPrewarmer.shared.stopAll()
+            return
+        }
+        var targets = SlowStartCameraStore.all
+        // The doorbell is a known on-demand (Scrypted-bridged) camera — warm it from the first
+        // foreground, before the timing learner would catch it, whenever this server has one.
+        if cameras.contains(where: { $0.name == "doorbell" }) { targets.insert("doorbell") }
+        guard !targets.isEmpty else { StreamPrewarmer.shared.stopAll(); return }
+        StreamPrewarmer.shared.warm(cameras: Array(targets), client: client, directLAN: true)
     }
 
     /// Sets (or clears, when empty) the optional home-network URL for the current server, persists
@@ -1348,8 +1378,11 @@ final class AppState: ObservableObject {
         stopForegroundPolling()
         cancelInFlightServerWork()
         locallyViewedIDs.removeAll()
-        // New server ⇒ re-evaluate its (possibly different / absent) local URL from scratch.
+        // New server ⇒ re-evaluate its (possibly different / absent) local URL from scratch, and
+        // drop the previous server's warm consumers + learned slow-camera list.
         onLocalNetwork = false
+        StreamPrewarmer.shared.stopAll()
+        SlowStartCameraStore.reset()
         self.session = session
         keychain.save(session: session)
         scheduleLocalProbe()
@@ -1380,6 +1413,8 @@ final class AppState: ObservableObject {
         unreviewedCount = 0
         keychain.clear()
         onLocalNetwork = false
+        StreamPrewarmer.shared.stopAll()
+        SlowStartCameraStore.reset()
         // Clear the Watch so it doesn't keep showing the last household's alerts after sign-out.
         WatchSyncManager.shared.push(alerts: [], heroJPEG: nil)
         session = nil

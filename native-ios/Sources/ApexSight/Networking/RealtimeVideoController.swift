@@ -22,8 +22,9 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// same audio arriving twice, seconds apart).
     @Published private(set) var audioTrack: RTCAudioTrack?
 
-    // One factory per process (shared pattern with TwoWayTalkController).
-    private static let factory: RTCPeerConnectionFactory = {
+    // One factory per process (shared pattern with TwoWayTalkController; also reused by
+    // StreamPrewarmer so there's a single heavy factory, not one per subsystem).
+    static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
@@ -37,6 +38,11 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// Resolved true by the first RENDERED frame, false by the per-attempt timeout / ICE failure.
     private var firstFrameContinuation: CheckedContinuation<Bool, Never>?
     private var attemptWatchdog: Task<Void, Never>?
+    /// When the in-flight attempt began + which source it's for — used to time cold-start
+    /// (tap → first frame) and learn which cameras are slow, so they can be pre-warmed. This is
+    /// also the before/after signal for the pre-warm work: a warmed camera paints in a fraction.
+    private var attemptStartedAt: Date?
+    private var attemptSource: String?
     private var bgObserver: NSObjectProtocol?
     private(set) var isSuspendedByBackground = false
     /// Per-camera failure count — a camera whose sources all fail (no H264 path, no media route)
@@ -179,6 +185,8 @@ final class RealtimeVideoController: NSObject, ObservableObject {
 
     /// One source: negotiate, then wait for a rendered frame (true) or timeout/failure (false).
     private func attempt(source: String, client: FrigateClient, directLAN: Bool) async -> Bool {
+        attemptStartedAt = Date()
+        attemptSource = source
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
         // On the LAN, host candidates alone connect the phone straight to go2rtc's `…:8555` in a
@@ -272,6 +280,15 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// Resolve the in-flight attempt exactly once (first frame → true, timeout/ICE-fail → false).
     private func resolveAttempt(_ rendered: Bool) {
         attemptWatchdog?.cancel(); attemptWatchdog = nil
+        if rendered, let started = attemptStartedAt, let src = attemptSource {
+            let elapsed = Date().timeIntervalSince(started)
+            let base = src.hasSuffix("_sub") ? String(src.dropLast(4)) : src
+            Self.rtLog("first frame \(base) in \(String(format: "%.2f", elapsed))s")
+            // A cold-start over ~1.2s means an on-demand server re-encode (doorbell, 4K HEVC) —
+            // learn it so the pre-warmer can keep it hot. Sticky: a camera stays "slow" once seen
+            // (pre-warming makes later opens fast, but that doesn't change that it's on-demand).
+            if elapsed > 1.2 { SlowStartCameraStore.record(base) }
+        }
         guard let cont = firstFrameContinuation else { return }
         firstFrameContinuation = nil
         cont.resume(returning: rendered)
