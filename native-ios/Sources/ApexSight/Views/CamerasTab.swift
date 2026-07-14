@@ -77,13 +77,18 @@ struct CamerasTab: View {
 
     // MARK: - Live wall (normal mode)
 
-    /// A plain (non-lazy) stack so every camera's feed loads and STAYS live as you
-    /// scroll, instead of flickering on/off as cells recycle. Feeds are persistent: they
-    /// keep streaming across tab switches and only drop the connection while the app is
-    /// backgrounded (rebuilding instantly on return).
+    /// Lazy stack: only tiles near the viewport instantiate, so an off-screen camera's snapshot
+    /// refresh loop (a `latest.jpg` fetch + downsample every ~3s) doesn't keep running for every
+    /// camera on the wall — that was continuous wasted network/CPU/battery for the ~6-7 cameras
+    /// scrolled out of view. SwiftUI keeps a buffer of just-off-screen tiles alive, and each tile
+    /// paints its cached last frame immediately on reappear, so scrolling back shows the frame with
+    /// at most a fresh fetch, not a flicker. Tiles are snapshot-based (CameraCard → LiveSnapshotView),
+    /// not persistent HLS, so nothing live is being torn down here.
+    /// NOTE: this is a behavior change to the wall's scroll/keep-warm model — compiler-verified only;
+    /// confirm the scroll-back feel against real Frigate on device (this sim has no credentials).
     private var liveScroll: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 if !isEditing {
                     HouseModeSwitcher(onOpenDetail: { path.append("house") })
                     householdSnoozeBanner
