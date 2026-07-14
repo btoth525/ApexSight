@@ -177,6 +177,21 @@ struct RecordingContextPlayerView: View {
                 )
             }
             .frame(height: 44)
+            // VoiceOver: the scrubber is a gesture-only track (drag + tap markers) a VoiceOver user
+            // can't operate. Expose it as one adjustable element so it's movable via the rotor, the
+            // way RecordingBrowserView's timeline already is.
+            .accessibilityElement()
+            .accessibilityLabel("Playback timeline")
+            .accessibilityValue("\(Int((playheadFraction * 100).rounded())) percent")
+            .accessibilityHint("Swipe up or down to scrub through the recording")
+            .accessibilityAdjustableAction { direction in
+                let step = max(duration, 1) * 0.02
+                switch direction {
+                case .increment: seek(to: min(duration, currentTime + step))
+                case .decrement: seek(to: max(0, currentTime - step))
+                @unknown default: break
+                }
+            }
 
             // Time axis.
             HStack {
