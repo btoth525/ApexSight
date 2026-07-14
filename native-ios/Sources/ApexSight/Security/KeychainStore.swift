@@ -56,7 +56,12 @@ final class KeychainStore {
     /// group / UserDefaults) because it's a security credential; the app only sends it after Face ID.
     @discardableResult
     func saveAlarmCode(_ code: String) -> Bool {
-        keychainSet(key: alarmCodeKey, data: Data(code.utf8))
+        // The disarm code is read only interactively (after Face ID, app in foreground) — never by
+        // the NSE/widgets in the background — so it takes the tightest accessibility: readable only
+        // while the device is unlocked, on this device only. (The session token below stays on
+        // AfterFirstUnlock because the notification extension reads it while the phone is locked.)
+        keychainSet(key: alarmCodeKey, data: Data(code.utf8),
+                    accessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
     }
 
     var alarmCode: String? {
@@ -71,14 +76,15 @@ final class KeychainStore {
     /// delete-before-add window where a concurrent read could see no item. Returns
     /// whether the value is now stored.
     @discardableResult
-    private func keychainSet(key: String, data: Data) -> Bool {
+    private func keychainSet(key: String, data: Data,
+                             accessible: CFString = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key
         ]
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            kSecAttrAccessible as String: accessible
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
@@ -86,7 +92,7 @@ final class KeychainStore {
 
         if updateStatus == errSecItemNotFound {
             var add = query
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            add[kSecAttrAccessible as String] = accessible
             add[kSecValueData as String] = data
             return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
         }
@@ -95,7 +101,7 @@ final class KeychainStore {
         // a clean replace so we still end up persisted rather than silently failing.
         SecItemDelete(query as CFDictionary)
         var add = query
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        add[kSecAttrAccessible as String] = accessible
         add[kSecValueData as String] = data
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }

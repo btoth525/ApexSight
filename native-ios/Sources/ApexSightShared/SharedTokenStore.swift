@@ -28,14 +28,14 @@ public enum SharedTokenStore {
             kSecValueData as String: data,
             // Available to the extension/widget while the device is unlocked-since-boot, on this
             // device only (never synced/backed up to another device).
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         let updateStatus = SecItemUpdate(base as CFDictionary, update as CFDictionary)
         if updateStatus == errSecSuccess { return true }
         if updateStatus == errSecItemNotFound {
             var add = base
             add[kSecValueData as String] = data
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
         }
         // Unexpected error: clean replace so we still end up persisted.
