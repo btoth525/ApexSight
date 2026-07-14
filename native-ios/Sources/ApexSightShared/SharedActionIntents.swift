@@ -75,6 +75,10 @@ enum ApexArmModeAppEnum: String, AppEnum {
 struct ApexSetArmModeIntent: AppIntent {
     static var title: LocalizedStringResource = "Set Security Mode"
     static var description = IntentDescription("Arm or disarm ApexSight (Home, Away, Night, or Disarmed).")
+    // This can DISARM (silence every camera alert), so it must not run from a locked device — require
+    // Face ID / passcode first. Otherwise "Hey Siri, disarm ApexSight" on a locked, stolen phone kills
+    // all alerting with no authentication.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
 
     @Parameter(title: "Mode")
     var mode: ApexArmModeAppEnum
@@ -90,6 +94,9 @@ struct ApexSetArmModeIntent: AppIntent {
 @available(iOS 18.0, *)
 struct ApexArmToggleIntent: SetValueIntent {
     static var title: LocalizedStringResource = "Arm ApexSight"
+    // The "off" position DISARMS (silences all camera alerts), so require authentication — a locked
+    // phone's Control Center must not let anyone toggle alerting off without Face ID / passcode.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
 
     @Parameter(title: "Armed")
     var value: Bool
