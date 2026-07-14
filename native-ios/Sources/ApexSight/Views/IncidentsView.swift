@@ -335,6 +335,7 @@ struct IncidentDetailView: View {
                     .frame(width: 44, height: 44)
                     .background(GlassTheme.surfaceHigh, in: Circle())
                     .foregroundStyle(GlassTheme.secondary)
+                    .accessibilityLabel("Incident actions")
             }
         }
     }

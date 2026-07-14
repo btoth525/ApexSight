@@ -79,6 +79,7 @@ struct ConfigEditorView: View {
                             Button { Task { await load(force: true) } } label: { Label("Reload from Frigate", systemImage: "arrow.clockwise") }
                         } label: {
                             Image(systemName: "ellipsis.circle").foregroundStyle(GlassTheme.accent)
+                                .accessibilityLabel("Editor options")
                         }
                     }
                 }
@@ -135,6 +136,7 @@ struct ConfigEditorView: View {
             Button { findNext += 1 } label: {
                 Image(systemName: "chevron.down.circle.fill").foregroundStyle(GlassTheme.accent)
             }
+            .accessibilityLabel("Find next")
             .disabled(findQuery.isEmpty)
             Button { withAnimation { showFind = false; findQuery = "" } } label: {
                 Text("Done").font(.subheadline.weight(.semibold)).foregroundStyle(GlassTheme.accent)
@@ -155,6 +157,7 @@ struct ConfigEditorView: View {
             Button { withAnimation { validationError = nil } } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(GlassTheme.tertiary)
             }
+            .accessibilityLabel("Dismiss error")
         }
         .padding(GlassTheme.Space.m)
         .background(GlassTheme.red.opacity(0.16))
@@ -189,6 +192,7 @@ struct ConfigEditorView: View {
                 Image(systemName: "ellipsis.circle.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(GlassTheme.secondary)
+                    .accessibilityLabel("More actions")
             }
         }
         .padding(GlassTheme.Space.m)
