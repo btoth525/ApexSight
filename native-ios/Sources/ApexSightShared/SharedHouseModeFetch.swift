@@ -21,7 +21,15 @@ public enum SharedHouseModeFetch {
         if relayURL.trimmingCharacters(in: .whitespaces).isEmpty { relayURL = RelayConfig.defaultURL }
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed + "/v1/mode"), url.scheme != nil, url.host != nil else { return "" }
+        // Send the household pairing code so the relay can authenticate this read. GET /v1/mode
+        // exposes live occupancy (home/away), armed_by, and the camera roster, so it should be
+        // gated; the widget's timeline provider and the silent-push handler both reach it through
+        // here, so they must present the code too. The code is available to this (widget-linked)
+        // Foundation file via the app-group mirror, falling back to the baked household default.
+        guard var comps = URLComponents(string: trimmed + "/v1/mode"), comps.scheme != nil, comps.host != nil else { return "" }
+        let pairing = defaults?.string(forKey: "apex.pairingCode") ?? RelayConfig.defaultPairingCode
+        if !pairing.isEmpty { comps.queryItems = [URLQueryItem(name: "pairing_code", value: pairing)] }
+        guard let url = comps.url else { return "" }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
