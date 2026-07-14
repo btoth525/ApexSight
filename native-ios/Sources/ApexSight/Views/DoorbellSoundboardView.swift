@@ -8,7 +8,10 @@ import UniformTypeIdentifiers
 /// and a hold-to-talk button — all speak through the door via the relay.
 struct DoorbellSoundboardStrip: View {
     @ObservedObject var soundboard: DoorbellSoundboard
-    @StateObject private var recorder = DoorbellVoiceRecorder()
+    @EnvironmentObject private var appState: AppState
+    /// LIVE talk: while held, the mic publishes into go2rtc (`apex_talkback`) and the relay pipes
+    /// it straight to the doorbell speaker — a real conversation, not record-then-send.
+    @StateObject private var talk = TwoWayTalkController()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showSay = false
     @State private var talkPulse = false
@@ -17,7 +20,7 @@ struct DoorbellSoundboardStrip: View {
         VStack(spacing: GlassTheme.Space.s) {
             // Relay/talkback failures surface right in the call — a tap that made no sound at the
             // door must never be silent in the UI.
-            if let status = soundboard.status {
+            if let status = soundboard.status ?? talkFailureText {
                 Text(status)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.white)
@@ -53,21 +56,26 @@ struct DoorbellSoundboardStrip: View {
             DoorbellSayView(soundboard: soundboard)
         }
         // Call ended (remotely or locally) mid-hold: never leave a hot mic or a hijacked session.
-        .onDisappear { recorder.stop() }
+        .onDisappear { endLiveTalk() }
+    }
+
+    private var talkFailureText: String? {
+        if case .failed(let message) = talk.status { return message }
+        return nil
     }
 
     private var talkButton: some View {
-        let recording = recorder.isRecording
+        let talking = talk.isActive
         return VStack(spacing: 4) {
-            Image(systemName: recording ? "waveform" : "mic.fill")
+            Image(systemName: talking ? "waveform" : "mic.fill")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 68, height: 68)
-                .background(recording ? GlassTheme.red : GlassTheme.accent, in: Circle())
-                .scaleEffect(recording && !reduceMotion ? (talkPulse ? 1.08 : 1) : 1)
-                .animation(recording && !reduceMotion ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
+                .background(talking ? GlassTheme.red : GlassTheme.accent, in: Circle())
+                .scaleEffect(talking && !reduceMotion ? (talkPulse ? 1.08 : 1) : 1)
+                .animation(talking && !reduceMotion ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
                            value: talkPulse)
-            Text(recording ? "Release to send" : "Hold to Talk")
+            Text(talking ? "Live — release to end" : "Hold to Talk")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.white.opacity(0.85))
         }
@@ -75,21 +83,42 @@ struct DoorbellSoundboardStrip: View {
         // `pressing:` (unlike a DragGesture) is ALSO called with false when the system cancels the
         // gesture (scroll steal, view teardown) — so the mic can never be left hot on a cancel.
         .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 60) {} onPressingChanged: { pressing in
-            if pressing {
-                Haptics.tap()
-                recorder.start()
-                talkPulse = true
-            } else {
-                talkPulse = false
-                guard let clip = recorder.stopAndData() else { return }
-                Haptics.success()
-                Task {
-                    await soundboard.sendData(clip.data, filename: "talk.m4a")
-                    try? FileManager.default.removeItem(at: clip.url)
-                }
-            }
+            if pressing { startLiveTalk() } else { endLiveTalk() }
         }
-        .task { DoorbellVoiceRecorder.requestPermission() }
+    }
+
+    /// Press: publish the mic into go2rtc, and once the publish is live tell the relay to pipe it
+    /// to the doorbell speaker. The relay call blocks for the whole hold — it returns on release.
+    private func startLiveTalk() {
+        guard let client = appState.client, !talk.isActive else { return }
+        Haptics.tap()
+        talkPulse = true
+        talk.begin(cameraTwoWaySource: "apex_talkback", client: client)
+        Task {
+            // Wait (≤4s) for the mic publish to actually land before opening the door speaker.
+            for _ in 0..<80 {
+                if talk.status == .talking { break }
+                if case .failed = talk.status { return }   // watchdog copy already surfaced
+                if talk.status == .idle { return }         // released before connect finished
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            guard talk.status == .talking else { return }
+            await soundboard.talkLive()
+        }
+    }
+
+    /// Release (or gesture cancel / view teardown): stop the mic publish — the relay session ends
+    /// itself when the stream EOFs — and hand the shared audio session back to the call's
+    /// playback so the visitor's voice keeps coming through.
+    private func endLiveTalk() {
+        talkPulse = false
+        guard talk.isActive else { return }
+        Haptics.success()
+        talk.stop()
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .videoChat,
+                                 options: [.defaultToSpeaker, .allowBluetoothA2DP])
+        try? session.setActive(true)
     }
 
     private func chip(icon: String, label: String, action: @escaping () -> Void) -> some View {

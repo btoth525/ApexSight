@@ -364,6 +364,30 @@ enum RelayClient {
         return r.clips
     }
 
+    /// LIVE hold-to-talk session: tells the relay to pull the mic stream the app just published
+    /// into go2rtc (`apex_talkback`) and pipe it to the doorbell speaker. BLOCKS for the duration
+    /// of the talk — the relay returns when the mic publish ends (talk-button release) — so call
+    /// it from a fire-and-forget Task with the long timeout it carries. Throws on 404 (add-on too
+    /// old), 409 (no stream landed / another clip busy), 5xx (camera/ffmpeg failure).
+    static func doorbellTalkLive(relayURL: String, pairingCode: String) async throws {
+        struct Body: Encodable { let pairing_code: String }
+        var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard let baseURL = URL(string: trimmed), baseURL.scheme != nil, baseURL.host != nil,
+              let url = URL(string: trimmed + "/v1/doorbell/talk-live") else { throw RelayError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(Body(pairing_code: pairingCode))
+        request.timeoutInterval = 150   // ≥ the relay's 120s per-hold backstop
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw RelayError.server(code, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
     /// Play a saved preset at the door.
     static func playSavedDoorbellClip(relayURL: String, pairingCode: String, slug: String) async throws {
         try await post(relayURL: relayURL, path: "/v1/doorbell/play",

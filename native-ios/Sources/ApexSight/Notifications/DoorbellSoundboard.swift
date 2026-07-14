@@ -71,6 +71,26 @@ final class DoorbellSoundboard: ObservableObject {
         if !saveAs.isEmpty { await reloadClips() }
     }
 
+    /// LIVE hold-to-talk session. The caller has already started publishing the mic into go2rtc's
+    /// `apex_talkback`; this tells the relay to pipe that stream to the doorbell speaker, and
+    /// stays awaiting until the talk ends (mic publish stops → stream EOFs → relay returns).
+    /// Failures surface in `status` with actionable copy — never a silent dead talk button.
+    func talkLive() async {
+        guard ready else { return }
+        status = nil
+        do {
+            try await RelayClient.doorbellTalkLive(relayURL: relayURL, pairingCode: pairing)
+        } catch {
+            if case RelayClient.RelayError.server(let code, _) = error, code == 404 {
+                status = "Live talk needs the ApexSight Push add-on v1.12+ — update it in Home Assistant."
+            } else if case RelayClient.RelayError.server(409, _) = error {
+                status = "The door speaker is busy — try again in a moment."
+            } else {
+                status = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
     /// Delete a saved preset.
     func delete(_ slug: String) async {
         guard ready else { return }
