@@ -33,5 +33,14 @@ struct OfflineBanner: View {
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.8), value: isVisible)
+        // Proactively tell VoiceOver the server went offline — otherwise the user would have to
+        // stumble onto the banner to learn the lists are stale.
+        .onChange(of: isVisible) { _, visible in
+            if visible {
+                AccessibilityNotification.Announcement(
+                    AttributedString("Can’t reach your server. Showing the last loaded data.")
+                ).post()
+            }
+        }
     }
 }

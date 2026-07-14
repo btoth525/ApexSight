@@ -12,6 +12,17 @@ struct CameraCard: View {
         appState.capabilities.first(where: { $0.camera == camera.name })
     }
 
+    /// The full spoken label. An explicit `.accessibilityLabel` REPLACES the text `.combine` would
+    /// synthesize, so the REC/PTZ capability chips must be folded in here or VoiceOver never hears
+    /// them.
+    private var accessibilityLabelText: String {
+        var parts = ["\(titleize(camera.name)) camera"]
+        if isLive { parts.append("live") }
+        if capability?.hasRecordings == true { parts.append("recording") }
+        if capability?.hasPtz == true { parts.append("pan tilt zoom") }
+        return parts.joined(separator: ", ") + ". Opens live view."
+    }
+
     var body: some View {
         NavigationLink {
             LiveStreamView(camera: camera)
@@ -73,7 +84,7 @@ struct CameraCard: View {
             .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
             .contentShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(titleize(camera.name)) camera\(isLive ? ", live" : ""). Opens live view.")
+            .accessibilityLabel(accessibilityLabelText)
             .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)

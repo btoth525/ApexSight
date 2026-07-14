@@ -111,6 +111,7 @@ struct ServerSwitcherView: View {
                 Image(systemName: "trash")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(GlassTheme.secondary)
+                    .hitTarget()
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(session.baseURL.host() ?? session.baseURL.absoluteString)")

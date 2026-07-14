@@ -19,7 +19,14 @@ struct LiveAlertBanner: View {
             if let banner = appState.liveBanner {
                 bannerCard(banner)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                    .onAppear { scheduleDismiss(banner) }
+                    .onAppear {
+                        scheduleDismiss(banner)
+                        // The toast auto-dismisses in 4.5s — announce it so a VoiceOver user hears
+                        // the alert instead of possibly never reaching the banner before it's gone.
+                        AccessibilityNotification.Announcement(
+                            AttributedString("Alert. \(banner.title). \(banner.body)")
+                        ).post()
+                    }
                     .onDisappear { dismissTask?.cancel(); dismissTask = nil }
             }
             Spacer()
