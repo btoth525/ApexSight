@@ -13,7 +13,12 @@ struct IceServerConfig: Codable, Equatable {
 /// Realtime TURN credentials from the pairing code the app already has (no new secret, no UI).
 /// Falls back to cached creds, then to STUN-only (LAN), so talk never hard-fails to fetch.
 enum TurnSettings {
-    private static let cacheKey = "cachedIceServers"
+    /// Last good ICE servers, kept **in memory only**. These are short-lived Cloudflare Realtime
+    /// TURN credentials (a secret) minted fresh from the relay on every talk session, so the
+    /// disk-persisted cache added no real resilience — a relaunch's stale creds would likely be
+    /// expired anyway — while leaving the credential sitting in an unencrypted `UserDefaults` plist.
+    /// In-memory keeps it as a within-session fallback without persisting the secret.
+    private static var memoryCache: [IceServerConfig]?
 
     /// The relay base URL + pairing code, read from the same App Group keys the rest of the
     /// relay integration uses (`apex.relayURL` / `apex.pairingCode`).
@@ -53,11 +58,10 @@ enum TurnSettings {
         RTCIceServer(urlStrings: c.urls, username: c.username, credential: c.credential)
     }
     private static func cache(_ s: [IceServerConfig]) {
-        UserDefaults.standard.set(try? JSONEncoder().encode(s), forKey: cacheKey)
+        memoryCache = s
     }
     private static func loadCache() -> [IceServerConfig]? {
-        guard let d = UserDefaults.standard.data(forKey: cacheKey) else { return nil }
-        return try? JSONDecoder().decode([IceServerConfig].self, from: d)
+        memoryCache
     }
     private static func nonEmpty(_ s: String?) -> String? {
         guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
