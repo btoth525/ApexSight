@@ -150,6 +150,20 @@ extension DoorbellCallManager: PKPushRegistryDelegate {
         guard type == .voIP else { return }
         let hex = credentials.token.map { String(format: "%02x", $0) }.joined()
         DeviceTokenStore.voipToken = hex
+        registerVoIPWithRelay(hex)
+    }
+
+    /// Re-send the cached VoIP token to the relay. iOS delivers a token via `didUpdate` only when it
+    /// changes (often just once per install), so a registration that failed at launch — or a relay
+    /// whose device table was reset (admin "Reset data" forces clients to re-identify) — would
+    /// otherwise leave this phone unable to ring until a reinstall. Call on every foreground so the
+    /// doorbell registration self-heals.
+    func reregisterVoIP() {
+        guard let hex = DeviceTokenStore.voipToken, !hex.isEmpty else { return }
+        registerVoIPWithRelay(hex)
+    }
+
+    private func registerVoIPWithRelay(_ hex: String) {
         Task {
             let relayURL = DeviceTokenStore.relayURL
             let pairing = DeviceTokenStore.ensurePairingCode()

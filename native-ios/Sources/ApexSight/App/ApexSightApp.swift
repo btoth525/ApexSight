@@ -108,7 +108,12 @@ struct ApexSightApp: App {
                         appState.scheduleLocalProbe()
                         appState.consumePendingIntentLink()
                         // Re-assert push registration each time the app comes forward (signed in only).
-                        if appState.session != nil { PushRegistrar.ensureRegistered() }
+                        if appState.session != nil {
+                            PushRegistrar.ensureRegistered()
+                            // Re-send the cached VoIP token too, so the doorbell self-heals if its
+                            // relay registration failed at launch or the relay's device table was reset.
+                            DoorbellCallManager.shared.reregisterVoIP()
+                        }
                         // You're in the app now — clear the Dynamic Island/Lock-Screen
                         // incident so it gets out of your way.
                         IncidentActivityController.end()
