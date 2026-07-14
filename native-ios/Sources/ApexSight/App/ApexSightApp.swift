@@ -44,6 +44,10 @@ struct ApexSightApp: App {
                     OfflineBanner()
                         .environmentObject(appState)
                 }
+                // Hide everything under the privacy cover from VoiceOver too. The cover is opaque to
+                // the eye, but VoiceOver reads the view tree, not pixels — without this a VoiceOver
+                // user could swipe *behind* the lock to camera names and events, defeating the lock.
+                .accessibilityHidden(appLock.isLocked || (appLock.isObscured && appState.session != nil))
                 // Privacy covers. The biometric LockOverlay (with an unlock button) appears
                 // only when the optional lock is enabled and engaged. The plain PrivacyCover
                 // is unconditional — it hides live camera frames from the app-switcher snapshot

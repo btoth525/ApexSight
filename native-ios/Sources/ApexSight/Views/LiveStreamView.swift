@@ -68,6 +68,9 @@ struct LiveStreamView: View {
             }
             .opacity(showChrome ? 1 : 0)
             .allowsHitTesting(showChrome)
+            // Opacity 0 keeps the controls in the VoiceOver order after the 4s auto-hide, cluttering
+            // it with invisible buttons — drop them from accessibility while hidden too.
+            .accessibilityHidden(!showChrome)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showChrome)
         }
         .navigationBarHidden(true)
