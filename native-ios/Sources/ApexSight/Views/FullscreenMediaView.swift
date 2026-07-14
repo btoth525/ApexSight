@@ -47,6 +47,8 @@ struct FullscreenMediaView: View {
                             .frame(width: 42, height: 42)
                             .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
+                            .hitTarget()
+                            .accessibilityLabel("Close")
                     }
                 }
                 Spacer()
@@ -99,6 +101,7 @@ struct ExpandableMediaModifier: ViewModifier {
                             .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                             .foregroundStyle(.white)
                             .hitTarget()
+                            .accessibilityLabel("View full screen")
                     }
                     .accessibilityLabel("View full screen")
                     .padding(GlassTheme.Space.s)
