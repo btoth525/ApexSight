@@ -84,19 +84,25 @@ enum BackgroundRefreshManager {
 
         for review in reviews where review.severity == "alert" {
             guard LastSeenStore.isNew(review.id) else { continue }
-            // Mark seen immediately so a mid-task cancellation can't re-deliver on the next run.
-            LastSeenStore.markSeen([review.id])
 
-            if remotePush { continue }
+            // Relay already delivered these — record seen (not a drop) so a later push-off doesn't
+            // dump the whole backlog at once.
+            if remotePush { LastSeenStore.markSeen([review.id]); continue }
 
             let label = review.data?.objects?.first ?? "object"
             let zones = review.data?.zones ?? []
+            // Deliberately suppressed by the user's own rules — mark seen; this is a choice, not a drop.
             guard await prefs.shouldDeliver(
                 camera: review.camera, label: label, zones: zones,
                 score: 0, triggers: triggers
-            ) else { continue }
+            ) else { LastSeenStore.markSeen([review.id]); continue }
 
             await LocalAlertNotifier.notify(review: review, client: client, session: session)
+            // Mark seen only AFTER a successful post. If the BGTask's expiration handler cancels us
+            // mid-`notify`, the review stays "new" and re-delivers next run — a rare duplicate, which
+            // for a home-security alert is the right side of the fail-open rule (deliver when
+            // uncertain) versus silently dropping the alert by stamping it seen before delivery.
+            LastSeenStore.markSeen([review.id])
         }
 
         await maybeSendRecap(client: client)
