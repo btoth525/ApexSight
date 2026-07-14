@@ -70,6 +70,24 @@ final class KeychainStore {
 
     func clearAlarmCode() { keychainDelete(key: alarmCodeKey) }
 
+    // MARK: - ApexSight account bearer token
+
+    private var accountTokenKey: String { "com.brandontoth.apexsight.native.accountToken" }
+
+    /// The signed-in ApexSight account's bearer session token. A per-user secret, so it lives in the
+    /// Keychain rather than the app-group plist. App-target only (no access group) — no extension
+    /// reads it.
+    @discardableResult
+    func saveAccountToken(_ token: String) -> Bool {
+        keychainSet(key: accountTokenKey, data: Data(token.utf8))
+    }
+
+    var accountToken: String? {
+        keychainGet(key: accountTokenKey).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    func clearAccountToken() { keychainDelete(key: accountTokenKey) }
+
     /// Writes a value, updating an existing item in place rather than delete-then-add.
     /// This both checks the result (the old code ignored `SecItemAdd`'s status, so a
     /// failed write silently logged the user out on next launch) and closes the brief

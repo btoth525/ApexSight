@@ -19,6 +19,10 @@ enum DeviceTokenStore {
         UserDefaults(suiteName: ApexAppGroup.identifier)
     }
 
+    /// App-only Keychain for the account bearer token (a per-user secret that shouldn't sit in the
+    /// unencrypted app-group plist). No extension reads the account token, so no access group.
+    private static let keychain = KeychainStore()
+
     static var deviceTokenHex: String? {
         get { defaults?.string(forKey: tokenKey) }
         set { defaults?.set(newValue, forKey: tokenKey) }
@@ -112,10 +116,29 @@ enum DeviceTokenStore {
 
     // MARK: - ApexSight account (session token + the account's private ingest token)
 
-    /// Bearer session token for the signed-in ApexSight account, or nil.
+    /// Bearer session token for the signed-in ApexSight account, or nil. Stored in the Keychain;
+    /// a legacy plaintext app-group value is migrated (and erased) on first access so an existing
+    /// signed-in user isn't logged out by the upgrade.
     static var accountToken: String? {
-        get { defaults?.string(forKey: accountTokenKey) }
-        set { defaults?.set(newValue, forKey: accountTokenKey) }
+        get {
+            if let secure = keychain.accountToken { return secure }
+            // One-time migration: lift an old plist token into the Keychain, then scrub the plist.
+            if let legacy = defaults?.string(forKey: accountTokenKey), !legacy.isEmpty {
+                keychain.saveAccountToken(legacy)
+                defaults?.removeObject(forKey: accountTokenKey)
+                return legacy
+            }
+            return nil
+        }
+        set {
+            if let newValue, !newValue.isEmpty {
+                keychain.saveAccountToken(newValue)
+            } else {
+                keychain.clearAccountToken()
+            }
+            // Never leave a plaintext copy behind (also clears a legacy value on sign-out).
+            defaults?.removeObject(forKey: accountTokenKey)
+        }
     }
 
     static var accountEmail: String? {
