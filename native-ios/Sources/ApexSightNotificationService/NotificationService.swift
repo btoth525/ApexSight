@@ -7,6 +7,35 @@ final class NotificationService: UNNotificationServiceExtension {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
     private var downloadTask: URLSessionDownloadTask?
+    private var widgetRefresh: Task<Void, Never>?
+    private let deliveryLock = NSLock()
+    private var hasDelivered = false
+
+    /// Deliver the notification to the system exactly once. The download completion, the bounded
+    /// widget-wait, and `serviceExtensionTimeWillExpire` can all race to deliver; iOS ignores a
+    /// second call, but the once-guard keeps the contract clean and drops the handler + best-attempt
+    /// so nothing is retained past delivery.
+    private func deliverOnce(_ content: UNNotificationContent) {
+        deliveryLock.lock()
+        let firstTime = !hasDelivered
+        hasDelivered = true
+        let handler = contentHandler
+        contentHandler = nil
+        deliveryLock.unlock()
+        if firstTime { handler?(content) }
+    }
+
+    /// Await the widget refresh, but at most `seconds` — never hold the user-facing alert hostage to
+    /// a slow or unreachable Frigate (WidgetKit re-refreshes on its own timeline regardless).
+    private static func awaitBounded(_ task: Task<Void, Never>?, seconds: Double) async {
+        guard let task else { return }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await task.value }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
 
     override func didReceive(
         _ request: UNNotificationRequest,
@@ -31,7 +60,7 @@ final class NotificationService: UNNotificationServiceExtension {
         // reload ONCE. Runs alongside the attachment download, but delivery WAITS for it —
         // iOS suspends the extension the moment contentHandler runs, which was silently
         // dropping in-flight refreshes. Both fit comfortably in the ~30s NSE budget.
-        let widgetRefresh = Task {
+        widgetRefresh = Task {
             await WidgetDataFetcher.refresh()
             WidgetCenter.shared.reloadAllTimelines()
         }
@@ -44,8 +73,8 @@ final class NotificationService: UNNotificationServiceExtension {
         let candidates = attachmentURLs(from: request.content.userInfo)
         guard !candidates.isEmpty else {
             Task {
-                await widgetRefresh.value
-                self.contentHandler?(mutableContent)
+                await Self.awaitBounded(self.widgetRefresh, seconds: 3)
+                self.deliverOnce(mutableContent)
             }
             return
         }
@@ -59,16 +88,17 @@ final class NotificationService: UNNotificationServiceExtension {
                 mutableContent.attachments = [attachment]
             }
             Task {
-                await widgetRefresh.value
-                self.contentHandler?(mutableContent)
+                await Self.awaitBounded(self.widgetRefresh, seconds: 3)
+                self.deliverOnce(mutableContent)
             }
         }
     }
 
     override func serviceExtensionTimeWillExpire() {
         downloadTask?.cancel()
+        widgetRefresh?.cancel()
         if let bestAttemptContent {
-            contentHandler?(bestAttemptContent)
+            deliverOnce(bestAttemptContent)
         }
     }
 
