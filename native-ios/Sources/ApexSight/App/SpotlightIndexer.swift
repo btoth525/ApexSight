@@ -45,7 +45,15 @@ enum SpotlightIndexer {
                 attributeSet: attr
             )
         }
-        CSSearchableIndex.default().indexSearchableItems(Array(items)) { _ in }
+        // Truly REPLACE the domain's contents. indexSearchableItems alone only upserts, so events
+        // that have scrolled out of the rolling window — or that Frigate has since purged — would
+        // linger in the index forever and surface dead apex://event links from Spotlight. Clear the
+        // domain first, then index the current window. (Called only when the event set changes, per
+        // AppState's eventSignature guard, so this isn't run on every poll.)
+        let index = CSSearchableIndex.default()
+        index.deleteSearchableItems(withDomainIdentifiers: [domain]) { _ in
+            index.indexSearchableItems(Array(items)) { _ in }
+        }
     }
 
     static func clear() {
