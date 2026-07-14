@@ -1512,12 +1512,18 @@ final class AppState: ObservableObject {
         case "doorbell":
             deepLink = .doorbell
         case "latest":
-            // Home Screen quick action / Control Center: jump to the most recent alert,
-            // else just open the camera wall.
+            // Home Screen quick action / Control Center: jump to the most recent alert.
             if let newest = reviews.first {
                 deepLink = .review(newest.id)
             } else {
-                deepLink = .cameras
+                // Cold launch — reviews aren't fetched yet, so don't dead-end on the camera wall.
+                // Load them, then open the newest alert; fall back to the Activity feed if there
+                // genuinely are none (still an alert-relevant surface, unlike the wall).
+                Task { [weak self] in
+                    guard let self else { return }
+                    if self.reviews.isEmpty { await self.refresh() }
+                    self.deepLink = self.reviews.first.map { .review($0.id) } ?? .activity
+                }
             }
         case "snooze":
             // Silence all alerts for an hour and mirror the gate to the relay so app-closed
