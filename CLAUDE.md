@@ -17,20 +17,22 @@ off the signed-in Xcode session — no API key needed) → commit + push to `fea
 next. Always `xcodegen generate` after bumping `CURRENT_PROJECT_VERSION` (else the archive ships the
 old build number). Never run two archives at once. Bump the build number every TestFlight upload.
 
-**⚠️ SHIP WITH THE iOS 27 BETA SDK — PERSONAL, TestFlight-only app (decided 2026-07-14).** Both users'
-iPhones run iOS 27 and this is never submitted to the public App Store, so build with
-**`DEVELOPER_DIR=/Users/brandon/Downloads/Xcode-beta.app/Contents/Developer`** (Xcode 27.0 / iOS 27
-SDK / Swift 6.4) to keep every iOS 27 feature (nav-bar `toolbarMinimizeBehavior`, Apple Intelligence
-vision, NowPlaying A1). Apple emails `ITMS-90534: Unsupported SDK` on each upload — EXPECTED and
-HARMLESS here: the build still reaches TestFlight for install/testing; the warning only blocks App
-Store submission, which we don't do. **Do NOT "fix" it by switching to the release Xcode** — that
-drops the 27-only features the user built on.
-- The code is ALSO release-SDK-portable (fallback if Apple ever hard-blocks the beta SDK): the one
-  27-only API (`toolbarMinimizeBehavior`) is guarded `#if compiler(>=6.4)` (Xcode 27=Swift 6.4,
-  26.5=6.3.2) so it self-reactivates under 27 and compiles out under 26.5; `MainTabView.body` is split
-  into `layoutWithPresentation` so the slower 6.3.2 type-checker doesn't time out. Builds clean under
-  either toolchain — but SHIP with the beta 27 for the features. Sim name is **iPhone 17 Pro**
-  (iPhone 16 Pro is gone).
+**⚠️ SHIP WITH THE RELEASE SDK (Xcode 26.5) — Apple now HARD-BLOCKS the iOS 27 beta SDK at upload
+(confirmed 2026-07-14).** As of the April 28 2026 rule, App Store Connect requires the released SDK
+(iOS 26.x) or a Release Candidate — a **beta** SDK is refused. Builds 202–206 (beta 27) slipped
+through with a warning; on 2026-07-14 the gate hardened and beta uploads are now rejected outright
+(`ITMS-90534`, confirmed via CLI ×2 + Xcode Organizer GUI, three distinct rejection IDs). So archive +
+upload with **`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`** (Xcode 26.5 / iOS 26.5 SDK
+/ Swift 6.3.2). Do NOT ship from `Xcode-beta.app` — it will fail at upload.
+- Cost of the release SDK: only the nav-bar `toolbarMinimizeBehavior` (the one genuinely-27-only
+  symbol) — guarded `#if compiler(>=6.4)` so it compiles out on 26.5 and **auto-returns the moment we
+  can build against the iOS 27 RC** (switch DEVELOPER_DIR back to a 27 RC Xcode when Apple ships it).
+  Apple Intelligence vision + NowPlaying still work (compile vs 26.5, runtime-gated via
+  `@available(iOS 27, *)`). `MainTabView.body` is split into `layoutWithPresentation` so the 6.3.2
+  type-checker doesn't time out.
+- Both build clean under either toolchain, but only the release SDK UPLOADS today. Sim name is
+  **iPhone 17 Pro** (iPhone 16 Pro is gone). This is a personal TestFlight-only app (2 phones, both
+  on iOS 27); never submitted to the public App Store.
 
 ---
 
