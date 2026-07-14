@@ -954,11 +954,17 @@ final class AppState: ObservableObject {
         // enforce auth on the LAN, so status alone isn't proof of identity).
         let expected = Set(cameras.map(\.name))
         var reachable = await probe.probeReachableFrigate(expectedCameras: expected)
+        // A cancelled probe (a newer path update superseded this one) returns false from the
+        // URLSession cancellation — bail without touching state so we don't demote home→tunnel on
+        // a supersession. The newer probe owns the decision.
+        if Task.isCancelled { return }
         // One quick retry before *demoting* home→remote, so a single transient blip (a roaming
         // handoff, a momentary drop) doesn't bounce everyone onto the slower tunnel.
         if !reachable && onLocalNetwork {
             try? await Task.sleep(nanoseconds: 500_000_000)
+            if Task.isCancelled { return }
             reachable = await probe.probeReachableFrigate(expectedCameras: expected)
+            if Task.isCancelled { return }
         }
         let changed = onLocalNetwork != reachable
         onLocalNetwork = reachable
@@ -1073,6 +1079,10 @@ final class AppState: ObservableObject {
                 // so a token refresh works even when away from home / before the local probe.
                 let client = FrigateClient(baseURL: session.baseURL)
                 let token = try await client.login(username: session.username, password: password)
+                // A sign-out or server switch during the login round-trip bumps serverGeneration and
+                // nils the session — don't let a late-completing reauth resurrect it (or rewrite the
+                // just-cleared keychain). Cancellation is cooperative, so guard the writes explicitly.
+                guard let self, self.serverGeneration == gen else { return false }
                 let next = FrigateSession(
                     baseURL: session.baseURL,
                     username: session.username,
@@ -1080,8 +1090,8 @@ final class AppState: ObservableObject {
                     password: password,
                     localBaseURL: session.localBaseURL
                 )
-                self?.keychain.save(session: next)
-                self?.session = next
+                self.keychain.save(session: next)
+                self.session = next
                 return true
             } catch {
                 return false
