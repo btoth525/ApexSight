@@ -15,6 +15,8 @@ struct MyExportsView: View {
     @State private var renameText = ""
     @State private var pendingDelete: FrigateExport?
     @State private var toast: String?
+    /// True when `toast` reports a failure, so the pill shows red instead of success-green.
+    @State private var toastIsError = false
 
     var body: some View {
         ScrollView {
@@ -53,7 +55,7 @@ struct MyExportsView: View {
             if let toast {
                 Text(toast).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                     .padding(.horizontal, GlassTheme.Space.l).padding(.vertical, GlassTheme.Space.s)
-                    .background(GlassTheme.green.opacity(0.92), in: Capsule())
+                    .background((toastIsError ? GlassTheme.red : GlassTheme.green).opacity(0.92), in: Capsule())
                     .padding(.bottom, 40).transition(.opacity)
             }
         }
@@ -115,13 +117,13 @@ struct MyExportsView: View {
 
     private func share(_ export: FrigateExport) async {
         if let url = await downloadURL(export) { sharePayload = SharePayload(url: url) }
-        else { flash("Download failed") }
+        else { flash("Download failed", isError: true) }
     }
 
     private func save(_ export: FrigateExport) async {
-        guard let url = await downloadURL(export) else { flash("Download failed"); return }
+        guard let url = await downloadURL(export) else { flash("Download failed", isError: true); return }
         let failed = await exporter.saveToPhotos([url])
-        if case .failed(let m) = exporter.phase { flash(m) }
+        if case .failed(let m) = exporter.phase { flash(m, isError: true) }
         else if failed.isEmpty { flash("Saved to Photos ✓") }
         else {
             // Photos refused it (ultra-wide clip) — share it so it can still be saved to Files.
@@ -136,21 +138,32 @@ struct MyExportsView: View {
         renaming = nil
         guard !newName.isEmpty else { return }
         busyID = export.id
-        try? await client.renameExport(id: export.id, name: newName)
-        busyID = nil
-        await load()
+        defer { busyID = nil }
+        do {
+            try await client.renameExport(id: export.id, name: newName)
+            await load()
+        } catch {
+            flash("Couldn't rename — try again", isError: true)
+        }
     }
 
     private func commitDelete() async {
         guard let export = pendingDelete, let client = appState.client else { return }
         pendingDelete = nil
         busyID = export.id
-        try? await client.deleteExport(id: export.id)
-        busyID = nil
-        exports.removeAll { $0.id == export.id }
+        defer { busyID = nil }
+        do {
+            try await client.deleteExport(id: export.id)
+            // Only drop the row once the server confirms — removing it on a failed delete would
+            // hide the export until the next reload, when it silently reappears.
+            exports.removeAll { $0.id == export.id }
+        } catch {
+            flash("Couldn't delete — try again", isError: true)
+        }
     }
 
-    private func flash(_ text: String) {
+    private func flash(_ text: String, isError: Bool = false) {
+        toastIsError = isError
         withAnimation { toast = text }
         Task { try? await Task.sleep(nanoseconds: 2_000_000_000); withAnimation { toast = nil } }
     }

@@ -13,6 +13,7 @@ struct HouseModeSwitcher: View {
     @State private var confirmArm: HouseModeOption?
     @State private var errorText: String?
     @Namespace private var pill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let keychain = KeychainStore()
 
     /// Who set the mode, but only if it wasn't this phone (showing your own name is just noise).
@@ -84,7 +85,7 @@ struct HouseModeSwitcher: View {
         .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
             .strokeBorder(GlassTheme.separator, lineWidth: 1))
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: appState.houseMode)
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: appState.houseMode)
     }
 
     private func segment(_ option: HouseModeOption) -> some View {
@@ -103,12 +104,10 @@ struct HouseModeSwitcher: View {
             .foregroundStyle(active ? Color.white : GlassTheme.secondary)
             .background {
                 if active {
+                    // GlassTheme: no heavy gradients on chrome, no colored shadows — a flat accent
+                    // fill reads as active against the near-black surface without the glow.
                     RoundedRectangle(cornerRadius: GlassTheme.Radius.tile - 4, style: .continuous)
-                        .fill(
-                            LinearGradient(colors: [option.color, option.color.opacity(0.72)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .shadow(color: option.color.opacity(0.45), radius: 8, y: 2)
+                        .fill(option.color)
                         .matchedGeometryEffect(id: "activePill", in: pill)
                 }
             }

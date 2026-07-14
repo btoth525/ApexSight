@@ -434,9 +434,11 @@ struct EventDetailView: View {
                 }
 
                 if let downloadFeedback {
+                    // This channel only ever carries a clip-prep failure, so it reads as an error,
+                    // not success — green here told the user "saved" when the clip actually failed.
                     Text(downloadFeedback)
                         .font(.footnote.weight(.medium))
-                        .foregroundStyle(GlassTheme.green)
+                        .foregroundStyle(GlassTheme.red)
                         .transition(.opacity)
                 }
             }

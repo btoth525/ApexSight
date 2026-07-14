@@ -13,6 +13,8 @@ struct RecordingBrowserView: View {
     @State private var errorMessage: String?
     @State private var isDownloading = false
     @State private var downloadFeedback: String?
+    /// True when `downloadFeedback` is an error, so the banner shows red instead of success-green.
+    @State private var downloadFeedbackIsError = false
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
 
@@ -92,6 +94,7 @@ struct RecordingBrowserView: View {
             )
             sharePayload = SharePayload(url: url)
         } catch {
+            downloadFeedbackIsError = true
             downloadFeedback = error.localizedDescription
         }
     }
@@ -386,6 +389,9 @@ struct RecordingBrowserView: View {
                         Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1)
                     }
                 }
+                // Compact pill, 44pt hit target (HIG minimum).
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -594,7 +600,7 @@ struct RecordingBrowserView: View {
                 if let downloadFeedback {
                     Text(downloadFeedback)
                         .font(.footnote.weight(.medium))
-                        .foregroundStyle(GlassTheme.green)
+                        .foregroundStyle(downloadFeedbackIsError ? GlassTheme.red : GlassTheme.green)
                 }
             }
         }
@@ -780,8 +786,10 @@ struct RecordingBrowserView: View {
         do {
             let url = client.recordingClipURL(camera: camera.name, start: start, end: start + windowSeconds)
             try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(camera.name)-\(Int(start))")
+            downloadFeedbackIsError = false
             downloadFeedback = "Saved to Photos."
         } catch {
+            downloadFeedbackIsError = true
             downloadFeedback = error.localizedDescription
         }
     }

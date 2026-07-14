@@ -370,6 +370,9 @@ struct ActivityTab: View {
             .overlay {
                 if !selected { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
             }
+            // Compact pill, 44pt hit target (HIG minimum).
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

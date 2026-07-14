@@ -119,13 +119,19 @@ final class NotificationService: UNNotificationServiceExtension {
     /// passive, so it refreshes widgets without double-counting the badge.
     private static func bumpBadgeAndRefreshWidgets(for content: UNNotificationContent, into mutable: UNMutableNotificationContent) {
         let defaults = UserDefaults(suiteName: appGroupSuite)
-        if content.interruptionLevel != .passive {
+        let info = content.userInfo
+        let hasReviewID = (info["review_id"] as? String).map { !$0.isEmpty } ?? false
+        let noBadge = (info["no_badge"] as? Bool) == true || (info["no_badge"] as? NSNumber)?.boolValue == true
+        // Bump only for a real, first-time event alert: it must carry a review_id (excludes the
+        // Daily Recap summary and the diagnostic test push) and must not be flagged no_badge
+        // (excludes the silent final-GIF and announce-only AI-description follow-ups, which REPLACE
+        // an existing alert in place via the shared collapse-id — counting them double-badges).
+        if hasReviewID, !noBadge, content.interruptionLevel != .passive {
             let next = (defaults?.integer(forKey: "apex.badgeCount") ?? 0) + 1
             defaults?.set(next, forKey: "apex.badgeCount")
             mutable.badge = NSNumber(value: next)
             // Mark real alerts Time Sensitive so they break through a Driving / Do Not Disturb
             // Focus and surface on CarPlay (requires the time-sensitive entitlement on the app).
-            // The silent "final GIF" follow-up stays .passive and is left untouched.
             mutable.interruptionLevel = .timeSensitive
         }
         // (Widget reload happens once in didReceive, after the fresh data is written —

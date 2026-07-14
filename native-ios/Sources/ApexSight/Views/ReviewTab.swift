@@ -327,6 +327,9 @@ struct ReviewTab: View {
                 .overlay {
                     if !selected { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
                 }
+                // Keep the visible pill compact but expand the tappable area to the 44pt HIG minimum.
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

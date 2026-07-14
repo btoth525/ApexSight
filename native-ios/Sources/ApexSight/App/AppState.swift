@@ -11,6 +11,7 @@ enum AppDeepLink: Hashable {
     case event(String)
     case camera(String)
     case cameras   // jump to the Cameras tab (e.g. Siri "Show my cameras")
+    case activity  // jump to the Activity feed (e.g. tapping the Daily Recap push)
     case house     // open the House Mode control (Lock Screen widget / Control Center / Live Activity)
     case doorbell  // present the full-screen doorbell call (doorbell-ring push)
 }
@@ -300,17 +301,23 @@ final class AppState: ObservableObject {
         let offset = TimeZone.current.secondsFromGMT()
         let signature = "\(RecapSettings.enabled)|\(RecapSettings.hour)|\(RecapSettings.minute)|\(offset)"
         guard signature != lastSyncedRecap else { return }
-        lastSyncedRecap = signature
 
         let relayURL = DeviceTokenStore.relayURL
         let pairing = DeviceTokenStore.ensurePairingCode()
         guard !relayURL.isEmpty, !pairing.isEmpty else { return }
+        // Mark synced optimistically so a concurrent call de-dups, but roll back on failure so the
+        // next foreground poll retries — otherwise a dropped POST leaves the relay permanently stale.
+        lastSyncedRecap = signature
         Task {
-            try? await RelayClient.syncRecap(
-                relayURL: relayURL, pairingCode: pairing,
-                enabled: RecapSettings.enabled, hour: RecapSettings.hour,
-                minute: RecapSettings.minute, tzOffset: offset
-            )
+            do {
+                try await RelayClient.syncRecap(
+                    relayURL: relayURL, pairingCode: pairing,
+                    enabled: RecapSettings.enabled, hour: RecapSettings.hour,
+                    minute: RecapSettings.minute, tzOffset: offset
+                )
+            } catch {
+                if lastSyncedRecap == signature { lastSyncedRecap = nil }
+            }
         }
     }
 
@@ -323,16 +330,22 @@ final class AppState: ObservableObject {
         let snoozedUntil = GlobalSnooze.until?.timeIntervalSince1970 ?? 0
         let signature = "\(disarmed)|\(Int(snoozedUntil))"
         guard signature != lastSyncedGate else { return }
-        lastSyncedGate = signature
 
         let relayURL = DeviceTokenStore.relayURL
         let pairing = DeviceTokenStore.ensurePairingCode()
         guard !relayURL.isEmpty, !pairing.isEmpty else { return }
+        // Optimistic mark + rollback-on-failure: the gate mirror is safety-critical (it's what
+        // silences pushes while disarmed), so a failed POST must retry, not silently stick.
+        lastSyncedGate = signature
         Task {
-            try? await RelayClient.syncGate(
-                relayURL: relayURL, pairingCode: pairing,
-                disarmed: disarmed, snoozedUntil: snoozedUntil
-            )
+            do {
+                try await RelayClient.syncGate(
+                    relayURL: relayURL, pairingCode: pairing,
+                    disarmed: disarmed, snoozedUntil: snoozedUntil
+                )
+            } catch {
+                if lastSyncedGate == signature { lastSyncedGate = nil }
+            }
         }
     }
 
@@ -358,12 +371,18 @@ final class AppState: ObservableObject {
                    String(TimeZone.current.secondsFromGMT()),
                    deviceName].compactMap { $0 }.joined(separator: "|")
         guard sig != lastSyncedDevicePrefs else { return }
+        // Optimistic mark + rollback-on-failure so a dropped POST re-syncs on the next foreground
+        // poll instead of leaving per-device mutes out of sync with app-closed delivery.
         lastSyncedDevicePrefs = sig
         Task {
-            try? await RelayClient.syncDevicePrefs(
-                relayURL: relayURL, deviceToken: token, pairingCode: pairing,
-                deviceName: deviceName, preferences: prefs, triggers: triggers
-            )
+            do {
+                try await RelayClient.syncDevicePrefs(
+                    relayURL: relayURL, deviceToken: token, pairingCode: pairing,
+                    deviceName: deviceName, preferences: prefs, triggers: triggers
+                )
+            } catch {
+                if lastSyncedDevicePrefs == sig { lastSyncedDevicePrefs = nil }
+            }
         }
     }
 
@@ -1407,7 +1426,12 @@ final class AppState: ObservableObject {
     }
 
     func markReviewViewed(_ review: FrigateReviewItem) async {
-        if review.severity == "alert" { unreviewedCount = max(0, unreviewedCount - 1) }
+        // Only decrement for alerts that actually count toward the badge — i.e. from a camera the
+        // current house mode shows. Otherwise the optimistic decrement drifts the badge negative-ish
+        // against the house-mode-filtered recompute below.
+        if review.severity == "alert", cameraVisibleInFeeds(review.camera) {
+            unreviewedCount = max(0, unreviewedCount - 1)
+        }
         await markReviewViewed(id: review.id)
     }
 
@@ -1417,7 +1441,9 @@ final class AppState: ObservableObject {
             try await client.markReviewsViewed(ids: [id])
             locallyViewedIDs.insert(id)
             reviews.removeAll { $0.id == id }
-            unreviewedCount = reviews.filter { $0.severity == "alert" }.count
+            // Badge counts only alerts from cameras the current house mode surfaces — keep this
+            // recompute in lockstep with the other badge sites (search for cameraVisibleInFeeds).
+            unreviewedCount = reviews.filter { $0.severity == "alert" && cameraVisibleInFeeds($0.camera) }.count
             // Rewrite + reload the widgets so a reviewed alert clears there too, not just in-app.
             cacheLatestAlertForWidget()
         } catch {
@@ -1457,6 +1483,10 @@ final class AppState: ObservableObject {
             }
         case "cameras":
             deepLink = .cameras
+        case "recap", "activity":
+            // The Daily Recap push carries apex://recap — land on the Activity feed (the day's
+            // events) instead of dead-ending because there was no matching handler.
+            deepLink = .activity
         case "house":
             deepLink = .house
         case "doorbell":

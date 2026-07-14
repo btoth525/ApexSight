@@ -127,11 +127,14 @@ struct DoorbellCallView: View {
                     .foregroundStyle(.white)
                     .frame(width: 68, height: 68)
                     .background(tint, in: Circle())
+                    .accessibilityHidden(true)   // decorative icon — the button carries the label
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(label)
             Text(label)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.white.opacity(0.85))
+                .accessibilityHidden(true)   // redundant with the button's label above
         }
         .frame(width: 92)
     }

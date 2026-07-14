@@ -476,9 +476,14 @@ struct SettingsTab: View {
         .confirmationDialog("Restart Frigate now?", isPresented: $showRestartConfirm, titleVisibility: .visible) {
             Button("Restart Frigate", role: .destructive) {
                 Task {
-                    do { try await appState.client?.restart(); restartToast = "Restarting Frigate…" }
-                    catch { restartToast = "Restart failed — check the connection" }
-                    Haptics.success()
+                    do {
+                        try await appState.client?.restart()
+                        restartToast = "Restarting Frigate…"
+                        Haptics.success()
+                    } catch {
+                        restartToast = "Restart failed — check the connection"
+                        Haptics.warning()   // don't buzz "success" when the restart didn't happen
+                    }
                     try? await Task.sleep(nanoseconds: 2_500_000_000); restartToast = nil
                 }
             }

@@ -8,6 +8,9 @@ struct MainTabView: View {
     @State private var showDoorbellCall = false
     @State private var doorbellAutoAnswer = false
     @State private var deepLinkTask: Task<Void, Never>?
+    /// Shown when a push/deep link couldn't resolve its target after retries, so the tap
+    /// isn't a silent no-op (the user still lands on the correct tab).
+    @State private var deepLinkFailed = false
 
     enum Tab: Int, Hashable, CaseIterable, Identifiable {
         case cameras, review, activity, explore, settings
@@ -105,6 +108,11 @@ struct MainTabView: View {
         .onChange(of: appState.deepLink) { _, route in
             handleDeepLink(route)
         }
+        .alert("Couldn't open that item", isPresented: $deepLinkFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("It may have been deleted, or the connection isn't ready yet. You've been taken to the right tab — pull to refresh.")
+        }
         .task {
             // Catch a deep link set before this view started observing (cold launch from a push).
             if appState.deepLink != nil { handleDeepLink(appState.deepLink) }
@@ -174,6 +182,10 @@ struct MainTabView: View {
             // Plain "show my cameras" — just land on the wall, no detail sheet.
             detailSheet = nil
             selectedTab = .cameras
+        case .activity:
+            // Daily Recap tap — land on the Activity feed for the day's events.
+            detailSheet = nil
+            selectedTab = .activity
         case .camera(let name):
             selectedTab = .cameras
             if let camera = appState.cameras.first(where: { $0.name == name }) {
@@ -227,6 +239,9 @@ struct MainTabView: View {
                 }
                 try? await Task.sleep(nanoseconds: UInt64(800_000_000 * (attempt + 1)))
             }
+            // Exhausted all retries without resolving — tell the user instead of failing silently
+            // (unless a newer deep link superseded this one, which cancels the task).
+            if !Task.isCancelled, detailSheet == nil { deepLinkFailed = true }
         }
     }
 }

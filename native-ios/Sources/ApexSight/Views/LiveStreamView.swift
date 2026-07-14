@@ -29,6 +29,9 @@ struct LiveStreamView: View {
     @State private var playerFillMode = false
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
+    /// Surfaces a brief alert when the snapshot Share couldn't fetch a frame, so the button
+    /// isn't silently dead when the grab fails.
+    @State private var shareFailed = false
     @StateObject private var talk = TwoWayTalkController()
     // Unified control grid: the viewer owns mute and PiP so every control renders as ONE uniform
     // button system (no floating overlay cluster).
@@ -99,6 +102,11 @@ struct LiveStreamView: View {
             CameraQuickControlsSheet(camera: camera)
                 .environmentObject(appState)
         }
+        .alert("Couldn't prepare the image", isPresented: $shareFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The camera frame couldn't be fetched. Check your connection and try again.")
+        }
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.items)
         }
@@ -145,7 +153,7 @@ struct LiveStreamView: View {
         isPreparingShare = true
         defer { isPreparingShare = false }
         guard let data = try? await client.imageData(from: client.latestFrameURL(camera: camera.name)),
-              let image = UIImage(data: data) else { return }
+              let image = UIImage(data: data) else { shareFailed = true; return }
         sharePayload = SharePayload(image: image)
     }
 

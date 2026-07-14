@@ -53,9 +53,11 @@ struct PTZControlView: View {
         // direction confirms once instead of rattling. An error buzzes distinctly.
         .sensoryFeedback(trigger: feedback) { _, new in
             switch new {
-            case "Error": return .error
-            case .some: return .impact(weight: .light)
             case nil: return nil
+            // The failure branch of send() sets exactly this string — buzz an error, not the
+            // success tick (the old "Error" case never matched the message actually set).
+            case "Move failed": return .error
+            case .some: return .impact(weight: .light)
             }
         }
         .task { await loadPresets() }
