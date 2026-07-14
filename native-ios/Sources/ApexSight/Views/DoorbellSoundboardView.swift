@@ -114,11 +114,11 @@ struct DoorbellSoundboardStrip: View {
         talkPulse = false
         guard talk.isActive else { return }
         Haptics.success()
+        // talk.stop() now RESTORES the shared session to whatever the call had (see
+        // TwoWayTalkController.deactivateAudioSession). The old manual setCategory/setActive(true)
+        // here was redundant and, on .onDisappear, raced the call's own teardown — leaving the
+        // session pinned in playAndRecord after the call ended. Let stop() own the handoff.
         talk.stop()
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: .videoChat,
-                                 options: [.defaultToSpeaker, .allowBluetoothA2DP])
-        try? session.setActive(true)
     }
 
     private func chip(icon: String, label: String, action: @escaping () -> Void) -> some View {

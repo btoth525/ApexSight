@@ -42,6 +42,15 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     /// answerable at each of connect()'s several exit points.
     private var connectGeneration = 0
 
+    /// Snapshot of the shared audio session taken before we grab it for mic capture, so teardown can
+    /// RESTORE it instead of hard-deactivating. During a live doorbell call the SAME process-wide
+    /// session carries the visitor's audio (the WebRTC/HLS feed), so `setActive(false)` on the
+    /// failure / watchdog / ICE-drop exits was muting the visitor for the rest of the call with
+    /// nothing to bring it back (only the success path re-activated it). Mirrors DoorbellVoiceRecorder.
+    private var previousCategory: AVAudioSession.Category?
+    private var previousMode: AVAudioSession.Mode?
+    private var previousOptions: AVAudioSession.CategoryOptions = []
+
     override init() {
         super.init()
         // Stop talking + free the mic/connection if the app backgrounds (don't hold the
@@ -204,13 +213,25 @@ final class TwoWayTalkController: NSObject, ObservableObject {
 
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
+        previousCategory = session.category
+        previousMode = session.mode
+        previousOptions = session.categoryOptions
         try? session.setCategory(.playAndRecord, mode: .voiceChat,
                                  options: [.defaultToSpeaker, .allowBluetoothA2DP])
         try? session.setActive(true)
     }
 
     private func deactivateAudioSession() {
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Restore the category the call/player had rather than setActive(false): the shared session
+        // still carries the live doorbell audio on every exit but the success path, so deactivating
+        // it left the visitor inaudible. No setActive(false) — mic capture already stopped when the
+        // peer connection closed. A nil snapshot means configureAudioSession never ran (nothing to
+        // undo). Fail-safe: this only ever RELAXES our hold on the session, never grabs it harder.
+        guard let category = previousCategory, let mode = previousMode else { return }
+        try? AVAudioSession.sharedInstance().setCategory(category, mode: mode, options: previousOptions)
+        previousCategory = nil
+        previousMode = nil
+        previousOptions = []
     }
 
     private func setLocal(_ sdp: RTCSessionDescription, on pc: RTCPeerConnection) async throws {
