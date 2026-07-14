@@ -75,10 +75,12 @@ struct FrigateURLBuilderTests {
             == "/api/yard/start/1700000000/end/1700000060/clip.mp4")
     }
 
-    @Test("Preview frame URL flooring + path")
+    @Test("Preview frame URL path")
     func previewFrame() {
-        #expect(client.previewFrameURL(camera: "yard", time: 1_700_000_000.9).path
-            == "/api/preview/yard/1700000000/thumbnail.jpg")
+        // previewFrameURL is served per-FILENAME now (api/preview/<file>/thumbnail.jpg), not per
+        // camera+timestamp — pairs with previewFrames().
+        #expect(client.previewFrameURL(filename: "yard-1700000000").path
+            == "/api/preview/yard-1700000000/thumbnail.jpg")
     }
 
     // MARK: - WebSocket upgrade
