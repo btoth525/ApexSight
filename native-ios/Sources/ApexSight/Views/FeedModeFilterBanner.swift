@@ -30,7 +30,7 @@ struct FeedModeFilterBanner: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(GlassTheme.accent)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, GlassTheme.Space.m)
             .padding(.vertical, 8)
             .background(GlassTheme.surface, in: Capsule())
             .overlay(Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1))

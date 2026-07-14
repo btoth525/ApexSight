@@ -23,7 +23,8 @@ struct MyExportsView: View {
         ScrollView {
             LazyVStack(spacing: GlassTheme.Space.m) {
                 if isLoading && exports.isEmpty {
-                    ProgressView().tint(GlassTheme.accent).padding(.top, 80)
+                    SkeletonList(rows: 6)
+                        .padding(.top, GlassTheme.Space.s)
                 } else if exports.isEmpty {
                     ContentUnavailableView("No exports", systemImage: "film.stack",
                         description: Text(errorText ?? "Clips you export show up here."))

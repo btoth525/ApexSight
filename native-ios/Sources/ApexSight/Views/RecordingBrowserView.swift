@@ -150,7 +150,7 @@ struct RecordingBrowserView: View {
     private var datePicker: some View {
         GlassCard {
             HStack(spacing: GlassTheme.Space.m) {
-                circleStepButton(systemName: "chevron.left", enabled: true) { shiftDate(by: -1) }
+                circleStepButton(systemName: "chevron.left", label: "Previous day", enabled: true) { shiftDate(by: -1) }
                 Spacer(minLength: GlassTheme.Space.s)
                 VStack(spacing: GlassTheme.Space.xs) {
                     Text(selectedDate, style: .date)
@@ -168,6 +168,7 @@ struct RecordingBrowserView: View {
                 Spacer(minLength: GlassTheme.Space.s)
                 circleStepButton(
                     systemName: "chevron.right",
+                    label: "Next day",
                     enabled: !calendar.isDateInToday(selectedDate)
                 ) { shiftDate(by: 1) }
                 .disabled(calendar.isDateInToday(selectedDate))
@@ -176,7 +177,7 @@ struct RecordingBrowserView: View {
     }
 
     /// Native material circle button used for prev/next day stepping.
-    private func circleStepButton(systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func circleStepButton(systemName: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.subheadline.weight(.semibold))
@@ -185,6 +186,7 @@ struct RecordingBrowserView: View {
                 .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     private func shiftDate(by days: Int) {

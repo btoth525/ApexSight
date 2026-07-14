@@ -24,7 +24,7 @@ struct ZoomableClipPlayer: View {
                 Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 13, weight: .black))
                     .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .liquidGlass(in: Circle(), interactive: true, fallbackMaterial: .ultraThinMaterial)
                     .foregroundStyle(.white)
                     .hitTarget()
             }
@@ -90,7 +90,7 @@ struct LoadingClipPlayer: View {
     private var clipError: some View {
         ZStack {
             Color.black
-            VStack(spacing: 12) {
+            VStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: "film.stack")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(.orange)
@@ -101,12 +101,12 @@ struct LoadingClipPlayer: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, GlassTheme.Space.xxl)
                 Button { model.retry() } label: {
                     Label("Retry", systemImage: "arrow.clockwise")
                         .font(.system(size: 13, weight: .black))
                         .foregroundStyle(.black)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, GlassTheme.Space.l)
                         .padding(.vertical, 9)
                         .background(.white, in: Capsule())
                 }

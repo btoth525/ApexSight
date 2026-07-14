@@ -117,7 +117,7 @@ struct CameraCard: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 12)
+        .padding(.bottom, GlassTheme.Space.m)
     }
 
     @ViewBuilder

@@ -30,7 +30,7 @@ struct ConfigEditorView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.05, green: 0.06, blue: 0.08).ignoresSafeArea()
+                GlassTheme.background.ignoresSafeArea()
 
                 if isLoading {
                     ProgressView("Loading config…")
