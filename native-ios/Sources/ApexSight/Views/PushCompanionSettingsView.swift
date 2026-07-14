@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import UserNotifications
 
 /// Instant push — always on. The relay URL and (for shared cameras) the pairing
@@ -220,7 +221,16 @@ struct PushCompanionSettingsView: View {
                         .monospaced()
                         .foregroundStyle(GlassTheme.primary)
                     Button {
-                        UIPasteboard.general.string = pairingCode
+                        // The pairing code is a household secret. Put it on the pasteboard with a
+                        // short expiry and local-only so it doesn't linger indefinitely or sync to
+                        // the user's other devices via Universal Clipboard.
+                        UIPasteboard.general.setItems(
+                            [[UTType.utf8PlainText.identifier: pairingCode]],
+                            options: [
+                                .expirationDate: Date().addingTimeInterval(60),
+                                .localOnly: true
+                            ]
+                        )
                         Haptics.success()
                         copiedCode = true
                         // Revert the checkmark so the button reads as "copy" again next time.
