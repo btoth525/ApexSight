@@ -145,12 +145,18 @@ struct DoorbellCallView: View {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
             pulse = true
         }
-        // A gentle repeating ring haptic until answered/declined.
+        // A gentle repeating ring haptic until answered/declined — but bounded. A VoIP-delivered
+        // ring is ended by DoorbellCallManager's 45s CallKit timeout, but a pure apex://doorbell
+        // DEEP-LINK presentation has no such backstop, so without a cap it would buzz forever
+        // unattended. Ring for ~45s (25 × 1.8s) then auto-dismiss.
         ringTask = Task { @MainActor in
-            while !Task.isCancelled && !answered {
+            var rings = 0
+            while !Task.isCancelled && !answered && rings < 25 {
                 Haptics.tap()
                 try? await Task.sleep(nanoseconds: 1_800_000_000)
+                rings += 1
             }
+            if !Task.isCancelled && !answered { end() }
         }
     }
 
