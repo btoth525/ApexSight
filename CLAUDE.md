@@ -17,18 +17,20 @@ off the signed-in Xcode session — no API key needed) → commit + push to `fea
 next. Always `xcodegen generate` after bumping `CURRENT_PROJECT_VERSION` (else the archive ships the
 old build number). Never run two archives at once. Bump the build number every TestFlight upload.
 
-**⚠️ SHIP WITH THE RELEASE SDK, NOT THE BETA (learned the hard way, 2026-07-14):** binaries built with
-the iOS 27 **beta** SDK get `ITMS-90534: Unsupported SDK or Xcode version` — the build STILL reaches
-TestFlight for testing, but it can't be **submitted to the App Store** (public release) and Apple
-emails a warning each upload. Prefer the release SDK for clean, submittable builds. Archive + upload
-with the **release**
-Xcode (`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, currently Xcode 26.5 / iOS 26.5
-SDK / Swift 6.3.2), NOT `Xcode-beta.app` (27.0). The one iOS-27-only API in the codebase
-(`toolbarMinimizeBehavior`) is guarded with `#if compiler(>=6.4)` so it compiles out on 26.5 and
-self-reactivates once the 27 SDK is accepted; everything else (AppleAI/Vision/NowPlaying) compiles
-against 26.5 fine (runtime-gated via `@available(iOS 27, *)`). Sim name under 26.5 is
-**iPhone 17 Pro** (iPhone 16 Pro is gone). If a build ever needs a genuinely-27-only symbol, guard
-it the same `#if compiler(>=6.4)` way — never ship from the beta Xcode.
+**⚠️ SHIP WITH THE iOS 27 BETA SDK — PERSONAL, TestFlight-only app (decided 2026-07-14).** Both users'
+iPhones run iOS 27 and this is never submitted to the public App Store, so build with
+**`DEVELOPER_DIR=/Users/brandon/Downloads/Xcode-beta.app/Contents/Developer`** (Xcode 27.0 / iOS 27
+SDK / Swift 6.4) to keep every iOS 27 feature (nav-bar `toolbarMinimizeBehavior`, Apple Intelligence
+vision, NowPlaying A1). Apple emails `ITMS-90534: Unsupported SDK` on each upload — EXPECTED and
+HARMLESS here: the build still reaches TestFlight for install/testing; the warning only blocks App
+Store submission, which we don't do. **Do NOT "fix" it by switching to the release Xcode** — that
+drops the 27-only features the user built on.
+- The code is ALSO release-SDK-portable (fallback if Apple ever hard-blocks the beta SDK): the one
+  27-only API (`toolbarMinimizeBehavior`) is guarded `#if compiler(>=6.4)` (Xcode 27=Swift 6.4,
+  26.5=6.3.2) so it self-reactivates under 27 and compiles out under 26.5; `MainTabView.body` is split
+  into `layoutWithPresentation` so the slower 6.3.2 type-checker doesn't time out. Builds clean under
+  either toolchain — but SHIP with the beta 27 for the features. Sim name is **iPhone 17 Pro**
+  (iPhone 16 Pro is gone).
 
 ---
 
