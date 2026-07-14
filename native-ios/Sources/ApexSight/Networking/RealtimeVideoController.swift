@@ -49,6 +49,11 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// stops being retried after 2 rounds this session instead of hammering go2rtc on every
     /// mute-toggle/appear. Cleared by a successful first frame. Keyed by the primary source.
     private var failures: [String: Int] = [:]
+    /// Bumped by every start()/stop(). A cascade captures its value; because stop() nils startTask
+    /// (letting a new start() run) while an old cascade may still be suspended on an await, a stale
+    /// cascade resuming must not wipe the new attempt's startTask (leaking a go2rtc session no stop()
+    /// can cancel) or tear down the new attempt's peer connection. Mirrors TwoWayTalkController.
+    private var startGeneration = 0
 
     override init() {
         super.init()
@@ -87,9 +92,13 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         primaryKey = key
         wantAudio = withAudio
         state = .connecting
+        startGeneration &+= 1
+        let generation = startGeneration
         startTask = Task { [weak self] in
-            await self?.cascade(sources: sources, client: client, directLAN: directLAN)
-            self?.startTask = nil
+            await self?.cascade(sources: sources, client: client, directLAN: directLAN, generation: generation)
+            // Don't let a stale cascade wipe a newer attempt's handle (see startGeneration).
+            guard let self, self.startGeneration == generation else { return }
+            self.startTask = nil
         }
     }
 
@@ -122,6 +131,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     }
 
     func stop() {
+        startGeneration &+= 1   // supersede any in-flight cascade so it can't wipe/teardown the next one
         startTask?.cancel(); startTask = nil
         teardown()
         state = .idle
@@ -149,7 +159,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         #endif
     }
 
-    private func cascade(sources: [String], client: FrigateClient, directLAN: Bool) async {
+    private func cascade(sources: [String], client: FrigateClient, directLAN: Bool, generation: Int) async {
         var anyHardFailure = false
         for source in sources {
             if Task.isCancelled { return }
@@ -164,7 +174,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             // cold stream still warming, is NOT retried here — TURN wouldn't help it.)
             if !rendered && attemptHardFailure && directLAN {
                 Self.rtLog("host-only hard-fail → retry \(source) with STUN+TURN")
-                teardown()
+                teardown(generation: generation)
                 if Task.isCancelled { return }
                 attemptHardFailure = false
                 rendered = await attempt(source: source, client: client, directLAN: false)
@@ -180,7 +190,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
                 return
             }
             if attemptHardFailure { anyHardFailure = true }
-            teardown()   // clean up before trying the next source
+            teardown(generation: generation)   // clean up before trying the next source (no-op if superseded)
             if Task.isCancelled { return }
         }
         // Only a hard failure (no media route / ICE dead) counts toward the lockout. An
@@ -301,7 +311,11 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         cont.resume(returning: rendered)
     }
 
-    private func teardown() {
+    private func teardown(generation: Int? = nil) {
+        // Callers inside cascade() pass their generation so a superseded cascade no-ops instead of
+        // closing the current attempt's pc (the stop() that superseded already released the old one).
+        // stop()/the delegate pass nothing, so their teardown always runs.
+        if let generation, generation != startGeneration { return }
         attemptWatchdog?.cancel(); attemptWatchdog = nil
         // Don't strand a suspended attempt — resolve it false before tearing the pc down.
         if let cont = firstFrameContinuation { firstFrameContinuation = nil; cont.resume(returning: false) }
