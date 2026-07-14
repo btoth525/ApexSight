@@ -52,6 +52,44 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        layoutWithPresentation
+        // Answered on the native CallKit screen → open the live doorbell view already connected.
+        .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellAnswered)) { _ in
+            _ = DoorbellCallManager.shared.consumePendingAnswer()   // observed live — clear the replay flag
+            doorbellAutoAnswer = true
+            showDoorbellCall = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellEnded)) { _ in
+            showDoorbellCall = false
+        }
+        .onAppear {
+            // Cold launch from a Lock Screen answer: the CXAnswerCallAction fired before this view
+            // existed (NotificationCenter posts aren't buffered) — replay it now so answering from
+            // a terminated app still lands in the live doorbell view, not the camera wall.
+            if DoorbellCallManager.shared.consumePendingAnswer() {
+                doorbellAutoAnswer = true
+                showDoorbellCall = true
+            }
+        }
+        .onChange(of: appState.deepLink) { _, route in
+            handleDeepLink(route)
+        }
+        .alert("Couldn't open that item", isPresented: $deepLinkFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("It may have been deleted, or the connection isn't ready yet. You've been taken to the right tab — pull to refresh.")
+        }
+        .task {
+            // Catch a deep link set before this view started observing (cold launch from a push).
+            if appState.deepLink != nil { handleDeepLink(appState.deepLink) }
+        }
+    }
+
+    // Layout + modal presentation, split out of `body` so the iOS 26.5-SDK compiler (Swift 6.3.2)
+    // can type-check each half within its budget — the full single modifier chain tripped
+    // "unable to type-check this expression in reasonable time." Modifier ORDER is unchanged:
+    // these apply first, then `body` continues the chain, exactly as before.
+    private var layoutWithPresentation: some View {
         Group {
             // The iPad sidebar layout is ONLY for actual iPads. iPhone "Plus/Max" models report a
             // REGULAR width class in landscape — without the idiom check, rotating one of those
@@ -86,36 +124,6 @@ struct MainTabView: View {
         }
         .fullScreenCover(isPresented: $showDoorbellCall, onDismiss: { AppOrientation.lockPortrait() }) {
             DoorbellCallView(autoAnswer: doorbellAutoAnswer).environmentObject(appState)
-        }
-        // Answered on the native CallKit screen → open the live doorbell view already connected.
-        .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellAnswered)) { _ in
-            _ = DoorbellCallManager.shared.consumePendingAnswer()   // observed live — clear the replay flag
-            doorbellAutoAnswer = true
-            showDoorbellCall = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .apexDoorbellEnded)) { _ in
-            showDoorbellCall = false
-        }
-        .onAppear {
-            // Cold launch from a Lock Screen answer: the CXAnswerCallAction fired before this view
-            // existed (NotificationCenter posts aren't buffered) — replay it now so answering from
-            // a terminated app still lands in the live doorbell view, not the camera wall.
-            if DoorbellCallManager.shared.consumePendingAnswer() {
-                doorbellAutoAnswer = true
-                showDoorbellCall = true
-            }
-        }
-        .onChange(of: appState.deepLink) { _, route in
-            handleDeepLink(route)
-        }
-        .alert("Couldn't open that item", isPresented: $deepLinkFailed) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("It may have been deleted, or the connection isn't ready yet. You've been taken to the right tab — pull to refresh.")
-        }
-        .task {
-            // Catch a deep link set before this view started observing (cold launch from a push).
-            if appState.deepLink != nil { handleDeepLink(appState.deepLink) }
         }
     }
 
