@@ -34,6 +34,13 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     /// press released before the SDP handshake finishes would let the mic + peer connection open
     /// after the finger is already up, with no release event coming, leaving a stuck hot mic.
     private var startTask: Task<Void, Never>?
+    /// Bumped by every begin()/stop(). A connect() attempt captures its value and checks it at each
+    /// exit point: cancellation is cooperative, so a released-then-re-pressed sequence (stop() then a
+    /// new begin()) can leave a stale attempt resuming from a completed await — it must NOT wipe the
+    /// new attempt's startTask (which would strand a hot mic no stop() could cancel), commit .talking,
+    /// or tear down the new attempt's peer connection. The generation makes "am I still current?"
+    /// answerable at each of connect()'s several exit points.
+    private var connectGeneration = 0
 
     override init() {
         super.init()
@@ -59,21 +66,27 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     func begin(cameraTwoWaySource: String, client: FrigateClient) {
         guard !isActive, startTask == nil else { return }
         status = .connecting
+        connectGeneration &+= 1
+        let generation = connectGeneration
         startTask = Task { [weak self] in
-            await self?.connect(cameraTwoWaySource: cameraTwoWaySource, client: client)
-            self?.startTask = nil
+            await self?.connect(cameraTwoWaySource: cameraTwoWaySource, client: client, generation: generation)
+            // Only clear the handle if a newer begin()/stop() hasn't superseded this attempt —
+            // otherwise a stale attempt finishing here would wipe the current attempt's startTask,
+            // and the next stop() couldn't cancel it (stuck hot mic).
+            guard let self, self.connectGeneration == generation else { return }
+            self.startTask = nil
         }
     }
 
     /// Resolves mic permission, builds the peer connection, gathers ICE, exchanges SDP with
     /// go2rtc, and opens the audio. Checks for cancellation at every await so a released press
     /// tears down cleanly and never strands an open mic.
-    private func connect(cameraTwoWaySource: String, client: FrigateClient) async {
+    private func connect(cameraTwoWaySource: String, client: FrigateClient, generation: Int) async {
         guard await requestMicPermission() else {
-            if !Task.isCancelled { status = .failed("Microphone access denied") }
+            if !Task.isCancelled, connectGeneration == generation { status = .failed("Microphone access denied") }
             return
         }
-        guard !Task.isCancelled else { return }   // nothing acquired yet — just bail
+        guard !Task.isCancelled, connectGeneration == generation else { return }   // nothing acquired yet — just bail
         configureAudioSession()
 
         let config = RTCConfiguration()
@@ -83,12 +96,12 @@ final class TwoWayTalkController: NSObject, ObservableObject {
         config.iceServers = await TurnSettings.iceServers()
         config.bundlePolicy = .maxBundle
         config.iceTransportPolicy = .all     // direct on LAN, relay (TURN) when needed
-        guard !Task.isCancelled else { teardown(); return }   // audio session is live — clean it up
+        guard !Task.isCancelled, connectGeneration == generation else { teardown(generation: generation); return }   // audio session is live — clean it up
         startConnectWatchdog()
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let pc = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
-            status = .failed("Couldn't create connection")
-            teardown()
+            if connectGeneration == generation { status = .failed("Couldn't create connection") }
+            teardown(generation: generation)
             return
         }
         self.pc = pc
@@ -120,21 +133,28 @@ final class TwoWayTalkController: NSObject, ObservableObject {
             try Task.checkCancellation()
             try await setRemote(RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
             try Task.checkCancellation()   // last gate before we commit to "talking"
+            // A newer begin()/stop() superseded us during the handshake — it owns the connection
+            // now, so don't commit .talking or touch shared state (the superseding stop() already
+            // tore this attempt's resources down).
+            guard connectGeneration == generation else { return }
             connectWatchdog?.cancel(); connectWatchdog = nil
             status = .talking
             Haptics.success()
         } catch {
+            // Superseded by a newer attempt: leave its state and connection alone.
+            guard connectGeneration == generation else { return }
             // Released mid-handshake: silently tear down and leave status as stop() set it (.idle).
             if error.isCancellation || Task.isCancelled {
-                teardown()
+                teardown(generation: generation)
             } else {
                 status = .failed(error.localizedDescription)
-                teardown()
+                teardown(generation: generation)
             }
         }
     }
 
     func stop() {
+        connectGeneration &+= 1   // supersede any in-flight connect so it can't commit or tear down shared state
         startTask?.cancel()
         startTask = nil
         teardown()
@@ -143,7 +163,12 @@ final class TwoWayTalkController: NSObject, ObservableObject {
 
     // MARK: - Internals
 
-    private func teardown() {
+    /// Release the mic + peer connection + audio session. Callers inside connect() pass their
+    /// `generation` so a superseded attempt no-ops instead of closing the *current* attempt's pc
+    /// (the stop() that superseded it already released the old one). stop()/the watchdog/the ICE-drop
+    /// delegate pass nothing, so their teardown always runs.
+    private func teardown(generation: Int? = nil) {
+        if let generation, generation != connectGeneration { return }
         connectWatchdog?.cancel(); connectWatchdog = nil
         micTrack = nil
         pc?.delegate = nil       // stop delegate callbacks from firing after close
