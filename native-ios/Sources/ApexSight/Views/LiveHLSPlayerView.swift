@@ -1076,8 +1076,15 @@ struct HLSLivePlayerView: View {
             if fellBack { realtime.stop() }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            // Realtime stops itself on background; pick it back up when we return.
-            syncRealtime()
+            // Realtime stops itself on background; pick it back up when we return. WebRTC-primary
+            // wall tiles go through the startup gate so they don't all stampede go2rtc at once on
+            // foreground (the old raw syncRealtime() did exactly that); the focused viewer and the
+            // doorbell call keep the direct path for lowest latency.
+            if hlsDead && !showControls && !realtimeAudio {
+                startWebRTCPrimary()
+            } else {
+                syncRealtime()
+            }
         }
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
