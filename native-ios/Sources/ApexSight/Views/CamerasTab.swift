@@ -115,10 +115,11 @@ struct CamerasTab: View {
                             .frame(maxWidth: .infinity)
                     }
                 } else {
-                    // Key rows by their camera contents, not row index: reordering / hiding a
-                    // camera then moves tiles between rows instead of rebuilding whichever rows
-                    // happen to land at the same index (which tore down persistent players).
-                    ForEach(cameraRows, id: \.self) { row in
+                    // Index-keyed rows: the row container is reused and the inner ForEach diffs
+                    // tiles by camera.id, so unchanged tiles in a row are reused. (Content-keying
+                    // the row rebuilds the whole HStack — including unchanged tiles — on any change.)
+                    // iPad/regular-width only.
+                    ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
                         HStack(spacing: GlassTheme.Space.m) {
                             ForEach(row) { camera in
                                 CameraCard(camera: camera)
