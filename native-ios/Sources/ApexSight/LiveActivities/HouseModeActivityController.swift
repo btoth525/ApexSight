@@ -6,6 +6,11 @@ import Foundation
 /// arming Night (no exit delay) shows "Armed Night" straight away. Disarming clears it.
 @MainActor
 enum HouseModeActivityController {
+    /// The pending auto-end Task. Held + cancelled so a stale linger from a PREVIOUS arm can't fire
+    /// and tear down a freshly-armed banner (arm Away → disarm → arm Night: the Away linger must not
+    /// end the Night banner mid-window).
+    private static var lingerTask: Task<Void, Never>?
+
     /// Start the arm banner. `exitDelay` (seconds) drives the countdown — 0 = instant (Night).
     static func startArm(mode: String, by: String, exitDelay: Double) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -22,8 +27,10 @@ enum HouseModeActivityController {
             content: ActivityContent(state: state, staleDate: dismiss),
             pushType: nil
         )
-        Task {
+        lingerTask?.cancel()   // supersede any prior arm's pending auto-end
+        lingerTask = Task {
             try? await Task.sleep(nanoseconds: UInt64(linger * 1_000_000_000))
+            if Task.isCancelled { return }
             await endAll()
         }
     }
@@ -32,6 +39,7 @@ enum HouseModeActivityController {
     static func disarm() { endAllNow() }
 
     private static func endAllNow() {
+        lingerTask?.cancel(); lingerTask = nil
         for activity in Activity<HouseModeActivityAttributes>.activities {
             Task { await activity.end(nil, dismissalPolicy: .immediate) }
         }

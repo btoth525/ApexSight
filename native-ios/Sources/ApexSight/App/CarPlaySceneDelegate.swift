@@ -32,7 +32,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         interfaceController.setRootTemplate(tabBar, animated: false, completion: nil)
 
         Task { [weak self] in await self?.refresh() }
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
         }
     }
@@ -98,6 +98,10 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                     item.setImage(image)
                 }
             }
+        } else {
+            // Signed in but Frigate unreachable — don't leave the Alerts tab stuck on "Loading…"
+            // forever (the Cameras tab recovers on its own from the shared snapshot store).
+            alertsTemplate.updateSections([messageSection("Can't reach Frigate")])
         }
 
         let names = SharedSnapshotStore.loadCameraNames()

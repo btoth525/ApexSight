@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Browse the exports Frigate holds — re-download, share, save to Photos, rename, or delete.
 /// (Frigate renders these server-side, so they persist on the host until you remove them.)
+@MainActor   // its async actions mutate @State (busyID/toast/exports/…); pin them to the main actor
 struct MyExportsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var exporter = ExportManager()

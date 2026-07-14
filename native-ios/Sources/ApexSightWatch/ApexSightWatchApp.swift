@@ -95,9 +95,10 @@ final class WatchAlertStore: NSObject, ObservableObject, WCSessionDelegate {
                     )
                 }
             }
-            if let data = context["heroJPEG"] as? Data {
-                self.heroImage = UIImage(data: data)
-            }
+            // Set unconditionally (nil when this update carries no hero) — the phone omits heroJPEG
+            // when the thumbnail download fails/oversizes, and leaving the OLD image up would pair the
+            // previous alert's photo with the new alert's caption.
+            self.heroImage = (context["heroJPEG"] as? Data).flatMap { UIImage(data: $0) }
         }
     }
 
