@@ -96,6 +96,9 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     private var primaryKey = ""
     private var wantAudio = false
     private var audioEnabled = false
+    /// True once this controller activated the shared audio session for real-time hearing, so
+    /// teardown releases it when the call ends instead of leaving it pinned in videoChat mode.
+    private var didActivateAudioSession = false
     /// Set true when the current attempt died from a HARD failure (ICE failed/closed, or a
     /// negotiation error) — as opposed to a first-frame TIMEOUT. Only hard failures count toward
     /// the per-camera lockout: a cold on-demand NVENC stream that simply hasn't painted yet must
@@ -114,6 +117,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             try? session.setCategory(.playAndRecord, mode: .videoChat,
                                      options: [.defaultToSpeaker, .allowBluetoothA2DP])
             try? session.setActive(true)
+            didActivateAudioSession = true
         }
     }
 
@@ -167,6 +171,10 @@ final class RealtimeVideoController: NSObject, ObservableObject {
                 Self.rtLog("retry \(source) → \(rendered ? "RENDERED ✅" : (attemptHardFailure ? "HARD FAIL ❌" : "timeout ⏱"))")
             }
             if rendered {
+                // A frame can resolve the attempt true at almost the same instant stop() cancels
+                // this task (and tears the pc down). Don't resurrect .live after a teardown — the
+                // .failed path below is already cancel-guarded; mirror it here.
+                if Task.isCancelled { return }
                 failures[primaryKey] = 0
                 state = .live
                 return
@@ -236,7 +244,11 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             try await set(remote: RTCSessionDescription(type: .answer, sdp: answerSDP), on: pc)
         } catch {
             Self.rtLog("negotiation error: \(error.localizedDescription)")
-            attemptHardFailure = true   // couldn't even negotiate — a real failure, not a cold start
+            // A 401/403 is an expired JWT, not a media/route failure — recoverable by the app's
+            // normal reauth (the 15s poller and refresh() both refresh the token on a 401, and the
+            // next sync restarts realtime with it). Don't count it toward the per-camera lockout, or
+            // a brief token expiry would pin the tile to low-res MJPEG for the rest of the session.
+            if !error.isUnauthorized { attemptHardFailure = true }
             return false
         }
 
@@ -300,6 +312,12 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         pc = nil
         gatheringContinuation?.resume()
         gatheringContinuation = nil
+        // Release the shared audio session if this controller took it for real-time hearing, so a
+        // finished doorbell call doesn't leave it pinned in videoChat mode — other audio resumes.
+        if didActivateAudioSession {
+            didActivateAudioSession = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func set(local sdp: RTCSessionDescription, on pc: RTCPeerConnection) async throws {
