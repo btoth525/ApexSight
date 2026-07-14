@@ -1145,11 +1145,14 @@ final class AppState: ObservableObject {
     func probeLiveHLSIfNeeded() {
         guard !liveHLSProbed, let client, let cam = cameras.first?.name else { return }
         liveHLSProbed = true
+        // Pin the verdict to THIS server: a switch/sign-out mid-probe bumps serverGeneration, and
+        // without this guard the old server's HLS decision could land on the new one.
+        let gen = serverGeneration
         Task { [weak self] in
             let available = await client.probeLiveHLS(camera: cam)
             FputsLog.log("[live] HLS probe (\(cam)) → \(available ? "available (0.17 pipeline)" : "ABSENT (0.18 → WebRTC-primary)")")
             await MainActor.run {
-                guard let self else { return }
+                guard let self, self.serverGeneration == gen else { return }
                 if available != self.liveHLSAvailable { self.liveHLSAvailable = available }
             }
         }
@@ -1370,6 +1373,13 @@ final class AppState: ObservableObject {
         refreshTask = nil
         reauthTask?.cancel()
         reauthTask = nil
+        // Re-arm the one-shot HLS-live probe. A different (or absent) server may have a different
+        // verdict, and unlike the sub-stream flags — which refresh() unconditionally reassigns —
+        // refresh() never overwrites liveHLSAvailable, so without this the FIRST server's HLS
+        // decision would stick for the whole process and pin every wall tile to the wrong live
+        // pipeline (dead HLS on a 0.18 server, or WebRTC-primary on a 0.17 one) until relaunch.
+        liveHLSProbed = false
+        liveHLSAvailable = true
     }
 
     func switchTo(session: FrigateSession) {
