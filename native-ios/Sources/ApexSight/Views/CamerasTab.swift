@@ -110,8 +110,11 @@ struct CamerasTab: View {
                             .frame(maxWidth: .infinity)
                     }
                 } else {
-                    ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
-                        HStack(spacing: 12) {
+                    // Key rows by their camera contents, not row index: reordering / hiding a
+                    // camera then moves tiles between rows instead of rebuilding whichever rows
+                    // happen to land at the same index (which tore down persistent players).
+                    ForEach(cameraRows, id: \.self) { row in
+                        HStack(spacing: GlassTheme.Space.m) {
                             ForEach(row) { camera in
                                 CameraCard(camera: camera)
                                     .frame(maxWidth: .infinity)
@@ -125,7 +128,7 @@ struct CamerasTab: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(GlassTheme.Space.l)
         }
         .softScrollEdges()
         .refreshable { await appState.refresh() }
@@ -141,7 +144,7 @@ struct CamerasTab: View {
     /// A few tile-shaped shimmer placeholders so the first load reads as "filling in," not
     /// a blank screen or a centered spinner.
     private var loadingSkeleton: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: GlassTheme.Space.m) {
             ForEach(0..<4, id: \.self) { _ in
                 SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -249,7 +252,7 @@ struct CamerasTab: View {
 
     private func editRow(_ camera: FrigateCamera) -> some View {
         let isHidden = draftHidden.contains(camera.name)
-        return HStack(spacing: 12) {
+        return HStack(spacing: GlassTheme.Space.m) {
             ZStack {
                 if let url = appState.client?.latestFrameURL(camera: camera.name) {
                     RemoteImage(url: url, contentMode: .fill)

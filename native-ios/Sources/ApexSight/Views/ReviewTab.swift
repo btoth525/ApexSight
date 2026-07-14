@@ -112,23 +112,6 @@ struct ReviewTab: View {
         }
     }
 
-    private var showEmptyState: Bool {
-        guard !appState.isLoading && !loadingDetections else { return false }
-        // Don't mistake an unreachable server for "All Clear" — the error state owns that case.
-        guard !showErrorState else { return false }
-        // Use the same filtered/visible set the list renders (which excludes
-        // just-viewed ids), so marking the last items reviewed shows "All Clear"
-        // instead of a "0 items" header with no rows.
-        return filtered.isEmpty
-    }
-
-    /// The last fetch failed (server unreachable) AND we have nothing cached to show — so the
-    /// screen offers Retry instead of falsely reading as "All Clear" over a dead connection.
-    private var showErrorState: Bool {
-        guard !appState.isLoading && !loadingDetections else { return false }
-        return !appState.isReachable && filtered.isEmpty
-    }
-
     private func retry() async {
         Haptics.tap()
         await appState.refresh()
@@ -155,7 +138,16 @@ struct ReviewTab: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        // `filtered` runs a filter + sort and was read ~5x per render pass (both empty/error
+        // gates, the skeleton gate, the List, the header count, and the toolbar). Compute it
+        // ONCE here and drive every branch off the result — same logic, one pass.
+        let visible = filtered
+        let busy = appState.isLoading || loadingDetections
+        // Unreachable server with nothing to show → offer Retry, never a false "All Clear".
+        let isError = !busy && !appState.isReachable && visible.isEmpty
+        // "All Clear" only when reachable and genuinely empty (excludes just-viewed ids).
+        let isEmpty = !busy && !isError && visible.isEmpty
+        return NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
                 VStack(spacing: 0) {
@@ -175,12 +167,12 @@ struct ReviewTab: View {
                         .padding(.bottom, GlassTheme.Space.s)
 
                     Group {
-                        if showErrorState {
+                        if isError {
                             errorState
-                        } else if showEmptyState {
+                        } else if isEmpty {
                             emptyState
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else if (appState.isLoading || loadingDetections) && filtered.isEmpty {
+                        } else if busy && visible.isEmpty {
                             ScrollView {
                                 SkeletonList(rows: 7)
                                     .padding(.top, GlassTheme.Space.s)
@@ -189,7 +181,7 @@ struct ReviewTab: View {
                         } else {
                             List {
                                 Section {
-                                    ForEach(filtered) { review in
+                                    ForEach(visible) { review in
                                         ReviewRow(
                                             review: review,
                                             onOpen: { path.append(review) },
@@ -206,7 +198,7 @@ struct ReviewTab: View {
                                         }
                                     }
                                 } header: {
-                                    Text("^[\(filtered.count) item](inflect: true)")
+                                    Text("^[\(visible.count) item](inflect: true)")
                                         .font(.footnote.weight(.medium))
                                         .foregroundStyle(GlassTheme.secondary)
                                         .monospacedDigit()
@@ -235,7 +227,7 @@ struct ReviewTab: View {
                         // Gate on the VISIBLE list, not just reviews — the Detections filter renders
                         // from `detectionItems` (which mark-all also clears), so keying off
                         // appState.reviews hid the button while detections were on screen.
-                        if !filtered.isEmpty {
+                        if !visible.isEmpty {
                             Button {
                                 showMarkAllConfirm = true
                             } label: {
