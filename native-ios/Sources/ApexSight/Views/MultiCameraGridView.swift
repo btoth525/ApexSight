@@ -261,15 +261,20 @@ private struct MultiCameraCell: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.black
-            // Auto-refreshing snapshot (current frame every few seconds) rather than many
-            // simultaneous live streams — a dense grid of live WebRTC feeds spins up slowly and
-            // stampedes the server. Tapping a tile opens that camera full-quality LIVE. Matches
-            // the main wall (CameraCard) and the Ring/Nest/UniFi grid model.
-            LiveSnapshotView(
+            // Live feed. This fullscreen grid is an opt-in "watch everything" view, and the
+            // LazyVStack stops off-screen rows decoding, so only the visible tiles stream (≈1–2 at
+            // the default one-column iPhone layout) — bounding the on-device decode/battery cost that
+            // keeps the main wall (CameraCard) on snapshots. `preferSub` keeps a dense grid light;
+            // `muted` so tiles don't all voice at once; tapping opens that camera full-quality.
+            // Startup is StreamGate-serialized (see HLSLivePlayerView.startWebRTCPrimary) so a whole
+            // wall of tiles appearing at once doesn't stampede go2rtc.
+            HLSLivePlayerView(
                 camera: camera,
-                onFrame: { hasFrame in
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = hasFrame }
-                }
+                preferSub: true,
+                onPlaying: { playing in
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isLive = playing }
+                },
+                muted: true
             )
             .allowsHitTesting(false)
 
