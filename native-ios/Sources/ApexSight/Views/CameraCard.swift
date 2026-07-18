@@ -120,11 +120,15 @@ struct CameraCard: View {
     private var bottomBar: some View {
         HStack(spacing: 8) {
             Text(titleize(camera.name))
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(.headline, design: .default).weight(.bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+                // Scales with Dynamic Type (was a hard-fixed 17pt); capped below the accessibility
+                // range so a long camera name on this small tile doesn't blow up the wall layout —
+                // the full name is still readable by opening the tile.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
@@ -150,7 +154,6 @@ struct CameraCard: View {
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+        .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
     }
 }

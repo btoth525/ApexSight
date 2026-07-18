@@ -62,9 +62,13 @@ struct EventRow: View {
                 .foregroundStyle(GlassTheme.tertiary)
         }
         .padding(10)
-        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .cardStroke(20)
+        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
+        .cardStroke(GlassTheme.Radius.card)
         .accessibilityElement(children: .combine)
+        // Matches ReviewRow's cap on its own fixed-height thumbnail row — the comment above
+        // claimed this cap already existed; it didn't, so text could grow past the 110×110
+        // thumbnail at the largest accessibility sizes.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     private func chip(_ text: String, tint: Color) -> some View {
