@@ -82,9 +82,11 @@ struct HouseModeView: View {
                     if appState.houseModeBusy { ProgressView().tint(GlassTheme.accent) }
                 }
                 if !appState.houseModeArmedBy.isEmpty {
+                    // Who armed/disarmed the house is audit-relevant in a security app, not
+                    // decoration — .secondary (62% white), not the washed-out .tertiary tier.
                     Label("Set by \(appState.houseModeArmedBy)", systemImage: "person.fill")
                         .font(.footnote)
-                        .foregroundStyle(GlassTheme.tertiary)
+                        .foregroundStyle(GlassTheme.secondary)
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: appState.houseMode)
@@ -134,9 +136,11 @@ struct HouseModeView: View {
         // the app can't and shouldn't change it. It only *remembers* the code (in this phone's
         // Keychain) so disarm is one Face ID tap. If you change the code in HA, the next disarm just
         // asks for it again.
+        // Explains exactly how disarming a physical alarm works — security-relevant, not
+        // decorative caption text, so it gets .secondary contrast, not .tertiary.
         Text("Arming rides your pairing. Disarming asks for \(BiometricLock.label), then sends your Alarmo code so Home Assistant can verify it — set the code in Alarmo; ApexSight just remembers it on this phone.")
             .font(.caption)
-            .foregroundStyle(GlassTheme.tertiary)
+            .foregroundStyle(GlassTheme.secondary)
             .padding(.top, GlassTheme.Space.s)
     }
 
