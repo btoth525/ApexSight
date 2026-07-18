@@ -85,7 +85,11 @@ struct Incident: Identifiable, Hashable {
 
 enum IncidentBuilder {
     /// Cluster events into incidents. A new incident starts when an event begins more than `gap`
-    /// seconds after the running cluster's latest activity. Returns newest-first.
+    /// seconds after the running cluster's latest activity, OR when an event on a camera NOT yet
+    /// in the cluster has no shared sub-label linking it to what's already there — bare time
+    /// coincidence across unrelated cameras (a driveway car and an unrelated backyard cat, say)
+    /// must not fabricate a cross-camera "story"; only a same camera or a shared recognized
+    /// identity (sub-label) may extend a cluster onto a new camera. Returns newest-first.
     static func build(from events: [FrigateEvent], gap: TimeInterval = 120) -> [Incident] {
         let sorted = events
             .filter { $0.startTime != nil }
@@ -95,15 +99,28 @@ enum IncidentBuilder {
         var clusters: [[FrigateEvent]] = []
         var current: [FrigateEvent] = []
         var clusterEnd: Double = -.greatestFiniteMagnitude
+        var clusterCameras: Set<String> = []
+        var clusterSubLabels: Set<String> = []
+
+        func matchesCurrentCluster(_ event: FrigateEvent) -> Bool {
+            if clusterCameras.contains(event.camera) { return true }
+            if let sub = event.subLabel, !sub.isEmpty, clusterSubLabels.contains(sub) { return true }
+            return false
+        }
 
         for event in sorted {
             let s = event.startTime ?? 0
-            if current.isEmpty || s - clusterEnd <= gap {
+            let withinGap = !current.isEmpty && s - clusterEnd <= gap
+            if withinGap && matchesCurrentCluster(event) {
                 current.append(event)
             } else {
-                clusters.append(current)
+                if !current.isEmpty { clusters.append(current) }
                 current = [event]
+                clusterCameras = []
+                clusterSubLabels = []
             }
+            clusterCameras.insert(event.camera)
+            if let sub = event.subLabel, !sub.isEmpty { clusterSubLabels.insert(sub) }
             clusterEnd = max(clusterEnd, event.endTime ?? s)
         }
         if !current.isEmpty { clusters.append(current) }
