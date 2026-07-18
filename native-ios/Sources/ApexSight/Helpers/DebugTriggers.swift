@@ -25,7 +25,7 @@ enum DebugTriggers {
             severity: "alert",
             thumbPath: nil,
             hasBeenReviewed: false,
-            data: ReviewData(detections: ["person"], objects: ["person"], subLabels: nil, zones: ["front_yard"], audio: nil, thumbTime: nil),
+            data: ReviewData(detections: ["person"], objects: ["person"], subLabels: nil, zones: ["front_yard"], audio: nil, thumbTime: nil, verifiedObjects: nil),
             description: "Person detected (debug)"
         )
     }

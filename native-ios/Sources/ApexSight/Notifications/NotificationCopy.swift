@@ -20,18 +20,37 @@ enum NotificationCopy {
         return parts.joined(separator: " • ")
     }
 
+    /// Frigate suffixes an object type with `-verified` once it's matched to a sub-label (e.g.
+    /// "car-verified"); strip it for DISPLAY/emoji lookup only. Never applied to the model's raw
+    /// `objects` values used elsewhere for trigger/mute matching (see `AppState.handleReview`).
+    private static func displayObject(_ raw: String) -> String {
+        raw.hasSuffix("-verified") ? String(raw.dropLast("-verified".count)) : raw
+    }
+
+    /// Attribute a sub-label to one specific object type only when it's unambiguous: either the
+    /// review has just one distinct object type, or `verified_objects` narrows it to exactly one.
+    /// `objects` and `sub_labels` are independently deduplicated lists — `objects.first` is NOT
+    /// necessarily the object `subLabels.first` belongs to (confirmed live: a person + a
+    /// verified car whose sub-label was a truck's name rendered "Person — Brandons Truck").
+    private static func attributableObject(for review: FrigateReviewItem) -> String? {
+        let objects = Set((review.data?.objects ?? []).map(displayObject))
+        if objects.count == 1 { return objects.first }
+        let verified = Set((review.data?.verifiedObjects ?? []).map(displayObject))
+        return verified.count == 1 ? verified.first : nil
+    }
+
     static func title(for review: FrigateReviewItem) -> String {
-        let objects = review.data?.objects ?? []
-        let subLabels = review.data?.subLabels ?? []
-        if objects.isEmpty { return "📹 Camera activity" }
-        let firstSub = subLabels.first
-        let firstObj = objects.first ?? ""
-        let e = emoji(for: firstObj, subLabel: firstSub)
-        // Prefer sub-label name when it adds meaning (face, plate, carrier)
-        if let sub = firstSub, !sub.isEmpty {
-            return "\(e) \(titleize(sub))"
+        let objects = (review.data?.objects ?? []).map(displayObject)
+        guard !objects.isEmpty else { return "📹 Camera activity" }
+        let subLabels = (review.data?.subLabels ?? []).filter { !$0.isEmpty }
+        // Prefer sub-label name when it can be confidently attributed to an object.
+        if let obj = attributableObject(for: review), let sub = subLabels.first {
+            return "\(emoji(for: obj, subLabel: sub)) \(titleize(sub))"
         }
-        return "\(e) \(objects.map { titleize($0) }.joined(separator: ", "))"
+        let e = emoji(for: objects.first ?? "", subLabel: subLabels.first)
+        let objectList = Array(Set(objects)).sorted().map { titleize($0) }.joined(separator: ", ")
+        guard !subLabels.isEmpty else { return "\(e) \(objectList)" }
+        return "\(e) \(objectList) — \(subLabels.map { titleize($0) }.joined(separator: ", "))"
     }
 
     /// Review-row/detail title that keeps BOTH the object and its sub-label for
@@ -39,15 +58,16 @@ enum NotificationCopy {
     /// dropping the object the way the notification `title` does. Falls back to the
     /// object list when there's no sub-label.
     static func combinedTitle(for review: FrigateReviewItem) -> String {
-        let objects = review.data?.objects ?? []
+        let objects = (review.data?.objects ?? []).map(displayObject)
         guard !objects.isEmpty else { return "📹 Camera activity" }
-        let firstObj = objects.first ?? ""
-        let firstSub = (review.data?.subLabels ?? []).first { !$0.isEmpty }
-        let e = emoji(for: firstObj, subLabel: firstSub)
-        if let sub = firstSub {
-            return "\(e) \(titleize(firstObj)) — \(titleize(sub))"
+        let subLabels = (review.data?.subLabels ?? []).filter { !$0.isEmpty }
+        if let obj = attributableObject(for: review), let sub = subLabels.first {
+            return "\(emoji(for: obj, subLabel: sub)) \(titleize(obj)) — \(titleize(sub))"
         }
-        return "\(e) \(objects.map { titleize($0) }.joined(separator: ", "))"
+        let e = emoji(for: objects.first ?? "", subLabel: subLabels.first)
+        let objectList = Array(Set(objects)).sorted().map { titleize($0) }.joined(separator: ", ")
+        guard !subLabels.isEmpty else { return "\(e) \(objectList)" }
+        return "\(e) \(objectList) — \(subLabels.map { titleize($0) }.joined(separator: ", "))"
     }
 
     static func body(for review: FrigateReviewItem) -> String {
