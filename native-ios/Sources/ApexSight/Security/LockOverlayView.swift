@@ -9,32 +9,31 @@ struct LockOverlayView: View {
         ZStack {
             // Opaque so nothing behind it leaks into the app-switcher snapshot.
             Color.black.ignoresSafeArea()
-            LinearGradient(
-                colors: [Color.cyan.opacity(0.18), .clear],
-                startPoint: .top, endPoint: .center
+            RadialGradient(
+                colors: [GlassTheme.accent.opacity(0.14), .clear],
+                center: .top, startRadius: 0, endRadius: 420
             )
             .ignoresSafeArea()
 
             VStack(spacing: 22) {
                 Image(systemName: "shield.lefthalf.filled")
                     .font(.system(size: 54, weight: .black))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(GlassTheme.accent)
+                // Scalable semantic styles (not fixed-pixel sizes) so this screen — the one
+                // every user must pass to reach the app — actually grows with Dynamic Type.
                 Text("ApexSight Locked")
-                    .font(.system(size: 22, weight: .black))
+                    .font(.system(.title2, design: .default).weight(.black))
                     .foregroundStyle(.white)
                 Text("Your cameras are private. Unlock to continue.")
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(.system(.subheadline, design: .default).weight(.heavy))
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
 
                 Button(action: onUnlock) {
                     Label("Unlock with \(BiometricLock.label)", systemImage: BiometricLock.symbolName)
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 14)
-                        .background(.cyan, in: Capsule())
+                        .font(.system(.headline, design: .default).weight(.black))
                 }
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
                 .padding(.top, 4)
             }
             .padding(32)
@@ -50,18 +49,18 @@ struct PrivacyCoverView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            LinearGradient(
-                colors: [Color.cyan.opacity(0.18), .clear],
-                startPoint: .top, endPoint: .center
+            RadialGradient(
+                colors: [GlassTheme.accent.opacity(0.14), .clear],
+                center: .top, startRadius: 0, endRadius: 420
             )
             .ignoresSafeArea()
 
             VStack(spacing: 16) {
                 Image(systemName: "shield.lefthalf.filled")
                     .font(.system(size: 48, weight: .black))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(GlassTheme.accent)
                 Text("ApexSight")
-                    .font(.system(size: 20, weight: .black))
+                    .font(.system(.title3, design: .default).weight(.black))
                     .foregroundStyle(.white)
             }
         }
