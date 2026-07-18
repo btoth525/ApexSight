@@ -23,6 +23,10 @@ enum WidgetDataFetcher {
         let subLabels: [String]?
         let detections: [String]?
         let zones: [String]?
+        /// Epoch of the frame Frigate chose as this review's canonical thumbnail. Mirrors
+        /// `ReviewData.thumbTime` / `FrigateClient.primaryDetectionID` — a review re-links
+        /// long-lived parked tracks, so the earliest detection is often the wrong moment.
+        let thumbTime: Double?
     }
 
     static func refresh() async {
@@ -71,17 +75,30 @@ enum WidgetDataFetcher {
             return
         }
 
-        // Hero = the EARLIEST detection's cropped thumbnail — the event that triggered the
-        // review. The `detections` array is UNORDERED, so `.first` was an arbitrary event and
-        // could mismatch the caption. Event ids carry their epoch start as a prefix.
-        // Derive from the SAME filtered list as the caption, so image and text never
-        // describe different events (the newest review may already be reviewed).
+        // Hero = the detection nearest the review's `thumb_time` — the frame Frigate itself
+        // chose as canonical. Frigate re-links long-lived parked tracks into fresh reviews, so
+        // the EARLIEST detection is frequently a stale, wrong moment (mirrors
+        // `FrigateClient.primaryDetectionID` / `bridge.py::_primary_detection` exactly, so the
+        // widget hero image can never disagree with the in-app/push selection). Derive from the
+        // SAME filtered list as the caption, so image and text never describe different events.
         var heroData: Data?
         func epoch(_ id: String) -> Double {
             guard let dash = id.firstIndex(of: "-"), let t = Double(id[..<dash]) else { return .greatestFiniteMagnitude }
             return t
         }
-        if let detectionID = (unreviewed.first?.data?.detections ?? []).min(by: { epoch($0) < epoch($1) }) {
+        func primaryDetectionID(_ review: WReview?) -> String? {
+            let ids = review?.data?.detections ?? []
+            guard !ids.isEmpty else { return nil }
+            if let tt = review?.data?.thumbTime {
+                let atOrBefore = ids.filter { epoch($0) <= tt + 1 }
+                if let best = atOrBefore.max(by: { epoch($0) < epoch($1) }) { return best }
+                // thumb_time precedes every detection (rare) → the closest one.
+                return ids.min(by: { abs(epoch($0) - tt) < abs(epoch($1) - tt) })
+            }
+            // No thumb_time yet (in-progress review) → earliest = the trigger detection.
+            return ids.min { epoch($0) < epoch($1) }
+        }
+        if let detectionID = primaryDetectionID(unreviewed.first) {
             let thumbURL = baseURL.appendingPathComponent("api/events/\(detectionID)/thumbnail.jpg")
             heroData = await get(thumbURL, token: token)
         }
