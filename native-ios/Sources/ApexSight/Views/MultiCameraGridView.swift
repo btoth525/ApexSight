@@ -79,10 +79,13 @@ struct MultiCameraGridView: View {
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { smartFocus.toggle() }
                             if !smartFocus { activeCameraName = nil }
                         } label: {
+                            // A filled circle (not just a color change) marks the "on" state, so
+                            // the toggle reads at a glance without relying on color alone.
                             Image(systemName: "sparkles")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(smartFocus ? GlassTheme.accent : GlassTheme.tertiary)
+                                .foregroundStyle(smartFocus ? .black : GlassTheme.tertiary)
                                 .frame(width: 44, height: 44)
+                                .background { if smartFocus { Circle().fill(GlassTheme.accent) } }
                                 .contentShape(Rectangle())
                         }
                         .accessibilityLabel(smartFocus ? "Smart Focus on" : "Smart Focus off")
@@ -90,9 +93,7 @@ struct MultiCameraGridView: View {
                     }
                 }
             }
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .glassNavBar()
             // iOS 27: collapse the nav bar while scrolling the wall so the feeds get full height.
             .ios27ToolbarMinimizeOnScroll()
             .sheet(item: $selectedCamera) { camera in
@@ -323,8 +324,7 @@ private struct MultiCameraCell: View {
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
                 .padding(GlassTheme.Space.s)
                 .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
