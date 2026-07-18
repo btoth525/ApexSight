@@ -109,12 +109,18 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
         // (`wouldDeliver`, not `shouldDeliver`: presentation must not consume the
         // local-notification cooldown clock.)
         if let camera = request.content.userInfo["camera"] as? String {
+            // The relay now mirrors the same object/zone/score fields its own per-device gate used
+            // (apns.build_payload); without them this re-check could only ever honor camera-level
+            // mutes, so a muted OBJECT or ZONE would still banner while the app was foregrounded.
+            let label = request.content.userInfo["label"] as? String ?? "object"
+            let zones = request.content.userInfo["zones"] as? [String] ?? []
+            let score = request.content.userInfo["score"] as? Double ?? 0
             Task { @MainActor in
                 let muted: Bool
                 if let appState = self.appState {
                     muted = !appState.notificationPrefs.wouldDeliver(
-                        camera: camera, label: "object", zones: [],
-                        score: 0, triggers: appState.triggerStore.triggers
+                        camera: camera, label: label, zones: zones,
+                        score: score, triggers: appState.triggerStore.triggers
                     )
                 } else {
                     muted = false
