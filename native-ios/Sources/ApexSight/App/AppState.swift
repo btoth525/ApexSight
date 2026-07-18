@@ -412,6 +412,20 @@ final class AppState: ObservableObject {
     /// of dropping them invisibly (the "why am I not getting notifications" fix). Epoch; 0 = off.
     @Published var householdSnoozedUntil: Double = 0
     @Published var householdDisarmed = false
+    /// Set when the "Snooze Alerts" Home Screen quick action fires, so the UI can ask "are you
+    /// sure?" instead of instantly silencing the WHOLE HOUSEHOLD's alerts for an hour. That quick
+    /// action is the FIRST, always-present item in a long-press menu that's trivially easy to land
+    /// on by accident — an unintended tap must not read as "I just opened the app" while quietly
+    /// disarming notifications. Confirmed via `confirmHouseholdSnooze()`.
+    @Published var pendingSnoozeConfirmation = false
+
+    /// Applies the household-wide 1-hour snooze the "Snooze Alerts" quick action requested, once
+    /// the user has explicitly confirmed it (see `pendingSnoozeConfirmation`).
+    func confirmHouseholdSnooze() {
+        let until = Date().addingTimeInterval(60 * 60)
+        GlobalSnooze.snooze(until: until)
+        Task { await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970) }
+    }
     /// User escape hatch: when true, the feeds ignore the house-mode filter and show every camera.
     /// @Published (not @AppStorage — that doesn't emit objectWillChange from an ObservableObject, so
     /// the feeds wouldn't re-filter on toggle); persisted by hand so the choice survives relaunch.
@@ -686,6 +700,12 @@ final class AppState: ObservableObject {
             isLive = true
         case .disconnected:
             isLive = false
+            // A dropped/reconnecting WebSocket never gets to see the in-flight detection's `.end`
+            // event, so without this a stale "person detected" box (and the Dynamic Island aura it
+            // drives) sticks around indefinitely — surviving background/foreground and network
+            // blips — until some unrelated future detection on the same camera happens to end.
+            pendingDetections.removeAll()
+            if !liveDetections.isEmpty { liveDetections = [:] }
         case .stats(let s):
             stats = s
         case .event(let item, let change):
@@ -1526,11 +1546,12 @@ final class AppState: ObservableObject {
                 }
             }
         case "snooze":
-            // Silence all alerts for an hour and mirror the gate to the relay so app-closed
-            // pushes are quieted too (see [[relay-gate-must-sync-on-app-closed-snooze]]).
-            let until = Date().addingTimeInterval(60 * 60)
-            GlobalSnooze.snooze(until: until)
-            Task { await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970) }
+            // The Home Screen "Snooze Alerts" quick action is the first, always-present item in
+            // a long-press menu — an accidental long-press-and-release lands on it easily, and
+            // applying an instant, silent, HOUSEHOLD-wide alert snooze from that would read as
+            // "notifications got snoozed just from opening the app." Ask first; the actual snooze
+            // (+ relay mirror) happens in `confirmHouseholdSnooze()` once the user taps through.
+            pendingSnoozeConfirmation = true
         #if DEBUG
         case "debug":
             // Deterministic triggers for surfaces that need a real alert to fire, reachable

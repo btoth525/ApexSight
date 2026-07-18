@@ -79,6 +79,15 @@ struct MainTabView: View {
         } message: {
             Text("It may have been deleted, or the connection isn't ready yet. You've been taken to the right tab — pull to refresh.")
         }
+        .alert("Snooze Camera Alerts?", isPresented: Binding(
+            get: { appState.pendingSnoozeConfirmation },
+            set: { appState.pendingSnoozeConfirmation = $0 }
+        )) {
+            Button("Cancel", role: .cancel) { }
+            Button("Snooze for 1 Hour", role: .destructive) { appState.confirmHouseholdSnooze() }
+        } message: {
+            Text("This silences camera alerts for everyone in the household for 1 hour.")
+        }
         .task {
             // Catch a deep link set before this view started observing (cold launch from a push).
             if appState.deepLink != nil { handleDeepLink(appState.deepLink) }
