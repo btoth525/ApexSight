@@ -44,7 +44,9 @@ struct ActivityTab: View {
 
     struct DaySection: Identifiable { let id: Date; let title: String; let events: [FrigateEvent] }
 
-    private var sections: [DaySection] {
+    /// Takes the already-filtered event list rather than reading `displayedEvents` itself, so a
+    /// render that needs both only filters the base list once (see `body`).
+    private func sections(for displayedEvents: [FrigateEvent]) -> [DaySection] {
         let cal = Calendar.current
         // Drop timestamp-less events so they don't bucket into a phantom "Jan 1, 1970" day.
         let grouped = Dictionary(grouping: displayedEvents.filter { $0.startTime != nil }) { event in
@@ -92,6 +94,13 @@ struct ActivityTab: View {
     }
 
     var body: some View {
+        // Computed exactly once per render (previously each was a computed property re-evaluated
+        // on every textual reference — several times per render — and any AppState publish, e.g.
+        // the 15s foreground poll, re-triggered all of it). Mirrors ReviewTab's `let visible =
+        // filtered` fix (commit 4cdba5d), just never applied here.
+        let events = displayedEvents
+        let daySections = sections(for: events)
+        let tallyList = tallies
         NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
@@ -111,14 +120,14 @@ struct ActivityTab: View {
                         if viewMode == .incidents {
                             IncidentsFeed()
                         } else {
-                        header
+                        header(tallies: tallyList)
 
                         FeedModeFilterBanner()
 
-                        if displayedEvents.isEmpty {
+                        if events.isEmpty {
                             emptyOrLoading
                         } else {
-                            ForEach(sections) { section in
+                            ForEach(daySections) { section in
                                 sectionHeader(section.title, count: section.events.count)
                                 ForEach(section.events) { event in
                                     Button { path.append(event) } label: { EventRow(event: event) }
@@ -144,7 +153,7 @@ struct ActivityTab: View {
                     // A new event inserts at the top (index 0); without this the whole feed
                     // jumps down by a row. Animate on the top id so rows slide down smoothly
                     // instead of jolting. Keyed to `first?.id` (cheap) — fires only on a top insert.
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: displayedEvents.first?.id)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: events.first?.id)
                     .padding(.horizontal, GlassTheme.Space.l)
                     .padding(.bottom, GlassTheme.Space.xl)
                 }
@@ -208,7 +217,7 @@ struct ActivityTab: View {
 
     // MARK: - Header (cameras + last-24h chips)
 
-    private var header: some View {
+    private func header(tallies: [Tally]) -> some View {
         VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: GlassTheme.Space.s) {
@@ -466,8 +475,7 @@ struct ActivityTab: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, GlassTheme.Space.l)
                 .padding(.vertical, GlassTheme.Space.m)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+                .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
                 .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 .padding(.bottom, GlassTheme.Space.l)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
