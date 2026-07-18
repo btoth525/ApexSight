@@ -124,6 +124,15 @@ enum SharedSnapshotStore {
     static func saveRecentAlerts(_ alerts: [SharedAlert], heroImageData: Data?) {
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
 
+        // Alerts BEFORE the hero image — `loadRecentAlerts` below reads them in that same order,
+        // so a widget timeline reload landing between these two writes sees the NEW captions next
+        // to the (briefly) OLD photo, rather than an old caption suddenly paired with a brand-new
+        // unrelated photo. Either ordering has a race (two separate storage backends, no shared
+        // transaction) — this one just fails in the less confusing direction.
+        if let encoded = try? JSONEncoder().encode(Array(alerts.prefix(8))) {
+            defaults?.set(encoded, forKey: recentAlertsKey)
+        }
+
         if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) {
             let heroURL = containerURL.appendingPathComponent(recentHeroFileName)
             if let heroImageData {
@@ -133,10 +142,6 @@ enum SharedSnapshotStore {
                 // the widget never shows an old snapshot under a newer caption or an empty feed.
                 try? FileManager.default.removeItem(at: heroURL)
             }
-        }
-
-        if let encoded = try? JSONEncoder().encode(Array(alerts.prefix(8))) {
-            defaults?.set(encoded, forKey: recentAlertsKey)
         }
     }
 
