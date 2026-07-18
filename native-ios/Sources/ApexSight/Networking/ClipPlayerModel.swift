@@ -24,6 +24,11 @@ final class ClipPlayerModel: ObservableObject {
     private var statusObs: NSKeyValueObservation?
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var wasPlayingBeforeBackground = false
+    /// Bounded auto-retry state for a fresh load — a failure right after a just-fired detection
+    /// is often transient (Frigate hasn't finished flushing that segment yet), so a couple of
+    /// short-delayed silent retries happen before giving up and showing the error state.
+    private var retryAttempt = 0
+    private var pendingAutoRetry: Task<Void, Never>?
     /// True once we took the shared audio session, so we deactivate it on stop/dealloc and
     /// the user's music/podcast resumes instead of staying ducked after viewing a clip.
     private var didActivateAudio = false
@@ -76,12 +81,18 @@ final class ClipPlayerModel: ObservableObject {
     /// Force (re)load — used by the timeline scrubber to jump to a new moment.
     func load(client: FrigateClient, url: URL) {
         configureAudioSession()
-        teardown()
         isReady = false
         hasError = false
+        retryAttempt = 0
+        pendingAutoRetry?.cancel()
+        pendingAutoRetry = nil
         lastURL = url
         lastClient = client
+        attachItem(client: client, url: url)
+    }
 
+    private func attachItem(client: FrigateClient, url: URL) {
+        teardown()
         let item = client.playerItem(for: url)
         // Start with a small forward buffer instead of AVPlayer's generous VOD default —
         // event clips are short and local-network, so waiting to buffer half the clip
@@ -99,8 +110,12 @@ final class ClipPlayerModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 switch item.status {
-                case .readyToPlay: self.isReady = true; self.hasError = false
-                case .failed: self.hasError = true
+                case .readyToPlay:
+                    self.isReady = true
+                    self.hasError = false
+                    self.retryAttempt = 0
+                case .failed:
+                    self.scheduleAutoRetryOrFail(client: client, url: url)
                 default: break
                 }
             }
@@ -119,16 +134,41 @@ final class ClipPlayerModel: ObservableObject {
         activePlayer.playImmediately(atRate: 1.0)
     }
 
+    /// A load failure is often transient right after a fresh detection (the segment isn't
+    /// flushed to Frigate's recordings DB yet) — silently retry twice with a short, growing
+    /// delay before surfacing the error state, instead of dead-ending on something that would
+    /// very likely resolve itself moments later.
+    private func scheduleAutoRetryOrFail(client: FrigateClient, url: URL) {
+        guard retryAttempt < 2 else {
+            hasError = true
+            return
+        }
+        retryAttempt += 1
+        let delaySeconds = retryAttempt == 1 ? 3.0 : 8.0
+        pendingAutoRetry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.lastURL == url else { return }
+            self.attachItem(client: client, url: url)
+        }
+    }
+
     func play() { player?.play() }
     func pause() { player?.pause() }
 
-    /// Re-attempt the last clip after a failure (wired to the error view's Retry button).
+    /// Re-attempt the last clip after a failure (wired to the error view's Retry button) —
+    /// bypasses the auto-retry delay and resets its counter for a clean run.
     func retry() {
         guard let lastClient, let lastURL else { return }
-        load(client: lastClient, url: lastURL)
+        pendingAutoRetry?.cancel()
+        pendingAutoRetry = nil
+        retryAttempt = 0
+        hasError = false
+        attachItem(client: lastClient, url: lastURL)
     }
 
     func stop() {
+        pendingAutoRetry?.cancel()
+        pendingAutoRetry = nil
         teardown()
         isReady = false
         hasError = false

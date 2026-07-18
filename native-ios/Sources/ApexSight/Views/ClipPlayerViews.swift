@@ -78,16 +78,22 @@ struct LoadingClipPlayer: View {
                     .animation(.easeIn(duration: 0.25), value: model.isReady)
             }
             if model.hasError {
-                clipError
+                ClipErrorView(retry: model.retry)
             } else if !model.isReady {
                 ClipSkeleton().transition(.opacity)
             }
         }
     }
+}
 
-    /// Shown when the clip can't load (no recording for that time, auth, server down) — a clear
-    /// dead-end message + Retry instead of a skeleton that spins forever.
-    private var clipError: some View {
+/// Shown when a clip can't load (no recording for that time, auth, server down) — a clear
+/// dead-end message + Retry instead of a skeleton that spins forever. Shared by every clip
+/// surface (`LoadingClipPlayer` and `RecordingBrowserView`) so a failed VOD load is never
+/// silently invisible.
+struct ClipErrorView: View {
+    let retry: () -> Void
+
+    var body: some View {
         ZStack {
             Color.black
             VStack(spacing: GlassTheme.Space.m) {
@@ -102,7 +108,7 @@ struct LoadingClipPlayer: View {
                     .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, GlassTheme.Space.xxl)
-                Button { model.retry() } label: {
+                Button(action: retry) {
                     Label("Retry", systemImage: "arrow.clockwise")
                         .font(.system(size: 13, weight: .black))
                         .foregroundStyle(.black)

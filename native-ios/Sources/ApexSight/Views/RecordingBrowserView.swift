@@ -551,9 +551,16 @@ struct RecordingBrowserView: View {
                     PiPPlayerView(player: player)
                         .opacity(clipModel.isReady ? 1 : 0)
                         .animation(reduceMotion ? nil : .easeIn(duration: 0.25), value: clipModel.isReady)
-                    // Each scrub loads a fresh VOD window; hold a skeleton over it until the
-                    // new moment is ready instead of flashing black.
-                    if !clipModel.isReady { ClipSkeleton() }
+                    // A failed VOD load (no footage for that window, or a dropped connection) used
+                    // to fall through to the skeleton branch forever — an invisible, permanent hang
+                    // with no explanation and no way to retry. Surface it like every other clip view.
+                    if clipModel.hasError {
+                        ClipErrorView(retry: clipModel.retry)
+                    } else if !clipModel.isReady {
+                        // Each scrub loads a fresh VOD window; hold a skeleton over it until the
+                        // new moment is ready instead of flashing black.
+                        ClipSkeleton()
+                    }
                 }
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
@@ -759,12 +766,17 @@ struct RecordingBrowserView: View {
         let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600
         let rangeSeconds = rangeEnd - rangeStart
         let time = rangeStart + scrubFraction * rangeSeconds
-        let cappedNow = Date().timeIntervalSince1970 - windowSeconds
-        playFrom(time: min(time, cappedNow))
+        playFrom(time: time)
     }
 
-    private func playFrom(time: Double) {
+    private func playFrom(time rawTime: Double) {
         guard let client = appState.client else { return }
+        // Never request a window whose end could still be past "now" — Frigate hasn't finished
+        // flushing very-recent segments to its recordings DB yet, so jumping straight to a
+        // just-fired detection (exactly what `eventJumpRow` does) would 404 as if there were no
+        // footage at all, rather than "not written yet". Clamp every caller through this one spot.
+        let cappedNow = Date().timeIntervalSince1970 - windowSeconds
+        let time = min(rawTime, cappedNow)
         let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
         let rangeStart = dayStart + Double(rangeStartHour) * 3600
         let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600

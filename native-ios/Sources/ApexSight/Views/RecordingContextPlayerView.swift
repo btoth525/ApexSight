@@ -26,6 +26,11 @@ struct RecordingContextPlayerView: View {
 
     private var windowStart: Double { centerTime - windowSeconds / 2 }
     private var windowEnd: Double { centerTime + windowSeconds / 2 }
+    /// Clamped for the actual VOD request only — Frigate may not have flushed segments this
+    /// recent to its recordings DB yet (a review opened right after it fires can center within
+    /// seconds of "now"). The displayed timeline keeps the true, un-clamped span so labels and
+    /// markers don't jump; only the network request is capped.
+    private var requestWindowEnd: Double { min(windowEnd, Date().timeIntervalSince1970) }
     /// Epoch of the current playhead (window-relative time → absolute).
     private var playheadEpoch: Double { windowStart + currentTime }
 
@@ -37,7 +42,7 @@ struct RecordingContextPlayerView: View {
         }
         .task {
             guard let client = appState.client else { return }
-            model.loadIfNeeded(client: client, url: client.recordingHLSURL(camera: camera, start: windowStart, end: windowEnd))
+            model.loadIfNeeded(client: client, url: client.recordingHLSURL(camera: camera, start: windowStart, end: requestWindowEnd))
             if let es = eventStart {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if let player = model.player {
