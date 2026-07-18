@@ -101,10 +101,30 @@ enum DeviceTokenStore {
         set { defaults?.set(newValue, forKey: voipTokenKey) }
     }
 
-    /// The household pairing code shared with the Home Assistant bridge addon.
+    /// The household pairing code shared with the Home Assistant bridge addon — or, once signed
+    /// into an account, that account's private ingest token (see `applyAccount`). Either way a
+    /// secret that grants disarm/doorbell-talk/mode-change access, so it's stored in the
+    /// Keychain; a legacy plaintext app-group value is migrated (and erased) on first access,
+    /// same pattern as `accountToken` below.
     static var pairingCode: String? {
-        get { defaults?.string(forKey: pairingKey) }
-        set { defaults?.set(newValue, forKey: pairingKey) }
+        get {
+            if let secure = keychain.pairingCode { return secure }
+            if let legacy = defaults?.string(forKey: pairingKey), !legacy.isEmpty {
+                keychain.savePairingCode(legacy)
+                defaults?.removeObject(forKey: pairingKey)
+                return legacy
+            }
+            return nil
+        }
+        set {
+            if let newValue, !newValue.isEmpty {
+                keychain.savePairingCode(newValue)
+            } else {
+                keychain.clearPairingCode()
+            }
+            // Never leave a plaintext copy behind (also clears a legacy value on sign-out).
+            defaults?.removeObject(forKey: pairingKey)
+        }
     }
 
     /// True once the user explicitly picked a code via "Join household" — then we

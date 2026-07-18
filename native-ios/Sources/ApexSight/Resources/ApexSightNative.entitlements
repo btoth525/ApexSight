@@ -9,6 +9,9 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.brandontoth.apexsight.shared</string>
+		<!-- App-only secrets (disarm code, account token, Frigate session incl. password) live
+		     here — NOT in the shared group above, which the NSE/widget targets also hold. -->
+		<string>$(AppIdentifierPrefix)com.brandontoth.apexsight.native</string>
 	</array>
 	<key>aps-environment</key>
 	<string>production</string>
