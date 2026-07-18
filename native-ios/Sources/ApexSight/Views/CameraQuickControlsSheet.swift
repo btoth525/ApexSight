@@ -50,7 +50,7 @@ struct CameraQuickControlsSheet: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, GlassTheme.Space.l)
                     .padding(.vertical, GlassTheme.Space.s)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
                     .padding(.bottom, 50)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }

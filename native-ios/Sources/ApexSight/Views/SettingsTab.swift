@@ -280,8 +280,7 @@ struct SettingsTab: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(GlassTheme.separator, lineWidth: 0.5))
+        .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
     }
 
     private func saveLocalURL() {
@@ -496,7 +495,7 @@ struct SettingsTab: View {
                 Text(restartToast)
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                     .padding(.horizontal, GlassTheme.Space.l).padding(.vertical, GlassTheme.Space.s)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
             }
         }
     }

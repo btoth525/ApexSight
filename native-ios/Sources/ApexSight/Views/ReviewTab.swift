@@ -103,8 +103,7 @@ struct ReviewTab: View {
             }
             .padding(.horizontal, GlassTheme.Space.l)
             .padding(.vertical, GlassTheme.Space.m)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
+            .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
             .padding(.horizontal, GlassTheme.Space.l)
             .padding(.bottom, GlassTheme.Space.l)

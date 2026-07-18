@@ -143,7 +143,7 @@ struct ConfigEditorView: View {
             }
         }
         .padding(GlassTheme.Space.m)
-        .background(.ultraThinMaterial)
+        .liquidGlass(in: Rectangle(), fallbackMaterial: .ultraThinMaterial)
     }
 
     private func validationBar(_ message: String) -> some View {
@@ -196,7 +196,7 @@ struct ConfigEditorView: View {
             }
         }
         .padding(GlassTheme.Space.m)
-        .background(.ultraThinMaterial)
+        .liquidGlass(in: Rectangle(), fallbackMaterial: .ultraThinMaterial)
         .overlay(isSaving ? ProgressView().tint(.white) : nil)
     }
 

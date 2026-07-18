@@ -484,11 +484,7 @@ struct RecordingBrowserView: View {
         }
         .padding(GlassTheme.Space.s)
         .frame(width: bubbleWidth)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous)
-                .strokeBorder(GlassTheme.separator, lineWidth: 1)
-        }
+        .liquidGlass(in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous), fallbackMaterial: .ultraThinMaterial)
         // Keep the bubble on-screen: it tracks the playhead but clamps near the edges.
         .offset(x: max(0, min(playheadX - bubbleWidth / 2, width - bubbleWidth)), y: -100)
         .allowsHitTesting(false)
