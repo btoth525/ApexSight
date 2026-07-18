@@ -443,12 +443,7 @@ final class AppState: ObservableObject {
     /// when the current mode affirmatively mutes it AND the user hasn't chosen to show all. FAIL-OPEN:
     /// unknown mode / empty mute list / a camera not in the list all show (mirrors the relay gate).
     func cameraVisibleInFeeds(_ camera: String) -> Bool {
-        if showAllCamerasInFeeds { return true }
-        guard !camera.isEmpty, !houseModeMutedCameras.isEmpty else { return true }
-        // Case-insensitive so an intended mute still applies even if the relay ever returns a
-        // differently-cased camera name; a miss only ever fails OPEN (shows the camera), never hides.
-        let key = camera.lowercased()
-        return !houseModeMutedCameras.contains { $0.lowercased() == key }
+        HouseModeVisibility.cameraVisible(camera, mutedCameras: houseModeMutedCameras, showAll: showAllCamerasInFeeds)
     }
 
     /// Pull the current house mode from the relay so the app reflects the real Alarmo state. Called
