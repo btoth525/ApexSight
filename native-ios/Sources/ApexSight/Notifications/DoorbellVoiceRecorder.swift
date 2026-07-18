@@ -1,4 +1,5 @@
 import AVFoundation
+import UIKit
 
 /// Records mic audio to an m4a file for the doorbell soundboard: push-to-talk (record while the
 /// Talk button is held, send on release) and saving custom clips. The relay transcodes m4a to the
@@ -20,6 +21,25 @@ final class DoorbellVoiceRecorder: NSObject, ObservableObject {
     /// Backstop: no push-to-talk hold should run longer than this — a gesture that was cancelled
     /// without release (List scroll steal, view teardown) must never leave a hot mic.
     static let maxSeconds: TimeInterval = 30
+    private var backgroundObserver: NSObjectProtocol?
+
+    override init() {
+        super.init()
+        // Every other mic/audio-session controller in this codebase (ClipPlayerModel,
+        // TwoWayTalkController, RealtimeVideoController) tears down on backgrounding; this one
+        // relied solely on `onDisappear`, which — per this codebase's own documented gotcha —
+        // doesn't reliably fire on backgrounding, leaving the mic pinned (previously bounded only
+        // by the 30s auto-stop backstop above).
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stop() }
+        }
+    }
+
+    deinit {
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+    }
 
     /// Ask for mic permission up front so the first hold-to-talk doesn't get clipped by the prompt.
     static func requestPermission() {
