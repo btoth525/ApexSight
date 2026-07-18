@@ -1184,12 +1184,25 @@ final class LivePiPController: ObservableObject {
     @Published var isActive = false
     fileprivate weak var controller: AVPictureInPictureController?
 
+    /// The controller currently presenting an active system PiP window, if any — only one can
+    /// be active app-wide at a time. Lets code outside this view's hierarchy (the biometric
+    /// lock) stop it without needing a reference threaded through the view tree.
+    static weak var current: LivePiPController?
+
     func toggle() {
         guard let controller else { return }
         if controller.isPictureInPictureActive {
             controller.stopPictureInPicture()
         } else if controller.isPictureInPicturePossible {
             controller.startPictureInPicture()
+        }
+    }
+
+    /// Stop PiP unconditionally if it's active — used when the biometric lock engages, so a
+    /// system PiP window can't keep floating live video over the home screen unauthenticated.
+    func stop() {
+        if controller?.isPictureInPictureActive == true {
+            controller?.stopPictureInPicture()
         }
     }
 }
@@ -1286,12 +1299,18 @@ struct ZoomablePlayerView: UIViewRepresentable {
 
         func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
             let pip = self.pip
-            Task { @MainActor in pip?.isActive = true }
+            Task { @MainActor in
+                pip?.isActive = true
+                LivePiPController.current = pip
+            }
         }
 
         func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
             let pip = self.pip
-            Task { @MainActor in pip?.isActive = false }
+            Task { @MainActor in
+                pip?.isActive = false
+                if LivePiPController.current === pip { LivePiPController.current = nil }
+            }
         }
     }
 }

@@ -81,8 +81,16 @@ targets:
         # (frigate.lan / router DNS), and DDNS/public-IP-over-HTTP. There's no domain we can
         # enumerate at build time for a user-entered host, so narrowing this would break those
         # setups. (Narrowing to NSAllowsLocalNetworking was evaluated and reverted for that reason.)
+        # The relay IS a fixed, known-at-build hostname though (unlike Frigate), and it carries
+        # the pairing code + disarm code — carve it back out of the blanket exception so ATS
+        # still enforces HTTPS/TLS for it specifically.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+          NSExceptionDomains:
+            relay.plexserver525.com:
+              NSExceptionAllowsInsecureHTTPLoads: false
+              NSExceptionMinimumTLSVersion: TLSv1.2
+              NSIncludesSubdomains: false
     dependencies:
       - target: ApexSightWidgets
         embed: true

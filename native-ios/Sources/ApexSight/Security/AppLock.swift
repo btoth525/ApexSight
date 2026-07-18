@@ -71,6 +71,12 @@ final class AppLockController: ObservableObject {
     func lockIfEnabled() {
         guard enabled, BiometricLock.isAvailable else { isLocked = false; return }
         isLocked = true
+        // A user who turned on the biometric lock wants privacy while backgrounded — without
+        // this, a system Picture-in-Picture window could keep floating live camera video over
+        // the home screen with zero authentication, even while this lock screen shows inside
+        // the app itself. Scoped to here (not every backgrounding) since PiP surviving the
+        // background is a deliberate feature for users who never opted into the lock.
+        LivePiPController.current?.stop()
     }
 
     /// Drop the opaque privacy cover the moment the app is no longer active. Called on

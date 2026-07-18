@@ -303,7 +303,11 @@ enum RelayClient {
     private static func post<T: Encodable>(relayURL: String, path: String, body: T) async throws {
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let base = URL(string: trimmed), base.scheme != nil, base.host != nil,
+        // Require https specifically (not just "some scheme") — the relay carries the pairing
+        // code and disarm code, unlike the user-supplied Frigate host, which legitimately needs
+        // plain http for LAN/DDNS setups ATS's own exception (see project.yml) already covers
+        // for that host only. Defense in depth alongside the ATS exception domain.
+        guard let base = URL(string: trimmed), base.scheme == "https", base.host != nil,
               let url = URL(string: trimmed + path) else { throw RelayError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
