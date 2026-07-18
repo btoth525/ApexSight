@@ -230,10 +230,13 @@ final class AppState: ObservableObject {
     private func mirrorSessionToAppGroup() {
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
         if let session {
-            defaults?.set(session.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
-            // The token is a secret: store it in the shared Keychain access group, not in the
-            // App-Group plist. The base URL is not sensitive and stays in defaults.
+            // Token BEFORE url: every reader (NSE, widgets) reads the URL first, then the token —
+            // writing in that same order would let a read land between them and see the NEW url
+            // paired with the OLD token (this exact window, however brief). Writing the token
+            // first means a reader in the gap sees only the OLD url with the NEW token, which the
+            // old server harmlessly rejects — the safer of the two possible mismatches.
             SharedTokenStore.save(session.token)
+            defaults?.set(session.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
         } else {
             defaults?.removeObject(forKey: "apex.frigateBaseURL")
             SharedTokenStore.clear()

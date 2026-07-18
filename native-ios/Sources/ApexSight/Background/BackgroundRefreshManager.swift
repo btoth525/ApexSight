@@ -150,9 +150,12 @@ enum BackgroundRefreshManager {
         )
         KeychainStore().save(session: next)
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
-        defaults?.set(next.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
-        // Token → shared Keychain (not the App-Group plist); clear any stale plaintext copy.
+        // Token BEFORE url — same ordering as AppState.mirrorSessionToAppGroup and for the same
+        // reason: every reader (NSE, widgets) reads the URL first, then the token, so writing the
+        // token first means a reader landing between these two writes sees the harmless "old url +
+        // new token" pairing (rejected by the old server) rather than "new url + old token".
         SharedTokenStore.save(token)
+        defaults?.set(next.baseURL.absoluteString, forKey: "apex.frigateBaseURL")
         defaults?.removeObject(forKey: "apex.frigateToken")
         return next
     }
