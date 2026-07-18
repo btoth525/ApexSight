@@ -107,6 +107,19 @@ private struct IncidentCard: View {
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GlassTheme.tertiary)
             }
         }
+        // So VoiceOver doesn't read the thumbnail + badge + headline + camera path + time +
+        // count as 7-8 separate fragments (matches CameraCard/ReviewRow's existing pattern).
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        let camerasNote = incident.isCrossCamera
+            ? "Tracked across \(incident.significantCameras.count) cameras"
+            : prettyCamera(incident.primaryCamera)
+        let time = incident.startDate.formatted(date: .omitted, time: .shortened)
+        let count = incident.events.count
+        return "\(prettyCamera(incident.headline).capitalized). \(camerasNote). \(time). \(count) event\(count == 1 ? "" : "s")."
     }
 }
 
@@ -277,7 +290,7 @@ struct IncidentDetailView: View {
             }
         }
         .padding(GlassTheme.Space.m)
-        .background(.ultraThinMaterial)
+        .liquidGlass(in: Rectangle(), fallbackMaterial: .ultraThinMaterial)
     }
 
     /// HomeKit-style live progress: a filling bar with a percentage (determinate) or a sweep

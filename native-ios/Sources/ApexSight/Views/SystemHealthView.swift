@@ -250,6 +250,9 @@ struct SystemHealthView: View {
         .padding(GlassTheme.Space.m)
         .background(GlassTheme.surfaceHigh, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
         .cardStroke(GlassTheme.Radius.tile)
+        // Combine label + status dot + value into one VoiceOver stop instead of 2-3 separate ones.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label). \(value)")
     }
 
     private func infoRow(icon: String, title: String, subtitle: String) -> some View {
@@ -272,6 +275,8 @@ struct SystemHealthView: View {
             Spacer()
         }
         .padding(.vertical, GlassTheme.Space.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(subtitle)")
     }
 
     private func format(_ value: Double?, suffix: String) -> String {
@@ -314,6 +319,15 @@ struct SystemHealthView: View {
             .frame(height: 6)
         }
         .padding(.vertical, GlassTheme.Space.xs)
+        // The used/total percentage is otherwise conveyed only by bar WIDTH — invisible to
+        // VoiceOver without an explicit value.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(mountLabel(mount))
+        .accessibilityValue(
+            used != nil && total != nil
+                ? "\(gb(used!)) of \(gb(total!)) used, \(Int(fraction * 100)) percent"
+                : "Unknown"
+        )
     }
 
     private func storageColor(_ fraction: Double) -> Color {
