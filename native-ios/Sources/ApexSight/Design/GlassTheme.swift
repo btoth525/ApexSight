@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Central design system. Dark-first, content-forward (camera imagery is the hero),
 /// translucent material only on chrome, one accent, semantic status colors, hairline
@@ -25,9 +26,21 @@ enum GlassTheme {
     static let secondary = Color.white.opacity(0.62)
     static let tertiary  = Color.white.opacity(0.34)
 
-    /// 1px hairline used to separate cards/rows instead of colored or heavy shadows.
-    static let separator = Color.white.opacity(0.08)
-    static let hairline  = Color.white.opacity(0.10)
+    /// 1px hairline used to separate cards/rows instead of colored or heavy shadows. Backed by a
+    /// dynamic UIColor (not a flat SwiftUI Color) so every existing call site automatically
+    /// thickens under Settings → Accessibility → Increase Contrast — previously this setting had
+    /// no effect anywhere in the app, since a plain `Color.white.opacity(...)` never responds to
+    /// `UITraitCollection.accessibilityContrast`.
+    static let separator = Color(UIColor { traits in
+        traits.accessibilityContrast == .high
+            ? UIColor.white.withAlphaComponent(0.28)
+            : UIColor.white.withAlphaComponent(0.08)
+    })
+    static let hairline = Color(UIColor { traits in
+        traits.accessibilityContrast == .high
+            ? UIColor.white.withAlphaComponent(0.32)
+            : UIColor.white.withAlphaComponent(0.10)
+    })
 
     // MARK: - Glass depth
     /// A hairline that catches light at the top and fades down the edge — the premium
@@ -80,6 +93,7 @@ enum GlassTheme {
 struct GlassCard<Content: View>: View {
     var material: Material = .regularMaterial
     let content: Content
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     init(material: Material = .regularMaterial, @ViewBuilder content: () -> Content) {
         self.material = material
@@ -88,16 +102,29 @@ struct GlassCard<Content: View>: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
-        content
-            .padding(GlassTheme.Space.l)
-            // Fill the container width so a single wide row can't stretch the card past the screen
-            // (which made pages like Settings drift horizontally); also keeps cards uniform.
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Content cards stay a calm dark frosted surface (HIG: Liquid Glass is for the
-            // control layer, not large content backgrounds), with a top-lit edge for depth.
-            .background(material, in: shape)
-            .overlay { shape.fill(GlassTheme.glassSheen).allowsHitTesting(false) }
-            .overlay { shape.strokeBorder(GlassTheme.glassEdge, lineWidth: 1) }
+        Group {
+            if reduceTransparency {
+                // A solid, higher-contrast fill instead of translucent material — Settings →
+                // Accessibility → Reduce Transparency previously had no effect anywhere in the app.
+                content
+                    .padding(GlassTheme.Space.l)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(GlassTheme.surfaceHigh, in: shape)
+                    .overlay { shape.strokeBorder(GlassTheme.hairline, lineWidth: 1) }
+            } else {
+                content
+                    .padding(GlassTheme.Space.l)
+                    // Fill the container width so a single wide row can't stretch the card past
+                    // the screen (which made pages like Settings drift horizontally); also keeps
+                    // cards uniform.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Content cards stay a calm dark frosted surface (HIG: Liquid Glass is for the
+                    // control layer, not large content backgrounds), with a top-lit edge for depth.
+                    .background(material, in: shape)
+                    .overlay { shape.fill(GlassTheme.glassSheen).allowsHitTesting(false) }
+                    .overlay { shape.strokeBorder(GlassTheme.glassEdge, lineWidth: 1) }
+            }
+        }
     }
 }
 
@@ -203,7 +230,10 @@ struct StatusDot: View {
         Circle()
             .fill(color)
             .frame(width: 8, height: 8)
-            .shadow(color: color.opacity(0.7), radius: pulse ? 4 : 2)
+            // No colored/tinted shadow (the design system's one rule the app otherwise follows
+            // everywhere else) — the pulse itself (scale + a soft opacity breathe) carries the
+            // liveness cue.
+            .opacity(pulse ? 1.0 : 0.75)
             .scaleEffect(pulse ? 1.0 : 0.82)
             .onAppear {
                 guard state != .offline, !reduceMotion else { return }
@@ -282,19 +312,25 @@ struct EmptyStateView: View {
 
 // MARK: - Liquid Glass (iOS 26+)
 
-extension View {
-    /// Apple's Liquid Glass material on iOS 26+, with a graceful fall-back to the app's
-    /// dark frosted material + top-lit edge on earlier systems. One call site, so the whole
-    /// app picks up real Liquid Glass on modern devices.
-    @ViewBuilder
-    func liquidGlass(
-        in shape: some InsettableShape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous),
-        tint: Color? = nil,
-        interactive: Bool = false,
-        fallbackMaterial: Material = .regularMaterial
-    ) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(
+/// A ViewModifier (not a plain extension function) specifically so it can read
+/// `accessibilityReduceTransparency` — a free function on `View` can't hold `@Environment`.
+private struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let tint: Color?
+    let interactive: Bool
+    let fallbackMaterial: Material
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            // Solid, higher-contrast fill instead of translucent glass — Reduce Transparency
+            // previously had no effect anywhere in the app (every chrome surface routes through
+            // this one modifier, so fixing it here fixes it everywhere at once).
+            content
+                .background(GlassTheme.surfaceHigh, in: shape)
+                .overlay { shape.strokeBorder(GlassTheme.hairline, lineWidth: 1) }
+        } else if #available(iOS 26.0, *) {
+            content.glassEffect(
                 {
                     var glass: Glass = .regular
                     if let tint { glass = glass.tint(tint) }
@@ -304,11 +340,25 @@ extension View {
                 in: shape
             )
         } else {
-            self
+            content
                 .background(fallbackMaterial, in: shape)
                 .overlay { shape.fill(GlassTheme.glassSheen).allowsHitTesting(false) }
                 .overlay { shape.strokeBorder(GlassTheme.glassEdge, lineWidth: 1) }
         }
+    }
+}
+
+extension View {
+    /// Apple's Liquid Glass material on iOS 26+, with a graceful fall-back to the app's
+    /// dark frosted material + top-lit edge on earlier systems. One call site, so the whole
+    /// app picks up real Liquid Glass on modern devices.
+    func liquidGlass(
+        in shape: some InsettableShape = RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous),
+        tint: Color? = nil,
+        interactive: Bool = false,
+        fallbackMaterial: Material = .regularMaterial
+    ) -> some View {
+        modifier(LiquidGlassModifier(shape: shape, tint: tint, interactive: interactive, fallbackMaterial: fallbackMaterial))
     }
 }
 
