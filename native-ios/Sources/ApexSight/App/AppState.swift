@@ -307,6 +307,11 @@ final class AppState: ObservableObject {
         }
     }
     private static let lastSyncedGateKey = "apex.lastSyncedGate"
+    /// When the relay last CONFIRMED (2xx'd) a gate POST from this device. `lastSyncedGate` is
+    /// marked optimistically before the request completes — deliberately, so a failure can roll it
+    /// back and retry — so it alone can't tell "the relay has our value" from "we're about to send
+    /// it". `adoptClearedHouseholdSnooze` needs the real answer; see the race note there.
+    private var lastGateConfirmedAt: Double = 0
     /// Last recap schedule we pushed to the relay, so we only POST when it changes.
     private var lastSyncedRecap: String?
     /// Last device-prefs blob signature we pushed, so the 15s foreground poll only POSTs on change.
@@ -360,6 +365,7 @@ final class AppState: ObservableObject {
                     relayURL: relayURL, pairingCode: pairing,
                     disarmed: disarmed, snoozedUntil: snoozedUntil
                 )
+                lastGateConfirmedAt = Date().timeIntervalSince1970
             } catch {
                 if lastSyncedGate == signature { lastSyncedGate = nil }
             }
@@ -437,6 +443,10 @@ final class AppState: ObservableObject {
     /// notifications stop?" answers itself. Empty / 0 when the relay reports no active gate.
     @Published var householdGateBy: String = ""
     @Published var householdGateAt: Double = 0
+    /// THIS phone's own Focus mute, mirrored so the banner re-renders when it changes. `FocusSnooze`
+    /// is app-group state written by the widget extension, so reading it straight from a view body
+    /// wouldn't invalidate anything when a Focus starts or ends. Epoch; 0 = not muted.
+    @Published var focusMutedUntil: Double = 0
 
     /// "Set by Brandon's iPhone at 2:16 PM" for the household-gate banners, or nil when the relay
     /// didn't report attribution (an older relay, or a gate set before 1.16.0) — callers fall back
@@ -487,6 +497,9 @@ final class AppState: ObservableObject {
         let relayURL = DeviceTokenStore.relayURL
         guard !relayURL.isEmpty else { return }
         let pairing = DeviceTokenStore.ensurePairingCode()
+        // Stamped BEFORE the request so `adoptClearedHouseholdSnooze` can tell a response that
+        // reflects our latest gate POST from one that was already in flight when we sent it.
+        let fetchStartedAt = Date().timeIntervalSince1970
         guard let status = await RelayClient.getMode(relayURL: relayURL, pairingCode: pairing) else { return }
         let modeChanged = status.mode != houseMode
         if modeChanged { houseMode = status.mode }
@@ -512,7 +525,11 @@ final class AppState: ObservableObject {
         if gateBy != householdGateBy { householdGateBy = gateBy }
         let gateAt = status.gate_at ?? 0
         if gateAt != householdGateAt { householdGateAt = gateAt }
-        adoptClearedHouseholdSnooze(relaySnoozedUntil: snoozed)
+        adoptClearedHouseholdSnooze(relaySnoozedUntil: snoozed, fetchStartedAt: fetchStartedAt)
+        // Pick up a Focus that started or ended while the app was closed (the filter runs in the
+        // widget process, so nothing here observes it directly).
+        let focus = FocusSnooze.epochForSync
+        if focus != focusMutedUntil { focusMutedUntil = focus }
         // Mirror to the app group so the Lock Screen widgets + Control Center controls can show it,
         // and refresh those surfaces the moment the mode actually changes.
         SharedHouseMode.mode = status.mode
@@ -527,12 +544,19 @@ final class AppState: ObservableObject {
     /// delivery gate stayed muted, and (before `lastSyncedGate` was persisted) it would re-POST
     /// that stale snooze and re-silence the household on its next cold launch.
     ///
-    /// Guarded against the obvious race: only adopt when the snooze we're holding is one the relay
-    /// has already ACKed (`lastSyncedGate` matches our current local state). A snooze set moments
-    /// ago and still in flight hasn't reached the relay yet, so its absence there means "not
-    /// written yet", not "someone cleared it" — clearing on that would cancel the user's own snooze.
-    private func adoptClearedHouseholdSnooze(relaySnoozedUntil: Double) {
+    /// Guarded against two races, both of which would cancel a snooze the user just set:
+    ///
+    /// 1. The snooze must be one the relay has ACKed — `lastSyncedGate` matching our current local
+    ///    state. A snooze that never reached the relay is absent there because it wasn't written
+    ///    yet, not because someone cleared it.
+    /// 2. `lastSyncedGate` is marked OPTIMISTICALLY (before the POST completes, so a failure can
+    ///    roll it back), so a match alone doesn't prove the relay has our value. This read must
+    ///    also have STARTED after the last confirmed POST — otherwise a `/v1/mode` response that
+    ///    was already in flight when we sent the snooze reports the pre-snooze state, and adopting
+    ///    that would undo it. Both fire from the same 15s poll tick, so this window is real.
+    private func adoptClearedHouseholdSnooze(relaySnoozedUntil: Double, fetchStartedAt: Double) {
         guard relaySnoozedUntil == 0, let localSnooze = GlobalSnooze.until else { return }
+        guard lastGateConfirmedAt > 0, fetchStartedAt > lastGateConfirmedAt else { return }
         let disarmed = !ArmStateStore.notificationsActive
         let currentSignature = "\(disarmed)|\(Int(localSnooze.timeIntervalSince1970))"
         guard lastSyncedGate == currentSignature else { return }

@@ -27,6 +27,13 @@ struct ApexResumeIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         GlobalSnooze.clear()
         await SharedRelayGate.syncCurrent()
+        // "Resume alerts" should mean it, so lift this phone's Focus mute too — otherwise the
+        // request appears to succeed while the phone stays silent. (A Focus that's still on will
+        // re-mute on its next activation; that's the Focus doing its job, not this failing.)
+        if FocusSnooze.isActive {
+            FocusSnooze.clear()
+            await SharedDevicePrefs.syncFocusSnooze(0)
+        }
         return .result()
     }
 }
