@@ -291,26 +291,37 @@ final class AppState: ObservableObject {
         pollTask = nil
     }
 
-    /// Last arm/snooze gate we pushed to the relay, so we only POST when it changes.
+    /// Gate signature this app INSTANCE has already attempted, so the 15s poll doesn't re-POST the
+    /// same state repeatedly. Marked optimistically (before the request completes) and rolled back
+    /// on failure, so it deliberately does NOT survive relaunch — see `lastConfirmedGate`.
+    private var lastSyncedGate: String?
+
+    /// Gate signature the relay has actually ACKed (2xx), PERSISTED in the app group.
     ///
-    /// PERSISTED in the app group, not just in memory. As a plain instance var it reset to nil on
-    /// every cold launch, so the first foreground poll always re-POSTed this phone's LOCAL snooze
-    /// over the household gate — meaning a snooze the other phone had just cleared came straight
-    /// back the next time this one was opened. Surviving relaunch makes "only POST when it
-    /// changes" true across launches, which is what it always claimed to be.
-    private var lastSyncedGate: String? {
-        get { UserDefaults(suiteName: ApexAppGroup.identifier)?.string(forKey: Self.lastSyncedGateKey) }
+    /// Two separate bugs make this split necessary, and collapsing them back into one variable
+    /// reintroduces one or the other:
+    ///
+    ///  • In-memory only → reset to nil on every cold launch, so the first poll re-POSTed this
+    ///    phone's LOCAL snooze over household state: a snooze the other phone had just cleared came
+    ///    straight back next time this one was opened.
+    ///  • Persisted but written OPTIMISTICALLY → if the POST fails and the app is killed before the
+    ///    rollback runs, the stored value permanently claims "synced" and the gate never re-syncs.
+    ///    Fail-CLOSED: the relay would keep silencing (or keep alerting) against the user's intent
+    ///    with nothing to correct it.
+    ///
+    /// So: attempt-tracking stays in memory, and only a CONFIRMED result is written here.
+    private var lastConfirmedGate: String? {
+        get { UserDefaults(suiteName: ApexAppGroup.identifier)?.string(forKey: Self.lastConfirmedGateKey) }
         set {
             let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
-            if let newValue { defaults?.set(newValue, forKey: Self.lastSyncedGateKey) }
-            else { defaults?.removeObject(forKey: Self.lastSyncedGateKey) }
+            if let newValue { defaults?.set(newValue, forKey: Self.lastConfirmedGateKey) }
+            else { defaults?.removeObject(forKey: Self.lastConfirmedGateKey) }
         }
     }
-    private static let lastSyncedGateKey = "apex.lastSyncedGate"
-    /// When the relay last CONFIRMED (2xx'd) a gate POST from this device. `lastSyncedGate` is
-    /// marked optimistically before the request completes — deliberately, so a failure can roll it
-    /// back and retry — so it alone can't tell "the relay has our value" from "we're about to send
-    /// it". `adoptClearedHouseholdSnooze` needs the real answer; see the race note there.
+    private static let lastConfirmedGateKey = "apex.lastConfirmedGate"
+    /// When the relay last CONFIRMED a gate POST from this device. Needed alongside the signature
+    /// because `adoptClearedHouseholdSnooze` must also know a `/v1/mode` response was issued AFTER
+    /// that confirmation — see the race note there.
     private var lastGateConfirmedAt: Double = 0
     /// Last recap schedule we pushed to the relay, so we only POST when it changes.
     private var lastSyncedRecap: String?
@@ -350,14 +361,21 @@ final class AppState: ObservableObject {
     func syncRelayGateIfChanged() {
         let disarmed = !ArmStateStore.notificationsActive
         let snoozedUntil = GlobalSnooze.until?.timeIntervalSince1970 ?? 0
-        let signature = "\(disarmed)|\(Int(snoozedUntil))"
-        guard signature != lastSyncedGate else { return }
+        let signature = GateSyncPolicy.signature(disarmed: disarmed, snoozedUntil: snoozedUntil)
+        // Skip when this instance already has it in flight, OR when the relay has already
+        // confirmed it (the latter survives relaunch, so a cold launch no longer re-imposes a
+        // local snooze the other phone cleared). See GateSyncPolicy for why the two differ.
+        guard GateSyncPolicy.shouldPost(signature: signature,
+                                        inFlight: lastSyncedGate,
+                                        confirmed: lastConfirmedGate) else { return }
 
         let relayURL = DeviceTokenStore.relayURL
         let pairing = DeviceTokenStore.ensurePairingCode()
         guard !relayURL.isEmpty, !pairing.isEmpty else { return }
         // Optimistic mark + rollback-on-failure: the gate mirror is safety-critical (it's what
         // silences pushes while disarmed), so a failed POST must retry, not silently stick.
+        // Only the in-memory marker is set here — persisting before the relay confirms would
+        // make a POST that failed just before the app was killed look permanently synced.
         lastSyncedGate = signature
         Task {
             do {
@@ -365,6 +383,7 @@ final class AppState: ObservableObject {
                     relayURL: relayURL, pairingCode: pairing,
                     disarmed: disarmed, snoozedUntil: snoozedUntil
                 )
+                lastConfirmedGate = signature
                 lastGateConfirmedAt = Date().timeIntervalSince1970
             } catch {
                 if lastSyncedGate == signature { lastSyncedGate = nil }
@@ -541,27 +560,36 @@ final class AppState: ObservableObject {
     /// actually resumes alerts on every phone.
     ///
     /// Without this, the other phone kept a local `GlobalSnooze` the relay no longer had: its own
-    /// delivery gate stayed muted, and (before `lastSyncedGate` was persisted) it would re-POST
-    /// that stale snooze and re-silence the household on its next cold launch.
+    /// delivery gate stayed muted, and it would re-POST that stale snooze and re-silence the
+    /// household on its next cold launch.
     ///
     /// Guarded against two races, both of which would cancel a snooze the user just set:
     ///
-    /// 1. The snooze must be one the relay has ACKed — `lastSyncedGate` matching our current local
-    ///    state. A snooze that never reached the relay is absent there because it wasn't written
-    ///    yet, not because someone cleared it.
-    /// 2. `lastSyncedGate` is marked OPTIMISTICALLY (before the POST completes, so a failure can
-    ///    roll it back), so a match alone doesn't prove the relay has our value. This read must
-    ///    also have STARTED after the last confirmed POST — otherwise a `/v1/mode` response that
-    ///    was already in flight when we sent the snooze reports the pre-snooze state, and adopting
-    ///    that would undo it. Both fire from the same 15s poll tick, so this window is real.
+    /// 1. The snooze must be one the relay has ACKed — `lastConfirmedGate` (written only on a 2xx)
+    ///    matching our current local state. A snooze that never reached the relay is absent there
+    ///    because it wasn't written yet, not because someone cleared it.
+    /// 2. A matching signature still isn't enough: this read must also have STARTED after that
+    ///    confirmation. Otherwise a `/v1/mode` response already in flight when we sent the snooze
+    ///    reports the pre-snooze state, and adopting it would undo the user's own action. Both the
+    ///    gate POST and the mode fetch are kicked off from the same 15s poll tick, so the window
+    ///    between them is real, not theoretical.
     private func adoptClearedHouseholdSnooze(relaySnoozedUntil: Double, fetchStartedAt: Double) {
-        guard relaySnoozedUntil == 0, let localSnooze = GlobalSnooze.until else { return }
-        guard lastGateConfirmedAt > 0, fetchStartedAt > lastGateConfirmedAt else { return }
         let disarmed = !ArmStateStore.notificationsActive
-        let currentSignature = "\(disarmed)|\(Int(localSnooze.timeIntervalSince1970))"
-        guard lastSyncedGate == currentSignature else { return }
+        let localSnooze = GlobalSnooze.until
+        let currentSignature = GateSyncPolicy.signature(
+            disarmed: disarmed, snoozedUntil: localSnooze?.timeIntervalSince1970 ?? 0)
+        guard GateSyncPolicy.shouldAdoptClear(
+            relaySnoozedUntil: relaySnoozedUntil,
+            hasLocalSnooze: localSnooze != nil,
+            currentSignature: currentSignature,
+            confirmed: lastConfirmedGate,
+            confirmedAt: lastGateConfirmedAt,
+            fetchStartedAt: fetchStartedAt
+        ) else { return }
         GlobalSnooze.clear()
-        lastSyncedGate = "\(disarmed)|0"
+        let cleared = GateSyncPolicy.signature(disarmed: disarmed, snoozedUntil: 0)
+        lastSyncedGate = cleared
+        lastConfirmedGate = cleared   // this IS the relay's current state — we just read it
     }
 
     /// Save the household per-mode alert matrix (from the House Mode Alerts editor). Household-wide:
@@ -587,7 +615,10 @@ final class AppState: ObservableObject {
     func resumeHouseholdNotifications() async {
         GlobalSnooze.clear()
         if ArmStateStore.mode == .disarmed { ArmStateStore.mode = .away }
-        lastSyncedGate = ""             // force the next syncRelayGateIfChanged through
+        // Force the next syncRelayGateIfChanged through: clear BOTH the in-flight marker and the
+        // persisted confirmation, or the resume would be skipped as "already synced".
+        lastSyncedGate = ""
+        lastConfirmedGate = ""
         await RelayGate.syncCurrent()
         syncRelayGateIfChanged()
         await refreshHouseMode()
