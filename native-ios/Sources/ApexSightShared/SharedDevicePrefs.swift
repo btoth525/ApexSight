@@ -38,16 +38,19 @@ enum SharedDevicePrefs {
 
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed + "/v1/device-prefs"),
+        // Dedicated endpoint, NOT /v1/device-prefs. This extension knows only the Focus deadline,
+        // and a partial body posted to /v1/device-prefs would be read by an older relay (≤ 1.15.0,
+        // where `prefs` defaulted to `{}`) as "store an empty blob" — wiping this phone's camera
+        // mutes, quiet hours and triggers. Against an old relay this path just 404s and does
+        // nothing, so the app is safe to install before or after the add-on update.
+        guard let url = URL(string: trimmed + "/v1/focus-mute"),
               url.scheme == "https", url.host != nil else { return false }
 
-        // Keys must match the main app's DevicePrefsBody (snake_case). `prefs` is deliberately
-        // OMITTED, not empty: the relay treats an absent blob as "don't touch", so this extension
-        // can't wipe the camera mutes / quiet hours / triggers it has no way to reconstruct.
+        // Keys must match the relay's FocusMuteIn (snake_case).
         let body: [String: Any] = [
             "device_token": token,
             "pairing_code": pairing,
-            "focus_snoozed_until": until
+            "until": until
         ]
         guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return false }
 
