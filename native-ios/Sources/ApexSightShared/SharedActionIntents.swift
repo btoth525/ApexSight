@@ -155,13 +155,19 @@ struct ApexFocusFilter: SetFocusFilterIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // PER-DEVICE ONLY. This used to write GlobalSnooze + /v1/gate, which is HOUSEHOLD state —
+        // so one partner's Do Not Disturb turning on silenced every phone's camera alerts for
+        // eight hours, invisibly. A Focus belongs to one person's device; it must never make a
+        // security decision for the whole house. FocusSnooze + /v1/device-prefs mute this phone
+        // alone, and leave a deliberate household snooze (which a person actually chose) intact.
         if muteAlerts {
-            // Long snooze that the matching Focus keeps refreshing while active.
-            GlobalSnooze.snooze(until: Date().addingTimeInterval(8 * 60 * 60))
+            // Backstop deadline in case iOS never runs this intent again to report the Focus
+            // ending. Bounded server-side too (see /v1/device-prefs) so it can't stick forever.
+            FocusSnooze.mute(until: Date().addingTimeInterval(8 * 60 * 60))
         } else {
-            GlobalSnooze.clear()
+            FocusSnooze.clear()
         }
-        await SharedRelayGate.syncCurrent()
+        await SharedDevicePrefs.syncFocusSnooze(FocusSnooze.epochForSync)
         return .result()
     }
 }

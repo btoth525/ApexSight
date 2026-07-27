@@ -180,7 +180,8 @@ struct CamerasTab: View {
                              : "Notifications snoozed until \(Date(timeIntervalSince1970: appState.householdSnoozedUntil).formatted(date: .omitted, time: .shortened))")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(GlassTheme.primary)
-                        Text("Tap to resume alerts")
+                        Text(appState.householdGateAttribution.map { "\($0) · Tap to resume" }
+                             ?? "Tap to resume alerts")
                             .font(.caption2)
                             .foregroundStyle(GlassTheme.secondary)
                     }

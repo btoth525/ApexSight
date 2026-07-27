@@ -292,7 +292,21 @@ final class AppState: ObservableObject {
     }
 
     /// Last arm/snooze gate we pushed to the relay, so we only POST when it changes.
-    private var lastSyncedGate: String?
+    ///
+    /// PERSISTED in the app group, not just in memory. As a plain instance var it reset to nil on
+    /// every cold launch, so the first foreground poll always re-POSTed this phone's LOCAL snooze
+    /// over the household gate — meaning a snooze the other phone had just cleared came straight
+    /// back the next time this one was opened. Surviving relaunch makes "only POST when it
+    /// changes" true across launches, which is what it always claimed to be.
+    private var lastSyncedGate: String? {
+        get { UserDefaults(suiteName: ApexAppGroup.identifier)?.string(forKey: Self.lastSyncedGateKey) }
+        set {
+            let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+            if let newValue { defaults?.set(newValue, forKey: Self.lastSyncedGateKey) }
+            else { defaults?.removeObject(forKey: Self.lastSyncedGateKey) }
+        }
+    }
+    private static let lastSyncedGateKey = "apex.lastSyncedGate"
     /// Last recap schedule we pushed to the relay, so we only POST when it changes.
     private var lastSyncedRecap: String?
     /// Last device-prefs blob signature we pushed, so the 15s foreground poll only POSTs on change.
@@ -372,6 +386,10 @@ final class AppState: ObservableObject {
         let sig = [(try? enc.encode(prefs))?.base64EncodedString(),
                    (try? enc.encode(triggers))?.base64EncodedString(),
                    String(TimeZone.current.secondsFromGMT()),
+                   // Include this device's Focus mute so a Focus that started/ended while the app
+                   // was closed re-syncs on the next foreground instead of being held back by an
+                   // otherwise-unchanged signature.
+                   String(Int(FocusSnooze.epochForSync)),
                    deviceName].compactMap { $0 }.joined(separator: "|")
         guard sig != lastSyncedDevicePrefs else { return }
         // Optimistic mark + rollback-on-failure so a dropped POST re-syncs on the next foreground
@@ -415,6 +433,23 @@ final class AppState: ObservableObject {
     /// of dropping them invisibly (the "why am I not getting notifications" fix). Epoch; 0 = off.
     @Published var householdSnoozedUntil: Double = 0
     @Published var householdDisarmed = false
+    /// Which device silenced the household, and when — surfaced in the banner so "why did my
+    /// notifications stop?" answers itself. Empty / 0 when the relay reports no active gate.
+    @Published var householdGateBy: String = ""
+    @Published var householdGateAt: Double = 0
+
+    /// "Set by Brandon's iPhone at 2:16 PM" for the household-gate banners, or nil when the relay
+    /// didn't report attribution (an older relay, or a gate set before 1.16.0) — callers fall back
+    /// to their generic copy rather than showing a half-empty sentence. Returns the attribution
+    /// alone; each banner appends its own call to action.
+    var householdGateAttribution: String? {
+        let who = householdGateBy.trimmingCharacters(in: .whitespaces)
+        guard !who.isEmpty else { return nil }
+        guard householdGateAt > 0 else { return "Set by \(who)" }
+        let when = Date(timeIntervalSince1970: householdGateAt)
+            .formatted(date: .omitted, time: .shortened)
+        return "Set by \(who) at \(when)"
+    }
     /// Set when the "Snooze Alerts" Home Screen quick action fires, so the UI can ask "are you
     /// sure?" instead of instantly silencing the WHOLE HOUSEHOLD's alerts for an hour. That quick
     /// action is the FIRST, always-present item in a long-press menu that's trivially easy to land
@@ -471,11 +506,38 @@ final class AppState: ObservableObject {
         if snoozed != householdSnoozedUntil { householdSnoozedUntil = snoozed }
         let disarmed = status.disarmed ?? false
         if disarmed != householdDisarmed { householdDisarmed = disarmed }
+        // Attribution for the banner — WHO silenced the house and when. Without this, "why did
+        // notifications stop?" had no answer short of reading the relay by hand.
+        let gateBy = status.gate_by ?? ""
+        if gateBy != householdGateBy { householdGateBy = gateBy }
+        let gateAt = status.gate_at ?? 0
+        if gateAt != householdGateAt { householdGateAt = gateAt }
+        adoptClearedHouseholdSnooze(relaySnoozedUntil: snoozed)
         // Mirror to the app group so the Lock Screen widgets + Control Center controls can show it,
         // and refresh those surfaces the moment the mode actually changes.
         SharedHouseMode.mode = status.mode
         SharedHouseMode.armedBy = by
         if modeChanged { ApexSurfaceRefresh.reload() }
+    }
+
+    /// Adopt a household snooze that someone else cleared, so tapping "resume" on ONE phone
+    /// actually resumes alerts on every phone.
+    ///
+    /// Without this, the other phone kept a local `GlobalSnooze` the relay no longer had: its own
+    /// delivery gate stayed muted, and (before `lastSyncedGate` was persisted) it would re-POST
+    /// that stale snooze and re-silence the household on its next cold launch.
+    ///
+    /// Guarded against the obvious race: only adopt when the snooze we're holding is one the relay
+    /// has already ACKed (`lastSyncedGate` matches our current local state). A snooze set moments
+    /// ago and still in flight hasn't reached the relay yet, so its absence there means "not
+    /// written yet", not "someone cleared it" — clearing on that would cancel the user's own snooze.
+    private func adoptClearedHouseholdSnooze(relaySnoozedUntil: Double) {
+        guard relaySnoozedUntil == 0, let localSnooze = GlobalSnooze.until else { return }
+        let disarmed = !ArmStateStore.notificationsActive
+        let currentSignature = "\(disarmed)|\(Int(localSnooze.timeIntervalSince1970))"
+        guard lastSyncedGate == currentSignature else { return }
+        GlobalSnooze.clear()
+        lastSyncedGate = "\(disarmed)|0"
     }
 
     /// Save the household per-mode alert matrix (from the House Mode Alerts editor). Household-wide:

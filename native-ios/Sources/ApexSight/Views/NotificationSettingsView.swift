@@ -165,7 +165,9 @@ struct NotificationSettingsView: View {
                              : "All notifications snoozed until \(snoozeTimeText)")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GlassTheme.primary)
-                        Text("For every phone in the household — tap to resume")
+                        Text(appState.householdGateAttribution
+                             .map { "\($0) — applies to every phone. Tap to resume." }
+                             ?? "For every phone in the household — tap to resume")
                             .font(.caption)
                             .foregroundStyle(GlassTheme.secondary)
                     }

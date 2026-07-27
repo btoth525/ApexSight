@@ -11,32 +11,58 @@ import Foundation
 /// builds in the extension without dragging the whole networking stack across the target boundary.
 public enum SharedRelayGate {
     /// POST the current Disarm + Snooze state to the relay's `/v1/gate`. No-op if pairing/relay
-    /// aren't configured yet. Best-effort: failures are swallowed (the next foreground re-syncs).
+    /// aren't configured yet.
+    ///
+    /// Retries when the post RESUMES alerts (not disarmed, not snoozed). The two directions carry
+    /// very different risk: a dropped "silence" POST just means a few extra notifications, but a
+    /// dropped "resume" leaves the whole household silent until someone opens the app — fail-CLOSED
+    /// on a security app. "The next foreground re-syncs" is not an acceptable answer for that one.
     static func syncCurrent() async {
+        let disarmed = !ArmStateStore.notificationsActive
+        let snoozedUntil = GlobalSnooze.until?.timeIntervalSince1970 ?? 0
+        let resuming = !disarmed && snoozedUntil == 0
+        let attempts = resuming ? 3 : 1
+        for attempt in 0..<attempts {
+            if await post(disarmed: disarmed, snoozedUntil: snoozedUntil) { return }
+            if attempt < attempts - 1 {
+                // Bounded and short — the extension's runtime is limited, so an open-ended retry
+                // loop would just get suspended rather than eventually succeeding.
+                try? await Task.sleep(nanoseconds: attempt == 0 ? 1_000_000_000 : 3_000_000_000)
+            }
+        }
+    }
+
+    /// One `/v1/gate` POST attempt. Returns true only on a 2xx — anything else is worth retrying.
+    @discardableResult
+    private static func post(disarmed: Bool, snoozedUntil: Double) async -> Bool {
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
         let relayURL = nonEmpty(defaults?.string(forKey: "apex.relayURL")) ?? RelayConfig.defaultURL
-        guard let pairing = nonEmpty(defaults?.string(forKey: "apex.pairingCode")) ?? nonEmpty(RelayConfig.defaultPairingCode) else { return }
+        guard let pairing = nonEmpty(defaults?.string(forKey: "apex.pairingCode")) ?? nonEmpty(RelayConfig.defaultPairingCode) else { return false }
 
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed + "/v1/gate"), url.scheme != nil, url.host != nil else { return }
+        guard let url = URL(string: trimmed + "/v1/gate"),
+              url.scheme == "https", url.host != nil else { return false }
 
-        let disarmed = !ArmStateStore.notificationsActive
-        let snoozedUntil = GlobalSnooze.until?.timeIntervalSince1970 ?? 0
         // Keys must match the main app's RelayClient.GateBody (snake_case).
         let body: [String: Any] = [
             "pairing_code": pairing,
             "disarmed": disarmed,
-            "snoozed_until": snoozedUntil
+            "snoozed_until": snoozedUntil,
+            // Attribution for the app's banner. A gate change from a widget / Control Center /
+            // Siri is exactly the kind that leaves someone asking "why did alerts stop?".
+            "by": nonEmpty(defaults?.string(forKey: "apex.deviceName")) ?? "Another device"
         ]
-        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return }
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return false }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = httpBody
         request.timeoutInterval = 15
-        _ = try? await URLSession.shared.data(for: request)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode)
     }
 
     /// Request a house-mode change from OUTSIDE the app (Control Center control, widget button,

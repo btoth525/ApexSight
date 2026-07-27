@@ -79,12 +79,17 @@ enum RelayClient {
         let pairing_code: String
         let device_name: String   // keeps the per-phone HA entity name fresh on the foreground sync
         let prefs: DevicePrefsBlob
+        /// This device's iOS Focus mute (epoch; 0 = not muted). Stored apart from `prefs` on the
+        /// relay so the Focus filter and this full sync can't clobber each other — sending it here
+        /// lets a foreground sync heal a stale mute the widget extension failed to clear.
+        let focus_snoozed_until: Double
     }
 
     private struct GateBody: Encodable {
         let pairing_code: String
         let disarmed: Bool
         let snoozed_until: Double   // epoch seconds; 0 = not snoozed
+        let by: String              // this device's name, so the banner can say WHO silenced it
     }
 
     private struct RecapBody: Encodable {
@@ -120,6 +125,8 @@ enum RelayClient {
         let cameras: [String]?         // camera roster last synced with the map
         let snoozed_until: Double?     // household snooze (epoch; present when pairing_code sent)
         let disarmed: Bool?            // household notifications disarmed (present when pairing_code sent)
+        let gate_by: String?           // device that set the active snooze/disarm (relay ≥ 1.16.0)
+        let gate_at: Double?           // when it was set (epoch); absent on older relays
         struct ArmedBy: Decodable { let by: String?; let mode: String?; let ts: Double? }
     }
 
@@ -220,7 +227,8 @@ enum RelayClient {
         )
         try await post(relayURL: relayURL, path: "/v1/device-prefs",
                        body: DevicePrefsBody(device_token: deviceToken, pairing_code: pairingCode,
-                                             device_name: deviceName, prefs: blob))
+                                             device_name: deviceName, prefs: blob,
+                                             focus_snoozed_until: FocusSnooze.epochForSync))
     }
 
     /// Asks the relay to send a test push to this device.
@@ -239,7 +247,8 @@ enum RelayClient {
     /// the in-app delivery gate.
     static func syncGate(relayURL: String, pairingCode: String, disarmed: Bool, snoozedUntil: Double) async throws {
         try await post(relayURL: relayURL, path: "/v1/gate",
-                       body: GateBody(pairing_code: pairingCode, disarmed: disarmed, snoozed_until: snoozedUntil))
+                       body: GateBody(pairing_code: pairingCode, disarmed: disarmed,
+                                      snoozed_until: snoozedUntil, by: DeviceTokenStore.deviceName))
     }
 
     /// Saves the Daily Recap schedule on the relay so the summary is delivered at the
