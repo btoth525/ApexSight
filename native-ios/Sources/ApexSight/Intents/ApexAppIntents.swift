@@ -100,9 +100,9 @@ private struct RecentActivitySnippetView: View {
 // MARK: - Latest alert ("Hey Siri, anyone at the front door?")
 
 struct LatestAlertIntent: AppIntent {
-    static var title: LocalizedStringResource = "Latest Camera Alert"
-    static var description = IntentDescription("Tells you the most recent camera alert.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Latest Camera Alert"
+    static let description = IntentDescription("Tells you the most recent camera alert.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
         guard let latest = SharedSnapshotStore.loadLatestAlert() else {
@@ -126,9 +126,9 @@ struct LatestAlertIntent: AppIntent {
 // MARK: - Recent activity summary
 
 struct RecentActivityIntent: AppIntent {
-    static var title: LocalizedStringResource = "Recent Camera Activity"
-    static var description = IntentDescription("Summarizes the most recent camera alerts.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Recent Camera Activity"
+    static let description = IntentDescription("Summarizes the most recent camera alerts.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
         let recent = SharedSnapshotStore.loadRecentAlerts().alerts
@@ -153,9 +153,9 @@ struct RecentActivityIntent: AppIntent {
 // MARK: - Open app to cameras
 
 struct ShowLiveCamerasIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Live Cameras"
-    static var description = IntentDescription("Opens the live cameras in ApexSight.")
-    static var openAppWhenRun = true
+    static let title: LocalizedStringResource = "Show Live Cameras"
+    static let description = IntentDescription("Opens the live cameras in ApexSight.")
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
         // Stash a deep link so the app jumps to the Cameras tab even on a warm launch where it
@@ -171,8 +171,8 @@ struct ShowLiveCamerasIntent: AppIntent {
 /// OpenIntent so tapping a camera in Spotlight (or picking one in Siri/Shortcuts)
 /// opens that camera's live view.
 struct OpenCameraIntent: OpenIntent {
-    static var title: LocalizedStringResource = "Show Camera"
-    static var description = IntentDescription("Opens a specific camera's live view in ApexSight.")
+    static let title: LocalizedStringResource = "Show Camera"
+    static let description = IntentDescription("Opens a specific camera's live view in ApexSight.")
 
     @Parameter(title: "Camera")
     var target: CameraEntity
@@ -196,7 +196,7 @@ struct OpenCameraIntent: OpenIntent {
 /// A camera the user can pick in a Shortcut / Siri ("Show Front Door"), and that
 /// gets indexed into Spotlight so typing "front door" opens it.
 struct CameraEntity: AppEntity {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Camera"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Camera"
     static var defaultQuery = CameraQuery()
 
     var id: String
@@ -232,9 +232,9 @@ struct CameraQuery: EntityQuery {
 // MARK: - Chainable intents (return values so the new Siri can branch / chain)
 
 struct CheckCameraIntent: AppIntent {
-    static var title: LocalizedStringResource = "Check Camera"
-    static var description = IntentDescription("Checks a camera for recent activity in the last 15 minutes.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Check Camera"
+    static let description = IntentDescription("Checks a camera for recent activity in the last 15 minutes.")
+    static let openAppWhenRun = false
 
     @Parameter(title: "Camera")
     var camera: CameraEntity
@@ -279,9 +279,9 @@ struct CheckCameraIntent: AppIntent {
 }
 
 struct WhoIsHomeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Who's Home"
-    static var description = IntentDescription("Lists the recognized people seen recently.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Who's Home"
+    static let description = IntentDescription("Lists the recognized people seen recently.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<[String]> {
         guard let session = KeychainStore().loadSession() else {
@@ -299,9 +299,9 @@ struct WhoIsHomeIntent: AppIntent {
 }
 
 struct MarkAllReviewedIntent: AppIntent {
-    static var title: LocalizedStringResource = "Mark All Reviewed"
-    static var description = IntentDescription("Marks every current camera alert as reviewed.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Mark All Reviewed"
+    static let description = IntentDescription("Marks every current camera alert as reviewed.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let session = KeychainStore().loadSession() else {
@@ -317,9 +317,9 @@ struct MarkAllReviewedIntent: AppIntent {
 }
 
 struct ShowRecapIntent: AppIntent {
-    static var title: LocalizedStringResource = "Daily Recap"
-    static var description = IntentDescription("Summarizes today's camera activity.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Daily Recap"
+    static let description = IntentDescription("Summarizes today's camera activity.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let session = KeychainStore().loadSession() else {
@@ -341,8 +341,8 @@ enum SnoozeDuration: String, AppEnum {
     case fourHours
     case eightHours
 
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Snooze Duration"
-    static var caseDisplayRepresentations: [SnoozeDuration: DisplayRepresentation] = [
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Snooze Duration"
+    static let caseDisplayRepresentations: [SnoozeDuration: DisplayRepresentation] = [
         .fifteenMinutes: "15 minutes",
         .oneHour: "1 hour",
         .fourHours: "4 hours",
@@ -360,9 +360,9 @@ enum SnoozeDuration: String, AppEnum {
 }
 
 struct SnoozeAlertsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze Camera Alerts"
-    static var description = IntentDescription("Mutes all ApexSight notifications for a while.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Snooze Camera Alerts"
+    static let description = IntentDescription("Mutes all ApexSight notifications for a while.")
+    static let openAppWhenRun = false
 
     @Parameter(title: "For how long", default: .oneHour)
     var duration: SnoozeDuration
@@ -383,9 +383,9 @@ struct SnoozeAlertsIntent: AppIntent {
 }
 
 struct ResumeAlertsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Resume Camera Alerts"
-    static var description = IntentDescription("Turns ApexSight notifications back on.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Resume Camera Alerts"
+    static let description = IntentDescription("Turns ApexSight notifications back on.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         GlobalSnooze.clear()

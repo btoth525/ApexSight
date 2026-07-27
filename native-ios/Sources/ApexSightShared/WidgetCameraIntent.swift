@@ -5,7 +5,7 @@ import AppIntents
 /// widget extension can see it. The candidate list comes from the camera names the app mirrors
 /// into the App Group via `SharedSnapshotStore.saveCameraNames(_:)`.
 struct WidgetCameraEntity: AppEntity, Identifiable {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Camera"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Camera"
     static var defaultQuery = WidgetCameraQuery()
 
     /// The Frigate camera name (also the entity id).
@@ -43,8 +43,8 @@ struct WidgetCameraQuery: EntityQuery {
 /// The widget's configuration: which camera to show. Backed by an App Intent so the user edits it
 /// inline from the widget (long-press → Edit Widget).
 struct SelectCameraIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "Select Camera"
-    static var description = IntentDescription("Choose which camera this widget shows a snapshot of.")
+    static let title: LocalizedStringResource = "Select Camera"
+    static let description = IntentDescription("Choose which camera this widget shows a snapshot of.")
 
     @Parameter(title: "Camera")
     var camera: WidgetCameraEntity?

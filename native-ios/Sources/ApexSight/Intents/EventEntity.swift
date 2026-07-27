@@ -5,7 +5,7 @@ import Foundation
 /// `CameraEntity`: a lightweight value with a `DisplayRepresentation` and an `OpenIntent` that
 /// routes through the existing `apex://event?id=…` deep link (the same one `SpotlightIndexer` uses).
 struct EventEntity: AppEntity {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Camera Event"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Camera Event"
     static var defaultQuery = EventQuery()
 
     var id: String
@@ -78,8 +78,8 @@ struct EventQuery: EntityQuery {
 /// Opens a specific event's detail in ApexSight — used when the user taps an event surfaced by
 /// Visual Intelligence or Siri.
 struct OpenEventIntent: OpenIntent {
-    static var title: LocalizedStringResource = "Open Camera Event"
-    static var description = IntentDescription("Opens a camera event in ApexSight.")
+    static let title: LocalizedStringResource = "Open Camera Event"
+    static let description = IntentDescription("Opens a camera event in ApexSight.")
 
     @Parameter(title: "Event")
     var target: EventEntity

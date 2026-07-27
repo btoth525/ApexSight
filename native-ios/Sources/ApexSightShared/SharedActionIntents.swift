@@ -9,8 +9,8 @@ import Foundation
 
 @available(iOS 17.0, *)
 struct ApexSnoozeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Snooze Camera Alerts"
-    static var description = IntentDescription("Mute ApexSight alerts for an hour.")
+    static let title: LocalizedStringResource = "Snooze Camera Alerts"
+    static let description = IntentDescription("Mute ApexSight alerts for an hour.")
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.snooze(until: Date().addingTimeInterval(60 * 60))
@@ -21,8 +21,8 @@ struct ApexSnoozeIntent: AppIntent {
 
 @available(iOS 17.0, *)
 struct ApexResumeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Resume Camera Alerts"
-    static var description = IntentDescription("Turn ApexSight alerts back on.")
+    static let title: LocalizedStringResource = "Resume Camera Alerts"
+    static let description = IntentDescription("Turn ApexSight alerts back on.")
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.clear()
@@ -42,8 +42,8 @@ struct ApexResumeIntent: AppIntent {
 /// in the widget process and ends the activity immediately so it gets out of the way.
 @available(iOS 17.0, *)
 struct ApexDismissIncidentIntent: AppIntent {
-    static var title: LocalizedStringResource = "Dismiss Alert"
-    static var description = IntentDescription("Clear the current camera alert from the Lock Screen / Dynamic Island.")
+    static let title: LocalizedStringResource = "Dismiss Alert"
+    static let description = IntentDescription("Clear the current camera alert from the Lock Screen / Dynamic Island.")
 
     func perform() async throws -> some IntentResult {
         for activity in Activity<IncidentActivityAttributes>.activities {
@@ -55,8 +55,8 @@ struct ApexDismissIncidentIntent: AppIntent {
 
 @available(iOS 17.0, *)
 struct ApexOpenAppIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open ApexSight"
-    static var openAppWhenRun = true
+    static let title: LocalizedStringResource = "Open ApexSight"
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult { .result() }
 }
@@ -67,8 +67,8 @@ struct ApexOpenAppIntent: AppIntent {
 enum ApexArmModeAppEnum: String, AppEnum {
     case disarmed, home, away, night
 
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Security Mode"
-    static var caseDisplayRepresentations: [ApexArmModeAppEnum: DisplayRepresentation] = [
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Security Mode"
+    static let caseDisplayRepresentations: [ApexArmModeAppEnum: DisplayRepresentation] = [
         .disarmed: "Disarmed",
         .home: "Home",
         .away: "Away",
@@ -80,8 +80,8 @@ enum ApexArmModeAppEnum: String, AppEnum {
 
 @available(iOS 17.0, *)
 struct ApexSetArmModeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Set Security Mode"
-    static var description = IntentDescription("Arm or disarm ApexSight (Home, Away, Night, or Disarmed).")
+    static let title: LocalizedStringResource = "Set Security Mode"
+    static let description = IntentDescription("Arm or disarm ApexSight (Home, Away, Night, or Disarmed).")
     // This can DISARM (silence every camera alert), so it must not run from a locked device — require
     // Face ID / passcode first. Otherwise "Hey Siri, disarm ApexSight" on a locked, stolen phone kills
     // all alerting with no authentication.
@@ -100,7 +100,7 @@ struct ApexSetArmModeIntent: AppIntent {
 /// Control Center toggle backing intent: on = Away, off = Disarmed.
 @available(iOS 18.0, *)
 struct ApexArmToggleIntent: SetValueIntent {
-    static var title: LocalizedStringResource = "Arm ApexSight"
+    static let title: LocalizedStringResource = "Arm ApexSight"
     // The "off" position DISARMS (silences all camera alerts), so require authentication — a locked
     // phone's Control Center must not let anyone toggle alerting off without Face ID / passcode.
     static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
@@ -122,8 +122,8 @@ struct ApexArmToggleIntent: SetValueIntent {
 /// (it needs Face ID + the Alarmo code, which live in the app — see ApexHouseModeIntent).
 @available(iOS 17.0, *)
 struct ApexArmAwayIntent: AppIntent {
-    static var title: LocalizedStringResource = "Arm Away"
-    static var description = IntentDescription("Arm the house to Away mode.")
+    static let title: LocalizedStringResource = "Arm Away"
+    static let description = IntentDescription("Arm the house to Away mode.")
 
     func perform() async throws -> some IntentResult {
         await SharedRelayGate.setHouseMode("away")
@@ -136,9 +136,9 @@ struct ApexArmAwayIntent: AppIntent {
 /// Face ID + Alarmo code) or the full switcher.
 @available(iOS 17.0, *)
 struct ApexHouseModeIntent: AppIntent {
-    static var title: LocalizedStringResource = "House Mode"
-    static var description = IntentDescription("Open ApexSight House Mode to arm or disarm.")
-    static var openAppWhenRun = true
+    static let title: LocalizedStringResource = "House Mode"
+    static let description = IntentDescription("Open ApexSight House Mode to arm or disarm.")
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: ApexAppGroup.identifier)?
@@ -151,8 +151,8 @@ struct ApexHouseModeIntent: AppIntent {
 
 @available(iOS 16.0, *)
 struct ApexFocusFilter: SetFocusFilterIntent {
-    static var title: LocalizedStringResource = "ApexSight Alerts"
-    static var description = IntentDescription("Mute ApexSight camera alerts while this Focus is on.")
+    static let title: LocalizedStringResource = "ApexSight Alerts"
+    static let description = IntentDescription("Mute ApexSight camera alerts while this Focus is on.")
 
     @Parameter(title: "Mute camera alerts", default: true)
     var muteAlerts: Bool
@@ -181,9 +181,9 @@ struct ApexFocusFilter: SetFocusFilterIntent {
 
 @available(iOS 17.0, *)
 struct ApexOpenCameraIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Camera"
-    static var description = IntentDescription("Open a camera's live view in ApexSight.")
-    static var openAppWhenRun = true
+    static let title: LocalizedStringResource = "Open Camera"
+    static let description = IntentDescription("Open a camera's live view in ApexSight.")
+    static let openAppWhenRun = true
 
     @Parameter(title: "Camera")
     var camera: String
