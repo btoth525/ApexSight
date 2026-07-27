@@ -417,6 +417,12 @@ struct SearchView: View {
 
     private var filterSection: some View {
         GlassCard {
+            // Each of these was a computed property read TWICE per render (once for the isEmpty
+            // check, once for `options:`), so every render built the Set and sorted it twice —
+            // the same pattern ReviewTab (4cdba5d) and ActivityTab (af498a3) were fixed for.
+            // Bound once here instead.
+            let subLabels = allSubLabels
+            let zones = allZones
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 SectionHeader("Filters")
 
@@ -426,13 +432,13 @@ struct SearchView: View {
                 chipRow(title: "Labels", icon: "tag", selected: selectedLabel, options: allLabels) {
                     selectedLabel = $0
                 }
-                if !allSubLabels.isEmpty {
-                    chipRow(title: "Sub-Labels", icon: "tag.fill", selected: selectedSubLabel, options: allSubLabels) {
+                if !subLabels.isEmpty {
+                    chipRow(title: "Sub-Labels", icon: "tag.fill", selected: selectedSubLabel, options: subLabels) {
                         selectedSubLabel = $0
                     }
                 }
-                if !allZones.isEmpty {
-                    chipRow(title: "Zones", icon: "mappin", selected: selectedZone, options: allZones) {
+                if !zones.isEmpty {
+                    chipRow(title: "Zones", icon: "mappin", selected: selectedZone, options: zones) {
                         selectedZone = $0
                     }
                 }
