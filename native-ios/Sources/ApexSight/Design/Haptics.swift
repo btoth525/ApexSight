@@ -27,10 +27,30 @@ enum Haptics {
         run { let g = UINotificationFeedbackGenerator(); g.prepare(); g.notificationOccurred(type) }
     }
 
-    private static func run(_ work: @escaping () -> Void) {
-        // Respect Reduce Motion — people who enable it generally want less buzz too. One
-        // guard here covers every Haptics call across the app.
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-        if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
+    /// Runs `work` on the main actor, synchronously when already there.
+    ///
+    /// The old form dispatched correctly at runtime but the compiler couldn't prove it:
+    /// `DispatchQueue.main.async` is not actor-isolation evidence, so every UIFeedbackGenerator
+    /// construction and call read as main-actor-isolated work from a nonisolated context — 11 of
+    /// the app's strict-concurrency warnings, and errors under the Swift 6 language mode. Taking a
+    /// `@MainActor` closure and using `assumeIsolated` on the fast path states the isolation that
+    /// was always true.
+    ///
+    /// The synchronous fast path is deliberate: haptics have to fire on the same turn of the
+    /// run loop as the touch, or the buzz lags the tap and the whole app feels loose. Hopping
+    /// through a Task even when already on main would cost that.
+    private static func run(_ work: @MainActor @escaping () -> Void) {
+        let fire: @MainActor () -> Void = {
+            // Respect Reduce Motion — people who enable it generally want less buzz too. One
+            // guard here covers every Haptics call across the app. (Reading this flag is itself
+            // main-actor isolated, so it lives inside the isolated closure.)
+            guard !UIAccessibility.isReduceMotionEnabled else { return }
+            work()
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { fire() }
+        } else {
+            Task { @MainActor in fire() }
+        }
     }
 }
