@@ -1008,7 +1008,11 @@ final class AppState: ObservableObject {
             id: item.id,
             title: NotificationCopy.title(for: item),
             body: NotificationCopy.body(for: item),
-            reviewID: item.id
+            reviewID: item.id,
+            // Frigate's AI rating, when this review already carries a summary. Most won't at
+            // banner time (the summary is generated after the review ends), and .routine is the
+            // right default — an unrated alert must look normal, never alarming.
+            level: ThreatLevel(raw: item.data?.metadata?.potentialThreatLevel)
         )
 
         if let client, let session {

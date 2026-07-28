@@ -5,6 +5,11 @@ struct LiveBannerModel: Identifiable, Equatable {
     let title: String
     let body: String
     let reviewID: String
+    /// Frigate's AI rating for this review, when it already has one. iOS gives no API to colour a
+    /// notification banner, so this is where good-vs-bad becomes visible: in-app, the toast takes
+    /// the level's colour and icon. Defaults to routine so a review without a summary looks
+    /// exactly as it always did.
+    var level: ThreatLevel = .routine
 }
 
 /// Transient toast shown when a new alert-severity review arrives while the app
@@ -43,10 +48,12 @@ struct LiveAlertBanner: View {
         } label: {
             HStack(spacing: GlassTheme.Space.m) {
                 ZStack {
-                    Circle().fill(GlassTheme.orange.opacity(0.18)).frame(width: 42, height: 42)
-                    Image(systemName: "bell.badge.fill")
+                    Circle().fill(banner.level.tint.opacity(0.18)).frame(width: 42, height: 42)
+                    // Icon AND colour both carry the meaning — never colour alone, so this still
+                    // reads under Increase Contrast and for colour-blind users.
+                    Image(systemName: banner.level == .routine ? "bell.badge.fill" : banner.level.symbol)
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(GlassTheme.orange)
+                        .foregroundStyle(banner.level.tint)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(banner.title)
