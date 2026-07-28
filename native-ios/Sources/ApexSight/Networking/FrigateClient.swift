@@ -448,6 +448,32 @@ struct FrigateClient {
         baseURL.appending(path: "vod/event/\(id)/master.m3u8")
     }
 
+    /// Longest event we'll hand to `/vod/event/<id>` before clamping to a time range instead.
+    private static let maxEventClipSeconds: Double = 120
+    /// Lead-in kept before the event's start so the object doesn't pop in on the first frame.
+    private static let eventClipLeadIn: Double = 5
+
+    /// Playback URL for an event, clamped so a long-lived tracked object doesn't open as an
+    /// hours-long clip.
+    ///
+    /// `/vod/event/<id>` serves the object's ENTIRE lifetime, and Frigate keeps a stationary
+    /// object alive for as long as it can see it — measured on this server, a parked car on the
+    /// driveway produced a single 37.8-minute event (528 segments), and 12 of 199 events in 24h
+    /// ran over two minutes. Opening that endpoint means waiting on a 38-minute playlist whose
+    /// interesting moment is at the very start, which reads as broken footage.
+    ///
+    /// Anything under the cap keeps using Frigate's purpose-built event endpoint, which is
+    /// frame-accurate to the object. Only long events fall back to a time-range VOD anchored a
+    /// few seconds before the object first appeared — the part that's actually worth seeing.
+    func eventPlaybackURL(id: String, camera: String, start: Double?, end: Double?) -> URL {
+        guard let start, let end, end - start > Self.maxEventClipSeconds else {
+            return eventVodURL(id: id)
+        }
+        return recordingHLSURL(camera: camera,
+                               start: start - Self.eventClipLeadIn,
+                               end: start + Self.maxEventClipSeconds)
+    }
+
     /// Lightweight preview "frames" Frigate keeps for a recording range — its documented
     /// `GET api/preview/<camera>/start/<start>/end/<end>/frames`. Returns the timestamps of
     /// the low-res scrub-preview frames so a timeline can show a richer still while dragging.

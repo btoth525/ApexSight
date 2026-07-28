@@ -446,12 +446,16 @@ struct EventDetailView: View {
                 // Keyed to THIS event + a forced load so a reused detail view can never
                 // play the previous event's clip.
                 guard hasClip, let client = appState.client else { clipModel.stop(); return }
-                // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`) —
-                // the documented, iOS-recommended way to play an event back.
+                // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`),
+                // except for very long-lived objects — a parked car can hold one event open for
+                // over half an hour, and that endpoint serves the whole span (see
+                // `eventPlaybackURL`).
                 // loadIfNeeded is URL-keyed: a reused view for a NEW event loads fresh, but a
                 // re-appear for the SAME event (returning from fullscreen expand or a push)
                 // keeps the existing playback instead of reloading + ghost-auto-playing.
-                clipModel.loadIfNeeded(client: client, url: client.eventVodURL(id: event.id))
+                clipModel.loadIfNeeded(client: client, url: client.eventPlaybackURL(
+                    id: event.id, camera: event.camera,
+                    start: event.startTime, end: event.endTime))
             }
             .onDisappear { if !mediaExpanded { clipModel.stop() } }
         }
