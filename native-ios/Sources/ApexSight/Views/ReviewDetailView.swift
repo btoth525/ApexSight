@@ -34,6 +34,14 @@ struct ReviewDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     hero
+                    // Frigate's review-level GenAI story sits directly under the clip: it answers
+                    // "should I care about this one", which is the question you have while the
+                    // video is still playing. The per-object description below answers the
+                    // different question "who was that", so it stays after it.
+                    if let summary = review.data?.metadata, summary.hasContent {
+                        ReviewStoryCard(summary: summary)
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                    }
                     if let reviewAIDescription {
                         aiCard(reviewAIDescription)
                             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))

@@ -232,6 +232,11 @@ struct ReviewData: Codable, Hashable {
     /// Truck"]` that belongs to the car, not `objects.first`) — use this to attribute a
     /// sub-label to a specific object instead of guessing `objects.first`.
     let verifiedObjects: [String]?
+    /// Frigate 0.18's GenAI **review summary** — a narrative of what happened across the whole
+    /// review, with a threat rating. This is a different feature from per-object descriptions
+    /// (which answer "who was that"); this one answers "should I care about this one".
+    /// Nil until `review.genai` is enabled server-side, and on every review recorded before it was.
+    let metadata: ReviewAISummary?
 
     enum CodingKeys: String, CodingKey {
         case detections
@@ -241,6 +246,51 @@ struct ReviewData: Codable, Hashable {
         case audio
         case thumbTime = "thumb_time"
         case verifiedObjects = "verified_objects"
+        case metadata
+    }
+}
+
+/// Frigate's GenAI narrative for a review item (`review.data.metadata`).
+///
+/// Every field is optional on purpose: the summary is produced by a language model, older reviews
+/// have none at all, and a half-written record must degrade to "show what we have" rather than
+/// failing the whole review's decode and blanking the tab.
+struct ReviewAISummary: Codable, Hashable {
+    /// Headline, e.g. "Daytime Package Delivery at Residence".
+    let title: String?
+    /// One-sentence version — what the row and the notification want.
+    let shortSummary: String?
+    /// Full narrative paragraph.
+    let scene: String?
+    /// Beat-by-beat observations, in order. Reads as a timeline.
+    let observations: [String]?
+    /// The model's confidence in its own reading, 0…1.
+    let confidence: Double?
+    /// 0 = routine. Higher means the model thinks it's worth a look. Drives the badge.
+    let potentialThreatLevel: Int?
+    /// Populated when the activity matched one of the household's `additional_concerns`.
+    let otherConcerns: String?
+    /// Frigate's own human-readable stamp, e.g. "Monday, 01:28 PM".
+    let time: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, scene, observations, confidence, time
+        case shortSummary
+        case potentialThreatLevel = "potential_threat_level"
+        case otherConcerns = "other_concerns"
+    }
+
+    /// True when there's actually something worth rendering.
+    var hasContent: Bool {
+        !(title ?? "").isEmpty || !(shortSummary ?? "").isEmpty
+            || !(scene ?? "").isEmpty || !(observations ?? []).isEmpty
+    }
+
+    /// The single best one-liner available, falling back through the fields.
+    var headline: String? {
+        [title, shortSummary, scene]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 }
 

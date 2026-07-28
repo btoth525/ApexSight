@@ -45,8 +45,35 @@ struct ReviewRow: View {
         .frame(height: 200)
         .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         .overlay(alignment: .topLeading) { severityBadge.padding(10) }
+        // Frigate's GenAI story badge, opposite the severity badge. Deliberately shown ONLY when
+        // the model rated the activity above routine — badging every delivery and passing car
+        // would just train you to ignore it (see ThreatLevel.deservesRowBadge).
+        .overlay(alignment: .topTrailing) { storyBadge.padding(10) }
         .cardStroke()
         .shadow(color: .black.opacity(0.22), radius: 9, y: 4)
+    }
+
+    /// Badge for Frigate's review-level GenAI rating, shown only above routine so the list stays
+    /// scannable. Icon + word, never colour alone.
+    @ViewBuilder
+    private var storyBadge: some View {
+        if let meta = review.data?.metadata, meta.hasContent {
+            let level = ThreatLevel(raw: meta.potentialThreatLevel)
+            if level.deservesRowBadge {
+                HStack(spacing: 4) {
+                    Image(systemName: level.symbol)
+                        .font(.caption2.weight(.bold))
+                    Text(level.label)
+                        .font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, GlassTheme.Space.s)
+                .padding(.vertical, 4)
+                .background(level.tint.opacity(0.9), in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("AI rating: \(level.label)")
+            }
+        }
     }
 
     /// Frigate keeps upgrading the detection's snapshot to the best frame while the review is
