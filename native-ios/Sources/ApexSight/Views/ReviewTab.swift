@@ -197,12 +197,22 @@ struct ReviewTab: View {
                                         }
                                     }
                                 } header: {
+                                    // A plain-list section header is STICKY and, with a clear
+                                    // background, cards scroll straight under it — the count was
+                                    // colliding with the first card's ALERT badge. An opaque strip
+                                    // (plus insets matching the rows) keeps it readable while
+                                    // scrolling instead of letting artwork bleed through the text.
                                     Text("^[\(visible.count) item](inflect: true)")
                                         .font(.footnote.weight(.medium))
                                         .foregroundStyle(GlassTheme.secondary)
                                         .monospacedDigit()
                                         .textCase(nil)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 6)
+                                        .background(GlassTheme.background)
                                 }
+                                .listRowInsets(EdgeInsets())
                             }
                             .listStyle(.plain)
                             .scrollContentBackground(.hidden)

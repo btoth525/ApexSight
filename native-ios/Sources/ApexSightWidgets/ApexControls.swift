@@ -65,11 +65,15 @@ struct ApexArmControl: ControlWidget {
                 isOn: ArmStateStore.notificationsActive,
                 action: ApexArmToggleIntent()
             ) {
-                Label(ArmStateStore.notificationsActive ? "Armed" : "Disarmed",
-                      systemImage: ArmStateStore.notificationsActive ? "shield.fill" : "shield.slash.fill")
+                // Says "Alerts", not "Armed". This toggle is the app's NOTIFICATION gate — it does
+                // not arm or disarm the house (that's House Mode / Alarmo, the control above).
+                // Labelling it "Armed" let a muted-alerts state read as a secured house, which is
+                // the most dangerous way for a security app to be ambiguous.
+                Label(ArmStateStore.notificationsActive ? "Alerts on" : "Alerts off",
+                      systemImage: ArmStateStore.notificationsActive ? "bell.fill" : "bell.slash.fill")
             }
         }
-        .displayName("Arm ApexSight")
-        .description("Arm or disarm your camera alerts.")
+        .displayName("ApexSight Alerts")
+        .description("Turn camera alerts on or off. Does not arm the house — use House Mode for that.")
     }
 }

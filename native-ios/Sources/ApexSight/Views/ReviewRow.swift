@@ -44,11 +44,18 @@ struct ReviewRow: View {
         .frame(maxWidth: .infinity)
         .frame(height: 200)
         .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
-        .overlay(alignment: .topLeading) { severityBadge.padding(10) }
-        // Frigate's GenAI story badge, opposite the severity badge. Deliberately shown ONLY when
-        // the model rated the activity above routine — badging every delivery and passing car
-        // would just train you to ignore it (see ThreatLevel.deservesRowBadge).
-        .overlay(alignment: .topTrailing) { storyBadge.padding(10) }
+        // Severity and the AI rating sit TOGETHER at the top-left: "what kind of event" then "how
+        // serious", which reads as one thought. The top-RIGHT is the dismiss button's — putting
+        // the rating there stacked the two on top of each other.
+        .overlay(alignment: .topLeading) {
+            HStack(spacing: 6) {
+                severityBadge
+                storyBadge
+            }
+            .padding(10)
+            // Never grow under the dismiss button (44pt + its 10pt padding) at large Dynamic Type.
+            .padding(.trailing, 54)
+        }
         .cardStroke()
         .shadow(color: .black.opacity(0.22), radius: 9, y: 4)
     }

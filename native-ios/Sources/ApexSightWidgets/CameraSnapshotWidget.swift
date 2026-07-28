@@ -334,20 +334,39 @@ private struct MediumWidgetView: View {
     }
 }
 
-/// Always-present footer strip: current arm state (read straight from the app group) — keeps the
-/// widget's right column full and glanceable even when there's no recent activity.
+/// Always-present footer strip: the current HOUSE mode — keeps the widget's right column full and
+/// glanceable even when there's no recent activity.
+///
+/// This used to read `apex.armMode` — the app's own NOTIFICATION gate — and render it as
+/// "Armed · Away". Two things were wrong with that. The gate is not the house mode: the house can
+/// be in Home while the gate reads away, so the widget confidently contradicted the app. And its
+/// `?? "away"` default meant an unset key ASSERTED "Armed · Away" — a security widget claiming an
+/// arm state it does not actually know, which is the worst possible direction to guess in.
+///
+/// Now it shows `SharedHouseMode` (the real Alarmo mode, synced from the relay) and says "Unknown"
+/// rather than inventing one. The notification gate is still surfaced, but as its own distinct
+/// idea — "Alerts off" — because muting alerts is not the same as disarming the house.
 private struct ArmStatusFooter: View {
-    private var armMode: String {
-        UserDefaults(suiteName: ApexAppGroup.identifier)?.string(forKey: "apex.armMode") ?? "away"
+    private var houseMode: String { SharedHouseMode.mode }
+    private var alertsOff: Bool { !ArmStateStore.notificationsActive }
+    private var known: Bool { !houseMode.isEmpty }
+
+    private var label: String {
+        if alertsOff { return "Alerts off" }
+        return known ? SharedHouseMode.title(houseMode) : "Unknown"
     }
-    private var isDisarmed: Bool { armMode == "disarmed" }
+
+    private var symbol: String {
+        if alertsOff { return "bell.slash.fill" }
+        return known ? SharedHouseMode.symbol(houseMode) : "shield.lefthalf.filled"
+    }
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: isDisarmed ? "shield.slash.fill" : "shield.fill")
+            Image(systemName: symbol)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(isDisarmed ? .white.opacity(0.5) : WidgetTheme.accent)
-            Text(isDisarmed ? "Disarmed" : "Armed · \(armMode.capitalized)")
+                .foregroundStyle(alertsOff || !known ? .white.opacity(0.5) : WidgetTheme.accent)
+            Text(label)
                 .font(.system(size: 11, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white.opacity(0.85))
             Spacer()
