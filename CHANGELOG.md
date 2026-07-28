@@ -5,15 +5,57 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
-## [Unreleased]
+## Builds 213–214 (2026-07-26/27) — a Focus stops silencing the household
 
-### Planned
-- Full-event notification GIF via a follow-up "final update" push (collapse-id).
-- Stability hardening: automatic re-login on expired sessions, safer data refresh,
-  reliable Keychain writes, notification-extension download timeout.
-- Reliability: relay/bridge retry, smarter alert de-duplication, wider background-refresh coverage.
-- Polish: loading skeletons, media retry buttons, persisted filters, accessibility & form validation.
-- New surfaces: Apple Watch companion, Siri Shortcuts / App Intents, CarPlay.
+### Fixed
+- **One phone's iOS Focus no longer silences everyone's cameras.** The Focus filter wrote the
+  *household* gate, so a partner turning on Do Not Disturb muted every phone for eight hours with
+  nothing on screen explaining it. Focus mutes are now per-device (`/v1/focus-mute`), and a phone
+  muted by its own Focus says so. Requires add-on 1.16.0+.
+- **The household gate records who silenced it and when** — the banner now reads "Set by
+  Brandons Iphone at 2:16 PM" instead of leaving you to guess.
+- **A cold launch no longer re-imposes a stale local snooze** over household state, and clearing
+  the snooze on one phone is adopted by the other. The sync marker is split into "attempted"
+  (in-memory) and "confirmed" (persisted, written only on a 2xx) so neither over- nor under-posting
+  is possible; both directions are pinned by `GateSyncPolicy` tests.
+- **Resuming alerts retries** instead of failing silently — dropping that request was fail-closed.
+- Picture-in-Picture stops when the biometric lock engages.
+
+### Changed
+- App Intent metadata is `static let`, removing 174 strict-concurrency warnings (317 → 132 under
+  `SWIFT_STRICT_CONCURRENCY=complete`); `Haptics` states the main-actor isolation it always relied
+  on. The normal build remains at **zero warnings**.
+- Explore's filter chips stop rebuilding their option sets twice per render.
+- Verified, not assumed: no heap growth across sustained tab switching, and App Intents
+  registration is byte-identical before and after the metadata change.
+
+## Builds 188–212 (2026-07-12 → 07-18) — Frigate 0.18, doorbell talk, hardening
+
+### Added
+- **Live two-way talk** at the doorbell — hold to talk, mic published over WebRTC and piped to the
+  Aqara speaker natively over the LAN. Plus a soundboard and TTS replies.
+- **Dual-URL auto-switch** (home vs away) with host-only ICE on the LAN, and stream pre-warm during
+  a doorbell ring.
+- Apple Watch, CarPlay and Apple TV companions; Siri Shortcuts / App Intents; Control Center
+  controls; daily recap.
+
+### Fixed
+- **Frigate 0.18 removed the nginx HLS proxy route**, breaking live view. Live is now
+  WebRTC-primary with an MJPEG fallback, and the app probes so 0.17 behaviour is unchanged.
+- Notification copy no longer mis-pairs an object with an unrelated sub-label; the widget hero
+  image matches its caption; incidents no longer cluster unrelated cameras.
+- The "Snooze Alerts" Home Screen quick action now asks for confirmation — an accidental
+  long-press used to silence the whole household for an hour instantly.
+- Keychain hardening: the app has its own private access group, and the pairing code moved out of
+  a plaintext app-group plist.
+- Accessibility: Reduce Transparency and Increase Contrast are honoured app-wide; the lock screen
+  scales with Dynamic Type; security-relevant text is off the lowest contrast tier.
+
+### Removed
+- Away/wall keep-warm streaming — measured *slower*, not faster, because the extra consumers
+  competed with the camera actually being watched.
+
+## Repository cleanup
 
 ### Removed
 - Legacy Expo / React Native prototype (`app/`, `components/`, `stores/`, `hooks/`,

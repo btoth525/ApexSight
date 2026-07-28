@@ -13,9 +13,11 @@ pass 3, do a pass 4. Keep going until 3 consecutive passes find nothing to fix.
 test it against the real Frigate on the simulator (see "Testing" below) → **build + upload to
 TestFlight** (`scratchpad/ship.sh` pattern: bump `CURRENT_PROJECT_VERSION`, archive, upload via
 `xcodebuild -exportArchive` with `destination=upload` + `-allowProvisioningUpdates`, which auth's
-off the signed-in Xcode session — no API key needed) → commit + push to `feature/ios27-platform` →
-next. Always `xcodegen generate` after bumping `CURRENT_PROJECT_VERSION` (else the archive ships the
-old build number). Never run two archives at once. Bump the build number every TestFlight upload.
+off the signed-in Xcode session — no API key needed) → commit + push to `feature/ios27-platform`
+(the default branch — see Git below) → next. Always `xcodegen generate` after bumping
+`CURRENT_PROJECT_VERSION` (else the archive ships the old build number). Never run two archives at
+once. Bump the build number every TestFlight upload. **Ask before uploading** — TestFlight is
+irreversible and lands on two real phones; do the fix/commit/push loop autonomously, then stop.
 
 **⚠️ SHIP WITH THE RELEASE SDK (Xcode 26.5) — Apple now HARD-BLOCKS the iOS 27 beta SDK at upload
 (confirmed 2026-07-14).** As of the April 28 2026 rule, App Store Connect requires the released SDK
@@ -304,17 +306,29 @@ Current watch-items (from the build-158 streaming work):
 
 ## Git
 
-Active development branch: **`feature/ios27-platform`** (all recent builds, incl. 158, ship from here;
-merged to `main` via PR). Repo root is `~/apexsight` (NOT `native-ios`), remote `btoth525/ApexSight`.
+**`feature/ios27-platform` IS the default branch** (set 2026-07-27). It is the trunk — commit and
+ship straight from it; there is no `main` and no PR step. Repo root is `~/apexsight` (NOT
+`native-ios`), remote `btoth525/ApexSight`.
 
-**Never `git add -A`** — the tree has large untracked dirs (`node_modules/`, `.expo/`, `ios/`, an embedded
-`native-ios/apexsight-ha-addon/`) that make it stall. Stage explicit paths only:
+> History: the default used to be `Main-Build`, which stopped at build 99 on 2026-06-30 while all
+> real work continued here — by the switch this branch was 185 commits ahead and 0 behind.
+> `Main-Build` is kept as a pre-switch safety net; nothing should be pushed to it.
+
+Staging is now safe: `.gitignore` covers `node_modules/`, `.expo/`, `/ios/`, `native-ios/scratchpad/`
+and the embedded `native-ios/apexsight-ha-addon/` clone (~736 MB that used to be one `git add -A`
+away from being committed). Prefer explicit paths anyway — it keeps commits reviewable:
 
 ```bash
-git add native-ios/Sources/... native-ios/project.yml   # explicit paths, never -A
+git add native-ios/Sources/... native-ios/project.yml   # explicit paths read better in review
 git commit -m "descriptive message"
 git push origin feature/ios27-platform
 ```
+
+**The HA add-on is a SEPARATE repo** at `native-ios/apexsight-ha-addon/`
+(`btoth525/apexsight-ha-addon`, branch `main`) — relay + bridge changes are committed and pushed
+there, not here. Its live version is what HA runs; bump `apexsight-push/config.yaml` and its
+CHANGELOG on every functional change, then deploy (see the store-cache note in the `apexsight-ios`
+memory — `ws_command: supervisor/api` → `POST /store/reload` is what forces HA to see a new version).
 
 ---
 
