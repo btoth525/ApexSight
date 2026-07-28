@@ -38,8 +38,10 @@ struct ReviewStoryCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if let concerns = summary.otherConcerns?.trimmed, !concerns.isEmpty {
-                    concernRow(concerns)
+                let concerns = (summary.otherConcerns ?? [])
+                    .map(\.trimmed).filter { !$0.isEmpty }
+                if !concerns.isEmpty {
+                    concernRow(concerns.joined(separator: " · "))
                 }
 
                 if hasDetail {

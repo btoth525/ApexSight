@@ -133,4 +133,80 @@ struct ReviewStoryTests {
         #expect(ThreatLevel.routine < ThreatLevel.notable)
         #expect(ThreatLevel.notable < ThreatLevel.concerning)
     }
+
+    // MARK: - Regression: the decode failure that blanked the Review tab
+
+    @Test("other_concerns as an ARRAY decodes — this exact shape emptied the Review tab")
+    func otherConcernsArrayDecodes() throws {
+        // Modelled as String? from a sample where it was null. Once the feature produced real
+        // data Frigate sent an array, the type mismatch threw, and the throw propagated up
+        // through ReviewData and FrigateReviewItem — taking the WHOLE review list with it.
+        let review = try decodeReview("""
+        {"id":"1.0-e","camera":"Front_Driveway","start_time":1.0,"severity":"alert",
+         "has_been_reviewed":false,
+         "data":{"objects":["person"],
+           "metadata":{"title":"Person at the driveway","shortSummary":"Someone approached a car.",
+             "other_concerns":["A person looking into vehicles"],
+             "potential_threat_level":1,"confidence":0.8}}}
+        """)
+        let m = try #require(review.data?.metadata)
+        #expect(m.otherConcerns == ["A person looking into vehicles"])
+        #expect(m.potentialThreatLevel == 1)
+    }
+
+    @Test("A bare string for other_concerns is still accepted")
+    func otherConcernsStringDecodes() throws {
+        let review = try decodeReview("""
+        {"id":"1.0-f","camera":"doorbell","start_time":1.0,"severity":"alert",
+         "has_been_reviewed":false,
+         "data":{"metadata":{"title":"T","other_concerns":"Trying door handles"}}}
+        """)
+        #expect(review.data?.metadata?.otherConcerns == ["Trying door handles"])
+    }
+
+    @Test("A wrong-typed FIELD degrades to nil instead of failing the review")
+    func badFieldDegrades() throws {
+        let review = try decodeReview("""
+        {"id":"1.0-g","camera":"doorbell","start_time":1.0,"severity":"alert",
+         "has_been_reviewed":false,
+         "data":{"objects":["person"],
+           "metadata":{"title":"Still here","potential_threat_level":"high",
+             "confidence":"very","observations":"not-a-list"}}}
+        """)
+        let m = try #require(review.data?.metadata)
+        #expect(m.title == "Still here", "the good field survives")
+        #expect(m.potentialThreatLevel == nil)
+        #expect(m.confidence == nil)
+        #expect(m.observations == nil)
+        #expect(ThreatLevel(raw: m.potentialThreatLevel) == .routine, "and it fails quiet")
+    }
+
+    @Test("metadata of an entirely wrong SHAPE can't cost the user their alerts")
+    func badShapeStillYieldsReview() throws {
+        for bad in ["\"a string\"", "42", "[1,2,3]"] {
+            let review = try decodeReview("""
+            {"id":"1.0-h","camera":"doorbell","start_time":1.0,"severity":"alert",
+             "has_been_reviewed":false,"data":{"objects":["car"],"metadata":\(bad)}}
+            """)
+            #expect(review.data?.metadata == nil)
+            #expect(review.data?.objects == ["car"], "the review itself still decodes")
+        }
+    }
+
+    @Test("A whole ARRAY of reviews survives one bad member — the actual failure mode")
+    func arrayOfReviewsSurvivesOneBadMember() throws {
+        // The tab renders a decoded ARRAY. Before the fix, one review with an array-typed
+        // other_concerns threw and emptied the entire list.
+        let json = """
+        [{"id":"a","camera":"doorbell","start_time":1.0,"severity":"alert","has_been_reviewed":false,
+          "data":{"objects":["person"]}},
+         {"id":"b","camera":"Front_Driveway","start_time":2.0,"severity":"alert","has_been_reviewed":false,
+          "data":{"objects":["car"],"metadata":{"title":"T","other_concerns":["x"],"confidence":"bad"}}},
+         {"id":"c","camera":"Garage","start_time":3.0,"severity":"alert","has_been_reviewed":false,
+          "data":{"objects":["dog"]}}]
+        """
+        let items = try JSONDecoder().decode([FrigateReviewItem].self, from: Data(json.utf8))
+        #expect(items.count == 3, "all three reviews must survive")
+        #expect(items[1].data?.metadata?.otherConcerns == ["x"])
+    }
 }

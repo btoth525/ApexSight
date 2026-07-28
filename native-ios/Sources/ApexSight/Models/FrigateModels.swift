@@ -248,6 +248,37 @@ struct ReviewData: Codable, Hashable {
         case verifiedObjects = "verified_objects"
         case metadata
     }
+
+    init(detections: [String]?, objects: [String]?, subLabels: [String]?, zones: [String]?,
+         audio: [String]?, thumbTime: Double?, verifiedObjects: [String]?,
+         metadata: ReviewAISummary?) {
+        self.detections = detections
+        self.objects = objects
+        self.subLabels = subLabels
+        self.zones = zones
+        self.audio = audio
+        self.thumbTime = thumbTime
+        self.verifiedObjects = verifiedObjects
+        self.metadata = metadata
+    }
+
+    /// The real fields decode normally; `metadata` is isolated behind `try?`.
+    ///
+    /// Belt and braces with ReviewAISummary's own lenient decoder: that one survives a bad FIELD,
+    /// this one survives `metadata` being an entirely unexpected SHAPE (a string, a number, an
+    /// array). The AI summary is a nice-to-have bolted onto a security feed — it must never be
+    /// able to cost the user their alerts.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        detections = try c.decodeIfPresent([String].self, forKey: .detections)
+        objects = try c.decodeIfPresent([String].self, forKey: .objects)
+        subLabels = try c.decodeIfPresent([String].self, forKey: .subLabels)
+        zones = try c.decodeIfPresent([String].self, forKey: .zones)
+        audio = try c.decodeIfPresent([String].self, forKey: .audio)
+        thumbTime = try c.decodeIfPresent(Double.self, forKey: .thumbTime)
+        verifiedObjects = try c.decodeIfPresent([String].self, forKey: .verifiedObjects)
+        metadata = (try? c.decodeIfPresent(ReviewAISummary.self, forKey: .metadata)) ?? nil
+    }
 }
 
 /// Frigate's GenAI narrative for a review item (`review.data.metadata`).
@@ -269,7 +300,12 @@ struct ReviewAISummary: Codable, Hashable {
     /// 0 = routine. Higher means the model thinks it's worth a look. Drives the badge.
     let potentialThreatLevel: Int?
     /// Populated when the activity matched one of the household's `additional_concerns`.
-    let otherConcerns: String?
+    ///
+    /// Frigate sends this as an ARRAY of strings, but `null` when nothing matched — which is all
+    /// this field ever was until the feature produced real data, so it was first modelled as a
+    /// `String?`. That mismatch threw on decode and took the whole review array with it, blanking
+    /// the Review tab. Decoded leniently now: array, bare string, or absent all work.
+    let otherConcerns: [String]?
     /// Frigate's own human-readable stamp, e.g. "Monday, 01:28 PM".
     let time: String?
 
@@ -278,6 +314,45 @@ struct ReviewAISummary: Codable, Hashable {
         case shortSummary
         case potentialThreatLevel = "potential_threat_level"
         case otherConcerns = "other_concerns"
+    }
+
+    init(title: String?, shortSummary: String?, scene: String?, observations: [String]?,
+         confidence: Double?, potentialThreatLevel: Int?, otherConcerns: [String]?, time: String?) {
+        self.title = title
+        self.shortSummary = shortSummary
+        self.scene = scene
+        self.observations = observations
+        self.confidence = confidence
+        self.potentialThreatLevel = potentialThreatLevel
+        self.otherConcerns = otherConcerns
+        self.time = time
+    }
+
+    /// Decoded field-by-field with `try?` on purpose.
+    ///
+    /// This whole struct is filled in by a language model, and Frigate's own shape has already
+    /// changed once under us (`other_concerns` went from `null` to an array). A single surprising
+    /// type must degrade THAT FIELD to nil — never throw, because a throw here propagates up
+    /// through ReviewData and FrigateReviewItem and takes the entire review list with it. That is
+    /// exactly how the Review tab went blank, and no future field is allowed to do it again.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        shortSummary = try? c.decodeIfPresent(String.self, forKey: .shortSummary)
+        scene = try? c.decodeIfPresent(String.self, forKey: .scene)
+        observations = (try? c.decodeIfPresent([String].self, forKey: .observations)) ?? nil
+        confidence = try? c.decodeIfPresent(Double.self, forKey: .confidence)
+        potentialThreatLevel = try? c.decodeIfPresent(Int.self, forKey: .potentialThreatLevel)
+        time = try? c.decodeIfPresent(String.self, forKey: .time)
+        // Array is what Frigate actually sends; a bare string is accepted so a provider that
+        // returns one doesn't silently drop the concern.
+        if let list = try? c.decodeIfPresent([String].self, forKey: .otherConcerns) {
+            otherConcerns = list
+        } else if let single = try? c.decodeIfPresent(String.self, forKey: .otherConcerns) {
+            otherConcerns = [single]
+        } else {
+            otherConcerns = nil
+        }
     }
 
     /// True when there's actually something worth rendering.
