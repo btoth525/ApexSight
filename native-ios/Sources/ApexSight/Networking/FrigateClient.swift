@@ -848,8 +848,17 @@ struct FrigateClient {
     }
 
     func playerItem(for url: URL) -> AVPlayerItem {
-        seedCookie(for: url)
-        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": authHeaders])
+        let cookie = seedCookie(for: url)
+        var options: [String: Any] = ["AVURLAssetHTTPHeaderFieldsKey": authHeaders]
+        // Belt-and-braces, NOT a fix for an observed failure: recorded playback against the
+        // auth-enforcing public host was verified working with headers alone. But
+        // `AVURLAssetHTTPHeaderFieldsKey` is undocumented and is only guaranteed to decorate the
+        // first request (the master playlist) — child playlists and media segments are fetched by
+        // AVFoundation's own loader, which doesn't read `HTTPCookieStorage.shared` either.
+        // `AVURLAssetHTTPCookiesKey` is the documented way to attach credentials to every request
+        // an asset makes, so it costs nothing and removes the dependency on undocumented behaviour.
+        if let cookie { options[AVURLAssetHTTPCookiesKey] = [cookie] }
+        let asset = AVURLAsset(url: url, options: options)
         return AVPlayerItem(asset: asset)
     }
 
