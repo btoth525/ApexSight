@@ -505,6 +505,10 @@ struct HLSLivePlayerView: View {
     /// The wall tile's already-decoding player, shown INSTANTLY while this view's own
     /// full-quality stream connects (zero-latency handoff). Cleared once handoff completes.
     @State private var warmPlayer: AVPlayer?
+    /// The player this view actually published to the system playback UI. Remembered because
+    /// `model.player` is REPLACED on every reconnect, so detaching with the current one after a
+    /// stall left the Now Playing session alive around an orphaned player.
+    @State private var nowPlayingPlayer: AVPlayer?
     @StateObject private var ownPiP = LivePiPController()
     private var pip: LivePiPController { pipController ?? ownPiP }
     @State private var fillMode = false
@@ -1016,7 +1020,16 @@ struct HLSLivePlayerView: View {
                 warmPlayer = nil
             }
             // Stop publishing to the system playback UI when the full-screen viewer closes.
-            if showControls { NowPlayingController.shared.detach(player: model.player) }
+            // Detach the player we ACTUALLY attached, not the current one: HLSLiveModel.connect()
+            // builds a fresh AVPlayer on every reconnect, so closing the viewer while a stalled
+            // camera was reconnecting passed a player the session had never seen — detach's
+            // identity guard returned early and the Lock Screen / Control Center / CarPlay kept
+            // showing a live "<Camera> · Live" transport card for a gone view, pinning the old
+            // player for the session and letting Play resume a headless decode.
+            if showControls {
+                NowPlayingController.shared.detach(player: nowPlayingPlayer)
+                nowPlayingPlayer = nil
+            }
             if persistent {
                 if model.player == nil {
                     // Disappeared before the gate handed us a slot (player never built), so
@@ -1107,6 +1120,7 @@ struct HLSLivePlayerView: View {
                     NowPlayingController.shared.attach(
                         player: player, title: titleize(camera.name), subtitle: "Live", isLive: true
                     )
+                    nowPlayingPlayer = player
                 }
             case .failed:
                 releaseGate(); fallToMJPEG()                                          // gave up — free + MJPEG
