@@ -102,7 +102,12 @@ final class FrigateEventStream {
         if useQueryTokenFallback, let token = client.streamToken, let reqURL = request.url,
            var components = URLComponents(url: reqURL, resolvingAgainstBaseURL: false) {
             components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "token", value: token)]
-            if let url = components.url { request = URLRequest(url: url) }
+            // Mutate the URL in place. Rebuilding the request threw away the Authorization,
+            // Cookie and X-CSRF-TOKEN headers webSocketRequest() had just applied, so the
+            // fallback attempt was strictly LESS authenticated than the one that failed — and
+            // since the flag only clears on a received message, an auth-enforcing host could
+            // never recover for the rest of the session.
+            if let url = components.url { request.url = url }
         }
 
         let socket = urlSession.webSocketTask(with: request)
