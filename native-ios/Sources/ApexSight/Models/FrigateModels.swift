@@ -97,6 +97,10 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     /// match). `searchSource` is "thumbnail" or "description".
     let searchDistance: Double?
     let searchSource: String?
+    /// The moment (`data.snapshot_frame_time`) the object's snapshot was captured. Frigate
+    /// re-chooses this frame for as long as the track lives, so on a long-lived object it can
+    /// sit far outside the review that referenced it — see `ReviewStillPolicy`.
+    let snapshotFrameTime: Double?
     /// Bounding box in pixels [x1, y1, x2, y2] from the WebSocket event stream.
     /// Pair with `frameWidth`/`frameHeight` to get 0-1 normalized overlay coords.
     let box: [Double]?
@@ -132,6 +136,7 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case description
         case searchDistance = "search_distance"
         case searchSource = "search_source"
+        case snapshotFrameTime = "snapshot_frame_time"
         case box
         case frameWidth = "width"
         case frameHeight = "height"
@@ -148,6 +153,7 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case score
         case topScore = "top_score"
         case description
+        case snapshotFrameTime = "snapshot_frame_time"
     }
 
     init(from decoder: Decoder) throws {
@@ -178,12 +184,16 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         // score / top_score / description can be top-level OR nested under `data`
         // (the /events/search response nests them) — read both, preferring top-level.
         var dataScore: Double?, dataTopScore: Double?, dataDescription: String?
+        var dataSnapshotFrameTime: Double?
         if let dataOuter = try? decoder.container(keyedBy: DataOuterKeys.self),
            let dataC = try? dataOuter.nestedContainer(keyedBy: DataKeys.self, forKey: .data) {
             dataScore = try? dataC.decodeIfPresent(Double.self, forKey: .score)
             dataTopScore = try? dataC.decodeIfPresent(Double.self, forKey: .topScore)
             dataDescription = try? dataC.decodeIfPresent(String.self, forKey: .description)
+            dataSnapshotFrameTime = try? dataC.decodeIfPresent(Double.self, forKey: .snapshotFrameTime)
         }
+        snapshotFrameTime = ((try? c.decodeIfPresent(Double.self, forKey: .snapshotFrameTime)) ?? nil)
+            ?? dataSnapshotFrameTime
         score = ((try? c.decodeIfPresent(Double.self, forKey: .score)) ?? nil) ?? dataScore
         topScore = ((try? c.decodeIfPresent(Double.self, forKey: .topScore)) ?? nil) ?? dataTopScore
         let topDescription = ((try? c.decodeIfPresent(String.self, forKey: .description)) ?? nil)

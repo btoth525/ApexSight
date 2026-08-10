@@ -9,6 +9,10 @@ struct ReviewRow: View {
     private var isAlert: Bool { review.severity == "alert" }
     private var tint: Color { isAlert ? GlassTheme.orange : GlassTheme.cyan }
 
+    /// Set only when this review's own snapshot belongs to a different moment — see
+    /// `ReviewStillPolicy`. Nil (the common case) leaves the image exactly as it was.
+    @State private var pinnedStill: URL?
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: onOpen) { card }
@@ -19,6 +23,12 @@ struct ReviewRow: View {
             // Fast "got it" dismiss — clears the item without opening it.
             dismissButton
                 .padding(10)
+        }
+        // Re-asks while the review is in progress (its best frame is still moving), then once
+        // more when it finishes — the same rule `snapshotStillChanging` applies to the image.
+        .task(id: "\(review.id)|\(snapshotStillChanging)") {
+            pinnedStill = await ReviewStillResolver.shared.pinnedStill(for: review,
+                                                                       client: appState.client)
         }
     }
 
@@ -89,10 +99,17 @@ struct ReviewRow: View {
     /// re-downloaded the same image and flashed the card. (Matches ReviewDetailView.)
     private var snapshotStillChanging: Bool { review.endTime == nil }
 
+    /// The object's own snapshot — correct for most reviews, and the fallback whenever the pinned
+    /// recording frame can't be served (an aged-out segment must degrade to today's image, never
+    /// to an empty card).
+    private var objectStillURL: URL? {
+        appState.client?.reviewSnapshotURL(review: review)
+            ?? appState.client?.reviewThumbnailURL(review: review)
+    }
+
     @ViewBuilder
     private var hero: some View {
-        if let url = appState.client?.reviewSnapshotURL(review: review)
-            ?? appState.client?.reviewThumbnailURL(review: review) {
+        if let url = pinnedStill ?? objectStillURL {
             // The FULL frame, uncropped, on a flat dark background — so ultra-wide cameras show
             // the whole scene (subject never cropped out of frame), with no blown-up zoom.
             // 200pt card → downsample to ~700px so a 4K snapshot doesn't decode full-res
@@ -103,7 +120,9 @@ struct ReviewRow: View {
                 // the review's canonical thumbnail (always exists) instead of a gray placeholder.
                 RemoteImage(url: url, contentMode: .fit, maxPixelSize: 700,
                             revalidate: snapshotStillChanging,
-                            fallbackURL: appState.client?.reviewThumbnailURL(review: review))
+                            fallbackURL: pinnedStill == nil
+                                ? appState.client?.reviewThumbnailURL(review: review)
+                                : objectStillURL)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {

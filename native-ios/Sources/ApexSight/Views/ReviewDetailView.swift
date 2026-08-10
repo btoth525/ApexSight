@@ -16,6 +16,8 @@ struct ReviewDetailView: View {
     /// clip player then (the cover is displaying that very player).
     @State private var mediaExpanded = false
     @State private var detectionEvents: [FrigateEvent] = []
+    /// Set only when this review's own snapshot belongs to a different moment (`ReviewStillPolicy`).
+    @State private var pinnedStill: URL?
     @State private var loadingDetections = false
     @State private var reviewAIDescription: String?
     /// Distinguishes "no summary" from "still fetching", so the AI card can show a skeleton
@@ -73,6 +75,12 @@ struct ReviewDetailView: View {
             )
         }
         .onDisappear { if !mediaExpanded { clipModel.stop() } }
+        // Same rule as `ReviewRow`: re-ask while the review is live, once more when it ends.
+        .task(id: "\(review.id)|\(review.endTime == nil)") {
+            pinnedStill = nil
+            pinnedStill = await ReviewStillResolver.shared.pinnedStill(for: review,
+                                                                       client: appState.client)
+        }
         .task(id: review.id) {
             guard let client = appState.client else { return }
             // Reset prior review's data so a reused view doesn't show review A's summary +
@@ -148,7 +156,9 @@ struct ReviewDetailView: View {
                         // 404s (snapshots disabled on this camera).
                         RemoteImage(url: url, contentMode: .fit,
                                     revalidate: review.endTime == nil,
-                                    fallbackURL: appState.client?.reviewThumbnailURL(review: review))
+                                    fallbackURL: pinnedStill == nil
+                                        ? appState.client?.reviewThumbnailURL(review: review)
+                                        : objectStillURL)
                             .frame(height: 300)
                             .frame(maxWidth: .infinity)
                     } else if let url = appState.client?.latestFrameURL(camera: review.camera) {
@@ -227,10 +237,14 @@ struct ReviewDetailView: View {
         .accessibilityLabel("Loading AI summary")
     }
 
-    private var snapshotURL: URL? {
+    /// The object's own snapshot — right for most reviews, and the fallback when a pinned
+    /// recording frame can't be served.
+    private var objectStillURL: URL? {
         appState.client?.reviewSnapshotURL(review: review)
             ?? appState.client?.reviewThumbnailURL(review: review)
     }
+
+    private var snapshotURL: URL? { pinnedStill ?? objectStillURL }
 
     /// What the fullscreen viewer shows — it MUST mirror exactly what the hero renders
     /// inline, so expand never opens the wrong medium (a snapshot while watching the

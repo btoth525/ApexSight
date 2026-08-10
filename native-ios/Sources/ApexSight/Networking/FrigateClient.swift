@@ -442,6 +442,17 @@ struct FrigateClient {
         baseURL.appending(path: "vod/\(camera)/start/\(Int(start))/end/\(Int(end))/master.m3u8")
     }
 
+    /// A still pulled from the RECORDING at an exact moment, rather than from a tracked object's
+    /// own best frame. This is the only way to get an image that is guaranteed to belong to the
+    /// moment being described — see `ReviewStillPolicy` for why a review sometimes needs one.
+    /// Full-resolution source, so `height` is a genuine downscale (the 4K driveway camera returns
+    /// ~270 KB at 720 rather than an upscaled detect-stream crop).
+    func recordingFrameURL(camera: String, at time: Double, height: Int = 720) -> URL {
+        baseURL
+            .appending(path: "api/\(camera)/recordings/\(Int(time))/snapshot.jpg")
+            .appending(queryItems: [URLQueryItem(name: "height", value: String(height))])
+    }
+
     /// VOD HLS playlist for a single tracked object / event — Frigate's documented
     /// `/vod/event/<event_id>/master.m3u8`. Purpose-built for event playback on iOS.
     func eventVodURL(id: String) -> URL {
