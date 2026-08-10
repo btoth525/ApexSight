@@ -5,7 +5,7 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
-## Builds 215–223 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
+## Builds 215–224 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
 
 ### Fixed — things the app was telling you that weren't true
 - **Review alerts showed a picture from the wrong day.** A review's still resolved through one of
@@ -76,6 +76,14 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   rating shows as unrated rather than as a green all-clear, because "we don't believe this" and
   "this is normal" are not the same statement. A confident warning about a stranger still comes
   through exactly as before.
+
+### Added — a black box (build 224)
+- **The app now keeps a log of its own errors and sends it to your relay**, so a problem you hit
+  while testing can be looked at afterwards instead of being lost. Until now the app only logged
+  in debug builds, which meant the TestFlight builds you actually use recorded nothing at all.
+  There's a switch in Settings → Diagnostics. It never leaves your household, and tokens, passwords
+  and your pairing code are stripped out *before* anything is written down — not just before it's
+  sent. Needs relay 1.23.0.
 
 ### Added
 - **Frigate's AI review story in the Review tab** — headline, threat level, and the play-by-play
