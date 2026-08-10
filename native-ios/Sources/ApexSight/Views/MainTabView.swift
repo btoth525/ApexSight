@@ -251,6 +251,11 @@ struct MainTabView: View {
             for attempt in 0..<4 where detailSheet == nil {
                 if Task.isCancelled { return }
                 if let sheet = await fetch() {
+                    // Re-check AFTER the suspension. Every synchronous branch of handleDeepLink
+                    // assigns detailSheet without cancelling this task, so a newer alert the user
+                    // tapped while the fetch was in flight (up to ~5.6s) would otherwise be swapped
+                    // out for this older one the moment it resolved.
+                    guard !Task.isCancelled, detailSheet == nil else { return }
                     detailSheet = sheet
                     return
                 }
