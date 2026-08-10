@@ -766,6 +766,10 @@ struct HLSLivePlayerView: View {
         releaseGate()
         model.stop()
         mjpegFailed = false
+        // Worth recording: this is a visible quality drop (full-res live → low-res MJPEG) that the
+        // user experiences but the app never reports as an error, so it would otherwise be
+        // invisible in the log while being one of the commonest "why does it look bad" causes.
+        DiagnosticLog.shared.warning("live", "\(camera.name): fell back to MJPEG (no live pixels in time)")
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = true }
     }
 

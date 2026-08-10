@@ -570,6 +570,7 @@ struct LiveStreamView: View {
         .onChange(of: talk.status) { _, status in
             switch status {
             case .failed(let message):
+                DiagnosticLog.shared.error("talk", "\(camera.name): \(message)")
                 talkErrorDismiss?.cancel()
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { talkError = message }
                 talkErrorDismiss = Task {

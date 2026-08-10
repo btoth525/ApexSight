@@ -109,6 +109,14 @@ struct ApexSightApp: App {
                     appLock.unlock()
                     // Pull preferences from iCloud (no-op until iCloud KVS is enabled).
                     SettingsSync.start()
+                    // A launch breadcrumb, so the log can PROVE it is alive. Without it an empty
+                    // log is ambiguous — "nothing went wrong" and "this build never reported" look
+                    // identical, which is exactly the question you ask first when reading it.
+                    // It also stamps which build produced the lines below it.
+                    DiagnosticLog.shared.info(
+                        "launch",
+                        "app launched · build \(DiagnosticLog.buildLabel) · "
+                        + (appState.session == nil ? "signed out" : "signed in"))
                 }
                 .onOpenURL { url in
                     appState.handleDeepLink(url)
