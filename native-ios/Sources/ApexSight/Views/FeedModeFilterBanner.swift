@@ -21,7 +21,12 @@ struct FeedModeFilterBanner: View {
                      : "\(modeTitle) mode — hiding \(count) camera\(count == 1 ? "" : "s")")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(GlassTheme.secondary)
-                    .lineLimit(1)
+                    // No lineLimit: this is the ONLY explanation of why cameras are missing from
+                    // the feed, and at the accessibility Dynamic Type sizes .footnote scales into
+                    // it truncated to "Home mode — hi…". A low-vision user then saw a feed short
+                    // seven cameras with no legible reason — exactly the "footage vanished" read
+                    // this banner exists to prevent. Worst case it wraps one line taller.
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: GlassTheme.Space.s)
                 Button(appState.showAllCamerasInFeeds ? "Filter" : "Show all") {
                     Haptics.tap()
