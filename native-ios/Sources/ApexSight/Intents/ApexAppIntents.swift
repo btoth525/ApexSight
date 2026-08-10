@@ -3,6 +3,8 @@ import SwiftUI
 import UIKit
 import CoreSpotlight
 import UniformTypeIdentifiers
+import UserNotifications
+import WidgetKit
 
 // MARK: - Phrasing helpers
 
@@ -311,7 +313,20 @@ struct MarkAllReviewedIntent: AppIntent {
         let unviewed = (try? await client.reviews(limit: 500, reviewed: false)) ?? []
         let ids = unviewed.map(\.id)
         guard !ids.isEmpty else { return .result(dialog: "You're all caught up — nothing to review.") }
-        try? await client.markReviewsViewed(ids: ids)
+        do {
+            try await client.markReviewsViewed(ids: ids)
+        } catch {
+            return .result(dialog: "I couldn't mark those reviewed — try again in a moment.")
+        }
+        // openAppWhenRun is false, so this runs entirely out-of-process and the app may never
+        // foreground to self-heal. Clear the app-group badge mirror, the icon badge and the
+        // widget cache here — the same four things AppState's in-app "mark all" path does —
+        // otherwise the icon keeps its old count and every widget keeps rendering alerts that
+        // no longer exist.
+        UserDefaults(suiteName: ApexAppGroup.identifier)?.set(0, forKey: "apex.badgeCount")
+        try? await UNUserNotificationCenter.current().setBadgeCount(0)
+        SharedSnapshotStore.saveRecentAlerts([], heroImageData: nil)
+        WidgetCenter.shared.reloadAllTimelines()
         return .result(dialog: IntentDialog(stringLiteral: "Marked \(ids.count) \(ids.count == 1 ? "alert" : "alerts") reviewed."))
     }
 }
