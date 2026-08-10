@@ -99,8 +99,12 @@ struct ActivityTab: View {
         // the 15s foreground poll, re-triggered all of it). Mirrors ReviewTab's `let visible =
         // filtered` fix (commit 4cdba5d), just never applied here.
         let events = displayedEvents
-        let daySections = sections(for: events)
-        let tallyList = tallies
+        // …and only for the mode that actually renders them. `sections(for:)` groups + sorts up
+        // to 100 events and `tallies` loops the 500-event last24h window plus two dictionaries
+        // and two sorts; in Incidents mode neither value is used (header(tallies:) and the day
+        // ForEach are both in the else branch), so both were pure waste on every AppState publish.
+        let daySections = viewMode == .events ? sections(for: events) : []
+        let tallyList = viewMode == .events ? tallies : []
         NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
