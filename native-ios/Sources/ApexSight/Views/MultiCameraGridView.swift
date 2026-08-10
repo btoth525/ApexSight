@@ -170,7 +170,16 @@ struct MultiCameraGridView: View {
         }
         // Detect the newest event and spotlight its camera if it's on this wall.
         .onChange(of: appState.events.first?.id) { _, newID in
-            guard smartFocus, let newID, newID != lastEventID else { return }
+            // Adopt the first id we ever observe WITHOUT spotlighting it. On a cold launch
+            // AppState.init restores the camera list from disk while `events` is still empty, so
+            // the `.task` below seeds lastEventID = nil; when the first fetch landed, nil → someID
+            // read as "a new event" and Smart Focus yanked the wall to the camera of the newest
+            // BACKLOG event — which can be hours old — holding a 6s accent border on it. A
+            // genuinely new event still fires; it is the second change.
+            guard smartFocus, let newID, lastEventID != nil, newID != lastEventID else {
+                lastEventID = newID
+                return
+            }
             lastEventID = newID
             if let cam = appState.events.first?.camera,
                displayedCameras.contains(where: { $0.name == cam }) {
