@@ -496,10 +496,11 @@ final class AppState: ObservableObject {
     /// User escape hatch: when true, the feeds ignore the house-mode filter and show every camera.
     /// @Published (not @AppStorage — that doesn't emit objectWillChange from an ObservableObject, so
     /// the feeds wouldn't re-filter on toggle); persisted by hand so the choice survives relaunch.
-    @Published var showAllCamerasInFeeds: Bool =
-        UserDefaults(suiteName: ApexAppGroup.identifier)?.bool(forKey: "apex.showAllCamerasInFeeds") ?? false {
+    @Published var showAllCamerasInFeeds: Bool = SharedHouseMode.showAllCameras {
         didSet {
-            UserDefaults(suiteName: ApexAppGroup.identifier)?.set(showAllCamerasInFeeds, forKey: "apex.showAllCamerasInFeeds")
+            // Same app-group key as before; `SharedHouseMode` now owns its spelling so the widget
+            // process reads exactly what the app writes.
+            SharedHouseMode.showAllCameras = showAllCamerasInFeeds
         }
     }
 
@@ -553,6 +554,10 @@ final class AppState: ObservableObject {
         // and refresh those surfaces the moment the mode actually changes.
         SharedHouseMode.mode = status.mode
         SharedHouseMode.armedBy = by
+        // The mute list has to cross into the app group too, or the widget/Watch/Siri feeds — which
+        // are written from extension processes with no access to AppState — keep listing cameras
+        // this mode has silenced, while the Review tab and the relay's push gate both suppress them.
+        SharedHouseMode.mutedCameras = mutes
         if modeChanged { ApexSurfaceRefresh.reload() }
     }
 
@@ -775,7 +780,11 @@ final class AppState: ObservableObject {
     /// timeline so the home-screen widget shows a recent-activity list — no live streaming.
     private func cacheLatestAlertForWidget() {
         guard let client else { return }
-        let recent = Array(reviews.prefix(8))
+        // Apply the SAME house-mode filter the Review tab renders with. `reviews` is filtered only
+        // for already-viewed items (see visibleReviews), so without this the widget hero, the
+        // widget feed, the Watch list and Siri's "latest alert" all surfaced cameras the current
+        // mode silences — while the Review tab hid them and the relay suppressed their pushes.
+        let recent = Array(reviews.filter { cameraVisibleInFeeds($0.camera) }.prefix(8))
         // Nothing left → write "all clear" and reload so the widgets CLEAR (they used to keep
         // showing the last alert because this bailed early on an empty list).
         guard !recent.isEmpty else {

@@ -53,7 +53,17 @@ enum WidgetDataFetcher {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         guard let reviews = try? decoder.decode([WReview].self, from: data) else { return }
 
-        let unreviewed = reviews.filter { !($0.hasBeenReviewed ?? false) }
+        // Same house-mode filter the Review tab applies and the relay's push gate enforces. Without
+        // it the widget hero + feed, the Watch list and Siri's "latest alert" showed activity from
+        // cameras the current mode silences (measured: 8/8 of this exact query were cameras muted in
+        // Home and Night). Reads the app's mirror; FAIL-OPEN — an empty/missing mirror shows
+        // everything, exactly as before.
+        let muted = SharedHouseMode.mutedCameras
+        let showAll = SharedHouseMode.showAllCameras
+        let unreviewed = reviews.filter {
+            !($0.hasBeenReviewed ?? false)
+                && HouseModeVisibility.cameraVisible($0.camera, mutedCameras: muted, showAll: showAll)
+        }
         let alerts: [SharedAlert] = unreviewed
             .prefix(8)
             .map { r in
