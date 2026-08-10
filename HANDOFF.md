@@ -1,6 +1,6 @@
 # ApexSight — Audit & Hardening Handoff
 
-**You are picking up a mature, shipping iOS app (build 206) + its Home-Assistant push relay.**
+**You are picking up a mature, shipping iOS app (build 222) + its Home-Assistant push relay.**
 Your job: audit, harden, and polish it toward "Apple-made-it" quality — UI, backend, correctness,
 security, performance, accessibility. This doc is the mission brief + current state + the traps that
 will waste your time if you don't know them. Read `CLAUDE.md` (repo root) first for the full
@@ -11,7 +11,7 @@ architecture and design system; this file assumes it.
 ## 0. TL;DR — do this first
 
 1. Read `CLAUDE.md` (architecture, GlassTheme design system, the 5 tabs, stream architecture).
-2. **Build with the iOS 27 BETA SDK** — see §2. Building with the wrong Xcode wastes an hour.
+2. **Build and ship with the RELEASE SDK (Xcode 26.5)** — see §2. The wrong Xcode is refused at upload.
 3. Skim §4 (what's already been done — don't redo it) and §5 (device-unverified — be careful).
 4. Work the audit checklist in §6, most-impactful first. Small, isolated, bisectable commits.
 5. Respect the hard rules in §3. The security constraints are non-negotiable.
@@ -28,7 +28,8 @@ gets notifications when closed.
 
 - **App bundle**: `com.brandontoth.apexsight.native` · scheme `ApexSightNative` · deploy target iOS 17.
 - **Personal app**: used only by two people (both on iOS 27). **Never submitted to the App Store** —
-  distributed via TestFlight only. This is why we ship on the beta SDK (§2).
+  distributed via TestFlight only. It still has to clear App Store Connect's upload gate, which is
+  why the released SDK is mandatory (§2).
 
 ### Topology (the backend you're auditing the client against)
 ```
@@ -63,7 +64,7 @@ NowPlaying still work — they compile against 26.5 and are runtime-gated with `
 
 ```bash
 # The correct toolchain:
-export DEVELOPER_DIR=/Users/brandon/Downloads/Xcode-beta.app/Contents/Developer   # Xcode 27.0 / Swift 6.4
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # Xcode 26.5 / Swift 6.3.2
 
 # Build for the simulator (zero-warning target):
 cd /Users/brandon/apexsight/native-ios
@@ -73,13 +74,13 @@ xcodebuild -project ApexSightNative.xcodeproj -scheme ApexSightNative \
   2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)"
 ```
 - **Sim device is `iPhone 17 Pro`** (iPhone 16 Pro no longer exists; CLAUDE.md may still say 16).
-- The code is *also* release-SDK-portable as a fallback: the one 27-only symbol is guarded
-  `#if compiler(>=6.4)` and `MainTabView.body` is split so the 6.3.2 type-checker doesn't time out.
-  Both toolchains build clean — but **ship the beta 27**.
+- Both toolchains still BUILD clean — the one 27-only symbol is guarded `#if compiler(>=6.4)` and
+  `MainTabView.body` is split so the 6.3.2 type-checker doesn't time out — but only the release SDK
+  UPLOADS. Switch back to a 27 RC Xcode the moment Apple ships one.
 - **Ship pipeline**: bump `CURRENT_PROJECT_VERSION` in `project.yml` → `xcodegen generate` →
   `xcodebuild archive` (generic/platform=iOS) → `-exportArchive` with `-allowProvisioningUpdates`
-  (auths off the signed-in Xcode session, no API key). See `native-ios/scratchpad/ship206.sh` for the
-  exact recipe. Never run two archives at once. Bump the build number every upload.
+  (auths off the signed-in Xcode session, no API key). Copy the newest `native-ios/scratchpad/ship*.sh` for the
+  exact recipe (it already exports the right `DEVELOPER_DIR`). Never run two archives at once. Bump the build number every upload.
 
 ---
 
