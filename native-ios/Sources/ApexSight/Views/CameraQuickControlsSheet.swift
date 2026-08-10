@@ -125,14 +125,21 @@ struct CameraQuickControlsSheet: View {
 
             // Title as the (visually hidden) toggle label so VoiceOver announces e.g.
             // "Detection, switch, on" instead of a bare "switch"; subtitle becomes the hint.
-            // The command goes over the WebSocket and Frigate echoes the real state back into
-            // `appState.cameraControlStates`, which this row reads — no optimistic-revert race.
+            // The command goes over the WebSocket; `setCameraControl` reports whether it reached
+            // a live socket and only then records the new state, so a send dropped during a
+            // reconnect backoff springs the toggle back instead of confirming a change Frigate
+            // never received.
             Toggle(title, isOn: Binding(
                 get: { isOn },
                 set: { newVal in
                     Haptics.tap()
-                    appState.setCameraControl(camera: camera.name, feature: feature, enabled: newVal)
-                    showToast("\(title) \(newVal ? "on" : "off")")
+                    let applied = appState.setCameraControl(camera: camera.name, feature: feature, enabled: newVal)
+                    if applied {
+                        showToast("\(title) \(newVal ? "on" : "off")")
+                    } else {
+                        Haptics.warning()
+                        showToast("Not connected to Frigate — \(title.lowercased()) unchanged")
+                    }
                 }
             ))
             .labelsHidden()

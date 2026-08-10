@@ -853,11 +853,18 @@ final class AppState: ObservableObject {
     }
 
     /// Toggle a runtime camera feature LIVE over the WebSocket (the only thing Frigate applies
-    /// without a restart). Updates the local state optimistically; Frigate echoes the real state
-    /// back on `<camera>/<feature>/state`, which keeps the map honest.
-    func setCameraControl(camera: String, feature: CameraFeature, enabled: Bool) {
-        eventStream.send(topic: "\(camera)/\(feature.rawValue)/set", payload: enabled ? "ON" : "OFF")
+    /// without a restart). Returns whether the command reached a live socket.
+    ///
+    /// The optimistic local write is applied ONLY on a successful send. Frigate 0.18 does not
+    /// relay `<camera>/<feature>/state`, so nothing ever corrects an optimistic value — writing it
+    /// after a dropped send (socket down / reconnect backoff) left the toggle showing "Recording
+    /// on" for a camera that was never told to record.
+    @discardableResult
+    func setCameraControl(camera: String, feature: CameraFeature, enabled: Bool) -> Bool {
+        guard eventStream.send(topic: "\(camera)/\(feature.rawValue)/set",
+                               payload: enabled ? "ON" : "OFF") else { return false }
         applyControlState(camera: camera, feature: feature.rawValue, on: enabled)
+        return true
     }
 
     private func updateLiveDetection(_ item: FrigateEvent, change: ChangeType) {

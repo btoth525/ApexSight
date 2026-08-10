@@ -222,13 +222,20 @@ final class FrigateEventStream {
 
     /// Publish a command over the live socket — Frigate's WS accepts `{topic, payload, retain}`
     /// and bridges it to MQTT. This is how runtime camera toggles actually apply (unlike the
-    /// config-file `/api/config/set`, which needs a restart). No-op if the socket isn't up.
-    func send(topic: String, payload: String) {
-        guard let task else { return }
+    /// config-file `/api/config/set`, which needs a restart).
+    ///
+    /// Returns whether the command was actually handed to a live socket. There is no socket
+    /// during a reconnect backoff (`task` is nil for the whole window), and Frigate 0.18 does
+    /// NOT echo `<camera>/<feature>/state` back, so a dropped send is invisible unless the
+    /// caller is told — the UI would otherwise confirm a toggle Frigate never received.
+    @discardableResult
+    func send(topic: String, payload: String) -> Bool {
+        guard let task else { return false }
         let message: [String: Any] = ["topic": topic, "payload": payload, "retain": false]
         guard let data = try? JSONSerialization.data(withJSONObject: message),
-              let string = String(data: data, encoding: .utf8) else { return }
+              let string = String(data: data, encoding: .utf8) else { return false }
         task.send(.string(string)) { _ in }
+        return true
     }
 }
 
