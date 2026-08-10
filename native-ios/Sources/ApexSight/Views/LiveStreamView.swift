@@ -33,6 +33,11 @@ struct LiveStreamView: View {
     /// isn't silently dead when the grab fails.
     @State private var shareFailed = false
     @StateObject private var talk = TwoWayTalkController()
+    /// Held separately from `talk.status` because releasing the button calls `stop()`, which resets
+    /// the controller to `.idle` and throws the reason away — so the failure has to be captured the
+    /// moment it happens or the user never sees why nothing was transmitted.
+    @State private var talkError: String?
+    @State private var talkErrorDismiss: Task<Void, Never>?
     // Unified control grid: the viewer owns mute and PiP so every control renders as ONE uniform
     // button system (no floating overlay cluster).
     @State private var isMutedUI = true
@@ -394,6 +399,22 @@ struct LiveStreamView: View {
             cursor += size
         }
         return VStack(spacing: GlassTheme.Space.m) {
+            // Why two-way talk didn't work. The button's own caption lives in a fixed 74pt cell,
+            // which can't show a sentence — and the actionable messages here are sentences ("turn
+            // the microphone on in Settings", "needs the relay's TURN key"). Same capsule the
+            // doorbell call already uses, so the two talk surfaces explain themselves the same way.
+            if let talkError {
+                Text(talkError)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, GlassTheme.Space.m)
+                    .padding(.vertical, GlassTheme.Space.s)
+                    .background(GlassTheme.red.opacity(0.85), in: Capsule())
+                    .transition(.opacity)
+                    .accessibilityAddTraits(.isStaticText)
+            }
             ForEach(rows.indices, id: \.self) { r in
                 HStack(spacing: GlassTheme.Space.m) {
                     // Fixed-width cells → circles are evenly spaced no matter how wide each
@@ -516,9 +537,11 @@ struct LiveStreamView: View {
                 .foregroundStyle(active ? .white : GlassTheme.primary)
                 .scaleEffect(active ? 1.08 : 1)
                 .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: active)
-            Text(connecting ? "Connecting…" : (active ? "Talking…" : "Hold to Talk"))
+            Text(talkError != nil && !active && !connecting
+                 ? "Talk failed"
+                 : (connecting ? "Connecting…" : (active ? "Talking…" : "Hold to Talk")))
                 .font(.caption.weight(.medium))
-                .foregroundStyle(active ? GlassTheme.red : GlassTheme.secondary)
+                .foregroundStyle(active || talkError != nil ? GlassTheme.red : GlassTheme.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 // The grid cell is a fixed width, so the mid-hold caption swap
@@ -543,6 +566,27 @@ struct LiveStreamView: View {
                 }
                 .onEnded { _ in talk.stop() }
         )
+        // Capture the reason before `stop()` clears it; a later success clears the banner.
+        .onChange(of: talk.status) { _, status in
+            switch status {
+            case .failed(let message):
+                talkErrorDismiss?.cancel()
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { talkError = message }
+                talkErrorDismiss = Task {
+                    // Long enough to read a sentence and act on it, short enough that it doesn't
+                    // sit over the controls for the rest of the session.
+                    try? await Task.sleep(for: .seconds(8))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { talkError = nil }
+                }
+            case .talking:
+                talkErrorDismiss?.cancel()
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { talkError = nil }
+            default:
+                break
+            }
+        }
+        .onDisappear { talkErrorDismiss?.cancel() }
         .accessibilityLabel("Push to talk")
         .accessibilityHint("Press and hold to speak through the camera")
     }

@@ -92,7 +92,11 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     /// tears down cleanly and never strands an open mic.
     private func connect(cameraTwoWaySource: String, client: FrigateClient, generation: Int) async {
         guard await requestMicPermission() else {
-            if !Task.isCancelled, connectGeneration == generation { status = .failed("Microphone access denied") }
+            // Name the fix, not the state — this is the only thing the user sees when holding the
+            // talk button does nothing, and "denied" doesn't tell them where to go.
+            if !Task.isCancelled, connectGeneration == generation {
+                status = .failed("Microphone access is off for ApexSight — turn it on in iOS Settings › Privacy › Microphone.")
+            }
             return
         }
         guard !Task.isCancelled, connectGeneration == generation else { return }   // nothing acquired yet — just bail
