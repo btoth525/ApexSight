@@ -165,6 +165,9 @@ targets:
       # Just the shared Keychain token reader (Foundation + Security only — extension-safe),
       # so the NSE can read the bearer token from the shared Keychain group.
       - path: Sources/ApexSightShared/SharedTokenStore.swift
+      # Gates that token to the origin the app signed in to — the NSE's image URLs come out of the
+      # push payload, so the host is remote-controlled (Foundation only, extension-safe).
+      - path: Sources/ApexSightShared/CredentialHostPolicy.swift
       # On-device Vision scene summary for AI-enriched alerts (Vision + ImageIO, extension-safe).
       - path: Sources/ApexSightShared/SceneVision.swift
       # Widget cache + fetcher (Foundation/WidgetKit — extension-safe): on every alert push the

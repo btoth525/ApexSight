@@ -196,7 +196,13 @@ final class NotificationService: UNNotificationServiceExtension {
         // fails fast and we can still try the next candidate (or give up cleanly)
         // well inside that window.
         urlRequest.timeoutInterval = 8
-        if let token, !token.isEmpty {
+        // The candidate URLs come out of the push payload, so the host is remote-controlled.
+        // Only ever hand the Frigate session token to the origin the app itself signed in to —
+        // otherwise a forged payload would exfiltrate a JWT that grants full camera access.
+        // An off-origin candidate still downloads, just unauthenticated: worst case a missing
+        // picture, never a missing alert.
+        if let token, !token.isEmpty,
+           CredentialHostPolicy.mayAttachCredentials(to: url, frigateBaseURL: Self.appGroupBaseURL()) {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             urlRequest.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
         }
