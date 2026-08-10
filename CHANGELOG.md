@@ -5,7 +5,7 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
-## Builds 215–221 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
+## Builds 215–222 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
 
 ### Fixed — things the app was telling you that weren't true
 - **Review alerts showed a picture from the wrong day.** A review's still resolved through one of
@@ -52,6 +52,17 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   at the Settings switch that fixes it.
 - **A threat level written as `2.0` no longer reads as Routine** — an AI-flagged review kept losing
   its badge to a decoding technicality.
+
+### Fixed — the last sweep (build 222)
+- **Notifications the app raises itself, and CarPlay, now pin the review still too.** The relay
+  clamps the image on the push path, so those two were the last places an alert could be
+  illustrated with a frame from a different day. It matters most on CarPlay, where the picture is
+  nearly all you get and you are glancing at it while driving.
+- **A live tile that never paints now falls back instead of sitting on a frozen snapshot.** The
+  fallback judged on the player reporting "playing"; a stream can report that, know its dimensions,
+  and still never hand the screen a frame. It now judges on whether live pixels are actually on
+  screen — on a security camera, a still that stopped being true ten seconds ago reads as "nothing
+  is happening".
 
 ### Added
 - **Frigate's AI review story in the Review tab** — headline, threat level, and the play-by-play
