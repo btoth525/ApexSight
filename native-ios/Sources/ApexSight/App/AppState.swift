@@ -1302,10 +1302,18 @@ final class AppState: ObservableObject {
         // without this guard the old server's HLS decision could land on the new one.
         let gen = serverGeneration
         Task { [weak self] in
-            let available = await client.probeLiveHLS(camera: cam)
-            FputsLog.log("[live] HLS probe (\(cam)) → \(available ? "available (0.17 pipeline)" : "ABSENT (0.18 → WebRTC-primary)")")
+            let probed = await client.probeLiveHLS(camera: cam)
+            let verdict = probed.map { $0 ? "available (0.17 pipeline)" : "ABSENT (0.18 → WebRTC-primary)" }
+                ?? "inconclusive — will re-probe"
+            FputsLog.log("[live] HLS probe (\(cam)) → \(verdict)")
             await MainActor.run {
                 guard let self, self.serverGeneration == gen else { return }
+                // Only a completed round-trip latches. An inconclusive probe (8s timeout, network
+                // drop) leaves liveHLSAvailable at its fail-open default and re-arms the flag so
+                // the next 15s poll asks again — otherwise a single timeout pinned the whole
+                // session to a pipeline that 404s on 0.18, and every wall tile sat out its
+                // fallback timer before dropping to low-res MJPEG with no way back but a relaunch.
+                guard let available = probed else { self.liveHLSProbed = false; return }
                 if available != self.liveHLSAvailable { self.liveHLSAvailable = available }
             }
         }

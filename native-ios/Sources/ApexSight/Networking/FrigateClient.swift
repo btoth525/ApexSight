@@ -252,16 +252,20 @@ struct FrigateClient {
 
     /// Whether go2rtc HLS live streaming exists on this Frigate. 0.18 removed the nginx route
     /// (`/api/go2rtc/api/...`) that served it — live viewing there is WebRTC-only. A 404 on the
-    /// playlist is the definitive signal; any other outcome (200, auth hiccup, timeout) reports
-    /// available, so 0.17 setups and transient failures keep the proven HLS-first pipeline.
-    func probeLiveHLS(camera: String) async -> Bool {
+    /// playlist is the definitive signal.
+    ///
+    /// Returns nil for an INCONCLUSIVE probe (timeout, dropped connection, non-HTTP response) so
+    /// the caller can keep the fail-open verdict — HLS available, the proven 0.17 pipeline —
+    /// while still re-asking later. Folding those into `true` here meant one 8s timeout at launch
+    /// permanently pinned a 0.18 server to a pipeline whose playlist 404s.
+    func probeLiveHLS(camera: String) async -> Bool? {
         let url = liveHLSURL(camera: camera)
         _ = seedCookie(for: url)
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         authHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         guard let (_, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse else { return true }
+              let http = response as? HTTPURLResponse else { return nil }
         return http.statusCode != 404
     }
 
