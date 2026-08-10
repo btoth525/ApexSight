@@ -5,7 +5,7 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
-## Builds 215–222 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
+## Builds 215–223 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
 
 ### Fixed — things the app was telling you that weren't true
 - **Review alerts showed a picture from the wrong day.** A review's still resolved through one of
@@ -63,6 +63,19 @@ The project follows a single rolling `CFBundleVersion` (build number) tracked in
   and still never hand the screen a frame. It now judges on whether live pixels are actually on
   screen — on a security camera, a still that stopped being true ten seconds ago reads as "nothing
   is happening".
+
+### Fixed — the AI cards (build 223)
+- **Summaries no longer stop mid-word.** Frigate hard-clamps its short summary to 140 characters
+  and cuts blind — measured across 61 rated reviews, **22 (36%) ended mid-sentence**. The app now
+  shows whichever field is an actual finished sentence, and only abbreviates (with an ellipsis)
+  when there is nothing whole to show.
+- **A fabricated "Forced Entry Attempt" can no longer raise the alarm.** One review was rated the
+  highest severity, complete with an imagined crowbar, against two **face-recognised residents
+  carrying a package** — at the model's own confidence of **0.02**. An escalation is now ignored
+  when the model isn't confident, or when it's about someone the cameras recognise. An untrusted
+  rating shows as unrated rather than as a green all-clear, because "we don't believe this" and
+  "this is normal" are not the same statement. A confident warning about a stranger still comes
+  through exactly as before.
 
 ### Added
 - **Frigate's AI review story in the Review tab** — headline, threat level, and the play-by-play
