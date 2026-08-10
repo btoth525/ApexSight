@@ -236,6 +236,41 @@ struct FrigateReviewItem: Identifiable, Codable, Hashable {
         case data
         case description
     }
+
+    init(id: String, camera: String, startTime: Double?, endTime: Double?, severity: String?,
+         thumbPath: String?, hasBeenReviewed: Bool?, data: ReviewData?, description: String?) {
+        self.id = id
+        self.camera = camera
+        self.startTime = startTime
+        self.endTime = endTime
+        self.severity = severity
+        self.thumbPath = thumbPath
+        self.hasBeenReviewed = hasBeenReviewed
+        self.data = data
+        self.description = description
+    }
+
+    /// `id` and `camera` are the only fields a review is useless without; everything else
+    /// degrades to nil rather than throwing.
+    ///
+    /// `/api/review` is decoded as one atomic `[FrigateReviewItem]`, so a single review whose
+    /// `data` arrives in an unexpected SHAPE (a list, a string, a future object ReviewData's own
+    /// lenient decode can't even enter) would rethrow through the synthesized decoder and fail
+    /// the ENTIRE array. refresh() swallows that with `try?` and keeps the previous value —
+    /// empty on cold start — so the Review tab would show nothing and the badge would read 0
+    /// while alerts piled up on the server.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        camera = try c.decode(String.self, forKey: .camera)
+        startTime = (try? c.decodeIfPresent(Double.self, forKey: .startTime)) ?? nil
+        endTime = (try? c.decodeIfPresent(Double.self, forKey: .endTime)) ?? nil
+        severity = (try? c.decodeIfPresent(String.self, forKey: .severity)) ?? nil
+        thumbPath = (try? c.decodeIfPresent(String.self, forKey: .thumbPath)) ?? nil
+        hasBeenReviewed = (try? c.decodeIfPresent(Bool.self, forKey: .hasBeenReviewed)) ?? nil
+        data = (try? c.decodeIfPresent(ReviewData.self, forKey: .data)) ?? nil
+        description = (try? c.decodeIfPresent(String.self, forKey: .description)) ?? nil
+    }
 }
 
 struct ReviewData: Codable, Hashable {
@@ -290,15 +325,22 @@ struct ReviewData: Codable, Hashable {
     /// this one survives `metadata` being an entirely unexpected SHAPE (a string, a number, an
     /// array). The AI summary is a nice-to-have bolted onto a security feed — it must never be
     /// able to cost the user their alerts.
+    /// Every field is isolated behind `try?`, not just `metadata`. `/api/review` is decoded as
+    /// one atomic `[FrigateReviewItem]`, so a single surprising field — a future Frigate emitting
+    /// `sub_labels` as `[["Brandon", 0.98]]` instead of `["Brandon"]`, say — used to throw all the
+    /// way out and fail the ENTIRE array; refresh() then kept the previous value, which on cold
+    /// start is empty, so the Review tab showed nothing while alerts piled up on the server. This
+    /// is the same mechanism as the `other_concerns` regression, which was only fixed for
+    /// `metadata`. A field we can't read degrades to nil; the review still lists.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        detections = try c.decodeIfPresent([String].self, forKey: .detections)
-        objects = try c.decodeIfPresent([String].self, forKey: .objects)
-        subLabels = try c.decodeIfPresent([String].self, forKey: .subLabels)
-        zones = try c.decodeIfPresent([String].self, forKey: .zones)
-        audio = try c.decodeIfPresent([String].self, forKey: .audio)
-        thumbTime = try c.decodeIfPresent(Double.self, forKey: .thumbTime)
-        verifiedObjects = try c.decodeIfPresent([String].self, forKey: .verifiedObjects)
+        detections = (try? c.decodeIfPresent([String].self, forKey: .detections)) ?? nil
+        objects = (try? c.decodeIfPresent([String].self, forKey: .objects)) ?? nil
+        subLabels = (try? c.decodeIfPresent([String].self, forKey: .subLabels)) ?? nil
+        zones = (try? c.decodeIfPresent([String].self, forKey: .zones)) ?? nil
+        audio = (try? c.decodeIfPresent([String].self, forKey: .audio)) ?? nil
+        thumbTime = (try? c.decodeIfPresent(Double.self, forKey: .thumbTime)) ?? nil
+        verifiedObjects = (try? c.decodeIfPresent([String].self, forKey: .verifiedObjects)) ?? nil
         metadata = (try? c.decodeIfPresent(ReviewAISummary.self, forKey: .metadata)) ?? nil
     }
 }
