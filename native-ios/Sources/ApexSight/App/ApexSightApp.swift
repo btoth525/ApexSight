@@ -131,6 +131,9 @@ struct ApexSightApp: App {
                         // walked in or out the door while the app was away.
                         appState.scheduleLocalProbe()
                         appState.consumePendingIntentLink()
+                        // Anything the app recorded while it was away (including from a previous
+                        // launch that was killed) goes out as soon as there's network again.
+                        Task { await DiagnosticLog.shared.flush() }
                         // Re-assert push registration each time the app comes forward (signed in only).
                         if appState.session != nil {
                             PushRegistrar.ensureRegistered()
@@ -159,6 +162,10 @@ struct ApexSightApp: App {
                         appLock.lockIfEnabled()
                         // Push preferences up to iCloud (no-op until iCloud KVS is enabled).
                         SettingsSync.pushToCloud()
+                        // Ship the session's log now. Backgrounding is when a testing session
+                        // actually ends, and the 60s timer may never fire again before the app is
+                        // killed — fire-and-forget, so it cannot delay going to background.
+                        Task { await DiagnosticLog.shared.flush() }
                     @unknown default:
                         break
                     }

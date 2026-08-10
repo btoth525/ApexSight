@@ -7,6 +7,8 @@ struct SettingsTab: View {
     @AppStorage("appleIntelligenceEnabled", store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var appleIntelligenceEnabled = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage(DiagnosticLog.enabledKey, store: UserDefaults(suiteName: ApexAppGroup.identifier))
+    private var diagnosticsEnabled = true
     @AppStorage("spotlightEventsEnabled") private var spotlightEventsEnabled = true
     @AppStorage(AppLockController.preferenceKey) private var biometricLockEnabled = false
     @State private var showSignOutConfirm = false
@@ -48,6 +50,7 @@ struct SettingsTab: View {
                         doorbellTalkCard
                         configurationSection
                         serverToolsCard
+                        diagnosticsCard
                         aboutCard
 
                         #if DEBUG
@@ -515,6 +518,35 @@ struct SettingsTab: View {
     }
 
     // MARK: - About
+
+    /// The app's black box. On by design (see DiagnosticLog) — this exists so "it did something
+    /// odd while I was testing" survives long enough to be fixed.
+    private var diagnosticsCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                SectionHeader("Diagnostics")
+
+                Toggle(isOn: $diagnosticsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Send error log to the relay")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GlassTheme.primary)
+                        // Footnote + primary, not caption/tertiary: this describes where data goes,
+                        // which is the class of text the accessibility pass says must stay legible.
+                        Text("Records errors this app hits and sends them to your own Home Assistant relay, so problems can be looked at later. Never leaves your household, and passwords, tokens and codes are stripped out before anything is written down.")
+                            .font(.footnote)
+                            .foregroundStyle(GlassTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .tint(GlassTheme.accent)
+                .onChange(of: diagnosticsEnabled) { _, on in
+                    DiagnosticLog.isEnabled = on
+                    if on { DiagnosticLog.shared.info("settings", "diagnostics enabled") }
+                }
+            }
+        }
+    }
 
     private var aboutCard: some View {
         GlassCard {

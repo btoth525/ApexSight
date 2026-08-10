@@ -1206,6 +1206,9 @@ final class AppState: ObservableObject {
     /// copy ("A server with the specified hostname could not be found.") for errors this already
     /// has good words for.
     static func userFacingMessage(for error: Error) -> String {
+        // Single funnel for everything the user is ever shown as an error, so the black box records
+        // exactly what they saw — without a log call having to be sprinkled at each call site.
+        DiagnosticLog.shared.error("app", error)
         if let frigate = error as? FrigateError {
             switch frigate {
             case .loginFailed:
