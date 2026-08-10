@@ -63,9 +63,16 @@ struct CameraSnapshotProvider: TimelineProvider {
     private func entry() -> CameraSnapshotEntry {
         let cached = SharedSnapshotStore.load()
         let recent = SharedSnapshotStore.loadRecentAlerts()
-        // Decode the hero once here (the latest event snapshot, else a cached camera frame),
-        // downsampled to stay under the widget memory budget.
-        let heroURL = recent.heroImageURL ?? cached?.imageURL
+        // Decode the hero once here, downsampled to stay under the widget memory budget.
+        //
+        // The cached camera frame is a LIVE frame from `cameras.first`, not an event frame, so it
+        // may only stand in when there is no alert caption to contradict it. Using it whenever the
+        // hero was missing defeated the guarantee SharedSnapshotStore makes on purpose ("delete
+        // the stale one so the widget never shows an old snapshot under a newer caption") — a
+        // fresh review whose detection thumbnail wasn't ready yet rendered an unrelated camera's
+        // frame captioned "Person · <other camera>". With alerts present and no hero,
+        // HeroSnapshotImage already draws PlaceholderHero.
+        let heroURL = recent.alerts.isEmpty ? (recent.heroImageURL ?? cached?.imageURL) : recent.heroImageURL
         let heroImage = heroURL.flatMap { downsampledImage(at: $0, maxPixel: 800) }
         return CameraSnapshotEntry(
             date: Date(),
