@@ -29,7 +29,14 @@ enum LocalAlertNotifier {
         content.interruptionLevel = .timeSensitive
 
         let gifURL = client.reviewGifURL(review: review)
-        let thumbURL = client.reviewSnapshotURL(review: review) ?? client.reviewThumbnailURL(review: review)
+        // Same wrong-moment problem the Review tab had: the object's own snapshot is its CURRENT
+        // best frame, which on a long-lived track can be hours outside this review. The relay
+        // clamps the image on the PUSH path, but this local path had no equivalent — so the one
+        // notification the app raises itself could illustrate an alert with a different day.
+        let pinned = await ReviewStillResolver.shared.pinnedStill(for: review, client: client)
+        let thumbURL = pinned
+            ?? client.reviewSnapshotURL(review: review)
+            ?? client.reviewThumbnailURL(review: review)
 
         var userInfo: [String: Any] = [
             "review_id": review.id,

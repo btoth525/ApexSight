@@ -92,7 +92,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                 CPListSection(items: items.isEmpty ? [CPListItem(text: "All clear", detailText: "No recent alerts")] : items)
             ])
             for (item, review) in zip(items, reviews) {
-                if let url = client.reviewThumbnailURL(review: review),
+                // Cached per review, so the list doesn't pay a round-trip per row after the first.
+                if let url = await ReviewStillResolver.shared.pinnedStill(for: review, client: client)
+                    ?? client.reviewThumbnailURL(review: review),
                    let data = try? await client.imageData(from: url),
                    let image = UIImage(data: data) {
                     item.setImage(image)
@@ -168,7 +170,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         ])
         interfaceController?.pushTemplate(detail, animated: true, completion: nil)
 
-        let url = client.reviewSnapshotURL(review: review) ?? client.reviewThumbnailURL(review: review)
+        // Pinned into the review's own window when the object's frame belongs elsewhere — see
+        // ReviewStillPolicy. A wrong-moment image matters more here than in the app: on CarPlay the
+        // picture is most of what you get, and it is glanced at while driving.
+        let url = await ReviewStillResolver.shared.pinnedStill(for: review, client: client)
+            ?? client.reviewSnapshotURL(review: review)
+            ?? client.reviewThumbnailURL(review: review)
         let imageSection = await snapshotSection(url: url, client: client, label: titleize(review.camera))
             ?? CPListSection(items: [CPListItem(text: "Snapshot unavailable", detailText: nil)])
         detail.updateSections([imageSection, CPListSection(items: infoRows)])
