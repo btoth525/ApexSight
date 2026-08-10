@@ -119,20 +119,32 @@ struct MultiCameraGridView: View {
     // MARK: - Grid
 
     private var grid: some View {
-        ScrollViewReader { proxy in
+        // ONE snapshot for the whole render. `displayedCameras` is a computed property that
+        // re-filters and re-sorts the live `appState.cameras` on every access, and the row
+        // closures — instantiated lazily as rows scroll in, and `onTap` later still — indexed it
+        // with integers captured from an earlier render. refresh() reassigns `cameras`
+        // unconditionally on the 15s poll, on pull-to-refresh and on every local↔remote flip, all
+        // of which happen while this wall is presented, so a camera disappearing from config.yml
+        // (or a partial /api/config during a Frigate restart) meant `displayedCameras[idx]`
+        // trapped with "Index out of range" and crashed the app with the wall open. Capturing the
+        // array in a local `let` means the closures can never outlive their own array — and it
+        // also removes the 4x re-filter+sort per cell per render.
+        let cams = displayedCameras
+        return ScrollViewReader { proxy in
             ScrollView {
                 // Lazy so rows scrolled off the wall stop decoding video.
                 LazyVStack(spacing: 2) {
-                    ForEach(cameraRows, id: \.self) { rowIndices in
+                    ForEach(rows(for: cams.count), id: \.self) { rowIndices in
                         HStack(spacing: 2) {
                             ForEach(rowIndices, id: \.self) { idx in
+                                let cam = cams[idx]
                                 MultiCameraCell(
-                                    camera: displayedCameras[idx],
+                                    camera: cam,
                                     columns: columns,
-                                    active: displayedCameras[idx].name == activeCameraName,
-                                    onTap: { selectedCamera = displayedCameras[idx] }
+                                    active: cam.name == activeCameraName,
+                                    onTap: { selectedCamera = cam }
                                 )
-                                .id(displayedCameras[idx].name)
+                                .id(cam.name)
                             }
                             // Fill partial last row
                             if rowIndices.count < columns {
@@ -186,8 +198,10 @@ struct MultiCameraGridView: View {
         }
     }
 
-    private var cameraRows: [[Int]] {
-        let count = displayedCameras.count
+    /// Index ranges for `count` cameras. Takes the count rather than reading
+    /// `displayedCameras` itself, so the rows can never describe a different array than the one
+    /// the cells index.
+    private func rows(for count: Int) -> [[Int]] {
         // max(1,...) so a corrupted/legacy persisted group with columns == 0 can't trap
         // stride (stride(by: 0) is a fatal precondition).
         let step = max(1, columns)
