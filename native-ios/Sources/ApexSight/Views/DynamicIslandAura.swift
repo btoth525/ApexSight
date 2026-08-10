@@ -117,8 +117,15 @@ struct DynamicIslandAura: View {
         }
 
         // 3) Alert ripples — expanding, fading capsules pulsing outward from the Island.
-        ripples.removeAll { now - $0 > rippleLife }
-        for start in ripples {
+        // Read-only: this runs inside the Canvas renderer, and `ripples` is @State. Pruning it
+        // here wrote state during the view update on EVERY displayed frame (SwiftUI's State
+        // setter invalidates unconditionally), which is the "Modifying state during view update,
+        // this will cause undefined behavior" condition — and a self-sustaining per-frame
+        // invalidation of an app-wide overlay that also recomputes `threat` and `alertCount` by
+        // flat-mapping every camera's live detections. The array is already bounded to 4 entries
+        // by the onChange handler, so nothing needs pruning while drawing.
+        let live = ripples.filter { now - $0 <= rippleLife }
+        for start in live {
             let p = (now - start) / rippleLife            // 0…1 progress
             guard p >= 0, p <= 1 else { continue }
             let spread = bleed + CGFloat(p) * 46          // grows outward
