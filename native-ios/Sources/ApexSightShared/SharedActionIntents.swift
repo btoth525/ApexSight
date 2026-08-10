@@ -93,7 +93,17 @@ struct ApexSetArmModeIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         ArmStateStore.mode = mode.core
         await SharedRelayGate.syncCurrent()
-        return .result(dialog: IntentDialog(stringLiteral: "ApexSight is now \(mode.core.title)."))
+        // This intent sets the app's own NOTIFICATION gate — it does not touch Alarmo or the real
+        // house mode (that is ApexArmAwayIntent / ApexHouseModeIntent). Saying "ApexSight is now
+        // Away" borrowed SharedHouseMode's exact vocabulary, so a security app told the user in
+        // its own voice that the house was armed when nothing had been armed. Same confusion the
+        // Control Center label and the widget footer were already fixed to avoid. Dialog only —
+        // the identifiers, titles and shortcut phrases are untouched so existing Shortcuts keep
+        // working.
+        let spoken = mode.core == .disarmed
+            ? "Camera alerts are now off."
+            : "Camera alerts are now on (\(mode.core.title))."
+        return .result(dialog: IntentDialog(stringLiteral: spoken))
     }
 }
 
