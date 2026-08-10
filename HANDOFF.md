@@ -48,11 +48,18 @@ Cameras ─→ Scrypted (rebroadcast/prebuffer, holds streams hot) ─→ Frigat
 
 ## 2. ⚠️ BUILD & SHIP — read this or lose an hour
 
-**Ship with the iOS 27 BETA SDK.** Both users' phones are on iOS 27 and the app uses 27-only APIs
-(nav-bar `toolbarMinimizeBehavior`, Apple Intelligence vision, NowPlaying). It is TestFlight-only, so
-Apple's `ITMS-90534: Unsupported SDK` email on every upload is **expected and harmless** (it only
-blocks public App Store submission, which we don't do). **Do NOT "fix" that warning by switching to
-the release Xcode — it silently drops the iOS 27 features.**
+**Ship with the RELEASE SDK — `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
+(Xcode 26.5).** Apple hard-blocks a beta SDK at upload as of 2026-07-14: `ITMS-90534` went from a
+warning to an outright rejection. Every build from 213 onward shipped this way; `scratchpad/ship*.sh`
+already exports the right `DEVELOPER_DIR`, so copy the newest one.
+
+The only cost is the nav-bar `toolbarMinimizeBehavior`, guarded `#if compiler(>=6.4)` so it compiles
+out on 26.5 and returns automatically once an iOS 27 RC Xcode exists. Apple Intelligence vision and
+NowPlaying still work — they compile against 26.5 and are runtime-gated with `@available(iOS 27, *)`.
+
+> This section used to say the opposite ("ship the iOS 27 BETA SDK, the ITMS-90534 email is
+> harmless"). That was true until the gate hardened, and following it now fails at upload every
+> time. CLAUDE.md is the authority on the toolchain; this note is kept so nobody re-derives it.
 
 ```bash
 # The correct toolchain:
@@ -253,12 +260,36 @@ commits over one big sweep.
 
 ## 9. Current state (as of this handoff)
 
-- **App build 206** on TestFlight (iOS 27 SDK), branch `feature/ios27-platform`, pushed. Zero
-  warnings. Contains all of §4.
-- **Relay 1.13.1** on `apexsight-ha-addon` main, pushed.
-- **Open verification the user owns**: device-test two-way talk (build 201's talk was never confirmed
-  working; the R1 refactor sits on that unverified baseline) and the live all-cameras grid.
-- The single biggest unlock for deeper auditing: **run-verifiable Frigate access from the sim/device**
-  so the live-video/talk tier stops being compiler-only.
+_Last updated 2026-08-10 (build 221 / relay 1.21.0). Update this section when you ship._
+
+- **App build 221** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
+  tree clean, zero warnings. 144 tests in 18 suites.
+- **Relay 1.21.0** on `apexsight-ha-addon` main, pushed AND deployed to HA (verified: `/healthz` ok,
+  APNs configured, 3 devices). 229 checks across 8 suites.
+  **⚠️ Its tests are standalone scripts, not pytest** — `pytest tests/` fails on their `raise
+  SystemExit`. Run each with `PYTHONPATH=<addon dir> APEX_DATA_DIR=… APEX_SECRET_KEY=… python3 tests/test_x.py`.
+
+**Open verification the user owns** (all compiler-and-tests-only; the simulator cannot exercise them):
+- Two-way talk end-to-end on a device — never confirmed working, and several fixes now sit on that
+  unverified baseline. Build 221 at least makes its failures *visible*, which is the missing
+  diagnostic: hold the button and read the red capsule.
+- The privacy cover / Face ID lock drawn over an OPEN SHEET (build 221's `SecurityCoverWindow`). Its
+  create/dismiss lifecycle was sim-verified; the over-a-sheet case and Face ID itself were not.
+- The live all-cameras grid.
+
+**Known-open, ranked** (nothing here is a regression; they're unstarted work):
+1. `LocalAlertNotifier` and CarPlay still resolve a review's still through the object's own frame,
+   so they can show the wrong-moment image `ReviewStillPolicy` fixes elsewhere. Deliberately scoped
+   out — the relay already clamps the notification image server-side, and CarPlay isn't verifiable here.
+2. The MJPEG fallback keys off AVPlayer's `.playing`, not real frames; keying off `videoReady` would
+   harden it against a stream that reports playing and never paints (CLAUDE.md watch-item).
+3. Doorbell first-open cold start (~8s, on-demand NVENC re-encode) — could be pre-warmed when the
+   wall loads.
+4. The wall uses the full `main` stream for sub-less cameras (doorbell, movie_room).
+5. Performance/battery on the camera wall and the 4K HEVC driveway camera has never been profiled;
+   heap growth HAS been measured and is clean.
+
+- The single biggest unlock for deeper auditing is unchanged: **run-verifiable live video from a
+  device**, so the WebRTC/talk tier stops being compiler-only.
 
 Good luck. Make it feel like Apple made it.
