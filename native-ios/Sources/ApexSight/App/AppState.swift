@@ -875,9 +875,18 @@ final class AppState: ObservableObject {
     }
 
     private func updateLiveDetection(_ item: FrigateEvent, change: ChangeType) {
-        guard let box = item.box, box.count == 4,
-              let w = item.frameWidth, w > 0,
-              let h = item.frameHeight, h > 0 else {
+        // Frigate 0.18's WebSocket tracked-object payload has NO top-level `width`/`height` keys
+        // (measured: 81 consecutive live `events` frames, zero occurrences), so `item.frameWidth`
+        // and `item.frameHeight` are always nil and this guard used to reject every detection —
+        // the overlay and the Dynamic Island aura could never see a box at all. `box` is already
+        // in the camera's DETECT-frame pixels, which `/api/config` gives us per camera, so fall
+        // back to that. Prefer the event's own size whenever a server does send one.
+        let detectFrame = cameras.first { $0.name == item.camera }
+        guard let normBox = DetectionBox.normalized(
+            box: item.box,
+            frameWidth: item.frameWidth ?? detectFrame?.width.map(Double.init),
+            frameHeight: item.frameHeight ?? detectFrame?.height.map(Double.init)
+        ) else {
             if change == .end {
                 pendingDetections[item.camera]?.removeAll { $0.id == item.id }
                 if pendingDetections[item.camera]?.isEmpty == true { pendingDetections.removeValue(forKey: item.camera) }
@@ -885,10 +894,6 @@ final class AppState: ObservableObject {
             }
             return
         }
-        let normBox = CGRect(
-            x: box[0] / w, y: box[1] / h,
-            width: (box[2] - box[0]) / w, height: (box[3] - box[1]) / h
-        )
         let det = LiveDetection(id: item.id, label: item.displayLabel, normBox: normBox)
         var current = pendingDetections[item.camera] ?? []
         current.removeAll { $0.id == item.id }
