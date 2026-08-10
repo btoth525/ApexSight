@@ -131,6 +131,9 @@ struct HouseModeAlertsView: View {
                     Text(spec.title)
                         .font(.headline)
                         .foregroundStyle(GlassTheme.primary)
+                        // A heading so the rotor can jump between the three mode cards — the only
+                        // thing that distinguishes three otherwise-identical camera lists.
+                        .accessibilityAddTraits(.isHeader)
                     if isCurrent {
                         Text("NOW")
                             .font(.caption2.weight(.bold))
@@ -153,6 +156,12 @@ struct HouseModeAlertsView: View {
                             .font(.subheadline)
                             .foregroundStyle(GlassTheme.primary)
                     }
+                    // modeCard is rendered three times over the same roster, so without the mode
+                    // in the label VoiceOver read the identical "Zachs Room, switch, on" three
+                    // times on one scrolling screen — and a mute meant for Night could just as
+                    // easily land on Away, the armed-nobody-home mode where every camera must
+                    // alert. The edit is household-wide, so it goes silent on every phone.
+                    .accessibilityLabel("\(spec.title): \(titleize(camera))")
                     .tint(spec.tint)
                     // Read-only until the relay can store edits (add-on 1.10.5+) — a toggle that
                     // silently reverts is worse than one that's visibly locked.
