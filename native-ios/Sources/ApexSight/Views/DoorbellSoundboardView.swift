@@ -80,6 +80,18 @@ struct DoorbellSoundboardStrip: View {
                 .foregroundStyle(.white.opacity(0.85))
         }
         .contentShape(Circle())
+        // Without these, VoiceOver met two unrelated fragments (an SF Symbol and a caption)
+        // instead of one control, and the caption is the only indication of live-mic state — so a
+        // blind user on a doorbell call could not tell this was the talk button, nor whether the
+        // mic was open to the door speaker. The full-screen viewer's equivalent is already
+        // labelled ("Push to talk"), so this was an inconsistency, not a design stance.
+        //
+        // Deliberately NO .accessibilityAction: the onPressingChanged contract below is what
+        // guarantees the mic tears down on gesture-cancel, and a tap-style action would open a
+        // hot mic outside it. Labelling only.
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(talking ? "Talking at the door. Release to end." : "Hold to talk at the door")
         // `pressing:` (unlike a DragGesture) is ALSO called with false when the system cancels the
         // gesture (scroll steal, view teardown) — so the mic can never be left hot on a cancel.
         .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 60) {} onPressingChanged: { pressing in
