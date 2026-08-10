@@ -1174,21 +1174,21 @@ struct HLSLivePlayerView: View {
         VStack(spacing: 14) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 40, weight: .bold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(GlassTheme.orange)
                 .symbolEffect(.pulse, options: reduceMotion ? .nonRepeating : .repeating)
             Text(message)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
-            Button { Haptics.tap(); retry() } label: {
+            // The shared Retry pill, like every other Retry in the app — the hand-rolled solid
+            // white capsule this replaces was the one button the design system rules out, and it
+            // had no press, disabled or haptic behaviour. PillButtonStyle taps on press, so the
+            // explicit Haptics.tap() here would have double-ticked.
+            Button { retry() } label: {
                 Label("Retry", systemImage: "arrow.clockwise")
-                    .font(.system(size: 14, weight: .black))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(.white, in: Capsule())
             }
+            .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
         }
     }
 }

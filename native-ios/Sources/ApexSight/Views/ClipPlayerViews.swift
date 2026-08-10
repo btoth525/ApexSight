@@ -55,7 +55,7 @@ struct ClipSkeleton: View {
                     .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: false), value: sweep)
                 }
                 ProgressView()
-                    .tint(GlassTheme.cyan)
+                    .tint(GlassTheme.accent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -99,7 +99,7 @@ struct ClipErrorView: View {
             VStack(spacing: GlassTheme.Space.m) {
                 Image(systemName: "film.stack")
                     .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(GlassTheme.orange)
                 Text("Clip unavailable")
                     .font(.system(size: 15, weight: .black))
                     .foregroundStyle(.white)
@@ -108,15 +108,12 @@ struct ClipErrorView: View {
                     .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, GlassTheme.Space.xxl)
+                // The shared Retry pill, matching every other Retry in the app instead of the
+                // hand-rolled solid white capsule the design system rules out.
                 Button(action: retry) {
                     Label("Retry", systemImage: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .black))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, GlassTheme.Space.l)
-                        .padding(.vertical, 9)
-                        .background(.white, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
             }
         }
     }
