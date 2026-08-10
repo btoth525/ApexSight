@@ -154,6 +154,8 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case topScore = "top_score"
         case description
         case snapshotFrameTime = "snapshot_frame_time"
+        case recognizedLicensePlate = "recognized_license_plate"
+        case recognizedLicensePlateScore = "recognized_license_plate_score"
     }
 
     init(from decoder: Decoder) throws {
@@ -173,8 +175,6 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         zones = try? c.decodeIfPresent([String].self, forKey: .zones)
         hasClip = try? c.decodeIfPresent(Bool.self, forKey: .hasClip)
         hasSnapshot = try? c.decodeIfPresent(Bool.self, forKey: .hasSnapshot)
-        recognizedLicensePlate = try? c.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)
-        recognizedLicensePlateScore = try? c.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)
         searchDistance = try? c.decodeIfPresent(Double.self, forKey: .searchDistance)
         searchSource = try? c.decodeIfPresent(String.self, forKey: .searchSource)
         box = try? c.decodeIfPresent([Double].self, forKey: .box)
@@ -185,13 +185,25 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         // (the /events/search response nests them) — read both, preferring top-level.
         var dataScore: Double?, dataTopScore: Double?, dataDescription: String?
         var dataSnapshotFrameTime: Double?
+        // The REST /api/events response carries the recognized plate ONLY under `data`
+        // (measured across 300 rows + a known plate event on Frigate 0.18); the WebSocket
+        // tracked-object payload carries it at top level. Read both, preferring top-level.
+        var dataPlate: String?, dataPlateScore: Double?
         if let dataOuter = try? decoder.container(keyedBy: DataOuterKeys.self),
            let dataC = try? dataOuter.nestedContainer(keyedBy: DataKeys.self, forKey: .data) {
             dataScore = try? dataC.decodeIfPresent(Double.self, forKey: .score)
             dataTopScore = try? dataC.decodeIfPresent(Double.self, forKey: .topScore)
             dataDescription = try? dataC.decodeIfPresent(String.self, forKey: .description)
             dataSnapshotFrameTime = try? dataC.decodeIfPresent(Double.self, forKey: .snapshotFrameTime)
+            dataPlate = try? dataC.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)
+            dataPlateScore = try? dataC.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)
         }
+        let topPlate = ((try? c.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)) ?? nil)
+        let mergedPlate = (topPlate?.isEmpty == false) ? topPlate : dataPlate
+        recognizedLicensePlate = (mergedPlate?.isEmpty == false) ? mergedPlate : nil
+        recognizedLicensePlateScore =
+            ((try? c.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)) ?? nil)
+            ?? dataPlateScore
         snapshotFrameTime = ((try? c.decodeIfPresent(Double.self, forKey: .snapshotFrameTime)) ?? nil)
             ?? dataSnapshotFrameTime
         score = ((try? c.decodeIfPresent(Double.self, forKey: .score)) ?? nil) ?? dataScore
