@@ -43,6 +43,13 @@ public enum SharedHouseModeFetch {
         let changed = SharedHouseMode.mode != mode
         SharedHouseMode.mode = mode
         if !by.isEmpty { SharedHouseMode.armedBy = by }
+        // The SAME response carries the cameras this mode silences, so refresh the mute mirror here
+        // too. Without it only the app process ever writes the list, and a mode change while the app
+        // is closed would leave the widget/Watch/Siri feed filtering by the previous mode's mutes —
+        // `SharedHouseMode.mutedCameras` would then correctly ignore it and show everything, but
+        // that is the safe degradation, not the right answer. Reading it here makes the mirror true.
+        // Absent/malformed → clear the list for this mode, which fails OPEN.
+        SharedHouseMode.setMutedCameras((obj["mutes"] as? [String]) ?? [], for: mode)
         if changed && reloadingSurfaces { ApexSurfaceRefresh.reload() }
         return mode
     }

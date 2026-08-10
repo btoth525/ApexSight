@@ -8,6 +8,8 @@ public enum SharedHouseMode {
     private static let modeKey = "apex.houseMode"
     private static let byKey = "apex.houseModeArmedBy"
     private static let mutesKey = "apex.houseModeMutedCameras"
+    /// Which mode the stored mute list was read for. See `mutedCameras`.
+    private static let mutesModeKey = "apex.houseModeMutedCamerasMode"
     private static let showAllKey = "apex.showAllCamerasInFeeds"
 
     private static var defaults: UserDefaults? { UserDefaults(suiteName: ApexAppGroup.identifier) }
@@ -31,9 +33,22 @@ public enum SharedHouseMode {
     ///
     /// Empty is the FAIL-OPEN answer (show everything), which is also what a process that has
     /// never seen a mirror write reads.
+    ///
+    /// **The list is only honoured for the mode it was read for.** `mode` is updated from three
+    /// places, two of which run in EXTENSION processes (`SharedHouseModeFetch`, `SharedRelayGate`)
+    /// and cannot see `AppState` — so a mode change while the app is closed used to leave this list
+    /// describing the PREVIOUS mode. Filtering the widget/Watch/Siri feed by the wrong mode's mutes
+    /// hides real alerts, which is the one direction this app must never fail in. A stamp mismatch
+    /// therefore reads as empty: show everything, and let the next relay poll re-establish the truth.
     public static var mutedCameras: [String] {
-        get { defaults?.stringArray(forKey: mutesKey) ?? [] }
-        set { defaults?.set(newValue, forKey: mutesKey) }
+        guard defaults?.string(forKey: mutesModeKey) == mode else { return [] }
+        return defaults?.stringArray(forKey: mutesKey) ?? []
+    }
+
+    /// Store the mute list together with the mode it belongs to. Always set them as a pair.
+    public static func setMutedCameras(_ cameras: [String], for mode: String) {
+        defaults?.set(cameras, forKey: mutesKey)
+        defaults?.set(mode, forKey: mutesModeKey)
     }
 
     /// The user's escape hatch: when true, every feed ignores the house-mode filter. Same key the

@@ -557,7 +557,9 @@ final class AppState: ObservableObject {
         // The mute list has to cross into the app group too, or the widget/Watch/Siri feeds — which
         // are written from extension processes with no access to AppState — keep listing cameras
         // this mode has silenced, while the Review tab and the relay's push gate both suppress them.
-        SharedHouseMode.mutedCameras = mutes
+        // Stamped with the mode it was read for — a list left over from a different mode must not
+        // filter the widget feed (see SharedHouseMode.mutedCameras).
+        SharedHouseMode.setMutedCameras(mutes, for: status.mode)
         if modeChanged { ApexSurfaceRefresh.reload() }
     }
 
