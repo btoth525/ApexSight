@@ -168,6 +168,14 @@ struct LiveStreamView: View {
 
     private func scheduleHideChrome() {
         hideTask?.cancel()
+        // Never auto-hide for VoiceOver. Hiding drops the whole chrome VStack from the
+        // accessibility tree (.accessibilityHidden(!showChrome)), and the only way back is a
+        // single tap on the ZoomableScrollView's UITapGestureRecognizer — a raw UIView hosting an
+        // AVPlayerLayer that is not an accessibility element, with the snapshot behind it
+        // explicitly hidden too. So a blind user who hadn't found a control within 4 seconds was
+        // left with nothing focusable: no way to close, mute, or stop the mic, and no way to tell
+        // whether audio was live.
+        guard !UIAccessibility.isVoiceOverRunning else { return }
         // Don't arm the hide timer while a control is in use; it re-arms when interaction ends.
         guard !interactionActive else { return }
         hideTask = Task { @MainActor in
