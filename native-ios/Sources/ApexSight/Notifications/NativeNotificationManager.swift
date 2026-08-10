@@ -4,6 +4,9 @@ import UserNotifications
 struct NotificationStatus: Hashable {
     let isAuthorized: Bool
     let description: String
+    /// Denied at the OS level. Distinct from "not determined": re-requesting authorization is a
+    /// no-op iOS answers instantly with false, so the only real fix is the Settings app.
+    var isDenied: Bool = false
 }
 
 enum NativeNotificationManager {
@@ -52,7 +55,7 @@ enum NativeNotificationManager {
         case .provisional:
             return NotificationStatus(isAuthorized: true, description: "Quiet")
         case .denied:
-            return NotificationStatus(isAuthorized: false, description: "Denied")
+            return NotificationStatus(isAuthorized: false, description: "Denied", isDenied: true)
         case .notDetermined:
             return NotificationStatus(isAuthorized: false, description: "Not Set")
         case .ephemeral:

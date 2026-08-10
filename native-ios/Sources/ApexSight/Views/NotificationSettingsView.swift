@@ -125,7 +125,29 @@ struct NotificationSettingsView: View {
                     Spacer()
                 }
 
-                if !status.isAuthorized {
+                if status.isDenied {
+                    // Notifications are off at the OS level: requestAuthorization returns false
+                    // instantly without showing any UI, so the old "Allow Notifications" button
+                    // was a promise iOS would never keep — it just set "check Settings" with no
+                    // way to get there. Same pattern PushCompanionSettingsView already uses.
+                    VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
+                        Text("Notifications are off for ApexSight. Turn them on in iOS Settings to get alerts.")
+                            .font(.subheadline)
+                            .foregroundStyle(GlassTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button {
+                            Haptics.tap()
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            Label("Open Settings", systemImage: "gear")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
+                        .accessibilityLabel("Open iOS Settings to enable notifications")
+                    }
+                } else if !status.isAuthorized {
                     Button {
                         Haptics.tap()
                         Task { await requestPermission() }
