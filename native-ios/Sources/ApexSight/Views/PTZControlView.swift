@@ -4,6 +4,11 @@ struct PTZControlView: View {
     let cameraName: String
     let client: FrigateClient
     @State private var feedback: String?
+    /// Whether `feedback` is reporting a FAILURE. Tracked explicitly rather than string-matched:
+    /// the label used to render "Left" (moved) and "Move failed" (didn't move) in the same accent
+    /// blue, same weight, same place, for the same 1.2s — so a glance at a live PTZ feed read a
+    /// failure as a confirmation. Only the haptic distinguished them, and haptics can be off.
+    @State private var feedbackIsError = false
     @State private var presets: [String] = []
 
     var body: some View {
@@ -16,7 +21,7 @@ struct PTZControlView: View {
                 if let msg = feedback {
                     Text(msg)
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(GlassTheme.accent)
+                        .foregroundStyle(feedbackIsError ? GlassTheme.red : GlassTheme.accent)
                         .transition(.opacity)
                 }
             }
@@ -54,10 +59,10 @@ struct PTZControlView: View {
         .sensoryFeedback(trigger: feedback) { _, new in
             switch new {
             case nil: return nil
-            // The failure branch of send() sets exactly this string — buzz an error, not the
-            // success tick (the old "Error" case never matched the message actually set).
-            case "Move failed": return .error
-            case .some: return .impact(weight: .light)
+            // Branches on the explicit failure flag rather than matching the message text, so
+            // rewording the copy can never silently turn the error buzz back into a success tick
+            // (an earlier "Error" case had already stopped matching the message actually set).
+            case .some: return feedbackIsError ? .error : .impact(weight: .light)
             }
         }
         .task { await loadPresets() }
@@ -127,11 +132,13 @@ struct PTZControlView: View {
         Task {
             do {
                 try await client.ptzMove(camera: cameraName, action: action, extra: extra)
+                feedbackIsError = false
                 withAnimation { feedback = action.replacingOccurrences(of: "_", with: " ").capitalized }
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 withAnimation { feedback = nil }
             } catch {
-                withAnimation { feedback = "Move failed" }
+                feedbackIsError = true
+                withAnimation { feedback = "Camera didn't move — try again" }
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 withAnimation { feedback = nil }
             }
