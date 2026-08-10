@@ -19,27 +19,41 @@ import Foundation
 final class ReviewStillResolver {
     static let shared = ReviewStillResolver()
 
-    /// reviewID → the pinned URL, or nil for "the existing snapshot is correct". Only holds
-    /// entries for FINISHED reviews (see the type doc).
-    private var cache: [String: URL?] = [:]
+    /// reviewID → the pinned frame TIME, or nil for "the existing snapshot is correct". Only
+    /// holds entries for FINISHED reviews (see the type doc).
+    ///
+    /// Deliberately not the URL: `recordingFrameURL` bakes in the client's `baseURL`, so caching
+    /// the address meant a still resolved at home kept pointing at the LAN host after
+    /// `onLocalNetwork` flipped and `AppState.client` switched to the tunnel. Every such row then
+    /// burned RemoteImage's three attempts against an unreachable address and fell back to
+    /// `objectStillURL` — exactly the wrong-moment snapshot ReviewStillPolicy exists to replace.
+    /// The frame time is host-independent, so it survives the local↔remote flip and a server
+    /// switch alike.
+    private var cache: [String: Double?] = [:]
     /// Coalesces concurrent asks for the same review — a row scrolling in and out shouldn't
     /// stack duplicate event fetches.
-    private var inFlight: [String: Task<URL?, Never>] = [:]
+    private var inFlight: [String: Task<Double?, Never>] = [:]
 
     private init() {}
 
     /// The URL to show instead of the review's own snapshot, or nil to keep the existing one.
+    /// Built against the CURRENT client, so it always names the host the app is talking to now.
     func pinnedStill(for review: FrigateReviewItem, client: FrigateClient?) async -> URL? {
         guard let client else { return nil }
+        guard let pinned = await pinnedFrameTime(for: review, client: client) else { return nil }
+        return client.recordingFrameURL(camera: review.camera, at: pinned)
+    }
+
+    private func pinnedFrameTime(for review: FrigateReviewItem, client: FrigateClient) async -> Double? {
         let isFinished = review.endTime != nil
         if isFinished, let cached = cache[review.id] { return cached }
         if let running = inFlight[review.id] { return await running.value }
 
-        let task = Task<URL?, Never> { [weak self] in
-            let url = await Self.resolve(review: review, client: client)
-            if isFinished { self?.cache[review.id] = url }
+        let task = Task<Double?, Never> { [weak self] in
+            let pinned = await Self.resolve(review: review, client: client)
+            if isFinished { self?.cache[review.id] = pinned }
             self?.inFlight[review.id] = nil
-            return url
+            return pinned
         }
         inFlight[review.id] = task
         return await task.value
@@ -54,15 +68,14 @@ final class ReviewStillResolver {
     }
 
     private nonisolated static func resolve(review: FrigateReviewItem,
-                                            client: FrigateClient) async -> URL? {
+                                            client: FrigateClient) async -> Double? {
         guard let detectionID = FrigateClient.primaryDetectionID(of: review) else { return nil }
         guard let event = try? await client.event(id: detectionID) else { return nil }
 
         // An in-progress review's window runs up to NOW; a frame chosen moments ago belongs to it.
         let effectiveEnd = review.endTime ?? Date().timeIntervalSince1970
-        guard let pinned = ReviewStillPolicy.pinnedFrameTime(snapshotFrameTime: event.snapshotFrameTime,
-                                                             reviewStart: review.startTime,
-                                                             reviewEnd: effectiveEnd) else { return nil }
-        return client.recordingFrameURL(camera: review.camera, at: pinned)
+        return ReviewStillPolicy.pinnedFrameTime(snapshotFrameTime: event.snapshotFrameTime,
+                                                 reviewStart: review.startTime,
+                                                 reviewEnd: effectiveEnd)
     }
 }
