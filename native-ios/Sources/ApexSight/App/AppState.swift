@@ -746,7 +746,7 @@ final class AppState: ObservableObject {
             unreviewedCount = 0
             cacheLatestAlertForWidget()   // clears the widgets too
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingMessage(for: error)
         }
     }
 
@@ -1176,14 +1176,20 @@ final class AppState: ObservableObject {
             // APNs token immediately, not wait for the next background→foreground cycle.
             PushRegistrar.ensureRegistered()
         } catch {
-            errorMessage = Self.signInErrorMessage(for: error)
+            errorMessage = Self.userFacingMessage(for: error)
         }
         isLoading = false
     }
 
-    /// Turns the raw sign-in error into something actionable, so the user can tell a
-    /// wrong password apart from an unreachable server instead of seeing a status code.
-    static func signInErrorMessage(for error: Error) -> String {
+    /// Turns a raw error into something actionable, so the user can tell a wrong password apart
+    /// from an unreachable server instead of seeing a status code. Any error the mapping doesn't
+    /// recognise falls through to `error.localizedDescription`, i.e. the old string.
+    ///
+    /// Named for sign-in originally and wired there only, which left every POST-login surface —
+    /// the Cameras error card, System Health, mark-reviewed — showing Foundation's developer-shaped
+    /// copy ("A server with the specified hostname could not be found.") for errors this already
+    /// has good words for.
+    static func userFacingMessage(for error: Error) -> String {
         if let frigate = error as? FrigateError {
             switch frigate {
             case .loginFailed:
@@ -1414,7 +1420,7 @@ final class AppState: ObservableObject {
             }
             // Ignore transient cancellations (interrupted refreshes, view teardown).
             if !error.isCancellation {
-                errorMessage = error.localizedDescription
+                errorMessage = Self.userFacingMessage(for: error)
                 isReachable = false
             }
         }
@@ -1643,7 +1649,7 @@ final class AppState: ObservableObject {
             // Rewrite + reload the widgets so a reviewed alert clears there too, not just in-app.
             cacheLatestAlertForWidget()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingMessage(for: error)
         }
     }
 
