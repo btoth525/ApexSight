@@ -135,42 +135,25 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNoti
 
     @MainActor
     private func handle(response: UNNotificationResponse, userInfo: [AnyHashable: Any]) async {
-        guard let appState else { return }
+        // markReviewed / snooze are handled in handleBackgroundAction (they must run without
+        // appState and defer the completion handler), so they never reach here.
+        let link = NotificationDeepLink.link(action: response.actionIdentifier, userInfo: userInfo)
 
-        // "View Live" — jump straight to the camera's live view.
-        if response.actionIdentifier == NativeNotificationManager.viewLiveAction,
-           let camera = userInfo["camera"] as? String {
-            appState.deepLink = .camera(camera)
-            return
-        }
-
-        // "Review" — open the review, else the deep link, else the camera. Explicit so
-        // this action can never dead-end regardless of which fields the payload carries.
-        if response.actionIdentifier == NativeNotificationManager.openReviewAction {
-            if let reviewID = userInfo["review_id"] as? String {
-                appState.deepLink = .review(reviewID)
-            } else if let urlString = userInfo["apex_url"] as? String, let url = URL(string: urlString) {
-                appState.handleDeepLink(url)
-            } else if let camera = userInfo["camera"] as? String {
-                appState.deepLink = .camera(camera)
+        guard let appState else {
+            // Cold launch: this Task can run before RootView.onAppear has called
+            // configure(appState:) — the very race the delegate is registered in init() to
+            // survive. Dropping the tap here meant the user tapped an alert and landed on the
+            // camera wall with no sheet and no error. Stash it in the app group instead; the
+            // launch `.task` and the `.active` handler both drain it via
+            // consumePendingIntentLink(), which removes the key before dispatching, so it
+            // cannot double-fire.
+            if let link {
+                UserDefaults(suiteName: ApexAppGroup.identifier)?
+                    .set(link.absoluteString, forKey: "apex.pendingIntentLink")
             }
             return
         }
 
-        // markReviewed / snooze are handled in handleBackgroundAction (they must run without
-        // appState and defer the completion handler), so they never reach here.
-
-        if let urlString = userInfo["apex_url"] as? String, let url = URL(string: urlString) {
-            appState.handleDeepLink(url)
-            return
-        }
-
-        if let reviewID = userInfo["review_id"] as? String {
-            appState.deepLink = .review(reviewID)
-        } else if let eventID = userInfo["event_id"] as? String {
-            appState.deepLink = .event(eventID)
-        } else if let camera = userInfo["camera"] as? String {
-            appState.deepLink = .camera(camera)
-        }
+        if let link { appState.handleDeepLink(link) }
     }
 }
