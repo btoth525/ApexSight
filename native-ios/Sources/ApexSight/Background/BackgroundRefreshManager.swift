@@ -146,7 +146,13 @@ enum BackgroundRefreshManager {
             baseURL: session.baseURL,
             username: session.username,
             token: token,
-            password: password
+            password: password,
+            // Carry the home-network URL through, exactly as the foreground reauth does.
+            // Omitting it defaulted the field to nil and this save persisted that over the real
+            // session, so the next cold launch had no LAN address: evaluateLocalNetwork() bailed
+            // immediately, onLocalNetwork could never become true, and every stream/snapshot/REST
+            // call went out over the tunnel while standing at home.
+            localBaseURL: session.localBaseURL
         )
         KeychainStore().save(session: next)
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
