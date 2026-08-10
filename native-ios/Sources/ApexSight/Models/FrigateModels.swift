@@ -406,7 +406,18 @@ struct ReviewAISummary: Codable, Hashable {
         scene = try? c.decodeIfPresent(String.self, forKey: .scene)
         observations = (try? c.decodeIfPresent([String].self, forKey: .observations)) ?? nil
         confidence = try? c.decodeIfPresent(Double.self, forKey: .confidence)
-        potentialThreatLevel = try? c.decodeIfPresent(Int.self, forKey: .potentialThreatLevel)
+        // An LLM writes this number and Frigate stores it verbatim, so it can arrive as `2.0`.
+        // Int-only decoding threw on that, `try?` swallowed it, and a review the model rated
+        // "worth acting on" lost its badge and read as routine — the silent-downgrade direction.
+        // Int is tried first, so the common case is unchanged and nil still means routine.
+        if let exact = try? c.decodeIfPresent(Int.self, forKey: .potentialThreatLevel) {
+            potentialThreatLevel = exact
+        } else if let approx = try? c.decodeIfPresent(Double.self, forKey: .potentialThreatLevel),
+                  approx.isFinite {
+            potentialThreatLevel = Int(approx.rounded())
+        } else {
+            potentialThreatLevel = nil
+        }
         time = try? c.decodeIfPresent(String.self, forKey: .time)
         // Array is what Frigate actually sends; a bare string is accepted so a provider that
         // returns one doesn't silently drop the concern.

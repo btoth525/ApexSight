@@ -181,6 +181,29 @@ struct ReviewStoryTests {
         #expect(ThreatLevel(raw: m.potentialThreatLevel) == .routine, "and it fails quiet")
     }
 
+    /// The rating is written by a language model and stored verbatim, so it can come back as `2.0`.
+    /// Int-only decoding threw on that and `try?` turned it into nil → routine, silently stripping
+    /// the badge off a review the model had flagged. Under-alerting is the direction that matters:
+    /// an over-eager badge is noise, a missing one is the thing the user never looks at.
+    @Test("A threat level written as a JSON float still rates the review")
+    func floatThreatLevelSurvives() throws {
+        for (raw, expected) in [("2.0", 2), ("1.0", 1), ("0.0", 0), ("1.6", 2), ("2.4", 2)] {
+            let review = try decodeReview("""
+            {"id":"1.0-i","camera":"doorbell","start_time":1.0,"severity":"alert",
+             "has_been_reviewed":false,
+             "data":{"metadata":{"title":"T","potential_threat_level":\(raw)}}}
+            """)
+            #expect(review.data?.metadata?.potentialThreatLevel == expected,
+                    "\(raw) should read as \(expected)")
+        }
+        // The plain integer path is untouched, and nonsense still fails quiet to routine.
+        let exact = try decodeReview("""
+        {"id":"1.0-j","camera":"doorbell","start_time":1.0,"severity":"alert",
+         "has_been_reviewed":false,"data":{"metadata":{"potential_threat_level":2}}}
+        """)
+        #expect(ThreatLevel(raw: exact.data?.metadata?.potentialThreatLevel) == .concerning)
+    }
+
     @Test("metadata of an entirely wrong SHAPE can't cost the user their alerts")
     func badShapeStillYieldsReview() throws {
         for bad in ["\"a string\"", "42", "[1,2,3]"] {
