@@ -5,6 +5,47 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
+## Builds 215–220 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
+
+### Fixed — things the app was telling you that weren't true
+- **Review alerts showed a picture from the wrong day.** A review's still resolved through one of
+  its detections, and Frigate keeps re-choosing that object's "best frame" for as long as the track
+  lives — so a parked car re-linked into a fresh review illustrated it with a frame from hours
+  earlier. Measured over three days: 27 of 157 alerts, 10 of them off by more than five minutes; the
+  worst showed a different vehicle from 16.5 hours before, with Frigate's own burnt-in timestamp
+  proving it. The still is now pinned into the review's own window when — and only when — the
+  object's frame falls outside it.
+- **The Lock Screen widget could say the house was armed when the arm had failed.** The Control
+  Center / widget arm control discarded the relay's response and repainted itself regardless.
+- **Siri's alerts toggle spoke like the alarm.** "ApexSight is now Away" borrowed the house-mode
+  vocabulary for what is only the app's notification gate; it now says "Camera alerts are now off".
+- **A failed detections poll rendered "No Detections"** — a security app affirmatively reporting
+  nothing was there when it had simply failed to ask.
+- **The widget hero could show an unrelated camera's live frame under an alert caption.**
+- **Live detection boxes never drew at all**, on any camera: Frigate's WebSocket payload carries no
+  frame dimensions, so every box was discarded. They now fall back to the camera's detect resolution.
+
+### Fixed — alerts and state that could go missing
+- Signing out or switching servers mid-refresh could publish (and persist) the previous server's
+  cameras, events and reviews over the cleared state; "Mark All Reviewed" could empty the *new*
+  server's queue and zero the badge.
+- A notification tapped on a cold launch could be dropped entirely instead of routed.
+- A background re-auth wiped the saved home-network URL, so the app silently ran every stream over
+  the tunnel while sitting at home.
+- One surprising field in one review can no longer fail the decode of the whole Review tab.
+- Camera Recording/Detect toggles confirmed changes the live socket never actually sent.
+- A single timed-out probe at launch could pin the whole session to a dead video pipeline.
+
+### Fixed — security
+- The notification extension attached the Frigate session token to image URLs taken from the push
+  payload; it now only ever sends credentials to the origin the app signed in to.
+- A Keychain recovery write downgraded the stored token to a backup-eligible protection class.
+
+### Added
+- **Frigate's AI review story in the Review tab** — headline, threat level, and the play-by-play
+  behind a disclosure — with the rating driving how loudly a notification interrupts you.
+- Traffic-light alert titles (green routine / yellow notable / red concerning).
+
 ## Builds 213–214 (2026-07-26/27) — a Focus stops silencing the household
 
 ### Fixed
