@@ -7,6 +7,12 @@ import WidgetKit
 /// extension uses), fetches recent un-reviewed alerts + a hero thumbnail, and writes
 /// them into SharedSnapshotStore. On any failure it leaves the last cache untouched.
 enum WidgetDataFetcher {
+    /// How many reviews to ASK for. Must stay comfortably larger than `displayCount`, because the
+    /// house-mode filter runs after the fetch and can discard most of a page (see refresh()).
+    static let fetchWindow = 40
+    /// How many rows the widget / Watch feed actually shows.
+    static let displayCount = 8
+
     private static var appGroup: UserDefaults? { UserDefaults(suiteName: ApexAppGroup.identifier) }
 
     private struct WReview: Decodable {
@@ -42,7 +48,13 @@ enum WidgetDataFetcher {
             resolvingAgainstBaseURL: false
         ) else { return }
         comps.queryItems = [
-            URLQueryItem(name: "limit", value: "8"),
+            // Fetch a WINDOW, show the newest `displayCount` of what survives the house-mode
+            // filter below. Fetching only 8 and then filtering has no headroom to backfill: the
+            // live server right now returns 8 muted-camera rows in its first 8, so the widget
+            // would write "all clear" while a Front_Driveway alert sat at position 9 — a security
+            // app affirmatively saying nothing happened. At 40 the same query leaves 16 visible.
+            // The Review tab already fetches 100 and filters for exactly this reason.
+            URLQueryItem(name: "limit", value: String(fetchWindow)),
             URLQueryItem(name: "reviewed", value: "0")
         ]
         guard let url = comps.url else { return }
@@ -55,9 +67,8 @@ enum WidgetDataFetcher {
 
         // Same house-mode filter the Review tab applies and the relay's push gate enforces. Without
         // it the widget hero + feed, the Watch list and Siri's "latest alert" showed activity from
-        // cameras the current mode silences (measured: 8/8 of this exact query were cameras muted in
-        // Home and Night). Reads the app's mirror; FAIL-OPEN — an empty/missing mirror shows
-        // everything, exactly as before.
+        // cameras the current mode silences. Reads the app's mirror; FAIL-OPEN — an empty/missing
+        // mirror shows everything, exactly as before.
         let muted = SharedHouseMode.mutedCameras
         let showAll = SharedHouseMode.showAllCameras
         let unreviewed = reviews.filter {
@@ -65,7 +76,7 @@ enum WidgetDataFetcher {
                 && HouseModeVisibility.cameraVisible($0.camera, mutedCameras: muted, showAll: showAll)
         }
         let alerts: [SharedAlert] = unreviewed
-            .prefix(8)
+            .prefix(displayCount)
             .map { r in
                 SharedAlert(
                     id: r.id,
