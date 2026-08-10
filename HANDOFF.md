@@ -262,7 +262,7 @@ commits over one big sweep.
 
 _Last updated 2026-08-10 (build 221 / relay 1.21.0). Update this section when you ship._
 
-- **App build 221** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
+- **App build 222** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
   tree clean, zero warnings. 144 tests in 18 suites.
 - **Relay 1.21.0** on `apexsight-ha-addon` main, pushed AND deployed to HA (verified: `/healthz` ok,
   APNs configured, 3 devices). 229 checks across 8 suites.
@@ -278,16 +278,24 @@ _Last updated 2026-08-10 (build 221 / relay 1.21.0). Update this section when yo
 - The live all-cameras grid.
 
 **Known-open, ranked** (nothing here is a regression; they're unstarted work):
-1. `LocalAlertNotifier` and CarPlay still resolve a review's still through the object's own frame,
-   so they can show the wrong-moment image `ReviewStillPolicy` fixes elsewhere. Deliberately scoped
-   out — the relay already clamps the notification image server-side, and CarPlay isn't verifiable here.
-2. The MJPEG fallback keys off AVPlayer's `.playing`, not real frames; keying off `videoReady` would
-   harden it against a stream that reports playing and never paints (CLAUDE.md watch-item).
-3. Doorbell first-open cold start (~8s, on-demand NVENC re-encode) — could be pre-warmed when the
-   wall loads.
-4. The wall uses the full `main` stream for sub-less cameras (doorbell, movie_room).
-5. Performance/battery on the camera wall and the 4K HEVC driveway camera has never been profiled;
-   heap growth HAS been measured and is clean.
+1. **The wall uses the full `main` stream for the three cameras with no `_sub`** (doorbell,
+   movie_room, Ryleighs_Rm — confirmed against the live go2rtc stream list). **Deliberately NOT
+   fixed, and think before you do**: giving them subs means either finding each camera's native
+   substream URL (the doorbell is an Aqara behind Scrypted, so there may not be one) or adding an
+   ffmpeg downscale, which puts *more* transcode on a 1080 Ti already running TensorRT + NVENC +
+   Scrypted. That could easily cost more than the phone-side decode it saves. Measure first.
+2. **Device battery / thermals on the wall have never been profiled.** The simulator says ~240 MB
+   RSS drifting *down* 81 MB over 95s at 2–13% CPU, and heap growth was separately measured clean —
+   but the sim decodes on the Mac's hardware, so none of that predicts an iPhone with the 4K HEVC
+   driveway camera. This needs Instruments on a real device.
+3. Doorbell first-open cold start (~8s, on-demand NVENC re-encode). **⚠️ Do NOT "fix" this by
+   rebuilding stream keep-warm** — that was built in 196–199 and deleted in 200 because it made taps
+   SLOWER (see §7). A ring already pre-warms the stream, which is the case that matters.
+
+_Items 1–2 of the previous list (review stills in notifications/CarPlay, and the MJPEG fallback)
+were closed in build 222. The old CLAUDE.md watch-item "MJPEG fallback keys off `.playing`, not real
+frames" was already stale before that — `evaluatePlaying()` has required a non-zero
+`presentationSize` for a while; 222 tightened it further to "live pixels actually on screen"._
 
 - The single biggest unlock for deeper auditing is unchanged: **run-verifiable live video from a
   device**, so the WebRTC/talk tier stops being compiler-only.
