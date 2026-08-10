@@ -796,7 +796,13 @@ struct SearchView: View {
                     )) ?? []
                     var changed = false
                     for e in aiEvents where !seen.contains(e.id) { seen.insert(e.id); merged.append(e); changed = true }
-                    if changed, gen == searchGeneration { results = plateFiltered(merged) }
+                    // Same 50-result cap present() applies. Without it the widening step
+                    // re-assigned the FULL merged array ~2s after the results were already on
+                    // screen, so the count leapt (50 → 300+) and the LazyVStack grew by hundreds
+                    // of rows each firing a thumbnail fetch — reintroducing exactly the scrolling
+                    // lag the cap was added to prevent. Merged order is already best-match-first,
+                    // so the top 50 keep the same semantics.
+                    if changed, gen == searchGeneration { results = Array(plateFiltered(merged).prefix(50)) }
                 }
 #endif
             }
