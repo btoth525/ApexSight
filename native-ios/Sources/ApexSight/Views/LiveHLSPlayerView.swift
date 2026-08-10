@@ -833,12 +833,18 @@ struct HLSLivePlayerView: View {
         model.setMuted(webRTCAudioLive ? true : (muted ?? true))
     }
 
-    /// The real stream (HLS or realtime) is on screen — hand the borrowed wall player back
-    /// (paused; the tile resumes it in its own onAppear when the user returns to the wall).
+    /// The real stream (HLS or realtime) is on screen — hand the borrowed wall player back.
+    ///
+    /// Deliberately does NOT pause it. The viewer is presented as a `.sheet`, which does not fire
+    /// the presenting wall tile's `onDisappear`, so the tile never re-runs the `onAppear` resume
+    /// branch that was supposed to restart it: pausing here left that tile frozen on a still frame
+    /// with `isLive` still true — no ConnectingHint, no reconnect, indistinguishable from live
+    /// video — until it was scrolled out of the LazyVStack and back. If the source tile really did
+    /// disappear, its own `model.stop()` already paused that player; if it did not, it was
+    /// decoding before the borrow and should keep decoding.
     private func completeHandoff() {
-        guard let warm = warmPlayer else { return }
+        guard warmPlayer != nil else { return }
         WallPlayerRegistry.shared.endBorrow(camera.name)
-        warm.pause()
         warmPlayer = nil
     }
 
@@ -1003,10 +1009,10 @@ struct HLSLivePlayerView: View {
             startTask?.cancel(); startTask = nil
             releaseGate()
             realtime.stop()
-            // Un-claimed warm player goes back to rest (the tile resumes it in its own onAppear).
-            if let warm = warmPlayer {
+            // Hand an un-claimed warm player back, running — same reasoning as completeHandoff():
+            // a `.sheet` presenter's onAppear never re-fires, so pausing here froze the tile.
+            if warmPlayer != nil {
                 WallPlayerRegistry.shared.endBorrow(camera.name)
-                warm.pause()
                 warmPlayer = nil
             }
             // Stop publishing to the system playback UI when the full-screen viewer closes.
