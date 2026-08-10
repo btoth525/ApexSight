@@ -18,6 +18,14 @@ struct ApexSightApp: App {
         // demand, only when there's actually audio to play.
     }
 
+    /// Single source of truth for what the cover window shows — deliberately the SAME conditions
+    /// the root-view overlays use, so the two can never disagree about whether content is covered.
+    private var securityCoverMode: SecurityCoverWindow.Mode {
+        if appLock.isLocked { return .locked }
+        if appLock.isObscured && appState.session != nil { return .cover }
+        return .none
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -63,6 +71,18 @@ struct ApexSightApp: App {
                         PrivacyCoverView()
                             .transition(.opacity)
                     }
+                }
+                // The overlays above only cover the root view — SwiftUI presents sheets and
+                // fullScreenCovers ON TOP of them, so with any sheet open the app-switcher snapshot
+                // still showed live frames and the biometric lock rendered BEHIND the sheet, whose
+                // content stayed visible and interactive. This mirrors the same state into a window
+                // above the modal layer. Additive: the overlays stay, so the worst case is today's
+                // behaviour.
+                .onChange(of: securityCoverMode) { _, mode in
+                    SecurityCoverWindow.shared.update(mode: mode) { appLock.unlock() }
+                }
+                .onAppear {
+                    SecurityCoverWindow.shared.update(mode: securityCoverMode) { appLock.unlock() }
                 }
                 // The whole design system is a hardcoded dark-glass palette (near-white text,
                 // dark surfaces). Light mode would render unreadable, so the app is dark-only —
