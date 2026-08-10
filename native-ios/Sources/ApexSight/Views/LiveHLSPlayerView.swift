@@ -742,7 +742,15 @@ struct HLSLivePlayerView: View {
             // come up full-quality. The cached snapshot covers the wait, and — since the trap is
             // gone — every reopen re-attempts HLS, so any premature fallback self-heals.
             try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard !Task.isCancelled, !isPlaying else { return }
+            // Judge on what the USER can see, not on what the player claims. `isPlaying` already
+            // requires a non-zero presentationSize, so a black stream can't satisfy it — but a
+            // stream can know its dimensions and still never hand the layer a frame to draw
+            // (`isReadyForDisplay` false). In that state `livePixelsShown` is false, the tile is
+            // showing the cached snapshot, and nothing here fired: the tile sat on a frozen still
+            // indefinitely because the model believed it was playing.
+            // Falling back is the safe direction — MJPEG is a quality downgrade, but it is live,
+            // and the alternative is a picture that stopped being true ten seconds ago.
+            guard !Task.isCancelled, !livePixelsShown else { return }
             fallToMJPEG()
         }
     }
