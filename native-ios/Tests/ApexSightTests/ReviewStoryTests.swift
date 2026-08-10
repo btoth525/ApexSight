@@ -232,4 +232,100 @@ struct ReviewStoryTests {
         #expect(items.count == 3, "all three reviews must survive")
         #expect(items[1].data?.metadata?.otherConcerns == ["x"])
     }
+    // MARK: - Believing the rating
+
+    /// The real false positive, verbatim from the live server: level 2, "Forced Entry Attempt",
+    /// an imagined crowbar — raised against two RECOGNISED RESIDENTS carrying a package, at
+    /// confidence 0.02. That is a red, audible, Focus-breaking alarm about a break-in that never
+    /// happened, aimed at the family. Every legitimate Level 1 in the same 61-review sample sat at
+    /// 0.5-1.0 confidence.
+    @Test("A rating the model isn't sure of does not escalate")
+    func lowConfidenceDoesNotEscalate() {
+        #expect(ThreatLevel.trusted(raw: 2, confidence: 0.02,
+                                    objects: ["person-verified", "person-verified"]) == nil)
+        #expect(ThreatLevel.trusted(raw: 1, confidence: 0.2, objects: ["person"]) == nil)
+        #expect(ThreatLevel.trusted(raw: 2, confidence: nil, objects: ["person"]) == nil)
+        #expect(ThreatLevel.trusted(raw: 2, confidence: .nan, objects: ["person"]) == nil)
+    }
+
+    /// The other direction is just as important — this must not become a way to go quiet.
+    @Test("A confident escalation on an unrecognised person still fires")
+    func confidentEscalationSurvives() {
+        #expect(ThreatLevel.trusted(raw: 2, confidence: 0.9, objects: ["person"]) == .concerning)
+        #expect(ThreatLevel.trusted(raw: 1, confidence: 0.7, objects: ["person"]) == .notable)
+        #expect(ThreatLevel.trusted(raw: 1, confidence: ThreatLevel.confidenceFloor,
+                                    objects: ["person"]) == .notable)
+    }
+
+    /// Frigate labels a face-recognised subject `person-verified`. The rubric already says that is
+    /// Level 0 "regardless of time or activity"; the model overrode it, so code enforces it.
+    @Test("A recognised resident can't be escalated, however sure the model claims to be")
+    func verifiedPersonNeverEscalates() {
+        #expect(ThreatLevel.trusted(raw: 2, confidence: 1.0, objects: ["person-verified"]) == nil)
+        #expect(ThreatLevel.trusted(raw: 1, confidence: 1.0,
+                                    objects: ["car", "person-verified"]) == nil)
+    }
+
+    /// Level 0 is exempt: "nothing to see" is the safe answer whatever the confidence, and gating it
+    /// would turn every quiet review into an unrated one.
+    @Test("Routine is believed unconditionally")
+    func routineNeedsNoConfidence() {
+        #expect(ThreatLevel.trusted(raw: 0, confidence: 0.01, objects: ["person-verified"]) == .routine)
+        #expect(ThreatLevel.trusted(raw: nil, confidence: nil, objects: []) == .routine)
+    }
+
+    // MARK: - The summary Frigate cut in half
+
+    /// Frigate hard-clamps `shortSummary` to 140 characters mid-word — 22 of 61 rated reviews on the
+    /// live server ended mid-sentence. In all 22, `scene` held the same narrative, finished.
+    @Test("The complete sentence wins over Frigate's 140-character clamp")
+    func summaryPrefersTheCompleteField() {
+        let cut = "An individual is walking towards a parked car on the street. They approach the vehicle but do not enter or interact with it, instead moving "
+        let whole = "A person is walking on the street towards a parked car. They approach the car but do not enter or interact with it, instead moving around the front of the house and along the sidewalk."
+        let s = ReviewAISummary(title: "T", shortSummary: cut, scene: whole, observations: nil,
+                                confidence: 1, potentialThreatLevel: 0, otherConcerns: nil, time: nil)
+        #expect(s.summarySentence == whole)
+        #expect(s.summarySentence?.hasSuffix("sidewalk.") == true)
+    }
+
+    @Test("With nothing complete, the dangling part-word is trimmed and marked")
+    func summaryTidiesAnUnavoidableCut() throws {
+        // A REAL clamped value: exactly the 140 characters Frigate emits, ending mid-word.
+        let cut = "A person approaches the front door of the residence carrying an object, pauses briefly on the porch, and then turns back towards the drivew"
+        #expect(cut.count >= ReviewAISummary.clampLength - 1, "must actually look clamped")
+        let s = ReviewAISummary(title: nil, shortSummary: cut, scene: nil, observations: nil,
+                                confidence: 1, potentialThreatLevel: 0, otherConcerns: nil, time: nil)
+        let out = try #require(s.summarySentence)
+        #expect(out.hasSuffix("…"))
+        #expect(!out.contains("drivew"), "the half-typed word goes with it")
+        #expect(out.hasPrefix("A person approaches the front door"))
+    }
+
+    /// The guard that stops the tidier vandalising short text: plenty of legitimate summaries
+    /// simply lack a full stop, and chopping their last word would be the bug, not the fix.
+    @Test("A short summary with no full stop is left exactly as written")
+    func shortUnpunctuatedTextIsUntouched() {
+        let s = ReviewAISummary(title: nil, shortSummary: "Real text", scene: nil, observations: nil,
+                                confidence: nil, potentialThreatLevel: nil, otherConcerns: nil, time: nil)
+        #expect(s.summarySentence == "Real text")
+        #expect(s.headline == "Real text")
+    }
+
+    @Test("A complete shortSummary is kept as-is")
+    func completeShortSummaryKept() {
+        let s = ReviewAISummary(title: nil, shortSummary: "A car pulled in.", scene: nil,
+                                observations: nil, confidence: 1, potentialThreatLevel: 0,
+                                otherConcerns: nil, time: nil)
+        #expect(s.summarySentence == "A car pulled in.")
+    }
+
+    /// A clamped summary must never become the headline — that was a title ending mid-word.
+    @Test("The headline falls back to a complete sentence, never a clamped one")
+    func headlineNeverEndsMidWord() {
+        let cut = String(repeating: "word ", count: 28)
+        let s = ReviewAISummary(title: nil, shortSummary: cut, scene: "A car pulled in.",
+                                observations: nil, confidence: 1, potentialThreatLevel: 0,
+                                otherConcerns: nil, time: nil)
+        #expect(s.headline == "A car pulled in.")
+    }
 }

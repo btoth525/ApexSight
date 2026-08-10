@@ -74,8 +74,10 @@ struct ReviewRow: View {
     /// scannable. Icon + word, never colour alone.
     @ViewBuilder
     private var storyBadge: some View {
-        if let meta = review.data?.metadata, meta.hasContent {
-            let level = ThreatLevel(raw: meta.potentialThreatLevel)
+        // `trustedThreatLevel` is nil when the rating isn't believable (near-zero model
+        // confidence, or a recognised resident) — that reads as unrated, so no badge at all.
+        if let meta = review.data?.metadata, meta.hasContent,
+           let level = review.trustedThreatLevel {
             if level.deservesRowBadge {
                 HStack(spacing: 4) {
                     Image(systemName: level.symbol)

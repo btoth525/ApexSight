@@ -52,4 +52,45 @@ enum ThreatLevel: Int, Comparable, CaseIterable {
     /// Whether this level should draw attention in a dense list. Routine activity is the vast
     /// majority, so badging it everywhere would just add noise and train people to ignore it.
     var deservesRowBadge: Bool { self != .routine }
+
+    /// The model's own confidence below which an ESCALATION is not believed.
+    ///
+    /// Measured across 61 rated reviews on the live server: every legitimate Level 1 carried
+    /// confidence 0.5–1.0, while the single Level 2 — a fabricated "Forced Entry Attempt", complete
+    /// with an imagined crowbar, raised against two RECOGNISED RESIDENTS carrying a package —
+    /// carried **0.02**. The model contradicted itself inside its own observations ("possibly a
+    /// package or a parcel", then "a tool that resembles a crowbar"). 0.35 sits in the empty gap
+    /// between those two populations with room on both sides.
+    static let confidenceFloor = 0.35
+}
+
+extension ThreatLevel {
+    /// The level to ACT on, or nil when the rating shouldn't be believed.
+    ///
+    /// Returning nil means "unrated" — no badge, no dot, no interruption — which is deliberately
+    /// NOT the same as `.routine`. Routine is a positive statement ("the model looked and this is
+    /// normal", shown as a green dot); an untrusted rating is an absence of information, and
+    /// dressing it up as an all-clear would be its own lie.
+    ///
+    /// Two things make a rating untrustworthy, both learned from real false positives:
+    ///
+    /// 1. **The model says it isn't sure.** An escalation asserted at 0.02 confidence woke the
+    ///    house for a fiction. Level 0 is exempt: "nothing to see" is the safe answer regardless of
+    ///    how sure it is, and requiring confidence there would turn quiet reviews into alarms.
+    /// 2. **The subject is a recognised person.** Frigate labels those `person-verified`, i.e. face
+    ///    recognition matched a household member. The rubric already says a verified person is
+    ///    Level 0 "regardless of time or activity" and the model ignored it — so it's enforced in
+    ///    code, where a prompt can't be argued with.
+    ///
+    /// Both guards only ever REDUCE an escalation. Neither can suppress a real alert: the
+    /// notification itself is already sent by this point, and this decides only how loudly it
+    /// presents. Never let it gate delivery.
+    static func trusted(raw: Int?, confidence: Double?, objects: [String]) -> ThreatLevel? {
+        let level = ThreatLevel(raw: raw)
+        guard level != .routine else { return .routine }
+
+        if objects.contains(where: { $0.lowercased().contains("verified") }) { return nil }
+        guard let confidence, confidence.isFinite, confidence >= confidenceFloor else { return nil }
+        return level
+    }
 }

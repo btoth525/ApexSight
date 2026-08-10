@@ -273,6 +273,18 @@ struct FrigateReviewItem: Identifiable, Codable, Hashable {
     }
 }
 
+extension FrigateReviewItem {
+    /// The AI rating to actually present, or nil when it shouldn't be believed — see
+    /// `ThreatLevel.trusted`. Lives here so the row badge, the story card and the live banner all
+    /// reach the same verdict from the same inputs; three call sites deciding this independently is
+    /// how one of them ends up screaming about a resident with a parcel.
+    var trustedThreatLevel: ThreatLevel? {
+        ThreatLevel.trusted(raw: data?.metadata?.potentialThreatLevel,
+                            confidence: data?.metadata?.confidence,
+                            objects: data?.objects ?? [])
+    }
+}
+
 struct ReviewData: Codable, Hashable {
     let detections: [String]?
     let objects: [String]?
@@ -436,11 +448,62 @@ struct ReviewAISummary: Codable, Hashable {
             || !(scene ?? "").isEmpty || !(observations ?? []).isEmpty
     }
 
-    /// The single best one-liner available, falling back through the fields.
+    /// The single best one-liner available. `title` is purpose-written and never clamped, so it
+    /// wins; only when it's absent do we fall back — and then to a COMPLETE sentence rather than
+    /// the 140-char-clamped `shortSummary`, which would otherwise become a headline ending
+    /// mid-word.
     var headline: String? {
-        [title, shortSummary, scene]
+        if let t = title?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
+        return summarySentence
+    }
+
+    /// The summary sentence to show under the headline — the best COMPLETE one available.
+    ///
+    /// Frigate hard-clamps `shortSummary` to 140 characters, slicing mid-word: measured across 61
+    /// rated reviews on the live server, **22 (36%) ended mid-sentence** — "…instead moving ",
+    /// "…entering through the", "…The person's". Rendering that verbatim is what made the AI card
+    /// look broken. In **all 22** cases the `scene` field carried the same narrative, finished:
+    /// 184 chars ending "…around the front of the house and along the sidewalk."
+    ///
+    /// So prefer whichever field is actually a finished sentence, longest first, and only fall back
+    /// to a clamped one when nothing complete exists — with the dangling partial word removed and an
+    /// ellipsis, so a cut-off summary at least reads as deliberately abbreviated.
+    var summarySentence: String? {
+        let candidates = [scene, shortSummary]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
+            .filter { !$0.isEmpty }
+        guard !candidates.isEmpty else { return nil }
+        if let complete = candidates.filter({ Self.readsComplete($0) }).max(by: { $0.count < $1.count }) {
+            return complete
+        }
+        // Nothing ends in punctuation. Only TIDY when the text actually looks clamped — plenty of
+        // legitimate short summaries just lack a full stop, and chopping their last word would be
+        // vandalism. Frigate's clamp is 140, so anything at that boundary is the machine's cut.
+        guard let longest = candidates.max(by: { $0.count < $1.count }) else { return nil }
+        return longest.count >= Self.clampLength - 1 ? Self.tidyTruncation(longest) : longest
+    }
+
+    /// Frigate's hard clamp on `shortSummary`, measured: the longest observed is exactly 140.
+    static let clampLength = 140
+
+    /// A sentence Frigate didn't cut off. Terminal punctuation is the only signal available —
+    /// the clamp slices blind, so a clamped string essentially never ends on one.
+    static func readsComplete(_ text: String) -> Bool {
+        guard let last = text.last else { return false }
+        return ".!?".contains(last)
+    }
+
+    /// Drop the half-word the clamp left behind and mark the cut, so it reads as abbreviated rather
+    /// than as a sentence that simply stops.
+    static func tidyTruncation(_ text: String) -> String {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A trailing space means the clamp landed BETWEEN words — nothing to drop, just mark it.
+        if !text.hasSuffix(" "), let lastSpace = s.lastIndex(of: " ") {
+            s = String(s[s.startIndex..<lastSpace])
+        }
+        s = s.trimmingCharacters(in: .whitespaces)
+        while let last = s.last, ",;:".contains(last) { s.removeLast() }
+        return s.isEmpty ? text : s + "…"
     }
 }
 

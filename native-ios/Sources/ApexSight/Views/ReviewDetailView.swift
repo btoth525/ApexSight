@@ -45,7 +45,7 @@ struct ReviewDetailView: View {
                     // video is still playing. The per-object description below answers the
                     // different question "who was that", so it stays after it.
                     if let summary = review.data?.metadata, summary.hasContent {
-                        ReviewStoryCard(summary: summary)
+                        ReviewStoryCard(summary: summary, objects: review.data?.objects ?? [])
                             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
                     if let reviewAIDescription {

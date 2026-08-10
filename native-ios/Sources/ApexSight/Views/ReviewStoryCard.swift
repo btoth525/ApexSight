@@ -12,10 +12,19 @@ import SwiftUI
 /// default — it's genuinely interesting after the fact and pure noise in the moment.
 struct ReviewStoryCard: View {
     let summary: ReviewAISummary
+    /// The review's tracked objects — needed because a recognised person (`person-verified`)
+    /// invalidates an escalation no matter what the model wrote. See `ThreatLevel.trusted`.
+    var objects: [String] = []
     @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var level: ThreatLevel { ThreatLevel(raw: summary.potentialThreatLevel) }
+    /// Nil = the rating isn't believable, so the card shows the story WITHOUT a verdict rather
+    /// than inventing a reassuring one.
+    private var level: ThreatLevel? {
+        ThreatLevel.trusted(raw: summary.potentialThreatLevel,
+                            confidence: summary.confidence,
+                            objects: objects)
+    }
 
     var body: some View {
         GlassCard {
@@ -30,7 +39,9 @@ struct ReviewStoryCard: View {
                 }
 
                 // Only show the one-liner when it isn't already doing duty as the headline.
-                if let short = summary.shortSummary?.trimmed, !short.isEmpty,
+                // `summarySentence`, not `shortSummary` — Frigate clamps that one to 140 chars
+                // mid-word on about a third of reviews (see the doc on summarySentence).
+                if let short = summary.summarySentence, !short.isEmpty,
                    short != summary.headline {
                     Text(short)
                         .font(.subheadline)
@@ -71,19 +82,24 @@ struct ReviewStoryCard: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// No badge when the rating isn't believable. Showing "Routine" there would be worse than
+    /// showing nothing: it's an affirmative all-clear the model never actually gave.
+    @ViewBuilder
     private var levelBadge: some View {
-        HStack(spacing: 4) {
-            Image(systemName: level.symbol)
-                .font(.caption2.weight(.bold))
-            Text(level.label)
-                .font(.caption2.weight(.semibold))
+        if let level {
+            HStack(spacing: 4) {
+                Image(systemName: level.symbol)
+                    .font(.caption2.weight(.bold))
+                Text(level.label)
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(level.tint)
+            .padding(.horizontal, GlassTheme.Space.s)
+            .padding(.vertical, 4)
+            .background(level.tint.opacity(0.14), in: Capsule())
+            // Never colour-only: the symbol and the word both carry the meaning.
+            .overlay(Capsule().stroke(level.tint.opacity(0.35), lineWidth: 1))
         }
-        .foregroundStyle(level.tint)
-        .padding(.horizontal, GlassTheme.Space.s)
-        .padding(.vertical, 4)
-        .background(level.tint.opacity(0.14), in: Capsule())
-        // Never colour-only: the symbol and the word both carry the meaning.
-        .overlay(Capsule().stroke(level.tint.opacity(0.35), lineWidth: 1))
     }
 
     private func concernRow(_ text: String) -> some View {
@@ -140,8 +156,11 @@ struct ReviewStoryCard: View {
                 }
             }
 
+            // `summarySentence` now usually IS `scene` (it's the field that isn't clamped), so
+            // without this the same paragraph rendered twice — once as the one-liner above and
+            // again inside the play-by-play.
             if let scene = summary.scene?.trimmed, !scene.isEmpty,
-               scene != summary.headline {
+               scene != summary.headline, scene != summary.summarySentence {
                 Text(scene)
                     .font(.footnote)
                     .foregroundStyle(GlassTheme.secondary)
