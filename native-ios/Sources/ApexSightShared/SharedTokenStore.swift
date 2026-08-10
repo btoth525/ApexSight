@@ -42,7 +42,9 @@ public enum SharedTokenStore {
         SecItemDelete(base as CFDictionary)
         var add = base
         add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        // Same accessibility class as the two paths above — a recovery write must NOT quietly
+        // downgrade the token to a backup-eligible class.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
