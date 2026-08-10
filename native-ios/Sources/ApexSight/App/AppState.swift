@@ -710,6 +710,10 @@ final class AppState: ObservableObject {
     /// after relaunch. Pages through the full backlog and marks in chunks.
     func markAllReviewsViewed() async {
         guard let client else { return }
+        // Paging the backlog plus the chunked POSTs is seconds of awaits; pin the local wipe to
+        // THIS server so a sign-out or switch part-way through can't empty the NEW server's
+        // freshly-loaded queue and zero the badge + widgets on it.
+        let gen = serverGeneration
         do {
             var idSet = Set<String>()
             var before: Double? = nil
@@ -726,7 +730,7 @@ final class AppState: ObservableObject {
 
             let ids = Array(idSet)
             guard !ids.isEmpty else {
-                reviews.removeAll()
+                if serverGeneration == gen { reviews.removeAll() }
                 return
             }
             // Mark in chunks so a huge backlog doesn't blow the request body.
@@ -734,6 +738,9 @@ final class AppState: ObservableObject {
                 let slice = Array(ids[start..<min(start + 500, ids.count)])
                 try await client.markReviewsViewed(ids: slice)
             }
+            // Server-side marks already landed; skipping the local wipe on a stale generation is
+            // always the safe direction — the next poll reconciles.
+            guard serverGeneration == gen else { return }
             locallyViewedIDs.formUnion(ids)
             reviews.removeAll()
             unreviewedCount = 0
