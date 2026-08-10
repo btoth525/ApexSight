@@ -173,12 +173,6 @@ struct FrigateClient {
         try await put("api/events/\(id)/description/regenerate", body: EmptyBody())
     }
 
-    func reviewDescription(id: String) async throws -> String? {
-        let item: FrigateReviewItem = try await get("api/review/\(id)")
-        let text = item.description?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (text?.isEmpty == false) ? text : nil
-    }
-
     func findSimilar(eventId: String, limit: Int = 20) async throws -> [FrigateEvent] {
         var components = URLComponents(url: baseURL.appending(path: "api/events/search"), resolvingAgainstBaseURL: false)
         components?.queryItems = [

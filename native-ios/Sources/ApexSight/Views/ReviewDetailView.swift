@@ -19,10 +19,14 @@ struct ReviewDetailView: View {
     /// Set only when this review's own snapshot belongs to a different moment (`ReviewStillPolicy`).
     @State private var pinnedStill: URL?
     @State private var loadingDetections = false
-    @State private var reviewAIDescription: String?
-    /// Distinguishes "no summary" from "still fetching", so the AI card can show a skeleton
-    /// on first load instead of silently appearing only once text arrives.
-    @State private var isLoadingAIDescription = true
+    /// Frigate's review API has no `description` field (measured: /api/review and
+    /// /api/review/<id> return id, camera, start/end_time, severity, thumb_path,
+    /// has_been_reviewed, data — nothing else), so this is populated purely from the payload the
+    /// list already carries. It stays wired so a future Frigate that does emit one renders it.
+    private var reviewAIDescription: String? {
+        let text = review.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text?.isEmpty == false) ? text : nil
+    }
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -47,8 +51,6 @@ struct ReviewDetailView: View {
                     if let reviewAIDescription {
                         aiCard(reviewAIDescription)
                             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
-                    } else if isLoadingAIDescription {
-                        aiSkeletonCard
                     }
                     timelineCard
                     objectsCard
@@ -83,16 +85,9 @@ struct ReviewDetailView: View {
         }
         .task(id: review.id) {
             guard let client = appState.client else { return }
-            // Reset prior review's data so a reused view doesn't show review A's summary +
+            // Reset prior review's detections so a reused view doesn't show review A's
             // detections under review B's header until B loads.
-            reviewAIDescription = nil
             detectionEvents = []
-            isLoadingAIDescription = true
-            let fetched = try? await client.reviewDescription(id: review.id)
-            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
-                reviewAIDescription = fetched
-                isLoadingAIDescription = false
-            }
             let ids = review.data?.detections ?? []
             guard !ids.isEmpty else { return }
             loadingDetections = true
@@ -215,26 +210,6 @@ struct ReviewDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    /// Skeleton shown while the review's AI summary is being fetched, so the card keeps its
-    /// shape instead of popping in only once text arrives.
-    private var aiSkeletonCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
-                HStack(spacing: GlassTheme.Space.s) {
-                    Image(systemName: "sparkles")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GlassTheme.accent)
-                    Text("AI Summary")
-                        .font(.headline)
-                        .foregroundStyle(GlassTheme.primary)
-                }
-                SkeletonBlock().frame(height: 13).frame(maxWidth: .infinity, alignment: .leading)
-                SkeletonBlock().frame(width: 200, height: 13)
-            }
-        }
-        .accessibilityLabel("Loading AI summary")
     }
 
     /// The object's own snapshot — right for most reviews, and the fallback when a pinned
