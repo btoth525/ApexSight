@@ -36,7 +36,7 @@ struct RemoteImage: View {
                 placeholder
             } else {
                 placeholder
-                    .overlay { ProgressView().tint(GlassTheme.cyan) }
+                    .overlay { ProgressView().tint(GlassTheme.accent) }
             }
         }
         .task(id: taskKey) { await load() }

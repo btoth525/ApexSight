@@ -350,13 +350,13 @@ struct CamerasTab: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") { commitEditing() }
                     .font(.system(size: 15, weight: .black))
-                    .foregroundStyle(GlassTheme.cyan)
+                    .foregroundStyle(GlassTheme.accent)
             }
         } else {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 14) {
                     if appState.isLoading {
-                        ProgressView().tint(GlassTheme.cyan)
+                        ProgressView().tint(GlassTheme.accent)
                     }
                     if appState.cameras.count > 1 {
                         Button {
@@ -365,7 +365,7 @@ struct CamerasTab: View {
                         } label: {
                             Image(systemName: "arrow.up.arrow.down.circle")
                                 .font(.system(size: 18, weight: .black))
-                                .foregroundStyle(GlassTheme.cyan)
+                                .foregroundStyle(GlassTheme.accent)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -432,7 +432,7 @@ struct CamerasTab: View {
         } label: {
             Image(systemName: "rectangle.grid.2x2.fill")
                 .font(.system(size: 18, weight: .black))
-                .foregroundStyle(GlassTheme.cyan)
+                .foregroundStyle(GlassTheme.accent)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
