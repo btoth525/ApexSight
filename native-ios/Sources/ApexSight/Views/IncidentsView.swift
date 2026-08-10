@@ -44,14 +44,22 @@ struct IncidentsFeed: View {
     }
 
     var body: some View {
-        LazyVStack(spacing: GlassTheme.Space.m) {
-            if incidents.isEmpty {
+        // Bind once per body evaluation. `incidents` is a computed property that re-runs the whole
+        // clustering pass (filter + sort + cluster + N Incident constructions + another sort over
+        // up to 100 events) on EVERY read, and it was read twice — the isEmpty check and the
+        // ForEach. This view observes AppState, so the body re-runs on the 15s poll, on isLoading
+        // flipping, and on the 250ms-coalesced WebSocket flush during motion: two full clustering
+        // passes ~4x/second while the feed is on screen. Same hoist already applied in ReviewTab
+        // (4cdba5d), ActivityTab (af498a3) and SearchView.
+        let list = incidents
+        return LazyVStack(spacing: GlassTheme.Space.m) {
+            if list.isEmpty {
                 ContentUnavailableView("No incidents yet",
                     systemImage: "square.stack.3d.up.slash",
                     description: Text("Recent activity gets grouped into stories here."))
                     .padding(.top, 80)
             } else {
-                ForEach(incidents) { incident in
+                ForEach(list) { incident in
                     NavigationLink(value: incident) {
                         IncidentCard(incident: incident)
                     }
