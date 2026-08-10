@@ -1306,6 +1306,12 @@ final class AppState: ObservableObject {
 
     private func refresh(retryOnAuthFailure: Bool) async {
         guard let client else { return }
+        // Pin every publish below to THIS server. Cancelling an `async let` child that has
+        // ALREADY COMPLETED does not make `try await` throw, and the later awaits are all
+        // `try?`, so a sign-out / server switch landing mid-refresh would otherwise let the old
+        // server's cameras, events and reviews be published — and persisted — over the cleared
+        // state. (Same pattern as reauthenticate() and probeLiveHLSIfNeeded().)
+        let gen = serverGeneration
         isLoading = true
         errorMessage = nil
         do {
@@ -1321,6 +1327,7 @@ final class AppState: ObservableObject {
             // the live WebSocket; SystemHealthView fetches both itself via loadSystemHealth().
 
             let loadedCameras = try await nextCameras
+            guard serverGeneration == gen else { isLoading = false; return }
             cameras = loadedCameras
             Self.persistCameras(loadedCameras)
             prewarmSnapshots()
@@ -1348,15 +1355,23 @@ final class AppState: ObservableObject {
             // during the await re-stages pendingEvents from the OLD list, and a nil-before-
             // await ordering let that stale copy flush over the fresh server list 250ms later.
             let fetchedEvents = (try? await nextEvents) ?? events
+            guard serverGeneration == gen else { isLoading = false; return }
             pendingEvents = nil  // full refresh is authoritative over any staged WS copy
             events = fetchedEvents
-            if let r = try? await nextReviews {
-                reviews = visibleReviews(r)
-            }
-            labels = (try? await nextLabels) ?? labels
-            subLabels = (try? await nextSubLabels) ?? subLabels
-
+            // Await the rest FIRST, then publish in one block behind a single generation check —
+            // a switch/sign-out landing on any of these `try?` awaits must not get a half-updated
+            // AppState carrying the previous server's reviews and stream capabilities.
+            let fetchedReviews = try? await nextReviews
+            let fetchedLabels = try? await nextLabels
+            let fetchedSubLabels = try? await nextSubLabels
             let streams = (try? await nextStreams) ?? [:]
+            guard serverGeneration == gen else { isLoading = false; return }
+            if let fetchedReviews {
+                reviews = visibleReviews(fetchedReviews)
+            }
+            labels = fetchedLabels ?? labels
+            subLabels = fetchedSubLabels ?? subLabels
+
             hasBirdseye = streams["birdseye"] != nil
             twoWayCameras = Set(streams.keys.filter { $0.hasSuffix("_twoway") }
                 .map { String($0.dropLast("_twoway".count)) })
