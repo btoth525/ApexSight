@@ -142,13 +142,18 @@ struct HouseModeAlertsView: View {
                             .foregroundStyle(spec.tint)
                     }
                     Spacer()
+                    // "2 of 9 alert" is the one-glance answer to "how many cameras will
+                    // actually notify me in this mode" — audit-relevant in a security app, so it
+                    // must not sit at the lowest contrast tier (white at 34%, ~3.1:1, under the
+                    // 4.5:1 AA floor for 12pt). Same call already made by hand in HouseModeView
+                    // and CamerasTab.
                     Text("\(alertCount(spec.key)) of \(roster.count) alert")
                         .font(.caption)
-                        .foregroundStyle(GlassTheme.tertiary)
+                        .foregroundStyle(GlassTheme.secondary)
                 }
                 Text(spec.blurb)
                     .font(.caption)
-                    .foregroundStyle(GlassTheme.tertiary)
+                    .foregroundStyle(GlassTheme.secondary)
                 Divider().overlay(GlassTheme.separator)
                 ForEach(roster, id: \.self) { camera in
                     Toggle(isOn: binding(mode: spec.key, camera: camera)) {
@@ -188,7 +193,7 @@ struct HouseModeAlertsView: View {
             }
             Text("New cameras alert in every mode until you turn them off here — nothing ever goes silent by accident.")
                 .font(.caption2)
-                .foregroundStyle(GlassTheme.tertiary)
+                .foregroundStyle(GlassTheme.secondary)
                 .multilineTextAlignment(.center)
         }
     }
