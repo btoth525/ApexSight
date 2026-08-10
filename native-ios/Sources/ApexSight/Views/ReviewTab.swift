@@ -43,8 +43,15 @@ struct ReviewTab: View {
     private func loadDetections(silent: Bool = false) async {
         guard let client = appState.client else { return }
         if !silent { loadingDetections = true }
-        detectionItems = ((try? await client.reviews(limit: 100, severity: "detection", reviewed: false)) ?? [])
-            .filter { !($0.hasBeenReviewed ?? false) && !appState.locallyViewedIDs.contains($0.id) }
+        // Only overwrite on success. Assigning the `?? []` fallback meant one failed 15s silent
+        // poll (Wi-Fi hiccup, a 401 before re-auth lands, Frigate restarting) emptied the list —
+        // and because the fetch was silent, `busy` was false and `appState.isReachable` was still
+        // true, so the view settled on "No Detections", a security app affirmatively reporting
+        // nothing was detected when it had simply failed to ask.
+        if let items = try? await client.reviews(limit: 100, severity: "detection", reviewed: false) {
+            detectionItems = items
+                .filter { !($0.hasBeenReviewed ?? false) && !appState.locallyViewedIDs.contains($0.id) }
+        }
         if !silent { loadingDetections = false }
     }
 
