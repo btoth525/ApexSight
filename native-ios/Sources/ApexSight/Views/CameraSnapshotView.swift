@@ -14,8 +14,9 @@ struct LiveSnapshotView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
     let camera: FrigateCamera
-    /// The wall's rhythm when Frigate answers promptly. `SnapshotPollPolicy` stretches it when the
-    /// server is slow or failing, so this is a floor rather than a fixed tick.
+    /// A **floor** on the gap between fetches, not the cadence itself — `SnapshotPollPolicy` owns
+    /// that, and stretches it whenever the server is slow or failing. Raising this slows a tile
+    /// down; it cannot speed one up.
     var interval: TimeInterval = SnapshotPollPolicy.base
     /// Fires true the first time a frame is on screen (drives the host's "warming up" hint / badge).
     var onFrame: ((Bool) -> Void)? = nil

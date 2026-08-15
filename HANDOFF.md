@@ -370,7 +370,18 @@ ffmpeg pipe it is the opposite. Both facts are true; you need the total cap as w
 
 ### ⚠️ NOT verified — this is the next engineer's job
 Everything above is compile-and-test verified only. **Nobody has watched the server while using the
-patched app**, because the fix has not been uploaded to TestFlight. Verify like this:
+patched app**, because the fix has not been uploaded to TestFlight.
+
+**One item is weaker than the rest and should be checked first: the foreground gate.** The wall's
+`.task(id:)` is keyed on `scenePhase`, which tears the loop down and rebuilds it *only if SwiftUI
+re-evaluates that view on the phase change. That is an assumption about invalidation, not a value a
+test can assert — the tests cover the pure policy and the session configs, neither of which touches
+it. Confirm it with the black box rather than the sim's unreliable tap tooling: leave the wall
+visible, background the app, foreground it, then read `/v1/diag` and look for the loop's transition
+lines. (Note also that `LiveSnapshotView.interval` is now only a *floor* — `SnapshotPollPolicy`
+owns the cadence — so setting it does not do what its name suggests.)
+
+Verify the server side like this:
 
 ```bash
 # ffmpeg count while using the app hard — should hover ~33 for 9 cameras and come back down
