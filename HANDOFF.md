@@ -381,6 +381,21 @@ docker logs --tail 500 frigate_LPR 2>&1 | grep ' 499 ' | grep ApexSight
 ```
 Any 499 with `request_time="125"` means a request was left to rot.
 
+**⭐ You do not need SSH or docker for the first check** — Frigate's own `/api/stats` reports every
+process it owns, cmdline included, so this runs from any machine on the LAN and is the fastest way
+to see whether exports are accumulating:
+```bash
+curl -s http://192.168.1.204:5000/api/stats | python3 -c "
+import json,sys
+cpu = json.load(sys.stdin).get('cpu_usages', {})
+ff = [v.get('cmdline','') for v in cpu.values() if 'ffmpeg' in str(v.get('cmdline',''))]
+print('ffmpeg:', len(ff), '| orphan-shaped playlist_ exports:', sum('playlist_' in c for c in ff))"
+```
+**Baseline measured 2026-08-15 on a healthy server: `ffmpeg: 33 | orphan-shaped: 0` for 9 cameras.**
+A non-zero second number that does not fall back to zero is the leak. (The API answered in 0.15s at
+the same moment, so the server was genuinely healthy — the number is a real baseline, not a
+reading taken while it was already degraded.)
+
 ### Server-side context (already done, no app action needed)
 - Server upgraded to Frigate `0.18.0-beta3-tensorrt`, which adds a generic subprocess watchdog that
   may reap stalled children.
