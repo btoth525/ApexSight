@@ -190,11 +190,26 @@ final class NotificationService: UNNotificationServiceExtension {
         }
         let remaining = Array(urls.dropFirst())
 
+        // A picture this exact URL already produced (the instant push, moments ago) is reused
+        // rather than re-fetched — an alert arrives as two pushes and each one runs this
+        // extension. GIFs are excluded on purpose; see NotificationMediaCache.
+        if let cached = NotificationMediaCache.cachedFile(for: url, appGroup: Self.appGroupSuite),
+           let attachment = copyAttachment(from: cached, originalURL: url) {
+            completion(attachment)
+            return
+        }
+
         var urlRequest = URLRequest(url: url)
         // The extension has a hard ~30s budget before iOS kills it and delivers the
         // notification without media. Cap each attempt so a slow/unreachable Frigate
         // fails fast and we can still try the next candidate (or give up cleanly)
         // well inside that window.
+        //
+        // ⚠️ This is an IDLE timeout — it alone does NOT bound the request. Frigate builds
+        // preview GIFs and exports by streaming an ffmpeg pipe, and a trickling pipe resets
+        // this timer indefinitely; the session (not the request) carries the total cap. See
+        // BoundedSession: abandoning one of these requests leaves an ffmpeg orphaned on the
+        // server, which is what took Frigate's API down for 7 hours on 2026-08-14.
         urlRequest.timeoutInterval = 8
         // The candidate URLs come out of the push payload, so the host is remote-controlled.
         // Only ever hand the Frigate session token to the origin the app itself signed in to —
@@ -207,7 +222,7 @@ final class NotificationService: UNNotificationServiceExtension {
             urlRequest.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
         }
 
-        downloadTask = URLSession.shared.downloadTask(with: urlRequest) { [weak self] temporaryURL, response, _ in
+        downloadTask = BoundedSession.notificationMedia.downloadTask(with: urlRequest) { [weak self] temporaryURL, response, _ in
             guard let self else { return }
             // Require a genuine 2xx. `?? false` so a non-HTTP response — or a reverse
             // proxy that answers auth failures with a 200 + HTML login page — is
@@ -215,6 +230,7 @@ final class NotificationService: UNNotificationServiceExtension {
             if let temporaryURL,
                (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
                let attachment = self.copyAttachment(from: temporaryURL, originalURL: url) {
+                NotificationMediaCache.store(temporaryURL, for: url, appGroup: Self.appGroupSuite)
                 completion(attachment)
             } else {
                 // Fall back to the next candidate (e.g. GIF not ready → static thumbnail).

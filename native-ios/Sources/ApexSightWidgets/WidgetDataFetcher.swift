@@ -134,7 +134,7 @@ enum WidgetDataFetcher {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
         }
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await BoundedSession.widget.data(for: request),
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false else {
             return nil
         }

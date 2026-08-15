@@ -178,6 +178,13 @@ targets:
       # same mute the Review tab shows and the relay's push gate enforces (Foundation-only).
       - path: Sources/ApexSightShared/SharedHouseMode.swift
       - path: Sources/ApexSightShared/HouseModeVisibility.swift
+      # Frigate sessions with a TOTAL time cap. Without it the NSE's media downloads ride
+      # URLSession.shared (7-day resource timeout) and an abandoned request leaves an ffmpeg
+      # export orphaned on the server — the mechanism that wedged Frigate for 7 hours.
+      - path: Sources/ApexSightShared/BoundedSession.swift
+      # Reuses a still the instant push already downloaded, so the follow-up push that replaces
+      # the alert doesn't re-fetch the same picture over the tunnel (GIFs excluded on purpose).
+      - path: Sources/ApexSightShared/NotificationMediaCache.swift
       - path: Sources/ApexSightWidgets/WidgetDataFetcher.swift
     settings:
       base:

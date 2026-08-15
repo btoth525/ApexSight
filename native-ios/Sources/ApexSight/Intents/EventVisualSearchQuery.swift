@@ -80,7 +80,9 @@ struct EventVisualSearchQuery: IntentValueQuery {
     /// Fetch an event's cropped thumbnail (authenticated) to a temp file; returns its path or nil.
     private static func cacheThumbnail(client: FrigateClient, id: String) async -> String? {
         let request = client.authedRequest(for: client.eventThumbnailURL(id: id))
-        guard let (data, _) = try? await URLSession.shared.data(for: request), !data.isEmpty else {
+        // `apiSession` carries a total-time cap; `URLSession.shared`'s is 7 days, which lets a
+        // slow Frigate hold this request open indefinitely (see BoundedSession).
+        guard let (data, _) = try? await FrigateClient.apiSession.data(for: request), !data.isEmpty else {
             return nil
         }
         let url = FileManager.default.temporaryDirectory.appending(path: "vi-event-\(id).jpg")

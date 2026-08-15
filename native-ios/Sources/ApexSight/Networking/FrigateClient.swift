@@ -14,10 +14,16 @@ struct FrigateClient {
     /// a second round-trip; live `latest.jpg` frames opt out per-request (see
     /// `imageData(from:)`). Auth rides the shared cookie jar so AVFoundation and the
     /// WebSocket upgrade stay consistent with REST calls.
+    ///
+    /// `httpMaximumConnectionsPerHost` is a load ceiling on the SERVER, not a client nicety: a
+    /// nine-camera wall refreshing together, or a burst of thumbnail fetches, otherwise arrives as
+    /// nine simultaneous requests — several of which Frigate answers by spawning ffmpeg. Three at
+    /// a time keeps the wall feeling live while leaving the server room to answer.
     static let apiSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 60
+        config.httpMaximumConnectionsPerHost = 3
         config.waitsForConnectivity = false
         config.httpCookieStorage = .shared
         config.httpCookieAcceptPolicy = .always
@@ -30,14 +36,21 @@ struct FrigateClient {
 
     /// Dedicated session for large media exports (clip downloads). Streams the response body
     /// straight to disk instead of buffering the whole MP4 in memory, and lifts the resource
-    /// timeout to an hour so a big clip over a slow link isn't killed mid-transfer by
-    /// `apiSession`'s 60s cap. `waitsForConnectivity` rides out brief drops. Shares the cookie
-    /// jar so auth stays consistent with REST calls.
+    /// timeout above `apiSession`'s 60s cap so a big clip over a slow link isn't killed
+    /// mid-transfer. Shares the cookie jar so auth stays consistent with REST calls.
+    ///
+    /// ⚠️ The resource cap was **an hour**, which is how a stalled export became a server-side
+    /// leak rather than a slow download: Frigate builds these by piping ffmpeg, and a client that
+    /// hangs on (then abandons) the request leaves that ffmpeg blocked on a full pipe forever,
+    /// holding an API worker. Three minutes is far longer than any real export on this server and
+    /// short enough that a stall can't accumulate. `waitsForConnectivity` is off for the same
+    /// reason — parking a request through an outage keeps the server's end open too.
     static let downloadSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60 * 60
-        config.waitsForConnectivity = true
+        config.timeoutIntervalForResource = 180
+        config.httpMaximumConnectionsPerHost = 2
+        config.waitsForConnectivity = false
         config.httpCookieStorage = .shared
         config.httpCookieAcceptPolicy = .always
         return URLSession(configuration: config)
@@ -264,7 +277,10 @@ struct FrigateClient {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         authHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
+        // `apiSession`, not `URLSession.shared`: shared has a 7-day resource timeout, so this
+        // probe could hold a connection to a struggling Frigate long after the 8s idle cap
+        // appears to have expired.
+        guard let (_, response) = try? await FrigateClient.apiSession.data(for: request),
               let http = response as? HTTPURLResponse else { return nil }
         return http.statusCode != 404
     }
