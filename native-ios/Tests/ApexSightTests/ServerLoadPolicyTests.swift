@@ -100,6 +100,24 @@ struct ServerLoadPolicyTests {
                 == .wait(SnapshotPollPolicy.base))
     }
 
+    @Test("A rebuilt tile serves out the rest of the interval instead of fetching instantly")
+    func restartResumesTheRhythm() {
+        // The failure this prevents: `.task` is rebuilt for every notification banner, camera list
+        // reload or view re-key, and a rebuilt task fetches immediately. Nine tiles doing that
+        // together is a burst — during an alert storm, exactly when the server is loaded.
+        #expect(SnapshotPollPolicy.initialDelay(sinceLastFetch: 0) == SnapshotPollPolicy.base)
+        #expect(SnapshotPollPolicy.initialDelay(sinceLastFetch: 1) == SnapshotPollPolicy.base - 1)
+    }
+
+    @Test("A tile that has waited long enough — or has never fetched — paints immediately")
+    func restartDoesNotStallAFreshTile() {
+        // A genuinely new tile loading the wall is not a burst, and must not be delayed.
+        #expect(SnapshotPollPolicy.initialDelay(sinceLastFetch: nil) == 0)
+        #expect(SnapshotPollPolicy.initialDelay(sinceLastFetch: 30) == 0)
+        // A clock that jumped backwards must not produce a wait longer than the interval itself.
+        #expect(SnapshotPollPolicy.initialDelay(sinceLastFetch: -10) == 0)
+    }
+
     @Test("A missing or nonsense duration falls back to the base rhythm, never to zero")
     func durationFailsQuiet() {
         #expect(SnapshotPollPolicy.next(lastDuration: nil, consecutiveFailures: 0) == .wait(3))

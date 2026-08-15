@@ -42,6 +42,22 @@ enum SnapshotPollPolicy {
         }
     }
 
+    /// How long a freshly (re)started tile must wait before its first fetch.
+    ///
+    /// A tile's polling task is rebuilt whenever its view identity changes — returning from the
+    /// background, a camera list reload, SwiftUI re-keying the row — and a rebuilt task would
+    /// otherwise fetch instantly. One tile doing that is nothing; nine doing it together, every
+    /// time something rebuilds them, is the burst this whole file exists to prevent. So a restart
+    /// serves out the remainder of the interval the previous fetch already started.
+    ///
+    /// - Parameter sinceLastFetch: seconds since this camera last fetched, or nil if it never has
+    ///   (a genuinely new tile paints as fast as it can — that's not a burst, that's the wall
+    ///   loading).
+    static func initialDelay(sinceLastFetch: TimeInterval?) -> TimeInterval {
+        guard let sinceLastFetch, sinceLastFetch.isFinite, sinceLastFetch >= 0 else { return 0 }
+        return max(0, base - sinceLastFetch)
+    }
+
     /// - Parameters:
     ///   - lastDuration: how long the previous fetch took, or nil if it failed/never ran.
     ///   - consecutiveFailures: failures since the last frame arrived.
@@ -59,5 +75,23 @@ enum SnapshotPollPolicy {
         // stretches the cadence on its own without anyone having to detect "slow".
         guard let lastDuration, lastDuration.isFinite, lastDuration > 0 else { return .wait(base) }
         return .wait(min(max(base, lastDuration * 2), maxDelay))
+    }
+}
+
+/// Remembers when each camera last asked for a frame, so a tile whose polling task is rebuilt
+/// resumes the rhythm instead of restarting it. Deliberately tiny and process-local: it is pacing
+/// state, not data, and losing it costs one early fetch.
+@MainActor
+enum SnapshotPacer {
+    private static var lastFetch: [String: Date] = [:]
+
+    /// Seconds since this camera last fetched, or nil if it hasn't in this process.
+    static func elapsed(for camera: String, now: Date = Date()) -> TimeInterval? {
+        guard let last = lastFetch[camera] else { return nil }
+        return now.timeIntervalSince(last)
+    }
+
+    static func record(_ camera: String, at now: Date = Date()) {
+        lastFetch[camera] = now
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Auto-refreshing camera snapshot for the wall/grid. Fetches the camera's `latest.jpg` every
 /// `interval` seconds (Frigate serves a fresh live frame each fetch, and `imageData` forces a
@@ -32,12 +33,18 @@ struct LiveSnapshotView: View {
                     .aspectRatio(contentMode: .fit)
             }
         }
-        // Keyed on the scene phase as well as the camera so the loop is torn down when the app
-        // leaves the foreground and rebuilt when it returns. A backgrounded app kept polling
-        // until iOS got round to suspending it — requests nobody could see the result of, landing
-        // on a server that may be why the user backgrounded the app in the first place.
-        .task(id: "\(camera.name)|\(scenePhase == .active)") {
-            guard scenePhase == .active else { return }
+        // Torn down on BACKGROUND and rebuilt on return. A backgrounded app kept polling until
+        // iOS got round to suspending it — requests nobody could see the result of, landing on a
+        // server that may be why the user put the app away.
+        //
+        // ⚠️ Keyed on `!= .background`, NOT on `== .active`, and the difference is not pedantic.
+        // `.inactive` fires for a notification banner, Control Centre, the app switcher, an
+        // incoming call — and rebuilding the task fetches immediately, so keying on `.active`
+        // turns every banner into nine simultaneous requests. During an alert storm, which is
+        // exactly when the server is loaded, that is a burst generator. `ApexSightApp` draws the
+        // same line for the same reason: `.background` stops the poller, `.inactive` does not.
+        .task(id: "\(camera.name)|\(scenePhase != .background)") {
+            guard scenePhase != .background else { return }
             await loop()
         }
     }
@@ -54,10 +61,26 @@ struct LiveSnapshotView: View {
                 image = Image(uiImage: disk); onFrame?(true)
             }
         }
+        // A rebuilt task serves out the remainder of the interval the last fetch already started,
+        // so nine tiles rebuilding together don't all fetch at once.
+        let initialDelay = SnapshotPollPolicy.initialDelay(sinceLastFetch: SnapshotPacer.elapsed(for: camera.name))
+        if initialDelay > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
+        }
+
         var consecutiveFailures = 0
         var onHeartbeat = false
         while !Task.isCancelled {
+            // The authoritative check, independent of whether SwiftUI re-evaluated the view: never
+            // fetch a picture nobody can see. Skip-and-continue rather than return, so the loop
+            // resumes on its own even if the task was never torn down and rebuilt.
+            guard UIApplication.shared.applicationState != .background else {
+                try? await Task.sleep(nanoseconds: UInt64(SnapshotPollPolicy.base * 1_000_000_000))
+                continue
+            }
+
             let started = Date()
+            SnapshotPacer.record(camera.name, at: started)
             let ok = await fetchOnce()
             consecutiveFailures = ok ? 0 : consecutiveFailures + 1
             let next = SnapshotPollPolicy.next(
