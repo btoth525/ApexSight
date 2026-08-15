@@ -5,6 +5,48 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
+## Builds 225–226 (2026-08-10 → 08-15) — the app stops overwhelming the server it depends on
+
+### Added (225) — the diagnostics log can now prove it is working
+
+Every launch records the build it is running, so an empty log unambiguously means nothing went
+wrong rather than "this version never reported anything". A live tile dropping to the low-resolution
+fallback, and two-way talk failing, are both recorded too — things you'd notice and the app didn't
+consider errors, so neither left any trace.
+
+### Fixed (226) — the app was taking the cameras offline
+
+The Frigate server went fully unresponsive for about seven hours. Nothing could be viewed, and the
+automations that poll it stalled, though the cameras kept recording throughout. The cause was this
+app.
+
+Frigate builds previews, snapshots and clip exports by starting an ffmpeg and streaming its output.
+When the app asked for one of those over a slow connection and then gave up waiting, nobody was left
+reading that output — so the ffmpeg never finished, and it held on to one of the server's limited
+workers permanently. Forty accumulated over fifteen hours, roughly one every twenty minutes, until
+there were none left and the server could not answer anything at all.
+
+Underneath it was a single misunderstanding about how a request expires. The limits the app set
+measured the pause *between* pieces of a response, not the length of the whole thing, so a server
+sending a trickle of data could keep a request alive indefinitely — and the notification and widget
+code had no overall limit at all, defaulting to seven days. Every request to Frigate now has a real
+ceiling on its total life, and the app opens fewer of them at once.
+
+- **The camera wall now follows the server's pace.** It asked for a fresh frame from every camera
+  every three seconds no matter what — including when the server was failing to answer and when
+  the app wasn't even on screen. It stays at three seconds when the server is quick, eases off as
+  the server slows, backs off after failures, and settles to a check-in once a minute if a camera
+  stays unreachable. It never stops entirely: a wall that goes quiet until you think to poke it is
+  worse than one that keeps looking.
+- **The wall stops when the app isn't in front of you**, rather than fetching pictures nobody can
+  see until iOS gets round to suspending it.
+- **An alert no longer downloads its picture twice.** Every alert arrives as two notifications — the
+  immediate one, then the one that replaces it with the finished summary — and each was fetching the
+  same still from scratch. Animated previews are still fetched fresh both times, on purpose: the
+  second notification exists precisely to carry the completed clip.
+- **The camera wall now records when it gives up on a camera and when it recovers**, so a
+  "why did that tile look stale" question has an answer afterwards instead of a guess.
+
 ## Builds 215–224 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
 
 ### Fixed — things the app was telling you that weren't true

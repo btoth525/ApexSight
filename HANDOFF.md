@@ -1,6 +1,6 @@
 # ApexSight — Audit & Hardening Handoff
 
-**You are picking up a mature, shipping iOS app (build 225) + its Home-Assistant push relay.**
+**You are picking up a mature, shipping iOS app (build 226) + its Home-Assistant push relay.**
 Your job: audit, harden, and polish it toward "Apple-made-it" quality — UI, backend, correctness,
 security, performance, accessibility. This doc is the mission brief + current state + the traps that
 will waste your time if you don't know them. Read `CLAUDE.md` (repo root) first for the full
@@ -266,12 +266,13 @@ commits over one big sweep.
 
 ## 9. Current state (as of this handoff)
 
-_Last updated 2026-08-15 (build 225 / relay 1.23.0). Update this section when you ship._
+_Last updated 2026-08-15 (build 226 / relay 1.23.0). Update this section when you ship._
 
-- **App build 225** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
-  tree clean, zero warnings. 162 unit tests in 19 suites + 3 UI tests, all green on this tree.
-  **Build 225 is the version that wedged the Frigate server — see §10.** The fix is committed but
-  NOT yet on the phones; nothing has been uploaded since.
+- **App build 226** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
+  tree clean, zero warnings. 176 unit tests in 20 suites + 3 UI tests, all green on this tree.
+  **226 carries the server-load fix; build 225 is the version that wedged the Frigate server — see
+  §10.** Uploaded 2026-08-15 (`scratchpad/ship226.log`, archive + app + NSE all stamped 226).
+  Until both phones actually install it, the household is still running the version that leaks.
 - **Relay 1.23.0** on `apexsight-ha-addon` main, pushed AND deployed to HA. 267 checks across
   9 suites. It gained `/v1/diag`, the app's black box — **read it before guessing at any bug**:
   `curl -s "http://192.168.1.203:3421/v1/diag?pairing_code=<code>&limit=200&level=error"`.
