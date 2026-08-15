@@ -199,6 +199,18 @@ GlassTheme.Radius.chip    // 11 — small pills
 - PiP: use `AVPictureInPictureController` — already wired in `LivePiPController`
 - Stop players on `.onDisappear` unless `persistent: true` is explicitly set
 
+### Networking (added after the app took the NVR down — see HANDOFF §10)
+- **Never `URLSession.shared` for Frigate.** Its `timeoutIntervalForResource` is 7 days. Use
+  `FrigateClient.apiSession`, `FrigateClient.downloadSession`, or `BoundedSession`.
+- **`request.timeoutInterval` is an IDLE timeout and does not bound a request.** Frigate streams
+  previews/snapshots/exports out of an ffmpeg pipe; a trickling pipe resets that timer forever. The
+  session's `timeoutIntervalForResource` is the only real cap.
+- **Abandoning a request costs the SERVER, not just the client.** An unread ffmpeg pipe blocks
+  forever and holds a Frigate API worker. 40 of those killed the whole API for 7 hours.
+- Cap `httpMaximumConnectionsPerHost`; never let a nine-camera view fan out as nine requests.
+- Any repeating fetch needs a failure path: back off, and slow down when the server is slow. A
+  fixed tick with no error handling is how the wall added load to a server already failing.
+
 ### Memory
 - All closures that reference `self` in async contexts use `[weak self]`
 - `NotificationCenter` observers stored and removed on deinit/disappear

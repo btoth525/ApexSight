@@ -1,6 +1,6 @@
 # ApexSight — Audit & Hardening Handoff
 
-**You are picking up a mature, shipping iOS app (build 222) + its Home-Assistant push relay.**
+**You are picking up a mature, shipping iOS app (build 225) + its Home-Assistant push relay.**
 Your job: audit, harden, and polish it toward "Apple-made-it" quality — UI, backend, correctness,
 security, performance, accessibility. This doc is the mission brief + current state + the traps that
 will waste your time if you don't know them. Read `CLAUDE.md` (repo root) first for the full
@@ -103,6 +103,11 @@ xcodebuild -project ApexSightNative.xcodeproj -scheme ApexSightNative \
 - **End-user safety > cleverness.** This is a live home-security app. A dropped alert or a stuck-open
   mic is a real harm. Fail-open on notifications (deliver when uncertain); fail-safe on the mic/audio
   session (tear down when uncertain).
+- **Every request to Frigate needs a TOTAL time cap, not just `request.timeoutInterval`.** That
+  property is an *idle* timeout; Frigate streams several endpoints from an ffmpeg pipe, and a
+  trickling pipe resets it forever. Use `FrigateClient.apiSession` / `downloadSession` /
+  `BoundedSession` — never `URLSession.shared` (7-day resource timeout). §10 explains what this
+  cost the household.
 
 ---
 
@@ -261,12 +266,18 @@ commits over one big sweep.
 
 ## 9. Current state (as of this handoff)
 
-_Last updated 2026-08-10 (build 221 / relay 1.21.0). Update this section when you ship._
+_Last updated 2026-08-15 (build 225 / relay 1.23.0). Update this section when you ship._
 
-- **App build 222** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
-  tree clean, zero warnings. 144 tests in 18 suites.
-- **Relay 1.21.0** on `apexsight-ha-addon` main, pushed AND deployed to HA (verified: `/healthz` ok,
-  APNs configured, 3 devices). 229 checks across 8 suites.
+- **App build 225** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
+  tree clean, zero warnings. 162 unit tests in 19 suites + 3 UI tests, all green on this tree.
+  **Build 225 is the version that wedged the Frigate server — see §10.** The fix is committed but
+  NOT yet on the phones; nothing has been uploaded since.
+- **Relay 1.23.0** on `apexsight-ha-addon` main, pushed AND deployed to HA. 267 checks across
+  9 suites. It gained `/v1/diag`, the app's black box — **read it before guessing at any bug**:
+  `curl -s "http://192.168.1.203:3421/v1/diag?pairing_code=<code>&limit=200&level=error"`.
+  Build 225 added a launch breadcrumb so an empty log unambiguously means "nothing reported"
+  rather than "this build never reported". **Nobody has read it since 225 shipped** — that is the
+  cheapest first move available to you.
   **⚠️ Its tests are standalone scripts, not pytest** — `pytest tests/` fails on their `raise
   SystemExit`. Run each with `PYTHONPATH=<addon dir> APEX_DATA_DIR=… APEX_SECRET_KEY=… python3 tests/test_x.py`.
 
@@ -300,5 +311,90 @@ frames" was already stale before that — `evaluatePlaying()` has required a non
 
 - The single biggest unlock for deeper auditing is unchanged: **run-verifiable live video from a
   device**, so the WebRTC/talk tier stops being compiler-only.
+
+---
+
+## 10. ⛔⛔ THE APP WEDGED THE FRIGATE SERVER (2026-08-14) — read this before touching networking
+
+**The whole NVR was unavailable for ~7 hours.** Frigate's API answered nothing; 1328 consecutive
+healthchecks timed out. Cameras kept recording, but nothing could be viewed and HA automations that
+poll Frigate stalled. The cause was **this app's client behaviour** against a latent Frigate flaw.
+
+### Mechanism
+1. The app requests a preview / snapshot / clip. Frigate answers by spawning
+   `ffmpeg -f concat -i /tmp/cache/playlist_<Camera>_<ts>.txt -c copy -f mp4 pipe:`.
+2. The response is slow — recordings live on a spinning array, and the client is remote over a
+   Cloudflare tunnel.
+3. **The app walks away.** nginx logs `499` (client closed request) at `request_time="125.0"`.
+4. Nobody drains ffmpeg's pipe. It blocks on a full buffer, never exits, and holds an API worker.
+5. One leaked roughly every 22 minutes for 15+ hours until the worker pool was exhausted.
+
+Server-side evidence: **73 ffmpeg processes for 9 cameras** (normal ≈33), 40 of them orphaned
+`playlist_*` exports. Killing exactly those 40 took the API from "timeout after 20s" to "HTTP 200
+in 0.007s" instantly. Recorded user agents: `ApexSightNative/225`, `ApexSightNotificationService/225`.
+
+### ⚠️ The client defect — and the thing that is easy to get wrong
+**`URLRequest.timeoutInterval` is an IDLE timeout, not a total one.** It measures the gap between
+packets, so a server trickling bytes out of an ffmpeg pipe resets it indefinitely. The app set it in
+~20 places and set `timeoutIntervalForResource` — the real wall-clock cap — in three. **Every
+extension used `URLSession.shared`, whose resource timeout is seven days.** That is how a request
+with an apparent 8-second limit reached 125 seconds.
+
+Note this cuts against an older, correct observation in the repo's memory: for a big NSE download,
+an idle timeout is a *feature* (780 KB can't spuriously fail where 188 KB succeeded). Against an
+ffmpeg pipe it is the opposite. Both facts are true; you need the total cap as well.
+
+### What was fixed (this session, committed, NOT yet shipped)
+- **`Sources/ApexSightShared/BoundedSession.swift`** — Frigate sessions with a real
+  `timeoutIntervalForResource` plus `httpMaximumConnectionsPerHost`. The NSE (12s total) and the
+  widgets (15s) now use it; so do `probeLiveHLS` and the Visual Intelligence thumbnail fetch.
+- **`FrigateClient.downloadSession` resource timeout 3600s → 180s**, `waitsForConnectivity` off. An
+  hour-long cap is what turned a stalled export into a server-side leak.
+- **`FrigateClient.apiSession` capped at 3 connections per host** so a nine-camera wall cannot
+  arrive as nine simultaneous requests.
+- **`Sources/ApexSight/Helpers/SnapshotPollPolicy.swift`** — the wall polled on a fixed 3s tick with
+  *no failure path at all*. Now: ~3s when the server answers fast, stretched proportionally when it
+  is slow, exponential backoff on failure, and a once-a-minute heartbeat after 5 consecutive
+  failures. **Deliberately not a hard stop** — a security wall that silently stops updating until
+  the user interacts is a worse failure than one quietly checking once a minute.
+- **The wall now stops entirely when the app is not foregrounded** (`.task(id:)` keyed on
+  `scenePhase`). It used to keep polling until iOS got round to suspending it.
+- **`Sources/ApexSightShared/NotificationMediaCache.swift`** — an alert arrives as two pushes
+  (instant, then the AI follow-up that replaces it), and each ran the NSE and re-downloaded the
+  same picture. Stills are now reused for 5 minutes. **GIFs are excluded on purpose**: the
+  follow-up push exists to carry the *finished* animation, so caching it would pin every alert to
+  its first second of footage.
+- `Tests/ApexSightTests/ServerLoadPolicyTests.swift` pins all of it, including "no Frigate session
+  may have a resource timeout over 300s" — which fails loudly if anyone reaches for
+  `URLSession.shared` again.
+
+### ⚠️ NOT verified — this is the next engineer's job
+Everything above is compile-and-test verified only. **Nobody has watched the server while using the
+patched app**, because the fix has not been uploaded to TestFlight. Verify like this:
+
+```bash
+# ffmpeg count while using the app hard — should hover ~33 for 9 cameras and come back down
+watch -n5 'docker exec frigate_LPR sh -c "pgrep -c ffmpeg"'
+
+# 499s are the direct signature of the app abandoning a request. Target: ZERO.
+docker logs --tail 500 frigate_LPR 2>&1 | grep ' 499 ' | grep ApexSight
+```
+Any 499 with `request_time="125"` means a request was left to rot.
+
+### Server-side context (already done, no app action needed)
+- Server upgraded to Frigate `0.18.0-beta3-tensorrt`, which adds a generic subprocess watchdog that
+  may reap stalled children.
+- The 40 orphaned ffmpegs were cleared; the API recovered without a restart.
+- **Assume a slow, lossy link, not LAN.** Frigate is behind a Cloudflare tunnel, so the app's
+  requests arrive from a public IP carrying real latency.
+
+### Still open in this area
+- `RelayClient` / `SharedRelayGate` / `SharedHouseModeFetch` / `DiagnosticLog` still use
+  `URLSession.shared`. They talk to the **relay**, not Frigate, and nothing there spawns ffmpeg, so
+  they were left alone — but `RelayClient.swift:395` deliberately holds a 150s long-poll, so read
+  the intent before "fixing" any of them.
+- AVPlayer's own HTTP (live HLS, VOD playback) is outside `URLSession` and cannot be given a
+  resource cap. `LiveHLSPlayerView` already backs off exponentially (capped 16s, max 8 attempts);
+  if 499s persist after this build, that is the next place to look.
 
 Good luck. Make it feel like Apple made it.
