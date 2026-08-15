@@ -5,7 +5,7 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
-## Builds 225–226 (2026-08-10 → 08-15) — the app stops overwhelming the server it depends on
+## Builds 225–227 (2026-08-10 → 08-15) — the app stops overwhelming the server it depends on
 
 ### Added (225) — the diagnostics log can now prove it is working
 
@@ -46,6 +46,14 @@ ceiling on its total life, and the app opens fewer of them at once.
   second notification exists precisely to carry the completed clip.
 - **The camera wall now records when it gives up on a camera and when it recovers**, so a
   "why did that tile look stale" question has an answer afterwards instead of a guess.
+
+### Fixed (227) — the previous build's own fix had a sting in it
+
+The change that stops the wall fetching while the app is away treated a notification banner, Control
+Centre and the app switcher as "away" — and coming back from any of them made every tile ask for a
+frame at once. Alert banners arrive in groups, so this landed hardest exactly when the server was
+busiest. Only genuinely leaving the app stops the wall now, and a tile that resumes waits out the
+rest of its interval rather than firing straight away.
 
 ## Builds 215–224 (2026-07-28 → 08-10) — the AI review story, then a deep correctness sweep
 

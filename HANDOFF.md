@@ -270,7 +270,7 @@ _Last updated 2026-08-15 (build 226 / relay 1.23.0). Update this section when yo
 
 - **App build 226** on TestFlight (release SDK — see §2), branch `feature/ios27-platform`, pushed,
   tree clean, zero warnings. 176 unit tests in 20 suites + 3 UI tests, all green on this tree.
-  **226 carries the server-load fix; build 225 is the version that wedged the Frigate server — see
+  **227 carries the server-load fix; build 225 is the version that wedged the Frigate server — see
   §10.** Uploaded 2026-08-15 (`scratchpad/ship226.log`, archive + app + NSE all stamped 226).
   Until both phones actually install it, the household is still running the version that leaks.
 - **Relay 1.23.0** on `apexsight-ha-addon` main, pushed AND deployed to HA. 267 checks across
@@ -373,14 +373,25 @@ ffmpeg pipe it is the opposite. Both facts are true; you need the total cap as w
 Everything above is compile-and-test verified only. **Nobody has watched the server while using the
 patched app**, because the fix has not been uploaded to TestFlight.
 
-**One item is weaker than the rest and should be checked first: the foreground gate.** The wall's
-`.task(id:)` is keyed on `scenePhase`, which tears the loop down and rebuilds it *only if SwiftUI
-re-evaluates that view on the phase change. That is an assumption about invalidation, not a value a
-test can assert — the tests cover the pure policy and the session configs, neither of which touches
-it. Confirm it with the black box rather than the sim's unreliable tap tooling: leave the wall
-visible, background the app, foreground it, then read `/v1/diag` and look for the loop's transition
-lines. (Note also that `LiveSnapshotView.interval` is now only a *floor* — `SnapshotPollPolicy`
-owns the cadence — so setting it does not do what its name suggests.)
+**⚠️ THE FOREGROUND GATE BIT ONCE ALREADY — don't re-introduce it.** The wall's `.task(id:)` was
+first keyed on `scenePhase == .active`, which is wrong in the direction this whole section exists to
+prevent. `.inactive` is not backgrounded: it fires for a notification banner, Control Centre, the
+app switcher, an incoming call. Keyed that way, each of those tore the task down and rebuilt it, and
+**a rebuilt task fetches immediately — so one banner became nine simultaneous requests**, during
+exactly the alert storms when the server is already loaded. It is now keyed on `!= .background`,
+matching what `ApexSightApp.swift` has always done for the foreground poller (`.background` stops
+it, `.inactive` deliberately does not). If you touch this, match that convention.
+
+Two guards back it up, because the teardown itself depends on SwiftUI re-evaluating the view on a
+phase change — an assumption no test here can assert. Each fetch is gated on
+`UIApplication.shared.applicationState` directly and **skips rather than returns**, so the loop
+resumes whether or not the task was rebuilt; and `SnapshotPollPolicy.initialDelay` makes a restarted
+tile serve out the remainder of the interval the previous fetch began, so a rebuild from *any* cause
+cannot become an instant nine-way fetch. A tile that has never fetched still paints immediately — a
+wall loading is not a burst.
+
+(Note also that `LiveSnapshotView.interval` is now only a *floor* — `SnapshotPollPolicy` owns the
+cadence — so setting it does not do what its name suggests.)
 
 Verify the server side like this:
 
