@@ -12,10 +12,11 @@ import SwiftUI
 /// refresh loop is a cancellable `.task` — it stops automatically when the tile scrolls away.
 struct LiveSnapshotView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     let camera: FrigateCamera
-    /// Seconds between frame fetches. ~3s keeps the wall feeling current without hammering the
-    /// server with 9 cameras' worth of full-frame fetches.
-    var interval: TimeInterval = 3
+    /// The wall's rhythm when Frigate answers promptly. `SnapshotPollPolicy` stretches it when the
+    /// server is slow or failing, so this is a floor rather than a fixed tick.
+    var interval: TimeInterval = SnapshotPollPolicy.base
     /// Fires true the first time a frame is on screen (drives the host's "warming up" hint / badge).
     var onFrame: ((Bool) -> Void)? = nil
 
@@ -30,7 +31,14 @@ struct LiveSnapshotView: View {
                     .aspectRatio(contentMode: .fit)
             }
         }
-        .task(id: camera.name) { await loop() }
+        // Keyed on the scene phase as well as the camera so the loop is torn down when the app
+        // leaves the foreground and rebuilt when it returns. A backgrounded app kept polling
+        // until iOS got round to suspending it — requests nobody could see the result of, landing
+        // on a server that may be why the user backgrounded the app in the first place.
+        .task(id: "\(camera.name)|\(scenePhase == .active)") {
+            guard scenePhase == .active else { return }
+            await loop()
+        }
     }
 
     private func loop() async {
@@ -45,28 +53,51 @@ struct LiveSnapshotView: View {
                 image = Image(uiImage: disk); onFrame?(true)
             }
         }
+        var consecutiveFailures = 0
+        var onHeartbeat = false
         while !Task.isCancelled {
-            await fetchOnce()
-            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            let started = Date()
+            let ok = await fetchOnce()
+            consecutiveFailures = ok ? 0 : consecutiveFailures + 1
+            let next = SnapshotPollPolicy.next(
+                lastDuration: ok ? Date().timeIntervalSince(started) : nil,
+                consecutiveFailures: consecutiveFailures)
+            // Record the transitions only — one line when the wall gives up on a camera and one
+            // when it comes back. Logging every failed poll would bury everything else in the
+            // black box, the same way badging every delivery trains you to ignore the badge.
+            switch (next, onHeartbeat) {
+            case (.heartbeat, false):
+                onHeartbeat = true
+                DiagnosticLog.shared.warning(
+                    "wall", "\(camera.name): \(consecutiveFailures) failed snapshot fetches, dropping to 60s heartbeat")
+            case (.wait, true):
+                onHeartbeat = false
+                DiagnosticLog.shared.info("wall", "\(camera.name): snapshots recovered")
+            default:
+                break
+            }
+            try? await Task.sleep(nanoseconds: UInt64(max(interval, next.delay) * 1_000_000_000))
         }
     }
 
-    private func fetchOnce() async {
+    /// Returns whether a frame actually arrived — the caller uses that to pace the next request.
+    private func fetchOnce() async -> Bool {
         guard let client = appState.client,
-              let url = appState.client?.latestFrameURL(camera: camera.name) else { return }
+              let url = appState.client?.latestFrameURL(camera: camera.name) else { return false }
         do {
             let data = try await client.imageData(from: url)
             let decoded = await Task.detached(priority: .utility) {
                 RemoteImage.downsample(data, maxPixel: 1200)
             }.value
-            if let ui = decoded {
-                ImageCache.shared.insert(ui, for: url)
-                image = Image(uiImage: ui)
-                onFrame?(true)
-            }
+            guard let ui = decoded else { return false }
+            ImageCache.shared.insert(ui, for: url)
+            image = Image(uiImage: ui)
+            onFrame?(true)
+            return true
         } catch {
             // Keep the last good frame on a transient blip / re-auth window rather than blanking.
             if error.isUnauthorized { _ = await appState.reauthenticate() }
+            return false
         }
     }
 }
