@@ -5,6 +5,25 @@ All notable changes to ApexSight (the native iOS client for Frigate NVR).
 The project follows a single rolling `CFBundleVersion` (build number) tracked in
 `native-ios/project.yml`. Marketing version is `1.0.0`.
 
+## Build 228 (2026-08-15) — two things the app was doing to itself
+
+### Removed — an iOS Focus could switch off your home security
+
+Turning on a Focus — Sleep, Driving, Do Not Disturb — silenced the cameras for as long as it was
+on, and the only sign was a small banner you had to open the app to find. ApexSight no longer
+appears in Settings → Focus → Focus Filters at all, and a mute left behind by an earlier version
+clears itself the first time this build syncs.
+
+iOS still decides whether to *show* a notification while a Focus is on. Alerts above routine are
+sent as time-sensitive and break through; quiet, routine ones stay quiet. That part is Apple's, not
+the app's.
+
+### Removed — the live bounding boxes that pointed at nothing
+
+On the wide cameras the orange "Car" and "Person" chips drew in the black bar underneath the
+picture instead of on the thing they were labelling. They will come back when they can be placed
+correctly.
+
 ## Builds 225–227 (2026-08-10 → 08-15) — the app stops overwhelming the server it depends on
 
 ### Added (225) — the diagnostics log can now prove it is working
