@@ -24,9 +24,6 @@ struct LiveStreamView: View {
     @State private var showChrome = true
     @State private var hideTask: Task<Void, Never>?
     @State private var showCameraControls = false
-    @State private var showDetectionOverlay = true
-    /// Mirrors the player's fit/fill state so the detection overlay maps boxes into the same rect.
-    @State private var playerFillMode = false
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
     /// Surfaces a brief alert when the snapshot Share couldn't fetch a frame, so the button
@@ -230,11 +227,13 @@ struct LiveStreamView: View {
             )
             .id(reloadToken)
 
-            if showDetectionOverlay,
-               let dets = appState.liveDetections[camera.name], !dets.isEmpty {
-                DetectionOverlayView(detections: dets, videoAspect: camera.aspectRatio, fill: playerFillMode)
-                    .allowsHitTesting(false)
-            }
+            // ⛔ Live bounding boxes were REMOVED (2026-08-15). Do not re-add without fixing the
+            // mapping first. They drew in the black letterbox bars BELOW the picture rather than on
+            // the subject — a "Car" chip floating in a bar, pointing at nothing. The overlay's own
+            // maths was fine; it is fed `camera.aspectRatio` from Frigate's declared detect size,
+            // and on the ultra-wide cameras here that disagrees with the aspect the player actually
+            // draws, so every box landed outside the image. `liveDetections` is still populated —
+            // DynamicIslandAura uses it — so re-adding is a view, not a pipeline.
         }
     }
 
