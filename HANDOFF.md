@@ -419,6 +419,34 @@ A non-zero second number that does not fall back to zero is the leak. (The API a
 the same moment, so the server was genuinely healthy — the number is a real baseline, not a
 reading taken while it was already degraded.)
 
+### ⭐ Live-stream speed: never chain a go2rtc stream (2026-08-15)
+
+`Front_Driveway` opened in **4.70s** while every other camera opened in ~1.5s. It was NOT the
+camera: `Front_Driveway_raw` (same camera, direct, `#video=copy`) opens in **1.64s**. The ~3s was
+purely NVENC spinning up a transcode of 4096x1152 HEVC — the driveway was the only camera whose
+live stream was a *third*, on-demand connection with an encoder on it. Every other camera's live
+stream is one already running 24/7 for record or detect, which is the real reason they feel instant.
+
+Two lessons, both measured:
+- **The app builds the go2rtc stream name itself** (`<camera>` / `<camera>_sub`, `FrigateClient`
+  ~L321) and does NOT read Frigate's `cameras.<n>.live.streams` mapping. Changing that mapping
+  would have done nothing; the fix has to land on the stream literally named `<camera>`.
+- **Never source a live stream as `ffmpeg:<other-stream-name>`.** That chain cost **3.94s** on its
+  own, while the underlying Scrypted URL answers in **0.19s**. Point at the source directly, the
+  way every other camera here does.
+
+Result: driveway live now **2.27s** vs Side_Gate 1.93s, h264 2560x720, no GPU transcode at all.
+Recording is untouched — still direct 4K HEVC — so review footage keeps every pixel; only the live
+view is 2560x720, which already exceeds what an iPhone can display. Backup:
+`~/Documents/frigate-backups/frigate-config-pre-driveway-live-20260815.yml`. Full-res-at-~3s
+alternative is left as a comment beside the stream.
+
+**⚠️ Frigate's nginx does not proxy go2rtc stream mutation** — `PUT/POST/PATCH
+/api/go2rtc/api/streams?name=…&src=…` all 404 (GET works). You cannot test a stream change at
+runtime; each attempt costs a restart, i.e. a ~2.5 min recording blind spot on all 9 cameras.
+Measure with `ffprobe rtsp://192.168.1.204:8554/<stream>` — go2rtc's own RTSP, LAN-only, needs no
+credentials, and is the honest cold-open number.
+
 ### Server-side context (already done, no app action needed)
 - Server upgraded to Frigate `0.18.0-beta3-tensorrt`, which adds a generic subprocess watchdog that
   may reap stalled children.
