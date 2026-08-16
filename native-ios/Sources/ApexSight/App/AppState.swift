@@ -411,10 +411,6 @@ final class AppState: ObservableObject {
         let sig = [(try? enc.encode(prefs))?.base64EncodedString(),
                    (try? enc.encode(triggers))?.base64EncodedString(),
                    String(TimeZone.current.secondsFromGMT()),
-                   // Include this device's Focus mute so a Focus that started/ended while the app
-                   // was closed re-syncs on the next foreground instead of being held back by an
-                   // otherwise-unchanged signature.
-                   String(Int(FocusSnooze.epochForSync)),
                    deviceName].compactMap { $0 }.joined(separator: "|")
         guard sig != lastSyncedDevicePrefs else { return }
         // Optimistic mark + rollback-on-failure so a dropped POST re-syncs on the next foreground
@@ -462,11 +458,6 @@ final class AppState: ObservableObject {
     /// notifications stop?" answers itself. Empty / 0 when the relay reports no active gate.
     @Published var householdGateBy: String = ""
     @Published var householdGateAt: Double = 0
-    /// THIS phone's own Focus mute, mirrored so the banner re-renders when it changes. `FocusSnooze`
-    /// is app-group state written by the widget extension, so reading it straight from a view body
-    /// wouldn't invalidate anything when a Focus starts or ends. Epoch; 0 = not muted.
-    @Published var focusMutedUntil: Double = 0
-
     /// "Set by Brandon's iPhone at 2:16 PM" for the household-gate banners, or nil when the relay
     /// didn't report attribution (an older relay, or a gate set before 1.16.0) — callers fall back
     /// to their generic copy rather than showing a half-empty sentence. Returns the attribution
@@ -546,10 +537,6 @@ final class AppState: ObservableObject {
         let gateAt = status.gate_at ?? 0
         if gateAt != householdGateAt { householdGateAt = gateAt }
         adoptClearedHouseholdSnooze(relaySnoozedUntil: snoozed, fetchStartedAt: fetchStartedAt)
-        // Pick up a Focus that started or ended while the app was closed (the filter runs in the
-        // widget process, so nothing here observes it directly).
-        let focus = FocusSnooze.epochForSync
-        if focus != focusMutedUntil { focusMutedUntil = focus }
         // Mirror to the app group so the Lock Screen widgets + Control Center controls can show it,
         // and refresh those surfaces the moment the mode actually changes.
         SharedHouseMode.mode = status.mode

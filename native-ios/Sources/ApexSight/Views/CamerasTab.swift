@@ -92,7 +92,6 @@ struct CamerasTab: View {
                 if !isEditing {
                     HouseModeSwitcher(onOpenDetail: { path.append("house") })
                     householdSnoozeBanner
-                    focusMuteBanner
                 }
 
                 if let error = appState.errorMessage {
@@ -198,40 +197,6 @@ struct CamerasTab: View {
                     .stroke(GlassTheme.orange.opacity(0.35), lineWidth: 1))
             }
             .buttonStyle(.plain)
-        }
-    }
-
-    /// Quieter sibling of the household banner: THIS phone's alerts are paused by one of its own
-    /// iOS Focuses. Deliberately not a "resume" button — the fix is turning the Focus off (or
-    /// removing ApexSight from its Focus Filters), and a button that fought the Focus would just
-    /// be overridden the next time it activated. This exists so the phone is never silently quiet:
-    /// the household version of this mute was invisible, which is exactly what made it hard to
-    /// diagnose. Informational only, so it doesn't shout like the household banner.
-    @ViewBuilder
-    private var focusMuteBanner: some View {
-        if !appState.householdDisarmed,
-           appState.householdSnoozedUntil <= Date().timeIntervalSince1970,
-           appState.focusMutedUntil > Date().timeIntervalSince1970 {
-            let until = Date(timeIntervalSince1970: appState.focusMutedUntil)
-            HStack(spacing: GlassTheme.Space.s) {
-                Image(systemName: "moon.fill")
-                    // Dynamic Type-relative, not a fixed pixel size, so the glyph grows with the
-                    // label instead of shrinking away from it at large text sizes.
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(GlassTheme.primary)
-                // This tells the user why their alerts are silent, so it's security-relevant and
-                // must not sit at the lowest contrast tier — the same finding an earlier audit
-                // raised against HouseModeView's who-armed text. .footnote (scales) + .primary.
-                Text("Alerts paused on this iPhone by a Focus · until \(until.formatted(date: .omitted, time: .shortened))")
-                    .font(.footnote)
-                    .foregroundStyle(GlassTheme.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, GlassTheme.Space.l)
-            .padding(.vertical, GlassTheme.Space.s)
-            .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip))
-            .accessibilityElement(children: .combine)
         }
     }
 

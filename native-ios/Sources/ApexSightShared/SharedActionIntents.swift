@@ -27,13 +27,6 @@ struct ApexResumeIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         GlobalSnooze.clear()
         await SharedRelayGate.syncCurrent()
-        // "Resume alerts" should mean it, so lift this phone's Focus mute too — otherwise the
-        // request appears to succeed while the phone stays silent. (A Focus that's still on will
-        // re-mute on its next activation; that's the Focus doing its job, not this failing.)
-        if FocusSnooze.isActive {
-            FocusSnooze.clear()
-            await SharedDevicePrefs.syncFocusSnooze(0)
-        }
         return .result()
     }
 }
@@ -157,37 +150,17 @@ struct ApexHouseModeIntent: AppIntent {
     }
 }
 
-// MARK: - Focus filter (mute alerts while a Focus is active)
-
-@available(iOS 16.0, *)
-struct ApexFocusFilter: SetFocusFilterIntent {
-    static let title: LocalizedStringResource = "ApexSight Alerts"
-    static let description = IntentDescription("Mute ApexSight camera alerts while this Focus is on.")
-
-    @Parameter(title: "Mute camera alerts", default: true)
-    var muteAlerts: Bool
-
-    var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: muteAlerts ? "Mute ApexSight alerts" : "ApexSight alerts on")
-    }
-
-    func perform() async throws -> some IntentResult {
-        // PER-DEVICE ONLY. This used to write GlobalSnooze + /v1/gate, which is HOUSEHOLD state —
-        // so one partner's Do Not Disturb turning on silenced every phone's camera alerts for
-        // eight hours, invisibly. A Focus belongs to one person's device; it must never make a
-        // security decision for the whole house. FocusSnooze + /v1/device-prefs mute this phone
-        // alone, and leave a deliberate household snooze (which a person actually chose) intact.
-        if muteAlerts {
-            // Backstop deadline in case iOS never runs this intent again to report the Focus
-            // ending. Bounded server-side too (see /v1/device-prefs) so it can't stick forever.
-            FocusSnooze.mute(until: Date().addingTimeInterval(8 * 60 * 60))
-        } else {
-            FocusSnooze.clear()
-        }
-        await SharedDevicePrefs.syncFocusSnooze(FocusSnooze.epochForSync)
-        return .result()
-    }
-}
+// MARK: - Focus filter — REMOVED ON PURPOSE (2026-08-15). Do not re-add.
+//
+// ApexSight used to publish a `SetFocusFilterIntent`, so any iOS Focus (Sleep, Do Not Disturb,
+// Driving…) could switch camera alerts off. It worked exactly as designed and the design was
+// wrong for this app: a Focus you set for one reason silently disabled home security for hours,
+// and the only clue was a small banner you had to open the app to see.
+//
+// Removing the intent is what removes ApexSight from Focus Filters in iOS Settings — a Focus can
+// no longer reach in and mute the cameras. iOS still decides whether to *display* a given
+// notification while a Focus is on; that is the system's call, and the relay already marks
+// anything above routine as time-sensitive so it breaks through.
 
 @available(iOS 17.0, *)
 struct ApexOpenCameraIntent: AppIntent {

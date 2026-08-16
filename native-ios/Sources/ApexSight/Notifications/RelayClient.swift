@@ -79,9 +79,14 @@ enum RelayClient {
         let pairing_code: String
         let device_name: String   // keeps the per-phone HA entity name fresh on the foreground sync
         let prefs: DevicePrefsBlob
-        /// This device's iOS Focus mute (epoch; 0 = not muted). Stored apart from `prefs` on the
-        /// relay so the Focus filter and this full sync can't clobber each other — sending it here
-        /// lets a foreground sync heal a stale mute the widget extension failed to clear.
+        /// ALWAYS 0 — a tombstone, not a value.
+        ///
+        /// The Focus filter is gone (see `SharedActionIntents`), but the relay stores this mute per
+        /// device under its own `focus:<token>` key, and `gate.py` still suppresses pushes while it
+        /// is in the future. Simply no longer writing it would leave whatever was last written in
+        /// place — a phone could stay silent for hours after the update, which is the exact failure
+        /// removing the feature is meant to end. Sending an explicit 0 on every sync clears it, and
+        /// keeps clearing it, so a mute written by an older build on any device heals itself.
         let focus_snoozed_until: Double
     }
 
@@ -228,7 +233,7 @@ enum RelayClient {
         try await post(relayURL: relayURL, path: "/v1/device-prefs",
                        body: DevicePrefsBody(device_token: deviceToken, pairing_code: pairingCode,
                                              device_name: deviceName, prefs: blob,
-                                             focus_snoozed_until: FocusSnooze.epochForSync))
+                                             focus_snoozed_until: 0))
     }
 
     /// Asks the relay to send a test push to this device.

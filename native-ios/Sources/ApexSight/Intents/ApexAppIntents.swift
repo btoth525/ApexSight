@@ -405,12 +405,6 @@ struct ResumeAlertsIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         GlobalSnooze.clear()
         await RelayGate.sync(snoozedUntil: 0)
-        // Lift this phone's Focus mute too, so "resume alerts" doesn't report success while the
-        // phone stays silent. (A Focus that's still on re-mutes on its next activation.)
-        if FocusSnooze.isActive {
-            FocusSnooze.clear()
-            await SharedDevicePrefs.syncFocusSnooze(0)
-        }
         return .result(dialog: "Camera alerts are back on.")
     }
 }

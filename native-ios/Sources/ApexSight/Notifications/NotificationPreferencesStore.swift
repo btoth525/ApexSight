@@ -96,8 +96,6 @@ final class NotificationPreferencesStore: ObservableObject {
         guard ArmStateStore.notificationsActive else { return false }
         // Global "snooze all" set from Siri / App Intents takes priority over everything.
         guard !GlobalSnooze.isActive else { return false }
-        // This device's own iOS Focus mute (per-device, not household — see FocusSnooze).
-        guard !FocusSnooze.isActive else { return false }
         guard preferences.isCameraEnabled(camera) else { return false }
         guard !preferences.isSnoozed(camera) else { return false }
         guard preferences.isObjectEnabled(label) else { return false }
@@ -132,7 +130,6 @@ final class NotificationPreferencesStore: ObservableObject {
     func wouldDeliver(camera: String, label: String, zones: [String], score: Double, triggers: [NotificationTrigger]) -> Bool {
         guard ArmStateStore.notificationsActive else { return false }
         guard !GlobalSnooze.isActive else { return false }
-        guard !FocusSnooze.isActive else { return false }
         guard !preferences.isSnoozed(camera) else { return false }
 
         let passesSoftFilters = preferences.isCameraEnabled(camera)
