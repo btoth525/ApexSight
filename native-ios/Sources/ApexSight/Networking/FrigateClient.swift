@@ -364,6 +364,51 @@ struct FrigateClient {
         baseURL.appending(path: "api/events/\(id)/thumbnail.jpg")
     }
 
+    /// Snapshot tab: the BEST cropped image — a full-detector-res tight crop of the object at its
+    /// best frame. `crop=1` needs `has_snapshot`; pair with a `thumbnail` fallback for cameras with
+    /// snapshots disabled. Do NOT fold these params into `eventSnapshotURL` — that URL is the
+    /// `ImageCache` key + the fullscreen/hero fallback; changing it poisons all three.
+    func eventBestCropURL(id: String, height: Int? = nil) -> URL {
+        var items: [URLQueryItem] = [.init(name: "crop", value: "1"),
+                                     .init(name: "quality", value: "100"),
+                                     .init(name: "bbox", value: "0"),
+                                     .init(name: "timestamp", value: "0")]
+        if let height { items.append(.init(name: "height", value: String(height))) }
+        return baseURL.appending(path: "api/events/\(id)/snapshot.jpg").appending(queryItems: items)
+    }
+
+    /// Tracking overlay ONLY: the FULL detect frame, clean (no burned-in box/clock to fight the
+    /// tail). `path_data` is normalized to THIS frame — never draw the tail on the crop/thumbnail.
+    /// (`height` downscale preserves aspect, so the normalized→screen mapping is unaffected.)
+    func eventCleanSnapshotURL(id: String) -> URL {
+        baseURL.appending(path: "api/events/\(id)/snapshot.jpg")
+            .appending(queryItems: [.init(name: "bbox", value: "0"),
+                                    .init(name: "timestamp", value: "0"),
+                                    .init(name: "height", value: "720")])
+    }
+
+    /// DEBUG verification frame: Frigate burns the TRUE box into the pixels, so a red normalized
+    /// `data.box` drawn via the same transform must land on it — the overlay-alignment oracle.
+    func eventBboxSnapshotURL(id: String) -> URL {
+        baseURL.appending(path: "api/events/\(id)/snapshot.jpg")
+            .appending(queryItems: [.init(name: "bbox", value: "1")])
+    }
+
+    /// The object's lifecycle timeline (`/api/timeline?source_id=<detection event id>`) — detected,
+    /// entered a zone, recognized, stationary/active, left. Pass the EVENT/detection id, NOT the
+    /// review id (that returns []). Defensive: `[]` on any failure, like `previewFrames`.
+    func objectTimeline(eventID: String) async -> [TimelineBeat] {
+        var comps = URLComponents(url: baseURL.appending(path: "api/timeline"), resolvingAgainstBaseURL: false)
+        comps?.queryItems = [.init(name: "source_id", value: eventID)]
+        guard let url = comps?.url else { return [] }
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        guard let (data, resp) = try? await session.data(for: request),
+              (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true,
+              let beats = try? JSONDecoder.frigate.decode([TimelineBeat].self, from: data) else { return [] }
+        return beats.sorted { $0.ts < $1.ts }
+    }
+
     /// Animated GIF preview of an event — used for rich notification attachments.
     func eventPreviewGifURL(id: String) -> URL {
         baseURL.appending(path: "api/events/\(id)/preview.gif")

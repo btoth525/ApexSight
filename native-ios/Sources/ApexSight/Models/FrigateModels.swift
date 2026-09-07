@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct FrigateSession: Codable, Equatable {
     let baseURL: URL
@@ -75,6 +76,47 @@ struct FrigateCamera: Identifiable, Hashable, Codable {
     }
 }
 
+/// A single point on a tracked object's movement trail (`data.path_data`). Normalized 0-1 to the
+/// full detect frame, top-left origin, y-down — the same space `snapshot.jpg` fills and the same
+/// convention SwiftUI uses, so overlays map with a bare multiply (no y-flip).
+struct PathPoint: Hashable { let x, y: Double; let ts: Double }
+
+/// One beat in a tracked object's lifecycle (Frigate `/api/timeline`): detected, entered a zone,
+/// recognized an attribute, went stationary/active, left. `box` is normalized [x,y,w,h].
+struct TimelineBeat: Identifiable, Decodable, Hashable {
+    let id = UUID()
+    let ts: Double
+    let classType: String
+    let box: CGRect?
+    let score: Double?
+    let zones: [String]?
+    let attribute: String?
+    let subLabel: String?
+
+    private enum CK: String, CodingKey { case ts = "timestamp", classType = "class_type", data }
+    private enum DK: String, CodingKey { case box, score, zones, attribute, subLabel = "sub_label" }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CK.self)
+        ts = (try? c.decode(Double.self, forKey: .ts)) ?? 0
+        classType = (try? c.decode(String.self, forKey: .classType)) ?? "unknown"
+        let dc = try? c.nestedContainer(keyedBy: DK.self, forKey: .data)
+        score = (try? dc?.decodeIfPresent(Double.self, forKey: .score)) ?? nil
+        zones = (try? dc?.decodeIfPresent([String].self, forKey: .zones)) ?? nil
+        attribute = (try? dc?.decodeIfPresent(String.self, forKey: .attribute)) ?? nil
+        if let arr = (try? dc?.decodeIfPresent([Double].self, forKey: .box)) ?? nil, arr.count == 4 {
+            box = CGRect(x: arr[0], y: arr[1], width: arr[2], height: arr[3])
+        } else { box = nil }
+        // sub_label is polymorphic: null | "name" | ["name", 0.77] — never let it throw.
+        if let str = (try? dc?.decodeIfPresent(String.self, forKey: .subLabel)) ?? nil {
+            subLabel = str
+        } else if var u = try? dc?.nestedUnkeyedContainer(forKey: .subLabel), let str = try? u.decode(String.self) {
+            subLabel = str
+        } else { subLabel = nil }
+    }
+    static func == (a: TimelineBeat, b: TimelineBeat) -> Bool { a.id == b.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+}
+
 struct FrigateEvent: Identifiable, Codable, Hashable {
     let id: String
     let camera: String
@@ -106,6 +148,13 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
     let box: [Double]?
     let frameWidth: Double?
     let frameHeight: Double?
+    /// The object's movement trail (`data.path_data`), oldest→newest. Normalized 0-1 to the full frame.
+    let pathData: [PathPoint]?
+    /// `data.box` — the object box NORMALIZED as [x,y,w,h] (top-left+size). Distinct from the pixel
+    /// `[x1,y1,x2,y2]` top-level `box` above; never run this through the pixel box helper.
+    let normBox: CGRect?
+    /// `data.region` — the detect region NORMALIZED [x,y,w,h] (h can exceed 1.0).
+    let region: CGRect?
 
     var displayLabel: String {
         if let sub = subLabel, !sub.isEmpty { return sub }
@@ -156,6 +205,9 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         case snapshotFrameTime = "snapshot_frame_time"
         case recognizedLicensePlate = "recognized_license_plate"
         case recognizedLicensePlateScore = "recognized_license_plate_score"
+        case box
+        case region
+        case pathData = "path_data"
     }
 
     init(from decoder: Decoder) throws {
@@ -189,6 +241,7 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         // (measured across 300 rows + a known plate event on Frigate 0.18); the WebSocket
         // tracked-object payload carries it at top level. Read both, preferring top-level.
         var dataPlate: String?, dataPlateScore: Double?
+        var dataPathData: [PathPoint]? = nil, dataNormBox: CGRect? = nil, dataRegion: CGRect? = nil
         if let dataOuter = try? decoder.container(keyedBy: DataOuterKeys.self),
            let dataC = try? dataOuter.nestedContainer(keyedBy: DataKeys.self, forKey: .data) {
             dataScore = try? dataC.decodeIfPresent(Double.self, forKey: .score)
@@ -197,6 +250,28 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
             dataSnapshotFrameTime = try? dataC.decodeIfPresent(Double.self, forKey: .snapshotFrameTime)
             dataPlate = try? dataC.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)
             dataPlateScore = try? dataC.decodeIfPresent(Double.self, forKey: .recognizedLicensePlateScore)
+            if let b = try? dataC.decodeIfPresent([Double].self, forKey: .box), b.count == 4 {
+                dataNormBox = CGRect(x: b[0], y: b[1], width: b[2], height: b[3])
+            }
+            if let r = try? dataC.decodeIfPresent([Double].self, forKey: .region), r.count == 4 {
+                dataRegion = CGRect(x: r[0], y: r[1], width: r[2], height: r[3])
+            }
+            var pts: [PathPoint] = []
+            if var outer = try? dataC.nestedUnkeyedContainer(forKey: .pathData) {
+                var guardN = 0
+                while !outer.isAtEnd && guardN < 5000 {
+                    guardN += 1
+                    guard var entry = try? outer.nestedUnkeyedContainer() else {
+                        _ = try? outer.decode(Double.self)   // non-array entry: consume to advance
+                        continue
+                    }
+                    guard let xy = try? entry.decode([Double].self), xy.count == 2,
+                          let ts = try? entry.decode(Double.self),
+                          xy[0].isFinite, xy[1].isFinite else { continue }
+                    pts.append(PathPoint(x: xy[0], y: xy[1], ts: ts))
+                }
+            }
+            dataPathData = pts.isEmpty ? nil : pts
         }
         let topPlate = ((try? c.decodeIfPresent(String.self, forKey: .recognizedLicensePlate)) ?? nil)
         let mergedPlate = (topPlate?.isEmpty == false) ? topPlate : dataPlate
@@ -211,6 +286,9 @@ struct FrigateEvent: Identifiable, Codable, Hashable {
         let topDescription = ((try? c.decodeIfPresent(String.self, forKey: .description)) ?? nil)
         let merged = topDescription ?? dataDescription
         description = (merged?.isEmpty == false) ? merged : nil
+        pathData = dataPathData
+        normBox = dataNormBox
+        region = dataRegion
     }
 }
 

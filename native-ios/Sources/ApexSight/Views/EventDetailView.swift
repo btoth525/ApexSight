@@ -9,11 +9,13 @@ struct EventDetailView: View {
     @State private var actionFeedback: String?
     @State private var actionIsError = false
     @State private var isActing = false
-    @StateObject private var clipModel = ClipPlayerModel()
+    @State private var highlightTS: Double?
+    @State private var trackingBeats: [TimelineBeat] = []
+    @State private var loadingTracking = false
     @State private var downloadFeedback: String?
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
-    @State private var mediaMode: MediaMode = .video
+    @State private var mediaMode: MediaMode = .snapshot
     /// True while our fullscreen media cover is presented — onDisappear must NOT stop the
     /// clip player then (the cover is displaying that very player).
     @State private var mediaExpanded = false
@@ -32,9 +34,9 @@ struct EventDetailView: View {
     @State private var isLoadingAIDescription = true
 
     private enum MediaMode: String, CaseIterable {
-        case video = "Video"
         case snapshot = "Snapshot"
-        case history = "History"
+        case tracking = "Tracking"
+        case history  = "History"
     }
 
     private var hasClip: Bool { event.hasClip != false }
@@ -44,19 +46,13 @@ struct EventDetailView: View {
     /// user is watching the clip, or vice-versa).
     private var fullscreenMedia: FullscreenMediaView.Media? {
         switch mediaMode {
-        case .video where hasClip:
-            // A real clip is showing — expand opens the zoomable video. Gate on isReady
-            // (the AVPlayer exists synchronously from the first load call, so `player != nil`
-            // was true during buffering and tapping the skeleton opened a black viewer).
-            guard clipModel.isReady, let player = clipModel.player else { return nil }
-            return .player(player)
-        case .video, .snapshot:
-            // Either Snapshot mode, or Video mode for a clip-less event — both render the
-            // event snapshot inline, so expand opens that same image.
+        case .snapshot:
+            // Expand shows the FULL frame (zoom out for context from the crop).
             guard let url = appState.client?.eventSnapshotURL(id: event.id) else { return nil }
             return .image(url)
-        case .history:
-            // The history scrubber has its own controls; nothing to expand.
+        case .tracking, .history:
+            // Tracking overlay can't ride the zoom transform (it would detach the tail); the
+            // history scrubber has its own controls. Nothing to expand.
             return nil
         }
     }
@@ -67,6 +63,7 @@ struct EventDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     heroCard
+                    if mediaMode == .tracking { trackingCard }
                     if let genAIDescription {
                         aiCard(genAIDescription)
                             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
@@ -86,7 +83,7 @@ struct EventDetailView: View {
             #if DEBUG
             // Sim-driving hook: synthetic taps can't switch a segmented Picker, so tests inject
             // the media tab via the app group (0=video 1=snapshot 2=history).
-            let modes: [MediaMode] = [.video, .snapshot, .history]
+            let modes: [MediaMode] = [.snapshot, .tracking, .history]
             if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?.object(forKey: "apex.debug.mediaMode") as? Int,
                modes.indices.contains(raw) {
                 mediaMode = modes[raw]
@@ -233,6 +230,25 @@ struct EventDetailView: View {
         .accessibilityLabel("Loading AI description")
     }
 
+    private var mediaPlaceholder: some View {
+        Color.black.frame(height: 300).frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var trackingCard: some View {
+        if !trackingBeats.isEmpty {
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                    SectionHeader("Tracking")
+                    ObjectTimelineView(beats: trackingBeats, eventStart: event.startTime, highlightTS: $highlightTS)
+                }
+            }
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+        } else if loadingTracking {
+            GlassCard { SkeletonBlock().frame(height: 90) }
+        }
+    }
+
     private var heroCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
@@ -242,41 +258,39 @@ struct EventDetailView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: mediaMode) { _, mode in
-                    Haptics.select()
-                    if mode == .video { clipModel.play() } else { clipModel.pause() }
-                }
+                .onChange(of: mediaMode) { _, _ in Haptics.select() }
 
                 ZStack {
-                    if hasClip, mediaMode == .video {
-                        // Holds a loading skeleton until a real frame is ready, then fades the
-                        // clip in — never a black box.
-                        LoadingClipPlayer(model: clipModel)
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
-                    } else if mediaMode == .history, let startTime = event.startTime {
-                        RecordingContextPlayerView(
-                            camera: event.camera,
-                            centerTime: startTime,
-                            eventStart: event.startTime,
-                            eventEnd: event.endTime
-                        )
-                        .frame(maxWidth: .infinity)
-                    } else if let url = appState.client?.eventSnapshotURL(id: event.id) {
-                        // Plain image inline (no inner scroll-zoom) so a tap flows through to
-                        // `.expandableMedia`, which opens the full-screen zoomable viewer.
-                        RemoteImage(url: url, contentMode: .fit)
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
-                    } else if let url = appState.client?.latestFrameURL(camera: event.camera) {
-                        // No event snapshot — show the camera's latest frame, never a black box.
-                        RemoteImage(url: url, contentMode: .fit)
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Color.black
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
+                    switch mediaMode {
+                    case .snapshot:
+                        // The BEST cropped image of what was found (thumbnail fallback when
+                        // snapshots are disabled); revalidate while the event is still in progress.
+                        if let url = appState.client?.eventBestCropURL(id: event.id) {
+                            RemoteImage(url: url, contentMode: .fit,
+                                        revalidate: event.endTime == nil,
+                                        fallbackURL: appState.client?.eventThumbnailURL(id: event.id))
+                                .frame(height: 300).frame(maxWidth: .infinity)
+                        } else { mediaPlaceholder }
+                    case .tracking:
+                        // The clean full frame with the object's movement tail drawn ON the subject
+                        // (letterbox-safe via TrackedSnapshot). Overlay only ever on the full frame.
+                        if let url = appState.client?.eventCleanSnapshotURL(id: event.id) {
+                            TrackedSnapshot(url: url) { size in
+                                PathTailCanvas(points: event.pathData ?? [],
+                                               snapshotTS: event.snapshotFrameTime,
+                                               highlightTS: highlightTS, size: size)
+                            }
+                            .frame(height: 300).frame(maxWidth: .infinity)
+                        } else { mediaPlaceholder }
+                    case .history:
+                        if let startTime = event.startTime {
+                            RecordingContextPlayerView(camera: event.camera, centerTime: startTime,
+                                                       eventStart: event.startTime, eventEnd: event.endTime)
+                                .frame(maxWidth: .infinity)
+                        } else if let url = appState.client?.eventThumbnailURL(id: event.id) {
+                            RemoteImage(url: url, contentMode: .fit)
+                                .frame(height: 300).frame(maxWidth: .infinity)
+                        } else { mediaPlaceholder }
                     }
                 }
                 .background(Color.black)
@@ -324,22 +338,12 @@ struct EventDetailView: View {
                 }
             }
             .task(id: event.id) {
-                // Keyed to THIS event + a forced load so a reused detail view can never
-                // play the previous event's clip.
-                guard hasClip, let client = appState.client else { clipModel.stop(); return }
-                // Frigate's purpose-built event VOD endpoint (`/vod/event/<id>/master.m3u8`),
-                // except for very long-lived objects — a parked car can hold one event open for
-                // over half an hour, and that endpoint serves the whole span (see
-                // `eventPlaybackURL`).
-                // loadIfNeeded is URL-keyed: a reused view for a NEW event loads fresh, but a
-                // re-appear for the SAME event (returning from fullscreen expand or a push)
-                // keeps the existing playback instead of reloading + ghost-auto-playing.
-                let vod = client.eventPlaybackURL(
-                    id: event.id, camera: event.camera,
-                    start: event.startTime, end: event.endTime)
-                clipModel.loadIfNeeded(client: client, url: vod)
+                // Object lifecycle timeline for the Tracking tab (best-effort; [] hides the rail).
+                highlightTS = nil
+                loadingTracking = true
+                trackingBeats = await appState.client?.objectTimeline(eventID: event.id) ?? []
+                loadingTracking = false
             }
-            .onDisappear { if !mediaExpanded { clipModel.stop() } }
         }
     }
 
