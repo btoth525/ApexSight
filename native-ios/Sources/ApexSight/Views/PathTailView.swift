@@ -122,3 +122,34 @@ struct PathTailCanvas: View {
         ctx.stroke(d, with: .color(.white), lineWidth: 2)
     }
 }
+
+
+/// A "tracking lock" box drawn on the frame at a lifecycle beat's normalized position — shown when
+/// the user taps a step in the timeline, so the object is boxed exactly where it was at that moment.
+/// Maps with a bare `n * size` onto the same fitted rect the tail uses (zero offset), so it stays
+/// aligned through pinch-zoom in the fullscreen viewer.
+struct BeatBoxView: View {
+    let box: CGRect        // normalized [x, y, w, h] on the full detect frame
+    let size: CGSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appear = false
+
+    var body: some View {
+        let r = CGRect(x: box.minX * size.width, y: box.minY * size.height,
+                       width: max(box.width * size.width, 6), height: max(box.height * size.height, 6))
+        let corner = min(6, min(r.width, r.height) / 3)
+        ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(GlassTheme.accent.opacity(0.14))
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(GlassTheme.accent, lineWidth: 2)
+                .shadow(color: GlassTheme.accent.opacity(0.8), radius: 6)
+        }
+        .frame(width: r.width, height: r.height)
+        .position(x: r.midX, y: r.midY)
+        .scaleEffect(appear ? 1 : 1.18)
+        .opacity(appear ? 1 : 0)
+        .allowsHitTesting(false)
+        .onAppear { withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) { appear = true } }
+    }
+}

@@ -11,11 +11,16 @@ struct FullscreenMediaView: View {
     enum Media: Equatable {
         case player(AVPlayer)
         case image(URL)
+        /// A tracked snapshot: the frame plus the object's movement tail (and, when a beat is
+        /// selected, its box) — so maximizing the Tracking tab still shows the path, and it all
+        /// pinch-zooms together with the image.
+        case tracked(url: URL, points: [PathPoint], snapshotTS: Double?, highlightTS: Double?, box: CGRect?)
 
         static func == (lhs: Media, rhs: Media) -> Bool {
             switch (lhs, rhs) {
             case let (.player(a), .player(b)): return a === b
             case let (.image(a), .image(b)): return a == b
+            case let (.tracked(u1, _, _, h1, b1), .tracked(u2, _, _, h2, b2)): return u1 == u2 && h1 == h2 && b1 == b2
             default: return false
             }
         }
@@ -34,6 +39,16 @@ struct FullscreenMediaView: View {
                     ZoomableScrollView { VideoLayerView(player: player) }
                 case .image(let url):
                     ZoomableScrollView { RemoteImage(url: url, contentMode: .fit) }
+                case let .tracked(url, points, snapshotTS, highlightTS, box):
+                    ZoomableScrollView {
+                        TrackedSnapshot(url: url) { size in
+                            ZStack {
+                                PathTailCanvas(points: points, snapshotTS: snapshotTS,
+                                               highlightTS: highlightTS, size: size)
+                                if let box { BeatBoxView(box: box, size: size) }
+                            }
+                        }
+                    }
                 }
             }
             .ignoresSafeArea()

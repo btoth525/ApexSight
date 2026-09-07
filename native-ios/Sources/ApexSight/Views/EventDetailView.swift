@@ -47,6 +47,24 @@ struct EventDetailView: View {
         appState.cameras.first(where: { $0.name == event.camera })?.aspectRatio ?? 16.0 / 9.0
     }
 
+    /// The lifecycle beat the user tapped in the timeline (nil = none).
+    private var selectedBeat: TimelineBeat? {
+        guard let ts = highlightTS else { return nil }
+        return trackingBeats.first(where: { abs($0.ts - ts) < 0.001 })
+    }
+    /// Native frame height for crisp recording-frame requests (no upscaling of ultra-wide feeds).
+    private var trackingCameraHeight: Int {
+        appState.cameras.first(where: { $0.name == event.camera })?.height ?? 720
+    }
+    /// The frame the Tracking tab shows: the RECORDED frame at the tapped beat, else the clean best frame.
+    private var trackingFrameURL: URL? {
+        guard let client = appState.client else { return nil }
+        if let beat = selectedBeat {
+            return client.recordingFrameURL(camera: event.camera, at: beat.ts, height: trackingCameraHeight)
+        }
+        return client.eventCleanSnapshotURL(id: event.id)
+    }
+
     /// What the fullscreen viewer shows — it MUST mirror exactly what the hero is
     /// rendering inline, so expand never opens the wrong medium (a snapshot while the
     /// user is watching the clip, or vice-versa).
@@ -57,10 +75,10 @@ struct EventDetailView: View {
             guard let url = appState.client?.eventSnapshotURL(id: event.id) else { return nil }
             return .image(url)
         case .tracking:
-            // Zoom the CLEAN full frame (the tail overlay can't ride the zoom transform, so it
-            // stays on the inline card) — lets the user pinch into the subject like other tabs.
-            guard let url = appState.client?.eventCleanSnapshotURL(id: event.id) else { return nil }
-            return .image(url)
+            // Maximize keeps the tail + path (and the selected-beat box) and zooms it all together.
+            guard let url = trackingFrameURL else { return nil }
+            return .tracked(url: url, points: event.pathData ?? [], snapshotTS: event.snapshotFrameTime,
+                            highlightTS: highlightTS, box: selectedBeat?.box)
         case .history:
             // The history scrubber has its own controls. Nothing to expand.
             return nil
@@ -250,6 +268,8 @@ struct EventDetailView: View {
             GlassCard {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                     SectionHeader("Tracking")
+                    Text("Tap a step to jump to that moment")
+                        .font(.caption).foregroundStyle(GlassTheme.secondary)
                     ObjectTimelineView(beats: trackingBeats, eventStart: event.startTime, highlightTS: $highlightTS)
                 }
             }
@@ -282,13 +302,16 @@ struct EventDetailView: View {
                                 .snapshotFrame()
                         } else { mediaPlaceholder }
                     case .tracking:
-                        // The clean full frame with the object's movement tail drawn ON the subject
-                        // (letterbox-safe via TrackedSnapshot). Overlay only ever on the full frame.
-                        if let url = appState.client?.eventCleanSnapshotURL(id: event.id) {
+                        // Clean full frame + movement tail. Tapping a lifecycle beat swaps to the
+                        // RECORDED frame at that moment and boxes the object where it was.
+                        if let url = trackingFrameURL {
                             TrackedSnapshot(url: url) { size in
-                                PathTailCanvas(points: event.pathData ?? [],
-                                               snapshotTS: event.snapshotFrameTime,
-                                               highlightTS: highlightTS, size: size)
+                                ZStack {
+                                    PathTailCanvas(points: event.pathData ?? [],
+                                                   snapshotTS: event.snapshotFrameTime,
+                                                   highlightTS: highlightTS, size: size)
+                                    if let box = selectedBeat?.box { BeatBoxView(box: box, size: size) }
+                                }
                             }
                             .mediaAspectFrame(mediaAspect)
                         } else { mediaPlaceholder }

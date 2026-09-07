@@ -139,13 +139,16 @@ struct ReviewDetailView: View {
                                 .snapshotFrame()
                         } else { mediaPlaceholder }
                     case .tracking:
-                        // Clean full frame + the object's movement tail drawn ON the subject.
-                        if let pid = FrigateClient.primaryDetectionID(of: review),
-                           let url = appState.client?.eventCleanSnapshotURL(id: pid) {
+                        // Clean full frame + tail. Tapping a lifecycle beat swaps to the RECORDED
+                        // frame at that moment and boxes the object where it was.
+                        if let url = trackingFrameURL {
                             TrackedSnapshot(url: url) { size in
-                                PathTailCanvas(points: primaryEvent?.pathData ?? [],
-                                               snapshotTS: primaryEvent?.snapshotFrameTime,
-                                               highlightTS: highlightTS, size: size)
+                                ZStack {
+                                    PathTailCanvas(points: primaryEvent?.pathData ?? [],
+                                                   snapshotTS: primaryEvent?.snapshotFrameTime,
+                                                   highlightTS: highlightTS, size: size)
+                                    if let box = selectedBeat?.box { BeatBoxView(box: box, size: size) }
+                                }
                             }
                             .mediaAspectFrame(mediaAspect)
                         } else { mediaPlaceholder }
@@ -223,11 +226,10 @@ struct ReviewDetailView: View {
             guard let url = snapshotURL else { return nil }
             return .image(url)
         case .tracking:
-            // Zoom the CLEAN full frame (tail stays on the inline card) — pinch into the subject
-            // like the other tabs.
-            guard let pid = FrigateClient.primaryDetectionID(of: review),
-                  let url = appState.client?.eventCleanSnapshotURL(id: pid) else { return nil }
-            return .image(url)
+            // Maximize keeps the tail + path (and the selected-beat box) and zooms it all together.
+            guard let url = trackingFrameURL else { return nil }
+            return .tracked(url: url, points: primaryEvent?.pathData ?? [], snapshotTS: primaryEvent?.snapshotFrameTime,
+                            highlightTS: highlightTS, box: selectedBeat?.box)
         case .history:
             return nil
         }
@@ -247,6 +249,24 @@ struct ReviewDetailView: View {
         appState.cameras.first(where: { $0.name == review.camera })?.aspectRatio ?? 16.0 / 9.0
     }
 
+    /// The lifecycle beat the user tapped in the timeline (nil = none).
+    private var selectedBeat: TimelineBeat? {
+        guard let ts = highlightTS else { return nil }
+        return trackingBeats.first(where: { abs($0.ts - ts) < 0.001 })
+    }
+    private var trackingCameraHeight: Int {
+        appState.cameras.first(where: { $0.name == review.camera })?.height ?? 720
+    }
+    /// The frame the Tracking tab shows: the RECORDED frame at the tapped beat, else the primary
+    /// detection's clean best frame.
+    private var trackingFrameURL: URL? {
+        guard let client = appState.client, let pid = FrigateClient.primaryDetectionID(of: review) else { return nil }
+        if let beat = selectedBeat {
+            return client.recordingFrameURL(camera: review.camera, at: beat.ts, height: trackingCameraHeight)
+        }
+        return client.eventCleanSnapshotURL(id: pid)
+    }
+
     private var mediaPlaceholder: some View {
         Color.black.mediaAspectFrame(mediaAspect)
     }
@@ -257,6 +277,8 @@ struct ReviewDetailView: View {
             GlassCard {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                     SectionHeader("Tracking")
+                    Text("Tap a step to jump to that moment")
+                        .font(.caption).foregroundStyle(GlassTheme.secondary)
                     ObjectTimelineView(beats: trackingBeats, eventStart: review.startTime, highlightTS: $highlightTS)
                 }
             }
