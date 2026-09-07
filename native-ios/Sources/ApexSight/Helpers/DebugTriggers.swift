@@ -8,10 +8,6 @@ import Foundation
 /// The whole file is behind `#if DEBUG`, so none of this ships in Release.
 @MainActor
 enum DebugTriggers {
-    static func fireLiveActivity(camera: String) {
-        IncidentActivityController.startOrUpdate(review: review(camera: camera))
-    }
-
     static func fireWatchPush(camera: String) {
         WatchSyncManager.shared.push(alerts: [alert(camera: camera)], heroJPEG: heroJPEG())
     }

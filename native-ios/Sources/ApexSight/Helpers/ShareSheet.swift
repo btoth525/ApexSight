@@ -9,6 +9,8 @@ struct SharePayload: Identifiable {
     let items: [Any]
 
     init(url: URL) { items = [url] }
+    init(urls: [URL]) { items = urls }
+    init(items: [Any]) { self.items = items }
     init(image: UIImage) { items = [image] }
 }
 

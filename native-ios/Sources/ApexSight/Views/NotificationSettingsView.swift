@@ -33,7 +33,6 @@ struct NotificationSettingsView: View {
                         permissionCard
                         if status.isAuthorized {
                             householdGateBanner
-                            houseModeAlertsCard
                             camerasCard
                             objectsCard
                             zonesCard
@@ -212,36 +211,6 @@ struct NotificationSettingsView: View {
             .formatted(date: .omitted, time: .shortened)
     }
 
-    // MARK: - House Mode Alerts entry
-
-    private var houseModeAlertsCard: some View {
-        NavigationLink {
-            HouseModeAlertsView()
-        } label: {
-            GlassCard {
-                HStack(spacing: GlassTheme.Space.m) {
-                    Image(systemName: "house.and.flag.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(GlassTheme.accent)
-                        .frame(width: 38, height: 38)
-                        .background(GlassTheme.accent.opacity(0.14), in: Circle())
-                    VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
-                        Text("House Mode Alerts")
-                            .font(.headline)
-                            .foregroundStyle(GlassTheme.primary)
-                        Text("Which cameras alert in Home, Night & Away — for the whole household")
-                            .font(.caption)
-                            .foregroundStyle(GlassTheme.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(GlassTheme.tertiary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - Cameras Card
 

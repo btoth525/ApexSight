@@ -3,9 +3,6 @@ import SwiftUI
 struct SettingsTab: View {
     @EnvironmentObject private var appState: AppState
     @State private var path = NavigationPath()
-    // App-group store so the Notification Service Extension can read the master AI toggle.
-    @AppStorage("appleIntelligenceEnabled", store: UserDefaults(suiteName: ApexAppGroup.identifier))
-    private var appleIntelligenceEnabled = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(DiagnosticLog.enabledKey, store: UserDefaults(suiteName: ApexAppGroup.identifier))
     private var diagnosticsEnabled = true
@@ -32,15 +29,9 @@ struct SettingsTab: View {
                 GlassBackground()
                 ScrollView {
                     VStack(spacing: GlassTheme.Space.l) {
-                        houseModeCard
                         serverCard
                         connectionCard
                         spotlightCard
-
-                        // Apple Intelligence — only on devices that can actually run the model.
-                        if AppleAI.deviceSupportsAI {
-                            intelligenceCard
-                        }
 
                         // Privacy / app lock card — only when the device can authenticate.
                         if BiometricLock.isAvailable {
@@ -74,48 +65,9 @@ struct SettingsTab: View {
                 else if value == "servers" { ServerSwitcherView() }
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
-                else if value == "recap" { DailyRecapView().environmentObject(appState) }
-                else if value == "house" { HouseModeView().environmentObject(appState) }
                 else if value == "doorbell_talk" { DoorbellSoundboardView() }
             }
         }
-    }
-
-    // MARK: - House Mode
-
-    /// Headline control: current arm stage + a tap into the full arm/disarm screen. Mirrors Alarmo
-    /// via the relay, so it also shows what a partner set.
-    private var houseModeCard: some View {
-        let opt = HouseModeOption.forKey(appState.houseMode)
-        let unknown = appState.houseMode.isEmpty
-        return NavigationLink(value: "house") {
-            GlassCard {
-                HStack(spacing: GlassTheme.Space.m) {
-                    ZStack {
-                        Circle().fill((unknown ? GlassTheme.accent : opt.color).opacity(0.18))
-                            .frame(width: 46, height: 46)
-                        Image(systemName: unknown ? "shield.lefthalf.filled" : opt.icon)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(unknown ? GlassTheme.accent : opt.color)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("House Mode")
-                            .font(.headline)
-                            .foregroundStyle(GlassTheme.primary)
-                        Text(unknown ? "Tap to arm or disarm" : opt.title)
-                            .font(.subheadline)
-                            .foregroundStyle(GlassTheme.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(GlassTheme.tertiary)
-                }
-                .animation(.easeInOut(duration: 0.25), value: appState.houseMode)
-            }
-        }
-        .buttonStyle(.plain)
-        .task { await appState.refreshHouseMode() }
     }
 
     /// Doorbell talkback: speak at the door with quick replies, on-device TTS, recordings, or MP3s.
@@ -305,12 +257,6 @@ struct SettingsTab: View {
         }
     }
 
-    // MARK: - Security / Arm
-
-    // MARK: - Appearance
-
-    // MARK: - Apple Intelligence
-
     private var spotlightCard: some View {
         GlassCard {
             Toggle(isOn: $spotlightEventsEnabled) {
@@ -331,54 +277,6 @@ struct SettingsTab: View {
             .sensoryFeedback(.selection, trigger: spotlightEventsEnabled)
             .onChange(of: spotlightEventsEnabled) { _, on in
                 if on { SpotlightIndexer.index(appState.events) } else { SpotlightIndexer.clear() }
-            }
-        }
-    }
-
-    private var intelligenceCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                Toggle(isOn: $appleIntelligenceEnabled) {
-                    HStack(spacing: GlassTheme.Space.m) {
-                        iconTile(systemName: "apple.intelligence", tint: GlassTheme.accent)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Apple Intelligence")
-                                .font(.headline)
-                                .foregroundStyle(GlassTheme.primary)
-                            Text("On-device AI for scene analysis, daily summaries and natural-language search. Private — nothing leaves your iPhone.")
-                                .font(.footnote)
-                                .foregroundStyle(GlassTheme.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .tint(GlassTheme.accent)
-                .sensoryFeedback(.selection, trigger: appleIntelligenceEnabled)
-
-                if appleIntelligenceEnabled {
-                    Divider().overlay(GlassTheme.separator)
-                    NavigationLink {
-                        AICamerasSettingsView().environmentObject(appState)
-                    } label: {
-                        HStack(spacing: GlassTheme.Space.m) {
-                            iconTile(systemName: "video.badge.waveform", tint: GlassTheme.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("AI Cameras")
-                                    .font(.headline)
-                                    .foregroundStyle(GlassTheme.primary)
-                                Text("Choose which cameras run on-device analysis.")
-                                    .font(.footnote)
-                                    .foregroundStyle(GlassTheme.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(GlassTheme.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
             }
         }
     }
@@ -423,9 +321,6 @@ struct SettingsTab: View {
             }
             settingsRow(icon: "slider.horizontal.3", title: "Triggers", subtitle: "Custom notification rules by camera, object, zone") {
                 path.append("triggers")
-            }
-            settingsRow(icon: "doc.text.image.fill", title: "Daily Recap", subtitle: "Today's activity + an optional daily summary") {
-                path.append("recap")
             }
         }
     }
@@ -633,15 +528,6 @@ struct SettingsTab: View {
                 Text("Debug builds only — fires the real Live Activity and watch-sync code paths with a synthetic alert.")
                     .font(.footnote)
                     .foregroundStyle(GlassTheme.secondary)
-
-                Button {
-                    Haptics.tap()
-                    DebugTriggers.fireLiveActivity(camera: debugCamera)
-                } label: {
-                    Label("Test Live Activity", systemImage: "bell.badge.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
 
                 Button {
                     Haptics.tap()

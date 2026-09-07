@@ -334,7 +334,7 @@ struct FrigateClient {
     }
 
     /// Live frame with Frigate's overlays OFF (timestamp, bounding box, motion, regions) — for
-    /// on-device AI analysis, so Vision/OCR see the real scene instead of the burned-in clock.
+    /// clean overlay-free analysis, so tools see the real scene instead of the burned-in clock.
     func cleanFrameURL(camera: String) -> URL {
         var comps = URLComponents(url: baseURL.appending(path: "api/\(camera)/latest.jpg"), resolvingAgainstBaseURL: false)
         comps?.queryItems = [

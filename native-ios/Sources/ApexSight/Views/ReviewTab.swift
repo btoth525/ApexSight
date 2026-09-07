@@ -168,10 +168,6 @@ struct ReviewTab: View {
                     }
                     .padding(.vertical, GlassTheme.Space.s)
 
-                    FeedModeFilterBanner()
-                        .padding(.horizontal, GlassTheme.Space.l)
-                        .padding(.bottom, GlassTheme.Space.s)
-
                     Group {
                         if isError {
                             errorState

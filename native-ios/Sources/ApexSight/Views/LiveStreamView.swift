@@ -39,10 +39,6 @@ struct LiveStreamView: View {
     // button system (no floating overlay cluster).
     @State private var isMutedUI = true
     @StateObject private var pip = LivePiPController()
-    // iOS 27 on-device "Ask AI" — describe who/what is on this live camera right now.
-    @State private var aiResult: String?
-    @State private var isAnalyzingAI = false
-    @State private var showAIResult = false
     // Doorbell "Responses" — quick spoken replies at the door (each also flips the matching
     // Doorpanel screen via the relay). Usable any time from the full-screen viewer, no ring needed.
     @StateObject private var soundboard = DoorbellSoundboard()
@@ -115,42 +111,12 @@ struct LiveStreamView: View {
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.items)
         }
-        .sheet(isPresented: $showAIResult) {
-            LiveAIResultSheet(cameraName: camera.name, isLoading: isAnalyzingAI, result: aiResult)
-                .presentationDetents([.medium])
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .onChange(of: showAIResult) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
         .sheet(isPresented: $showResponses) {
             DoorbellResponsesSheet(soundboard: soundboard)
         }
         .onChange(of: showResponses) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
     }
 
-    /// On-device "Ask AI": describe who/what is on this live camera using the current snapshot,
-    /// plus any legible text (plates/labels). Entirely on-device; gated to iOS 27 + AppleAI.
-    @available(iOS 27.0, *)
-    private func analyzeLive() async {
-        guard !isAnalyzingAI, let client = appState.client else { return }
-        isAnalyzingAI = true
-        aiResult = nil
-        showAIResult = true
-        // Fetch the current frame FRESH and CLEAN (overlays off) so Vision sees the real scene, not
-        // Frigate's burned-in timestamp/box. latest.jpg ignores the local cache, so it's live.
-        guard let data = try? await client.imageData(from: client.cleanFrameURL(camera: camera.name)),
-              let cg = UIImage(data: data)?.cgImage else {
-            isAnalyzingAI = false
-            aiResult = "Couldn't grab the current frame — check the connection and try again."
-            return
-        }
-        async let scene = AppleAI.describeScene(in: cg, cameraName: camera.name)
-        async let text = AppleAI.readText(in: cg)
-        let (description, legibleText) = await (scene, text)
-        var combined = description ?? "Couldn't analyze this frame on-device."
-        if let legibleText, !legibleText.isEmpty { combined += "\n\n📄 Text seen: \(legibleText)" }
-        isAnalyzingAI = false
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { aiResult = combined }
-    }
 
     /// Grab the camera's current still and hand it to the share sheet (AirDrop / Messages / …).
     private func shareSnapshot() async {
@@ -432,7 +398,7 @@ struct LiveStreamView: View {
 
     /// The live-view action buttons, in order — collected so they can render as one row or
     /// wrap to two (see `ViewThatFits` above). Type-erased because the set is conditional
-    /// (birdseye, Ask AI availability, two-way audio).
+    /// (birdseye, two-way audio).
     private var actionItems: [AnyView] {
         var items: [AnyView] = [
             AnyView(actionButton(icon: "arrow.clockwise", label: "Refresh") {
@@ -457,11 +423,6 @@ struct LiveStreamView: View {
         items.append(AnyView(actionButton(icon: "slider.horizontal.3", label: "Controls") {
             showCameraControls = true
         }))
-        if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(camera.name) {
-            items.append(AnyView(actionButton(icon: "sparkles", label: "Ask AI") {
-                Task { await analyzeLive() }
-            }))
-        }
         items.append(AnyView(actionButton(icon: "square.and.arrow.up", label: "Share") {
             Task { await shareSnapshot() }
         }))
@@ -589,51 +550,5 @@ struct LiveStreamView: View {
         .onDisappear { talkErrorDismiss?.cancel() }
         .accessibilityLabel("Push to talk")
         .accessibilityHint("Press and hold to speak through the camera")
-    }
-}
-
-/// Bottom sheet that presents the on-device "Ask AI" result for a live camera. Pure local
-/// inference — the copy makes the privacy guarantee explicit.
-private struct LiveAIResultSheet: View {
-    let cameraName: String
-    let isLoading: Bool
-    let result: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-            HStack(spacing: GlassTheme.Space.s) {
-                Image(systemName: "sparkles").foregroundStyle(GlassTheme.accent)
-                Text("On-Device Analysis")
-                    .font(.headline)
-                    .foregroundStyle(GlassTheme.primary)
-                Spacer()
-            }
-            Text(titleize(cameraName))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(GlassTheme.secondary)
-
-            if isLoading {
-                HStack(spacing: GlassTheme.Space.s) {
-                    ProgressView().tint(.white)
-                    Text("Analyzing this frame on your iPhone…")
-                        .font(.callout)
-                        .foregroundStyle(GlassTheme.secondary)
-                }
-                .padding(.top, GlassTheme.Space.s)
-            } else if let result {
-                ScrollView {
-                    Text(result)
-                        .font(.system(size: 16))
-                        .foregroundStyle(GlassTheme.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            Spacer()
-            Label("Runs entirely on your device — no image leaves your iPhone.",
-                  systemImage: "lock.shield")
-                .font(.caption)
-                .foregroundStyle(GlassTheme.tertiary)
-        }
-        .padding(GlassTheme.Space.xl)
     }
 }

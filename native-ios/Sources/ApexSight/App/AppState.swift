@@ -12,7 +12,6 @@ enum AppDeepLink: Hashable {
     case camera(String)
     case cameras   // jump to the Cameras tab (e.g. Siri "Show my cameras")
     case activity  // jump to the Activity feed (e.g. tapping the Daily Recap push)
-    case house     // open the House Mode control (Lock Screen widget / Control Center / Live Activity)
     case doorbell  // present the full-screen doorbell call (doorbell-ring push)
 }
 
@@ -275,7 +274,6 @@ final class AppState: ObservableObject {
                     await self?.refresh()
                 }
                 self?.syncRelayGateIfChanged()
-                self?.syncRecapIfChanged()
                 self?.syncDevicePrefs()
                 self?.probeLiveHLSIfNeeded()
                 // Fire-and-forget (like the syncs above) so a slow/black-holed relay's house-mode
@@ -324,35 +322,9 @@ final class AppState: ObservableObject {
     /// that confirmation — see the race note there.
     private var lastGateConfirmedAt: Double = 0
     /// Last recap schedule we pushed to the relay, so we only POST when it changes.
-    private var lastSyncedRecap: String?
     /// Last device-prefs blob signature we pushed, so the 15s foreground poll only POSTs on change.
     private var lastSyncedDevicePrefs: String?
 
-    /// Mirrors the Daily Recap schedule to the relay so the summary fires at the chosen
-    /// local time with the app closed. Idempotent — only POSTs when the schedule changes.
-    func syncRecapIfChanged() {
-        let offset = TimeZone.current.secondsFromGMT()
-        let signature = "\(RecapSettings.enabled)|\(RecapSettings.hour)|\(RecapSettings.minute)|\(offset)"
-        guard signature != lastSyncedRecap else { return }
-
-        let relayURL = DeviceTokenStore.relayURL
-        let pairing = DeviceTokenStore.ensurePairingCode()
-        guard !relayURL.isEmpty, !pairing.isEmpty else { return }
-        // Mark synced optimistically so a concurrent call de-dups, but roll back on failure so the
-        // next foreground poll retries — otherwise a dropped POST leaves the relay permanently stale.
-        lastSyncedRecap = signature
-        Task {
-            do {
-                try await RelayClient.syncRecap(
-                    relayURL: relayURL, pairingCode: pairing,
-                    enabled: RecapSettings.enabled, hour: RecapSettings.hour,
-                    minute: RecapSettings.minute, tzOffset: offset
-                )
-            } catch {
-                if lastSyncedRecap == signature { lastSyncedRecap = nil }
-            }
-        }
-    }
 
     /// Mirrors the current Disarm / Snooze state to the relay so app-closed pushes are
     /// suppressed while disarmed or snoozed — the relay counterpart of the in-app gate.
@@ -499,7 +471,7 @@ final class AppState: ObservableObject {
     /// when the current mode affirmatively mutes it AND the user hasn't chosen to show all. FAIL-OPEN:
     /// unknown mode / empty mute list / a camera not in the list all show (mirrors the relay gate).
     func cameraVisibleInFeeds(_ camera: String) -> Bool {
-        HouseModeVisibility.cameraVisible(camera, mutedCameras: houseModeMutedCameras, showAll: showAllCamerasInFeeds)
+        true   // House Mode removed — every camera's activity surfaces in the feeds.
     }
 
     /// Pull the current house mode from the relay so the app reflects the real Alarmo state. Called
@@ -638,14 +610,6 @@ final class AppState: ObservableObject {
                                       pairingCode: pairing, mode: mode, code: code)
         // Lock Screen / Dynamic Island arm banner: countdown on Away arm, "Armed" for Night,
         // cleared on disarm. 60s matches the Alarmo Away exit delay (Night has none → instant).
-        if #available(iOS 16.1, *) {
-            if mode == "home" {
-                HouseModeActivityController.disarm()
-            } else {
-                HouseModeActivityController.startArm(
-                    mode: mode, by: DeviceTokenStore.deviceName, exitDelay: mode == "away" ? 60 : 0)
-            }
-        }
         for _ in 0..<9 {   // ~1.3s × 9 ≈ 12s
             try? await Task.sleep(nanoseconds: 1_300_000_000)
             await refreshHouseMode()
@@ -962,7 +926,6 @@ final class AppState: ObservableObject {
             // Only dismiss the Live Activity for alert reviews — and only THIS camera's.
             // Ending them all tore down another camera's still-active incident banner
             // whenever incidents overlapped.
-            if item.severity == "alert" { IncidentActivityController.end(camera: item.camera) }
             // The incident ENDED but is still unreviewed — it belongs in the queue. Removing
             // it made the row + badge vanish, then flap back on the next 15s poll (which
             // fetches reviewed:false and re-adds it).
@@ -977,19 +940,6 @@ final class AppState: ObservableObject {
         let label = item.data?.objects?.first ?? "object"
         let zones = item.data?.zones ?? []
 
-        // Live Activity: when instant push is active the RELAY starts/updates the incident
-        // Live Activity (so it appears even with the app closed, and we don't double it).
-        // Without a confirmed relay, the app drives it itself as the in-app fallback —
-        // but it must respect the user's mutes (Disarm, snoozes, per-camera/object/zone,
-        // quiet hours) exactly like every other alert surface. `wouldDeliver` is the
-        // side-effect-free check: no cooldown consumed, so incident UPDATES keep flowing.
-        if item.severity == "alert", !DeviceTokenStore.hasRemotePush,
-           notificationPrefs.wouldDeliver(
-               camera: item.camera, label: label, zones: zones,
-               score: 0, triggers: triggerStore.triggers
-           ) {
-            IncidentActivityController.startOrUpdate(review: item)
-        }
 
         // Notify the first time a review reaches alert severity. This includes a
         // detection-severity review that later *escalates* to an alert — Frigate
@@ -1695,8 +1645,6 @@ final class AppState: ObservableObject {
             // The Daily Recap push carries apex://recap — land on the Activity feed (the day's
             // events) instead of dead-ending because there was no matching handler.
             deepLink = .activity
-        case "house":
-            deepLink = .house
         case "doorbell":
             deepLink = .doorbell
         case "latest":
@@ -1728,7 +1676,6 @@ final class AppState: ObservableObject {
             let camera = items.first(where: { $0.name == "camera" })?.value
                 ?? cameras.first?.name ?? "front_door"
             switch items.first(where: { $0.name == "action" })?.value {
-            case "liveactivity": DebugTriggers.fireLiveActivity(camera: camera)
             case "watchpush": DebugTriggers.fireWatchPush(camera: camera)
             default: break
             }

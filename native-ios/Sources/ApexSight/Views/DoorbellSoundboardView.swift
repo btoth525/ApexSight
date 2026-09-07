@@ -1,5 +1,17 @@
 import AVFoundation
 import SwiftUI
+
+private enum SoundboardReplies {
+    /// Curated quick replies to speak at the door (static — no model).
+    static let quickReplies = [
+        "Be right there!",
+        "Leave it at the door, please.",
+        "Thanks, just leave the package.",
+        "One moment, please.",
+        "Sorry, we can't come right now.",
+        "Who is it?",
+    ]
+}
 import UniformTypeIdentifiers
 
 // MARK: - Call strip (compact soundboard shown inside the doorbell call)
@@ -38,7 +50,7 @@ struct DoorbellSoundboardStrip: View {
                             Task { await soundboard.playClip(clip.slug) }
                         }
                     }
-                    ForEach(DoorbellSmartReplies.presets.prefix(4), id: \.self) { reply in
+                    ForEach(SoundboardReplies.quickReplies.prefix(4), id: \.self) { reply in
                         chip(icon: "quote.bubble", label: reply) {
                             Task { await soundboard.say(reply) }
                         }
@@ -158,8 +170,6 @@ struct DoorbellSayView: View {
     @State private var text = ""
     @State private var saveIt = false
     @State private var saveName = ""
-    @State private var aiSuggestions: [String] = []
-    @State private var loadingAI = false
     @FocusState private var focused: Bool
 
     private let voices = DoorbellSpeech.selectableVoices()
@@ -179,27 +189,8 @@ struct DoorbellSayView: View {
 
                     // Quick replies stay put — never mutated, so nothing shifts under your finger.
                     SectionHeader("Quick replies")
-                    FlowChips(items: DoorbellSmartReplies.presets) { text = $0 }
+                    FlowChips(items: SoundboardReplies.quickReplies) { text = $0 }
 
-                    // AI ideas load only when you ask, into their own section (no surprise reflow).
-                    if DoorbellSmartReplies.modelAvailable {
-                        HStack {
-                            SectionHeader("AI ideas")
-                            Spacer()
-                            if loadingAI {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Button { Task { await generateAI() } } label: {
-                                    Label(aiSuggestions.isEmpty ? "Generate" : "Regenerate", systemImage: "sparkles")
-                                        .font(.subheadline.weight(.semibold))
-                                }
-                            }
-                        }
-                        if !aiSuggestions.isEmpty {
-                            FlowChips(items: aiSuggestions) { text = $0 }
-                                .transition(.opacity)
-                        }
-                    }
 
                     Toggle("Save as a soundboard button", isOn: $saveIt)
                         .tint(GlassTheme.accent)
@@ -213,7 +204,6 @@ struct DoorbellSayView: View {
                     }
                 }
                 .padding()
-                .animation(.easeInOut(duration: 0.2), value: aiSuggestions)
             }
             .background(GlassTheme.background.ignoresSafeArea())
             .navigationTitle("Say at the Door")
@@ -265,11 +255,6 @@ struct DoorbellSayView: View {
         }
     }
 
-    private func generateAI() async {
-        loadingAI = true
-        defer { loadingAI = false }
-        aiSuggestions = await DoorbellSmartReplies.suggestions()
-    }
 }
 
 // MARK: - Management screen (Settings → Doorbell Talkback)

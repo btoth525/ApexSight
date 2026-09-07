@@ -12,8 +12,6 @@ struct ActivityTab: View {
     @AppStorage("activity.selectedSubLabel") private var selectedSubLabel = "all"
     @AppStorage("activity.sortNewest") private var sortNewest = true
     @State private var path = NavigationPath()
-    private enum ViewMode { case events, incidents }
-    @State private var viewMode: ViewMode = .events
     // When a filter is active we query the server (the live `appState.events` cache is
     // only the latest ~50, so an older combo would falsely look empty).
     @State private var serverResults: [FrigateEvent] = []
@@ -103,8 +101,8 @@ struct ActivityTab: View {
         // to 100 events and `tallies` loops the 500-event last24h window plus two dictionaries
         // and two sorts; in Incidents mode neither value is used (header(tallies:) and the day
         // ForEach are both in the else branch), so both were pure waste on every AppState publish.
-        let daySections = viewMode == .events ? sections(for: events) : []
-        let tallyList = viewMode == .events ? tallies : []
+        let daySections = sections(for: events)
+        let tallyList = tallies
         NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
@@ -113,20 +111,7 @@ struct ActivityTab: View {
                     // LazyVStack recompute offsets as async thumbnails load, which made the
                     // tiles drift/glitch while scrolling or sitting still.
                     LazyVStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                        // Events vs Incidents — first-class, not hidden behind a toolbar icon.
-                        Picker("View", selection: $viewMode) {
-                            Text("Events").tag(ViewMode.events)
-                            Text("Incidents").tag(ViewMode.incidents)
-                        }
-                        .pickerStyle(.segmented)
-                        .padding(.top, GlassTheme.Space.xs)
-
-                        if viewMode == .incidents {
-                            IncidentsFeed()
-                        } else {
                         header(tallies: tallyList)
-
-                        FeedModeFilterBanner()
 
                         if events.isEmpty {
                             emptyOrLoading
@@ -151,7 +136,6 @@ struct ActivityTab: View {
                                         }
                                 }
                             }
-                        }
                         }
                     }
                     // A new event inserts at the top (index 0); without this the whole feed
@@ -182,15 +166,6 @@ struct ActivityTab: View {
             }
             .onDisappear { toastTask?.cancel(); toastTask = nil }
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { Haptics.select(); path.append(IncidentsRoute()) } label: {
-                        Image(systemName: "square.stack.3d.up.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(GlassTheme.accent)
-                    }
-                    .accessibilityLabel("Incidents")
-                    .accessibilityHint("Grouped activity you can export")
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: GlassTheme.Space.m) {
                         if appState.isLoading || loadingFiltered { ProgressView().tint(GlassTheme.accent) }
@@ -206,15 +181,6 @@ struct ActivityTab: View {
             }
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
-            }
-            .navigationDestination(for: IncidentsRoute.self) { _ in
-                IncidentsListView()
-            }
-            .navigationDestination(for: Incident.self) { incident in
-                IncidentDetailView(incident: incident)
-            }
-            .navigationDestination(for: MyExportsRoute.self) { _ in
-                MyExportsView()
             }
         }
     }

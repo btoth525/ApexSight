@@ -39,14 +39,12 @@ struct MainTabView: View {
         case event(FrigateEvent)
         case review(FrigateReviewItem)
         case camera(FrigateCamera)
-        case house
 
         var id: String {
             switch self {
             case .event(let event): return "event-\(event.id)"
             case .review(let review): return "review-\(review.id)"
             case .camera(let camera): return "camera-\(camera.name)"
-            case .house: return "house"
             }
         }
     }
@@ -123,7 +121,6 @@ struct MainTabView: View {
                 case .event(let event): EventDetailView(event: event)
                 case .review(let review): ReviewDetailView(review: review)
                 case .camera(let camera): LiveStreamView(camera: camera)
-                case .house: HouseModeView()
                 }
             }
             .environmentObject(appState)
@@ -232,8 +229,6 @@ struct MainTabView: View {
                     (try? await appState.client?.event(id: id)).map { .event($0) }
                 }
             }
-        case .house:
-            detailSheet = .house
         case .doorbell:
             doorbellAutoAnswer = false   // notification tap → show the in-app call UI with choices
             DoorbellPrewarmer.warm()     // start the encoder now so the live view paints instantly

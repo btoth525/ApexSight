@@ -105,33 +105,8 @@ enum BackgroundRefreshManager {
             LastSeenStore.markSeen([review.id])
         }
 
-        await maybeSendRecap(client: client)
     }
 
-    /// Posts the once-a-day recap notification when it's at/after the user's chosen
-    /// time and today's hasn't gone out yet. Independent of the alert path.
-    private static func maybeSendRecap(client: FrigateClient) async {
-        guard RecapSettings.shouldSendNow() else { return }
-        // When instant push is set up, the relay sends the daily recap (reliable even
-        // with the app fully closed) — skip the local one so it isn't duplicated.
-        guard !DeviceTokenStore.hasRemotePush else { return }
-        let style = UserDefaults.standard.data(forKey: "apex.notificationStyle")
-            .flatMap { try? JSONDecoder().decode(NotificationStyle.self, from: $0) } ?? .default
-        let events = await RecapBuilder.fetchToday(client: client)
-        let recap = RecapBuilder.build(events: events, style: style)
-        RecapSettings.markSentToday()
-
-        let content = UNMutableNotificationContent()
-        content.title = "🧾 Daily Recap — \(recap.headline)"
-        content.body = recap.notificationBody
-        content.sound = .default
-        let request = UNNotificationRequest(
-            identifier: "apex-recap-\(RecapSettings.todayKey())",
-            content: content,
-            trigger: nil
-        )
-        try? await UNUserNotificationCenter.current().add(request)
-    }
 
     /// Silent re-login from a background task (no live AppState available). Re-runs the
     /// stored login, persists the fresh session, and mirrors the new token into the app

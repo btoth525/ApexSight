@@ -67,9 +67,6 @@ struct CamerasTab: View {
                 if value == "groups" {
                     CameraGroupsView(store: groupStore)
                         .environmentObject(appState)
-                } else if value == "house" {
-                    HouseModeView()
-                        .environmentObject(appState)
                 }
             }
         }
@@ -89,11 +86,6 @@ struct CamerasTab: View {
     private var liveScroll: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                if !isEditing {
-                    HouseModeSwitcher(onOpenDetail: { path.append("house") })
-                    householdSnoozeBanner
-                }
-
                 if let error = appState.errorMessage {
                     errorCard(error)
                 }
@@ -143,7 +135,6 @@ struct CamerasTab: View {
             // Warm snapshots so every tile shows a frame instantly (never black).
             else { appState.prewarmSnapshots() }
             // Populate the House Mode bar promptly (the 15s poll refreshes it thereafter).
-            await appState.refreshHouseMode()
         }
     }
 
@@ -160,45 +151,6 @@ struct CamerasTab: View {
         .accessibilityHidden(true)
     }
 
-    /// Loud home-screen banner when the HOUSEHOLD notification gate is silencing every push —
-    /// a snooze/disarm can come from Siri, a widget, or a partner's phone, and without this it
-    /// was invisible ("why am I not getting notifications?"). One tap resumes for everyone.
-    @ViewBuilder
-    private var householdSnoozeBanner: some View {
-        if appState.householdDisarmed || appState.householdSnoozedUntil > Date().timeIntervalSince1970 {
-            Button {
-                Haptics.tap()
-                Task { await appState.resumeHouseholdNotifications() }
-            } label: {
-                HStack(spacing: GlassTheme.Space.m) {
-                    Image(systemName: "bell.slash.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(GlassTheme.orange)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(appState.householdDisarmed
-                             ? "Notifications OFF for everyone"
-                             : "Notifications snoozed until \(Date(timeIntervalSince1970: appState.householdSnoozedUntil).formatted(date: .omitted, time: .shortened))")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(GlassTheme.primary)
-                        Text(appState.householdGateAttribution.map { "\($0) · Tap to resume" }
-                             ?? "Tap to resume alerts")
-                            .font(.caption2)
-                            .foregroundStyle(GlassTheme.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.clockwise.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(GlassTheme.orange)
-                }
-                .padding(.horizontal, GlassTheme.Space.l)
-                .padding(.vertical, GlassTheme.Space.m)
-                .background(GlassTheme.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile))
-                .overlay(RoundedRectangle(cornerRadius: GlassTheme.Radius.tile)
-                    .stroke(GlassTheme.orange.opacity(0.35), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-        }
-    }
 
     /// A calm error+retry card — the fetch failed but the user can recover in place.
     private func errorCard(_ message: String) -> some View {

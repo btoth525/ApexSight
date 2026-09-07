@@ -30,10 +30,6 @@ struct EventDetailView: View {
     /// Distinguishes "no description yet" from "still fetching", so the AI card can show a
     /// skeleton on first load instead of silently appearing only once text arrives.
     @State private var isLoadingAIDescription = true
-    /// iOS 27 on-device (Apple Intelligence) scene analysis of the event snapshot. Separate from
-    /// the server-side Frigate GenAI description above — this never leaves the phone.
-    @State private var onDeviceAnalysis: String?
-    @State private var isAnalyzingOnDevice = false
 
     private enum MediaMode: String, CaseIterable {
         case video = "Video"
@@ -77,7 +73,6 @@ struct EventDetailView: View {
                     } else if isLoadingAIDescription {
                         aiSkeletonCard
                     }
-                    onDeviceAICard
                     detailsCard
                     actionsCard
                 }
@@ -110,14 +105,6 @@ struct EventDetailView: View {
                 isLoadingAIDescription = false
             }
         }
-        .task(id: event.id) {
-            // On-device analysis: show the saved result instantly, or run it once automatically —
-            // but only for cameras the user enabled in Settings → Apple Intelligence → AI Cameras.
-            if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(event.camera) {
-                onDeviceAnalysis = nil
-                await loadOrRunAnalysis()
-            }
-        }
         .sheet(isPresented: $showSimilarSheet) {
             SimilarEventsSheet(sourceEvent: event, events: similarEvents, errorMessage: similarError)
                 .environmentObject(appState)
@@ -146,113 +133,7 @@ struct EventDetailView: View {
         }
     }
 
-    /// iOS 27 on-device Apple Intelligence analysis of this event's snapshot. Only appears on
-    /// hardware that can run it (and with the user's AI toggle on); the work runs entirely on the
-    /// phone via FoundationModels image input — no frame leaves the device.
-    @ViewBuilder
-    private var onDeviceAICard: some View {
-        if #available(iOS 27.0, *), AppleAI.visionAIAvailable, AICameraSettings.isEnabled(event.camera) {
-            GlassCard {
-                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                    HStack(spacing: GlassTheme.Space.s) {
-                        Image(systemName: "apple.intelligence")
-                            .foregroundStyle(GlassTheme.accent)
-                        SectionHeader("On-Device Analysis")
-                        Spacer()
-                    }
-                    if isAnalyzingOnDevice && onDeviceAnalysis == nil {
-                        HStack(spacing: GlassTheme.Space.s) {
-                            ProgressView().tint(.white).scaleEffect(0.7)
-                            Text("Analyzing on your iPhone…")
-                                .font(.system(size: 13))
-                                .foregroundStyle(GlassTheme.secondary)
-                        }
-                    } else if let onDeviceAnalysis {
-                        Text(onDeviceAnalysis)
-                            .font(.system(size: 15))
-                            .foregroundStyle(GlassTheme.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button {
-                            Task { await analyzeOnDevice(force: true) }
-                        } label: {
-                            Label("Re-analyze", systemImage: "arrow.clockwise")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(GlassTheme.accent)
-                        .disabled(isAnalyzingOnDevice)
-                    } else {
-                        Text("Couldn't analyze this frame.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(GlassTheme.secondary)
-                        Button { Task { await analyzeOnDevice(force: true) } } label: {
-                            Text("Try again")
-                        }
-                        .buttonStyle(PillButtonStyle(tint: GlassTheme.accent))
-                        .disabled(isAnalyzingOnDevice)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Load a saved analysis for this event, or run one automatically the first time it's opened —
-    /// so the user never has to press a button and the result survives closing the app.
-    @available(iOS 27.0, *)
-    private func loadOrRunAnalysis() async {
-        if let cached = AIAnalysisStore.load(event.id) {
-            onDeviceAnalysis = cached
-            return
-        }
-        await analyzeOnDevice(force: false)
-    }
-
-    /// Fetch the event snapshot FRESH (the image cache is only warmed on the Snapshot tab, so an
-    /// event showing its clip has no cached frame — that's why analysis used to say "waiting for
-    /// snapshot"), run scene description + text OCR on-device, show it, and persist it.
-    @available(iOS 27.0, *)
-    private func analyzeOnDevice(force: Bool) async {
-        guard !isAnalyzingOnDevice, let client = appState.client else { return }
-        if force { Haptics.tap() }
-        isAnalyzingOnDevice = true
-        // On an explicit re-run, clear the old text so the "Analyzing…" spinner shows.
-        if force { withAnimation { onDeviceAnalysis = nil } }
-        defer { isAnalyzingOnDevice = false }
-
-        var combined: String?
-
-        // Prefer the animated preview GIF — a short sequence lets the AI read MOTION ("walked up,
-        // left a package, drove off"), which is far better than a single still. Falls back to the
-        // snapshot when there's no clip or too few frames.
-        if hasClip,
-           let gifData = try? await client.imageData(from: client.eventPreviewGifURL(id: event.id)) {
-            combined = await AppleAI.describeEvent(gifData: gifData, cameraName: event.camera, knownLabel: event.label)
-        }
-
-        if combined == nil,
-           let data = try? await client.imageData(from: client.eventSnapshotURL(id: event.id)),
-           let cgImage = UIImage(data: data)?.cgImage {
-            async let scene = AppleAI.describeScene(in: cgImage, cameraName: event.camera, knownLabel: event.label)
-            async let text = AppleAI.readText(in: cgImage)
-            let (description, legibleText) = await (scene, text)
-            if let description {
-                var single = description
-                if let legibleText, !legibleText.isEmpty { single += "\n\n📄 Text seen: \(legibleText)" }
-                combined = single
-            }
-        }
-
-        guard let result = combined else {
-            if force { withAnimation { onDeviceAnalysis = nil } }
-            return
-        }
-        AIAnalysisStore.save(event.id, result)
-        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) {
-            onDeviceAnalysis = result
-        }
-    }
-
-    private func aiCard(_ text: String) -> some View {
+        private func aiCard(_ text: String) -> some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 HStack(spacing: GlassTheme.Space.s) {

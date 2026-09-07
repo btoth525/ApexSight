@@ -149,9 +149,6 @@ struct ApexSightApp: App {
                             // relay registration failed at launch or the relay's device table was reset.
                             DoorbellCallManager.shared.reregisterVoIP()
                         }
-                        // You're in the app now — clear the Dynamic Island/Lock-Screen
-                        // incident so it gets out of your way.
-                        IncidentActivityController.end()
                         // Prompt for Face ID if we locked on the way out.
                         appLock.unlock()
                     case .inactive:

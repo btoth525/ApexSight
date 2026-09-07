@@ -331,23 +331,6 @@ struct MarkAllReviewedIntent: AppIntent {
     }
 }
 
-struct ShowRecapIntent: AppIntent {
-    static let title: LocalizedStringResource = "Daily Recap"
-    static let description = IntentDescription("Summarizes today's camera activity.")
-    static let openAppWhenRun = false
-
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let session = KeychainStore().loadSession() else {
-            return .result(dialog: "I couldn't reach your cameras.")
-        }
-        let client = FrigateClient(session: session)
-        let events = await RecapBuilder.fetchToday(client: client)
-        let recap = RecapBuilder.build(events: events, style: .default)
-        let body = recap.isEmpty ? "" : " \(recap.notificationBody)"
-        return .result(dialog: IntentDialog(stringLiteral: "\(recap.headline).\(body)"))
-    }
-}
-
 // MARK: - Snooze / resume alerts
 
 enum SnoozeDuration: String, AppEnum {
@@ -489,15 +472,6 @@ struct ApexShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Security Mode",
             systemImageName: "shield.fill"
-        )
-        AppShortcut(
-            intent: ShowRecapIntent(),
-            phrases: [
-                "What happened today in \(.applicationName)",
-                "\(.applicationName) daily recap"
-            ],
-            shortTitle: "Daily Recap",
-            systemImageName: "doc.text.image"
         )
         AppShortcut(
             intent: MarkAllReviewedIntent(),

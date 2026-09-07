@@ -24,8 +24,6 @@ struct SearchView: View {
     @State private var plateQuery = ""
     @State private var sortNewest = true
     @State private var path = NavigationPath()
-    @State private var showAlbums = false
-    @State private var answer: String?
     @State private var faceNames: [String] = []
 
     // Browse view (default state): a larger recent set grouped by object.
@@ -88,19 +86,6 @@ struct SearchView: View {
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { Haptics.tap(); showAlbums = true } label: {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(GlassTheme.accent)
-                    }
-                    .accessibilityLabel("Smart albums")
-                }
-            }
-            .sheet(isPresented: $showAlbums) {
-                SmartAlbumsView().environmentObject(appState)
-            }
             .task {
                 if browseEvents.isEmpty { await loadBrowse() } else if groups.isEmpty { rebuildGroups() }
                 if faceNames.isEmpty, let client = appState.client, let faces = try? await client.faces() {
@@ -130,7 +115,6 @@ struct SearchView: View {
                         Haptics.tap()
                         query = ""
                         results = []
-                        answer = nil
                         hasSearched = false
                         // Also drop any active label/sub-label/camera/date/plate filters — otherwise
                         // they silently constrain the NEXT typed search with no visible chip to explain
@@ -512,21 +496,7 @@ struct SearchView: View {
 
     private var resultsSection: some View {
         VStack(spacing: GlassTheme.Space.l) {
-            if let answer {
-                GlassCard {
-                    HStack(alignment: .top, spacing: GlassTheme.Space.m) {
-                        Image(systemName: "sparkles")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(GlassTheme.accent)
-                        Text(answer)
-                            .font(.body)
-                            .foregroundStyle(GlassTheme.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-            GlassCard {
+                        GlassCard {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     SectionHeader("Results") {
                         HStack(spacing: GlassTheme.Space.s) {
@@ -691,7 +661,6 @@ struct SearchView: View {
         isSearching = true
         hasSearched = true
         errorMessage = nil
-        answer = nil
         resultsRanked = false
         // Generation token: results now show BEFORE the slow LLM step finishes (so isSearching
         // flips false mid-run), which means a NEW search can start while this one's LLM widening is
@@ -733,25 +702,10 @@ struct SearchView: View {
                     zone: zone, after: afterDate, limit: 300
                 )
                 present(found)
-            } else if isQuestion(q) {
-                // A question ("how many packages today") — parse into precise filters, then answer.
-                let plan = AskParser.interpret(q, cameras: appState.cameras.map(\.name), faceNames: faceNames, subLabels: appState.subLabels)
-                let found = (try await client.events(
-                    camera: fCamera ?? plan.camera, label: fLabel ?? plan.label,
-                    subLabel: subLabel ?? plan.subLabel, zone: zone,
-                    after: afterDate ?? plan.after, before: plan.before, limit: 100
-                )).filter { plan.matches($0) }
-                let sorted = found.sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
-                // On-device templated answer — deterministic and reliable. We intentionally do NOT
-                // swap in a slower LLM re-write afterward: the visible answer changing ~2s later
-                // read as a glitch. The template already reads naturally ("Yes — 3 UPS deliveries…").
-                answer = AskParser.answer(for: plan, results: sorted)
-                present(sorted)
             } else {
                 // A description ("kid on a bike", "blue car", "Amazon"). Run the three fast
-                // matchers, merge, and SHOW them right away:
-                //   1. Frigate semantic search  2. exact sub-label/object hits
-                //   3. on-device keyword ranker (reliable safety net)
+                // matchers and merge: (1) Frigate server semantic search, (2) exact
+                // sub-label/object hits, (3) a keyword ranker as a reliable safety net.
                 async let semanticTask = client.safeSemanticSearch(
                     query: q, camera: fCamera, label: fLabel,
                     subLabel: subLabel, zone: zone, after: afterDate, limit: 120
@@ -772,7 +726,7 @@ struct SearchView: View {
 
                 // Nothing in the recent pool → query implied object labels directly, reaching back.
                 if merged.isEmpty {
-                    for label in AskParser.impliedLabels(in: q) {
+                    for label in Self.impliedLabels(in: q) {
                         let evs = (try? await client.events(
                             camera: fCamera, label: label, zone: zone, after: afterDate, limit: 100
                         )) ?? []
@@ -780,31 +734,7 @@ struct SearchView: View {
                     }
                 }
                 resultsRanked = true
-                present(merged)   // ← results on screen NOW; the LLM step below is a bonus.
-
-                // Apple Intelligence (on-device): parse the request into structured filters and pull
-                // those events too — additive, and it runs AFTER results are already visible, so slow
-                // model spin-up never delays the search. New hits are appended when they arrive.
-#if canImport(FoundationModels)
-                if AppleAI.isAvailable, #available(iOS 26, *),
-                   let aiq = await AppleAI.parseQuery(q, cameras: appState.cameras.map(\.name), labels: appState.labels),
-                   aiq.camera != nil || aiq.label != nil || aiq.zone != nil {
-                    let aiEvents = (try? await client.events(
-                        camera: fCamera ?? aiq.camera, label: fLabel ?? aiq.label,
-                        zone: zone ?? aiq.zone, after: afterDate,
-                        limit: 200, hasClip: aiq.hasClip ? true : nil
-                    )) ?? []
-                    var changed = false
-                    for e in aiEvents where !seen.contains(e.id) { seen.insert(e.id); merged.append(e); changed = true }
-                    // Same 50-result cap present() applies. Without it the widening step
-                    // re-assigned the FULL merged array ~2s after the results were already on
-                    // screen, so the count leapt (50 → 300+) and the LazyVStack grew by hundreds
-                    // of rows each firing a thumbnail fetch — reintroducing exactly the scrolling
-                    // lag the cap was added to prevent. Merged order is already best-match-first,
-                    // so the top 50 keep the same semantics.
-                    if changed, gen == searchGeneration { results = Array(plateFiltered(merged).prefix(50)) }
-                }
-#endif
+                present(merged)
             }
         } catch {
             if !error.isCancellation {
@@ -815,25 +745,6 @@ struct SearchView: View {
         }
     }
 
-#if canImport(FoundationModels)
-    /// Natural-language answer to a question, generated on-device from ONLY the matched events.
-    /// Returns nil on any failure so the caller keeps the reliable templated answer.
-    @available(iOS 26, *)
-    private func aiAnswer(question: String, events: [FrigateEvent]) async -> String? {
-        let lines = events.prefix(40).map { e -> String in
-            let t = e.startTime.map { Date(timeIntervalSince1970: $0).formatted(date: .omitted, time: .shortened) } ?? "—"
-            let sub = e.subLabel.map { " (\($0))" } ?? ""
-            return "\(t) — \(e.displayLabel)\(sub) at \(titleize(e.camera))"
-        }.joined(separator: "\n")
-        let context = events.isEmpty
-            ? "No matching events were found."
-            : "Matching events (\(events.count) total):\n\(lines)"
-        return await AppleAI.summarize(
-            instructions: "Answer a question about a home's security events using ONLY the provided list. Be brief and factual (1-2 sentences), give counts and times when relevant, and if the list is empty say nothing matched. No markdown, no identity guesses.",
-            prompt: "Question: \(question)\n\n\(context)"
-        )
-    }
-#endif
 
     /// Exact sub-label / object-label matches for a query, honoring the panel's
     /// camera/zone/date filters. Lets "Amazon", "FedEx", a person's name, "car",
@@ -876,7 +787,7 @@ struct SearchView: View {
             after: afterDate, limit: 120
         )) ?? []
 
-        let implied = Set(AskParser.impliedLabels(in: q))
+        let implied = Set(Self.impliedLabels(in: q))
         let stop: Set<String> = ["on", "the", "and", "with", "near", "around", "was", "were",
                                  "any", "all", "for", "from", "out", "off", "did", "has", "have"]
         let tokens = q.lowercased()
@@ -905,15 +816,30 @@ struct SearchView: View {
             .map(\.0)
     }
 
-    private func isQuestion(_ q: String) -> Bool {
-        let l = q.lowercased()
-        if l.hasSuffix("?") { return true }
-        let starters = ["how ", "when ", "did ", "was ", "is ", "are ", "any ", "who ",
-                        "what", "whats", "what's", "has ", "have ", "were ", "show me any",
-                        "anything", "anyone", "tell me"]
-        if starters.contains(where: l.hasPrefix) { return true }
-        // Recap-style phrasings ("what's been going on today", "what happened at the door").
-        return l.contains("how many") || l.contains("last seen") || l.contains("when did")
-            || l.contains("going on") || l.contains("happened") || l.contains("happening")
+
+    /// Plain object-label synonym map (NOT a model): "kid on a bike" → ["person","bicycle"].
+    /// Lets natural descriptions still pull the right Frigate object labels.
+    private static let labelMap: [(keys: [String], label: String)] = [
+        (["package", "delivery", "deliveries", "amazon", "ups", "fedex", "usps", "mail"], "package"),
+        (["person", "people", "someone", "somebody", "anyone", "intruder", "stranger",
+          "kid", "kids", "child", "children", "toddler", "baby", "boy", "girl",
+          "man", "woman", "guy", "lady"], "person"),
+        (["car", "vehicle", "vehicles", "automobile", "sedan", "suv"], "car"),
+        (["truck", "van", "pickup"], "truck"),
+        (["dog", "pet", "puppy"], "dog"),
+        (["cat", "kitten"], "cat"),
+        (["bike", "bicycle", "cyclist"], "bicycle"),
+        (["bird"], "bird"),
+        (["motorcycle", "motorbike", "scooter"], "motorcycle"),
+    ]
+
+    static func impliedLabels(in q: String) -> [String] {
+        let text = q.lowercased()
+        var labels: [String] = []
+        for entry in labelMap where entry.keys.contains(where: { text.contains($0) }) {
+            if !labels.contains(entry.label) { labels.append(entry.label) }
+        }
+        return labels
     }
+
 }
