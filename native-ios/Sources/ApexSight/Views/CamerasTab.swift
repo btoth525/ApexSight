@@ -103,7 +103,7 @@ struct CamerasTab: View {
                     // shifts the others WITHOUT tearing down and reconnecting their persistent
                     // HLS players — keeping the wall live with no black flash.
                     ForEach(visibleCameras) { camera in
-                        CameraCard(camera: camera)
+                        LiveCameraTile(camera: camera)
                             .frame(maxWidth: .infinity)
                     }
                 } else {
@@ -114,7 +114,7 @@ struct CamerasTab: View {
                     ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
                         HStack(spacing: GlassTheme.Space.m) {
                             ForEach(row) { camera in
-                                CameraCard(camera: camera)
+                                LiveCameraTile(camera: camera)
                                     .frame(maxWidth: .infinity)
                             }
                             if row.count < columns {
