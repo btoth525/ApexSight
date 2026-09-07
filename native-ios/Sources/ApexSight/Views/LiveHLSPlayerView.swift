@@ -720,11 +720,14 @@ struct HLSLivePlayerView: View {
             await StreamGate.shared.acquire()
             gateHeld = true
             guard !Task.isCancelled, started else { releaseGate(); return }
+            // A reused tile that's already live never re-fires first-frame, so release now.
+            if realtime.state == .live { releaseGate() }
             syncRealtime()
             startRealtimeFallbackTimer()
-            // Hold the slot until this tile's realtime resolves (or a budget passes), so the next
-            // tile negotiates only after this one is off the critical path — then free it.
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            // The .live path (onChange above) releases the slot on first frame; .failed releases
+            // via fallToMJPEG(). This is only a SAFETY net for a camera that never does either
+            // (a dead/one-second-hung source) so it can't wedge the gate — bounded, not a 10s wait.
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
             releaseGate()
         }
     }
@@ -1087,8 +1090,13 @@ struct HLSLivePlayerView: View {
             // WebRTC-primary: realtime IS the stream — landing cancels the MJPEG safety net;
             // exhausting its source cascade drops to MJPEG right away (no need to wait it out).
             if hlsDead {
-                if newState == .live { fallbackTask?.cancel(); fallbackTask = nil; onPlaying?(true) }
-                if newState == .failed { fallToMJPEG() }
+                if newState == .live {
+                    // First frame rendered → this camera's NVR cold-start is DONE, so the
+                    // contended slot is free NOW. Release it immediately so the next tile
+                    // negotiates without waiting out a blind timer — the "all load fast" fix.
+                    fallbackTask?.cancel(); fallbackTask = nil; releaseGate(); onPlaying?(true)
+                }
+                if newState == .failed { fallToMJPEG() }   // fallToMJPEG() releases the slot too
             }
         }
         .onChange(of: appState.liveHLSAvailable) { _, available in

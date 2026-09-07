@@ -109,13 +109,16 @@ struct ReviewRow: View {
             ?? appState.client?.reviewThumbnailURL(review: review)
     }
 
-    /// Animated preview GIF of the moment (Frigate's per-event `preview.gif`) for the review's
-    /// primary detection — the living-thumbnail Brandon wants in the triage feed. nil when there's
-    /// no resolvable detection; the static poster then stands alone.
-    private var previewGifURL: URL? {
+    /// Crisp looping HD clip of the moment (the event's `/vod/event/<id>`) for the review's primary
+    /// detection — the living thumbnail, without the dithered-GIF noise. nil when there's no
+    /// resolvable detection; the static poster then stands alone.
+    private var previewClipURL: URL? {
         guard let client = appState.client,
               let detectionID = FrigateClient.primaryDetectionID(of: review) else { return nil }
-        return client.eventPreviewGifURL(id: detectionID)
+        // Clamped builder — the raw /vod/event serves a stationary object's ENTIRE (possibly hours-
+        // long) lifetime; this caps it to a short window so the loop is a preview, not an epic.
+        return client.eventPlaybackURL(id: detectionID, camera: review.camera,
+                                       start: review.startTime, end: review.endTime)
     }
 
     @ViewBuilder
@@ -135,10 +138,11 @@ struct ReviewRow: View {
                                 ? appState.client?.reviewThumbnailURL(review: review)
                                 : objectStillURL)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Living thumbnail: the moment's motion plays over the still, fading in when decoded.
-                if let gif = previewGifURL {
-                    AnimatedGIFView(url: gif)
+                // Living thumbnail: the real footage loops (muted, HD) over the still.
+                if let clip = previewClipURL, let client = appState.client {
+                    LoopingVideoView(url: clip, client: client)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
                 }
             }
         } else {
