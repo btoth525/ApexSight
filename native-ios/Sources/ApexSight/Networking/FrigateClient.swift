@@ -3,9 +3,6 @@ import AVFoundation
 
 struct FrigateClient {
     private let baseURL: URL
-    /// ApexSight Core's base (the remote domain) — where instant `/v1/clip/<id>` is served,
-    /// on both LAN and remote. Mirrors `baseURL` when Core isn't configured.
-    private let coreBaseURL: URL
     private let token: String?
     private let session: URLSession
 
@@ -59,18 +56,15 @@ struct FrigateClient {
         return URLSession(configuration: config)
     }()
 
-    init(baseURL: URL, token: String? = nil, coreBaseURL: URL? = nil,
+    init(baseURL: URL, token: String? = nil,
          session: URLSession = FrigateClient.apiSession) {
         self.baseURL = baseURL
-        // ApexSight Core lives at the remote domain; it serves instant /v1/clip there on both
-        // LAN and remote. Defaults to baseURL when a Core URL isn't supplied.
-        self.coreBaseURL = coreBaseURL ?? baseURL
         self.token = token
         self.session = session
     }
 
     init(session: FrigateSession) {
-        self.init(baseURL: session.baseURL, token: session.token, coreBaseURL: session.baseURL)
+        self.init(baseURL: session.baseURL, token: session.token)
     }
 
     /// Fast reachability + identity probe for the home-network fast path. Confirms the host at
@@ -384,28 +378,6 @@ struct FrigateClient {
 
     func eventClipURL(id: String) -> URL {
         baseURL.appending(path: "api/events/\(id)/clip.mp4")
-    }
-
-    /// ApexSight Core's instant full-res clip for an event: `<core>/v1/clip/<id>`. Core pre-cuts
-    /// it to SSD on event-end, so this serves in tens of ms with byte-range scrubbing — vs
-    /// seconds for the engine's on-demand VOD mapping. Auth rides the app's existing token.
-    func coreClipURL(id: String) -> URL {
-        coreBaseURL.appending(path: "v1/clip/\(id)")
-    }
-
-    /// True only if Core already has this event's clip cached (playing it is then instant).
-    /// Never throws — any failure (Core down, offline, older server) returns false, so the caller
-    /// falls back to the engine VOD and Core is used ONLY when it is genuinely faster.
-    func coreClipCached(id: String) async -> Bool {
-        let url = coreBaseURL.appending(path: "v1/clip/\(id)/status")
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 4
-        applyAuth(to: &request)
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return false }
-        return (obj["cached"] as? Bool) ?? false
     }
 
     /// A review's best static image: the cropped thumbnail of its first detection.

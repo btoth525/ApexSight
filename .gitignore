@@ -41,3 +41,9 @@ native-ios/apexsight-ha-addon/
 .claude/worktrees/
 # Stray coordinate dump from the simulator tap tooling.
 native-ios/tap
+
+# ApexSight Core / Argus server experiments (separate effort, not app code)
+/core/
+/detect/
+/ui/
+/SERVER_BUILD_SPEC.md

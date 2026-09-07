@@ -438,6 +438,26 @@ struct RecordingBrowserView: View {
         return event
     }
 
+    /// Instant poster for the moment being LOADED (vs the bubble, which tracks the finger):
+    /// nearest continuous preview frame within a minute, else the nearest detection thumbnail
+    /// within five — a real picture on screen the instant a scrub lands, while the cold VOD
+    /// (seconds, server-side) loads underneath. Nil only when nothing near exists.
+    private var playingPosterURL: URL? {
+        guard let client = appState.client, let t = playingTime else { return nil }
+        if let frame = previewFrames.min(by: { abs($0.time - t) < abs($1.time - t) }),
+           abs(frame.time - t) <= 60 {
+            return client.previewFrameURL(filename: frame.filename)
+        }
+        let candidate = dayEvents
+            .compactMap { e -> (FrigateEvent, Double)? in
+                guard let s = e.startTime else { return nil }
+                return (e, abs(s - t))
+            }
+            .min { $0.1 < $1.1 }
+        guard let (event, delta) = candidate, delta <= 300 else { return nil }
+        return client.eventThumbnailURL(id: event.id)
+    }
+
     /// Best continuous preview frame for the playhead time, when the Preview API is
     /// available — used to keep the bubble live even between detections.
     private var nearestPreviewURL: URL? {
@@ -553,9 +573,20 @@ struct RecordingBrowserView: View {
                     if clipModel.hasError {
                         ClipErrorView(retry: clipModel.retry)
                     } else if !clipModel.isReady {
-                        // Each scrub loads a fresh VOD window; hold a skeleton over it until the
-                        // new moment is ready instead of flashing black.
-                        ClipSkeleton()
+                        // Each scrub loads a fresh VOD window, and Frigate takes seconds to map a
+                        // cold one. Show a real picture of the moment INSTANTLY (nearest preview
+                        // frame, else the nearest detection thumbnail — the UniFi/Protect pattern)
+                        // and let the video fade in over it; the skeleton only when nothing is near.
+                        if let poster = playingPosterURL {
+                            RemoteImage(url: poster, contentMode: .fill)
+                                .overlay(alignment: .bottomTrailing) {
+                                    ProgressView()
+                                        .tint(.white)
+                                        .padding(GlassTheme.Space.m)
+                                }
+                        } else {
+                            ClipSkeleton()
+                        }
                     }
                 }
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)

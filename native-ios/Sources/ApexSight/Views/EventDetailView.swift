@@ -456,16 +456,7 @@ struct EventDetailView: View {
                 let vod = client.eventPlaybackURL(
                     id: event.id, camera: event.camera,
                     start: event.startTime, end: event.endTime)
-                // Prefer ApexSight Core's OWN instant clip when it's already cut (tens of ms);
-                // otherwise the engine VOD. Core playback carries the VOD as an auto-fallback,
-                // so it can never dead-end.
-                if await client.coreClipCached(id: event.id) {
-                    clipModel.loadIfNeeded(client: client,
-                                           url: client.coreClipURL(id: event.id),
-                                           fallbackURL: vod)
-                } else {
-                    clipModel.loadIfNeeded(client: client, url: vod)
-                }
+                clipModel.loadIfNeeded(client: client, url: vod)
             }
             .onDisappear { if !mediaExpanded { clipModel.stop() } }
         }
