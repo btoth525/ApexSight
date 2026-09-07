@@ -73,19 +73,23 @@ final class ClipPlayerModel: ObservableObject {
     /// `.task`, which re-runs on every re-appear: returning from a fullscreen expand or a
     /// push used to force a reload that flashed the player AND auto-played ghost audio
     /// while Snapshot mode was showing). A different URL (reused view, new event) loads.
-    func loadIfNeeded(client: FrigateClient, url: URL) {
+    func loadIfNeeded(client: FrigateClient, url: URL, fallbackURL: URL? = nil) {
         guard player == nil || lastURL != url else { return }
-        load(client: client, url: url)
+        load(client: client, url: url, fallbackURL: fallbackURL)
     }
 
     /// Force (re)load — used by the timeline scrubber to jump to a new moment.
-    func load(client: FrigateClient, url: URL) {
+    /// `fallbackURL` (e.g. the engine VOD) plays automatically if `url` fails to load, so
+    /// pointing playback at Core's instant clip can never dead-end on an uncached/expired one.
+    func load(client: FrigateClient, url: URL, fallbackURL: URL? = nil) {
         configureAudioSession()
         isReady = false
         hasError = false
         retryAttempt = 0
         pendingAutoRetry?.cancel()
         pendingAutoRetry = nil
+        self.fallbackURL = fallbackURL
+        usedFallback = false
         lastURL = url
         lastClient = client
         attachItem(client: client, url: url)
@@ -115,7 +119,7 @@ final class ClipPlayerModel: ObservableObject {
                     self.hasError = false
                     self.retryAttempt = 0
                 case .failed:
-                    self.scheduleAutoRetryOrFail(client: client, url: url)
+                    self.handleFailure(client: client, url: url)
                 default: break
                 }
             }
@@ -134,8 +138,26 @@ final class ClipPlayerModel: ObservableObject {
         activePlayer.playImmediately(atRate: 1.0)
     }
 
+    /// The URL to fall back to (engine VOD) if the primary — Core's instant clip — fails.
+    private var fallbackURL: URL?
+    private var usedFallback = false
+
+    /// On a load failure, switch to the fallback URL once (Core clip → engine VOD) before the
+    /// transient-retry path, so an uncached/expired Core clip degrades to reliable playback
+    /// instead of dead-ending.
+    private func handleFailure(client: FrigateClient, url: URL) {
+        if let fallback = fallbackURL, !usedFallback, fallback != url {
+            usedFallback = true
+            retryAttempt = 0
+            lastURL = fallback
+            attachItem(client: client, url: fallback)
+            return
+        }
+        scheduleAutoRetryOrFail(client: client, url: url)
+    }
+
     /// A load failure is often transient right after a fresh detection (the segment isn't
-    /// flushed to Frigate's recordings DB yet) — silently retry twice with a short, growing
+    /// flushed to the recordings index yet) — silently retry twice with a short, growing
     /// delay before surfacing the error state, instead of dead-ending on something that would
     /// very likely resolve itself moments later.
     private func scheduleAutoRetryOrFail(client: FrigateClient, url: URL) {

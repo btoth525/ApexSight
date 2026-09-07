@@ -453,9 +453,19 @@ struct EventDetailView: View {
                 // loadIfNeeded is URL-keyed: a reused view for a NEW event loads fresh, but a
                 // re-appear for the SAME event (returning from fullscreen expand or a push)
                 // keeps the existing playback instead of reloading + ghost-auto-playing.
-                clipModel.loadIfNeeded(client: client, url: client.eventPlaybackURL(
+                let vod = client.eventPlaybackURL(
                     id: event.id, camera: event.camera,
-                    start: event.startTime, end: event.endTime))
+                    start: event.startTime, end: event.endTime)
+                // Prefer ApexSight Core's OWN instant clip when it's already cut (tens of ms);
+                // otherwise the engine VOD. Core playback carries the VOD as an auto-fallback,
+                // so it can never dead-end.
+                if await client.coreClipCached(id: event.id) {
+                    clipModel.loadIfNeeded(client: client,
+                                           url: client.coreClipURL(id: event.id),
+                                           fallbackURL: vod)
+                } else {
+                    clipModel.loadIfNeeded(client: client, url: vod)
+                }
             }
             .onDisappear { if !mediaExpanded { clipModel.stop() } }
         }

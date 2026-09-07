@@ -144,7 +144,9 @@ final class AppState: ObservableObject {
     var client: FrigateClient? {
         guard let session else { return nil }
         let base = (onLocalNetwork && session.localBaseURL != nil) ? session.localBaseURL! : session.baseURL
-        return FrigateClient(baseURL: base, token: session.token)
+        // coreBaseURL is always the remote domain — ApexSight Core fronts it and serves instant
+        // /v1/clip there on both LAN and remote, so playback is fast either way.
+        return FrigateClient(baseURL: base, token: session.token, coreBaseURL: session.baseURL)
     }
 
     /// Short label for the Settings connection indicator. "Home network" only when a local URL is
