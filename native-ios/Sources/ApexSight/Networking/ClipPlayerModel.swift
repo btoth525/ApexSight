@@ -78,6 +78,18 @@ final class ClipPlayerModel: ObservableObject {
         load(client: client, url: url)
     }
 
+    /// Jump within the ALREADY-LOADED asset — no reload, no network. This is what makes
+    /// repeat scrubs inside one preloaded hour manifest instant: AVPlayer seeks the VOD
+    /// segment-accurately with zero server work. Safe before `isReady` (AVPlayerItem
+    /// honors a queued seek once loading completes).
+    func seek(toOffset seconds: Double, andPlay play: Bool = true) {
+        guard let player else { return }
+        player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
+                    toleranceBefore: .zero,
+                    toleranceAfter: CMTime(seconds: 2, preferredTimescale: 600))
+        if play { player.play() }
+    }
+
     /// Force (re)load — used by the timeline scrubber to jump to a new moment.
     func load(client: FrigateClient, url: URL) {
         configureAudioSession()

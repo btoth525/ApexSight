@@ -535,6 +535,45 @@ struct FrigateClient {
         baseURL.appending(path: "api/preview/\(filename)/thumbnail.jpg")
     }
 
+    /// A packed preview VIDEO Frigate keeps per completed hour: 640×180 H.264 timelapse
+    /// (~0.77 fps, ~4 MB) — the exact asset Frigate's own web UI scrubs on. `src` is a
+    /// host-root path (`/clips/previews/<cam>/<start>-<end>.mp4`).
+    struct PreviewSegment: Decodable, Hashable {
+        let camera: String
+        let src: String
+        let type: String
+        let start: Double
+        let end: Double
+    }
+
+    /// Packed preview videos covering a range — `GET api/preview/<cam>/start/<s>/end/<e>`.
+    /// The CURRENT hour is never packed yet (Frigate answers "No previews found", which fails
+    /// decode → `[]`); scrubbing there degrades to the loose `previewFrames` webps. Defensive:
+    /// `[]` on any failure, previews are always an enhancement.
+    func previewSegments(camera: String, start: Double, end: Double) async -> [PreviewSegment] {
+        let path = "api/preview/\(camera)/start/\(Int(start))/end/\(Int(end))"
+        return (try? await get(path) as [PreviewSegment]) ?? []
+    }
+
+    /// The local file for a preview segment's video, downloading it (authenticated) on first
+    /// use. Packed previews are IMMUTABLE once written, so the disk cache is keyed by filename
+    /// and kept forever — after the first fetch, scrubbing an hour costs zero network. Playing
+    /// the LOCAL file also sidesteps AVPlayer auth entirely.
+    func cachedPreviewVideo(for segment: PreviewSegment) async -> URL? {
+        guard let name = segment.src.split(separator: "/").last.map(String.init) else { return nil }
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "frigate-previews", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appending(path: name)
+        if FileManager.default.fileExists(atPath: dest.path) { return dest }
+        var request = URLRequest(url: baseURL.appending(path: String(segment.src.drop(while: { $0 == "/" }))))
+        applyAuth(to: &request)
+        guard let (tmp, response) = try? await Self.downloadSession.download(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        try? FileManager.default.moveItem(at: tmp, to: dest)
+        return FileManager.default.fileExists(atPath: dest.path) ? dest : nil
+    }
+
     // Events with full filter params
     func events(
         camera: String? = nil,

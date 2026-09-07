@@ -34,6 +34,20 @@ struct RecordingBrowserView: View {
     /// day's frames could resolve last and overwrite the current day's preview bubble.
     @State private var previewTask: Task<Void, Never>?
 
+    // Dual-player instant scrubbing (the Frigate-web-UI / UniFi architecture):
+    // a muted AVPlayer holds the hour's packed preview VIDEO (640×180 timelapse, disk-cached,
+    // immutable) and seeks locally while the finger drags — frames land with zero network.
+    /// The day's packed preview segments (one per completed hour).
+    @State private var daySegments: [FrigateClient.PreviewSegment] = []
+    /// The segment currently loaded into `previewPlayer` (nil while none/downloading).
+    @State private var loadedSegment: FrigateClient.PreviewSegment?
+    @State private var previewPlayer: AVPlayer?
+    /// In-flight preview-video download; cancelled/superseded when the finger crosses hours.
+    @State private var previewVideoTask: Task<Void, Never>?
+    /// Epoch range covered by the VOD manifest loaded in `clipModel` — a scrub landing inside
+    /// it is a pure local seek (instant); outside it loads that hour's manifest once.
+    @State private var loadedWindow: ClosedRange<Double>?
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let calendar = Calendar.current
@@ -75,7 +89,14 @@ struct RecordingBrowserView: View {
         .onChange(of: selectedDate) { _, date in
             Task { await loadDay(date) }
         }
-        .onDisappear { clipModel.stop(); previewTask?.cancel() }
+        .onDisappear {
+            clipModel.stop()
+            previewTask?.cancel()
+            previewVideoTask?.cancel()
+            previewPlayer?.pause()
+            previewPlayer = nil
+            loadedSegment = nil
+        }
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: payload.items)
         }
@@ -321,6 +342,7 @@ struct RecordingBrowserView: View {
                         let f = Double(max(0, min(value.location.x / w, 1)))
                         updateSnapHaptic(for: f)
                         scrubFraction = f
+                        syncPreviewPlayer()
                     }
                     .onEnded { _ in
                         isScrubbing = false
@@ -477,7 +499,13 @@ struct RecordingBrowserView: View {
         let thumbURL = event.flatMap { appState.client?.eventThumbnailURL(id: $0.id) } ?? nearestPreviewURL
         VStack(spacing: GlassTheme.Space.xs) {
             ZStack {
-                if let thumbURL {
+                // Live video scrubbing: when this hour's packed preview is loaded, the bubble IS
+                // a video seeking locally under the finger (the Frigate-UI/UniFi feel). Thumbs
+                // and the clock only when the preview isn't (yet) available for this moment.
+                if let previewPlayer, let seg = loadedSegment,
+                   scrubEpoch >= seg.start, scrubEpoch <= seg.end {
+                    PreviewPlayerLayerView(player: previewPlayer)
+                } else if let thumbURL {
                     RemoteImage(url: thumbURL, contentMode: .fill)
                 } else {
                     GlassTheme.surfaceHigh
@@ -737,6 +765,7 @@ struct RecordingBrowserView: View {
         errorMessage = nil
         clipModel.stop()
         playingTime = nil
+        loadedWindow = nil
         downloadFeedback = nil
 
         previewFrames = []
@@ -777,13 +806,29 @@ struct RecordingBrowserView: View {
         // and guarded on the day so a slow fetch for a previous day can't clobber the current one.
         previewTask?.cancel()
         previewTask = Task {
-            let frames = await client.previewFrames(
+            // Packed hourly preview VIDEOS (the instant-scrub surface) + loose frames for the
+            // current, not-yet-packed hour — fetched together, both best-effort.
+            async let packed = client.previewSegments(
                 camera: camera.name,
                 start: startOfDay.timeIntervalSince1970,
                 end: endOfDay.timeIntervalSince1970
             )
-            guard !Task.isCancelled, date == selectedDate, !frames.isEmpty else { return }
-            previewFrames = frames
+            async let loose = client.previewFrames(
+                camera: camera.name,
+                start: startOfDay.timeIntervalSince1970,
+                end: endOfDay.timeIntervalSince1970
+            )
+            let segments = await packed
+            let frames = await loose
+            guard !Task.isCancelled, date == selectedDate else { return }
+            daySegments = segments
+            if !frames.isEmpty { previewFrames = frames }
+            // Warm the hour the playhead is parked in, so the first drag scrubs live video
+            // immediately (disk-cached after the first visit — free forever after).
+            let parked = scrubEpoch
+            if let seg = segments.first(where: { parked >= $0.start && parked <= $0.end }) {
+                loadPreviewVideo(seg)
+            }
         }
     }
 
@@ -798,12 +843,10 @@ struct RecordingBrowserView: View {
 
     private func playFrom(time rawTime: Double) {
         guard let client = appState.client else { return }
-        // Never request a window whose end could still be past "now" — Frigate hasn't finished
-        // flushing very-recent segments to its recordings DB yet, so jumping straight to a
-        // just-fired detection (exactly what `eventJumpRow` does) would 404 as if there were no
-        // footage at all, rather than "not written yet". Clamp every caller through this one spot.
-        let cappedNow = Date().timeIntervalSince1970 - windowSeconds
-        let time = min(rawTime, cappedNow)
+        // Never request a moment that could still be past what Frigate has flushed — jumping
+        // straight to a just-fired detection would 404 as if there were no footage at all,
+        // rather than "not written yet". Clamp every caller through this one spot.
+        let time = min(rawTime, Date().timeIntervalSince1970 - 15)
         let dayStart = calendar.startOfDay(for: selectedDate).timeIntervalSince1970
         let rangeStart = dayStart + Double(rangeStartHour) * 3600
         let rangeEnd = dayStart + Double(rangeEndHour + 1) * 3600
@@ -812,11 +855,58 @@ struct RecordingBrowserView: View {
 
         downloadFeedback = nil
         playingTime = time
-        // VOD HLS for this 5-min window — Frigate's documented recording playback source.
+
+        // Inside the preloaded hour manifest → pure local seek: instant, zero server work.
+        if let window = loadedWindow, window.contains(time),
+           clipModel.player != nil, !clipModel.hasError {
+            clipModel.seek(toOffset: time - window.lowerBound)
+            return
+        }
+        // Otherwise load the WHOLE HOUR's VOD manifest once (nginx-vod serves it in ~60 ms and
+        // AVPlayer seeks it segment-accurately) — every further scrub in this hour is then local.
+        let hourStart = floor(time / 3600) * 3600
+        let hourEnd = min(hourStart + 3600, Date().timeIntervalSince1970 - 5)
+        loadedWindow = hourStart...hourEnd
         clipModel.load(
             client: client,
-            url: client.recordingHLSURL(camera: camera.name, start: time, end: time + windowSeconds)
+            url: client.recordingHLSURL(camera: camera.name, start: hourStart, end: hourEnd)
         )
+        clipModel.seek(toOffset: time - hourStart)   // honored once the item is ready
+    }
+
+    /// Keep the bubble's preview player on the finger: seek the loaded hour's timelapse
+    /// locally (proportional mapping — ~0.77 real fps packed into the file's own timebase),
+    /// and when the finger crosses into an hour that isn't loaded, swap videos (disk-cached
+    /// after first use, so revisits are instant even offline).
+    private func syncPreviewPlayer() {
+        let t = scrubEpoch
+        if let seg = loadedSegment, t >= seg.start, t <= seg.end {
+            guard let player = previewPlayer, let item = player.currentItem,
+                  item.duration.isNumeric, item.duration.seconds > 0 else { return }
+            let fraction = (t - seg.start) / max(1, seg.end - seg.start)
+            let target = CMTime(seconds: item.duration.seconds * fraction, preferredTimescale: 600)
+            player.seek(to: target, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity)
+            return
+        }
+        guard let seg = daySegments.first(where: { t >= $0.start && t <= $0.end }),
+              seg != loadedSegment else { return }
+        loadPreviewVideo(seg)
+    }
+
+    /// Download (first time only) and mount one hour's preview video into the bubble player.
+    private func loadPreviewVideo(_ segment: FrigateClient.PreviewSegment) {
+        guard let client = appState.client else { return }
+        previewVideoTask?.cancel()
+        previewVideoTask = Task {
+            guard let local = await client.cachedPreviewVideo(for: segment),
+                  !Task.isCancelled, segment.camera == camera.name else { return }
+            let player = AVPlayer(url: local)
+            player.isMuted = true
+            player.actionAtItemEnd = .pause
+            previewPlayer = player
+            loadedSegment = segment
+            syncPreviewPlayer()
+        }
     }
 
     private func downloadCurrent() async {
@@ -840,5 +930,28 @@ private extension CGFloat {
     /// Keeps the playhead handle inside the track bounds.
     func clampedX(in width: CGFloat) -> CGFloat {
         Swift.max(0, Swift.min(self, width))
+    }
+}
+
+/// Minimal AVPlayerLayer host for the scrub bubble's preview video — fills its frame,
+/// muted, no controls, no PiP: purely a surface the timelapse frames land on while the
+/// finger drags.
+private struct PreviewPlayerLayerView: UIViewRepresentable {
+    let player: AVPlayer
+
+    final class LayerView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    }
+
+    func makeUIView(context: Context) -> LayerView {
+        let view = LayerView()
+        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.player = player
+        return view
+    }
+
+    func updateUIView(_ view: LayerView, context: Context) {
+        if view.playerLayer.player !== player { view.playerLayer.player = player }
     }
 }
