@@ -44,6 +44,7 @@ struct LoopingVideoView: UIViewRepresentable {
         private(set) var url: URL?
         private var player: AVPlayer?
         private var statusObs: NSKeyValueObservation?
+        private var layerObs: NSKeyValueObservation?
         private var endObs: NSObjectProtocol?
         private var firstFrameFired = false
 
@@ -58,11 +59,19 @@ struct LoopingVideoView: UIViewRepresentable {
             view.playerLayer.player = p
             view.playerLayer.videoGravity = .resizeAspect   // match the poster (uncropped, letterboxed)
 
-            statusObs = item.observe(\.status, options: [.new]) { [weak self] it, _ in
+            statusObs = item.observe(\.status, options: [.new]) { it, _ in
                 guard it.status == .readyToPlay else { return }
+                DispatchQueue.main.async { p.play() }
+            }
+            // Fire onFirstFrame only when the LAYER can actually paint a real frame — so a host can
+            // hold the video hidden until then and never composite a blank/partial frame over the
+            // poster (the broken in-progress review card).
+            layerObs = view.playerLayer.observe(\.isReadyForDisplay, options: [.new, .initial]) { [weak self] layer, _ in
+                guard layer.isReadyForDisplay else { return }
                 DispatchQueue.main.async {
-                    p.play()
-                    if let self, !self.firstFrameFired { self.firstFrameFired = true; onFirstFrame?() }
+                    guard let self, !self.firstFrameFired else { return }
+                    self.firstFrameFired = true
+                    onFirstFrame?()
                 }
             }
             // Loop: HLS VOD fires end-of-playlist; rewind + play again (AVPlayerLooper won't do HLS).
@@ -77,6 +86,7 @@ struct LoopingVideoView: UIViewRepresentable {
 
         func teardown() {
             statusObs?.invalidate(); statusObs = nil
+            layerObs?.invalidate(); layerObs = nil
             if let endObs { NotificationCenter.default.removeObserver(endObs) }; endObs = nil
             player?.pause(); player = nil
             firstFrameFired = false

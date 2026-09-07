@@ -129,14 +129,14 @@ struct ReviewDetailView: View {
                         // Best CROPPED image of what was found (the primary detection), review
                         // thumbnail as the always-available fallback.
                         if let pid = FrigateClient.primaryDetectionID(of: review),
-                           let url = appState.client?.eventBestCropURL(id: pid) {
-                            RemoteImage(url: url, contentMode: .fit, revalidate: review.endTime == nil,
+                           let url = appState.client?.eventBestCropURL(id: pid, height: 1080) {
+                            RemoteImage(url: url, contentMode: .fit, maxPixelSize: 1600, revalidate: review.endTime == nil,
                                         fallbackURL: appState.client?.reviewThumbnailURL(review: review))
-                                .mediaAspectFrame(mediaAspect)
+                                .snapshotFrame()
                         } else if let url = snapshotURL {
-                            RemoteImage(url: url, contentMode: .fit, revalidate: review.endTime == nil,
+                            RemoteImage(url: url, contentMode: .fit, maxPixelSize: 1600, revalidate: review.endTime == nil,
                                         fallbackURL: appState.client?.reviewThumbnailURL(review: review))
-                                .mediaAspectFrame(mediaAspect)
+                                .snapshotFrame()
                         } else { mediaPlaceholder }
                     case .tracking:
                         // Clean full frame + the object's movement tail drawn ON the subject.
@@ -234,8 +234,11 @@ struct ReviewDetailView: View {
     }
 
     private var primaryEvent: FrigateEvent? {
+        // Strictly the primary detection: if it isn't loaded yet, show NO tail rather than
+        // drawing a different object's path over the primary detection's frame. The clean
+        // snapshot (keyed to `pid` directly) still renders; the tail fills in once loaded.
         guard let pid = FrigateClient.primaryDetectionID(of: review) else { return detectionEvents.first }
-        return detectionEvents.first(where: { $0.id == pid }) ?? detectionEvents.first
+        return detectionEvents.first(where: { $0.id == pid })
     }
 
     /// The camera's true frame aspect — drives every media tab's height so ultra-wide / fisheye

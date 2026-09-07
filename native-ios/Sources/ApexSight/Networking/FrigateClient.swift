@@ -537,7 +537,12 @@ struct FrigateClient {
     /// frame-accurate to the object. Only long events fall back to a time-range VOD anchored a
     /// few seconds before the object first appeared — the part that's actually worth seeing.
     func eventPlaybackURL(id: String, camera: String, start: Double?, end: Double?) -> URL {
-        guard let start, let end, end - start > Self.maxEventClipSeconds else {
+        // An in-progress review has no end yet; treat it as "now" so a long-lived (parked-object)
+        // event is still CLAMPED to a short recording window instead of falling through to the
+        // uncapped live /vod/event playlist — which mis-composites in the row preview AND is the
+        // unbounded Frigate request class that took the API down for hours.
+        let effectiveEnd = end ?? Date().timeIntervalSince1970
+        guard let start, effectiveEnd - start > Self.maxEventClipSeconds else {
             return eventVodURL(id: id)
         }
         return recordingHLSURL(camera: camera,

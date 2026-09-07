@@ -12,6 +12,9 @@ struct ReviewRow: View {
     /// Set only when this review's own snapshot belongs to a different moment — see
     /// `ReviewStillPolicy`. Nil (the common case) leaves the image exactly as it was.
     @State private var pinnedStill: URL?
+    /// Hold the looping preview hidden until it can actually paint, so a not-yet-ready clip never
+    /// composites a blank/partial frame over the poster.
+    @State private var videoReady = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -140,9 +143,12 @@ struct ReviewRow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Living thumbnail: the real footage loops (muted, HD) over the still.
                 if let clip = previewClipURL, let client = appState.client {
-                    LoopingVideoView(url: clip, client: client)
+                    LoopingVideoView(url: clip, client: client,
+                                     onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { videoReady = true } })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(videoReady ? 1 : 0)
                         .allowsHitTesting(false)
+                        .onChange(of: clip) { _, _ in videoReady = false }
                 }
             }
         } else {

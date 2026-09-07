@@ -275,11 +275,11 @@ struct EventDetailView: View {
                     case .snapshot:
                         // The BEST cropped image of what was found (thumbnail fallback when
                         // snapshots are disabled); revalidate while the event is still in progress.
-                        if let url = appState.client?.eventBestCropURL(id: event.id) {
-                            RemoteImage(url: url, contentMode: .fit,
+                        if let url = appState.client?.eventBestCropURL(id: event.id, height: 1080) {
+                            RemoteImage(url: url, contentMode: .fit, maxPixelSize: 1600,
                                         revalidate: event.endTime == nil,
                                         fallbackURL: appState.client?.eventThumbnailURL(id: event.id))
-                                .mediaAspectFrame(mediaAspect)
+                                .snapshotFrame()
                         } else { mediaPlaceholder }
                     case .tracking:
                         // The clean full frame with the object's movement tail drawn ON the subject
@@ -351,6 +351,7 @@ struct EventDetailView: View {
             .task(id: event.id) {
                 // Object lifecycle timeline for the Tracking tab (best-effort; [] hides the rail).
                 highlightTS = nil
+                trackingBeats = []
                 loadingTracking = true
                 trackingBeats = await appState.client?.objectTimeline(eventID: event.id) ?? []
                 loadingTracking = false

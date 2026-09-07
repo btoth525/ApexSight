@@ -60,14 +60,23 @@ struct TrackedSnapshot<Overlay: View>: View {
 // MARK: - Consistent media sizing
 
 extension View {
-    /// Sizes a detail-media surface to the camera's TRUE frame aspect (full width, height =
-    /// width / aspect) so ultra-wide / fisheye feeds (e.g. 1536×432) fill edge-to-edge with NO
-    /// letterbox bars, capped so a portrait feed can't dominate the screen. Every media tab
-    /// (Snapshot / Tracking / History) routes through this, so all three read as one surface.
+    /// A big, crisp box for the cropped best-shot: the subject fills a generous fixed height at
+    /// its OWN aspect (not the ultra-wide camera frame), so the snapshot reads large and clear.
+    func snapshotFrame() -> some View {
+        self.frame(height: 360).frame(maxWidth: .infinity)
+    }
+
+    /// Sizes the full-frame Tracking/History surface to the camera's TRUE aspect (full width,
+    /// height = width / aspect) so ultra-wide / fisheye feeds fill edge-to-edge with NO letterbox
+    /// bars, capped so a portrait feed can't dominate the screen — and the tail maps 1:1.
     func mediaAspectFrame(_ aspect: CGFloat) -> some View {
-        self
+        // A Color.clear establishes the aspect box; the media rides in its overlay so it's
+        // handed a CONCRETE size. Applying `.aspectRatio` straight onto the media collapses
+        // a GeometryReader-based view (TrackedSnapshot) to zero height — a black tab.
+        Color.clear
             .aspectRatio(aspect > 0 ? aspect : 16.0 / 9.0, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .frame(maxHeight: 360)
+            .frame(maxWidth: .infinity, maxHeight: 360)
+            .overlay { self }
+            .clipped()
     }
 }

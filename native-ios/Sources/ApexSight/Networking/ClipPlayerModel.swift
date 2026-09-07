@@ -155,7 +155,7 @@ final class ClipPlayerModel: ObservableObject {
         // a failure so the UI never spins forever on a stream that will never paint.
         stallTimeout?.cancel()
         stallTimeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
             guard !Task.isCancelled, let self, self.lastURL == url,
                   !self.isReady, !self.hasError else { return }
             self.scheduleAutoRetryOrFail(client: client, url: url)
