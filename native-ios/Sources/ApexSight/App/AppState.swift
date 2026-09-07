@@ -278,7 +278,7 @@ final class AppState: ObservableObject {
                 self?.probeLiveHLSIfNeeded()
                 // Fire-and-forget (like the syncs above) so a slow/black-holed relay's house-mode
                 // fetch (8s timeout) can't stretch the 15s alert-poll cadence when Frigate is fine.
-                Task { [weak self] in await self?.refreshHouseMode() }
+                Task { [weak self] in await self?.refreshGate() }
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
@@ -402,26 +402,6 @@ final class AppState: ObservableObject {
 
     // MARK: - House mode (Alarmo, via the relay) — arm/disarm from the app
 
-    /// Current house mode as the relay mirrors it from Alarmo: "home" / "away" / "night" / "" unknown.
-    /// A partner's app reflects a change here within one 15s poll — no friction, no confirmation.
-    @Published var houseMode: String = ""
-    /// Who last changed the mode (device name), for display. Empty when unknown.
-    @Published var houseModeArmedBy: String = ""
-    /// True while a set-mode request is in flight, so the UI can show progress + disable the buttons.
-    @Published var houseModeBusy = false
-    /// Cameras the CURRENT house mode silences (from the relay). Used to filter the Review/Activity
-    /// feeds to match the notification rule — Home shows only Front Driveway + Doorbell, etc.
-    @Published var houseModeMutedCameras: [String] = []
-    /// The full household per-mode mute matrix (mode → muted cameras) that the House Mode Alerts
-    /// editor shows and edits. From the relay: the household's custom map when one was saved, else
-    /// the built-in defaults. ONE map for every phone on the pairing code.
-    @Published var houseModeMap: [String: [String]] = [:]
-    /// True when the household has customized the matrix (vs. built-in defaults).
-    @Published var houseModeMapIsCustom = false
-    /// Camera roster the relay knows for the matrix (last synced with a save, or the relay's
-    /// fallback) — lets the House Mode Alerts editor list EVERY camera (including never-muted
-    /// ones) even before the live Frigate camera list has loaded.
-    @Published var houseModeCameraRoster: [String] = []
     /// Household notification gate, surfaced so the app can SHOW that alerts are silenced instead
     /// of dropping them invisibly (the "why am I not getting notifications" fix). Epoch; 0 = off.
     @Published var householdSnoozedUntil: Double = 0
@@ -456,16 +436,6 @@ final class AppState: ObservableObject {
         GlobalSnooze.snooze(until: until)
         Task { await RelayGate.sync(snoozedUntil: until.timeIntervalSince1970) }
     }
-    /// User escape hatch: when true, the feeds ignore the house-mode filter and show every camera.
-    /// @Published (not @AppStorage — that doesn't emit objectWillChange from an ObservableObject, so
-    /// the feeds wouldn't re-filter on toggle); persisted by hand so the choice survives relaunch.
-    @Published var showAllCamerasInFeeds: Bool = SharedHouseMode.showAllCameras {
-        didSet {
-            // Same app-group key as before; `SharedHouseMode` now owns its spelling so the widget
-            // process reads exactly what the app writes.
-            SharedHouseMode.showAllCameras = showAllCamerasInFeeds
-        }
-    }
 
     /// Whether a camera's activity should surface in the Review/Activity feeds right now: hidden only
     /// when the current mode affirmatively mutes it AND the user hasn't chosen to show all. FAIL-OPEN:
@@ -474,52 +444,24 @@ final class AppState: ObservableObject {
         true   // House Mode removed — every camera's activity surfaces in the feeds.
     }
 
-    /// Pull the current house mode from the relay so the app reflects the real Alarmo state. Called
-    /// on the 15s foreground poll (and right after a change) — this is how a partner's app follows.
-    func refreshHouseMode() async {
+    /// Pull just the household notification GATE from the relay (who silenced alerts, until when),
+    /// so a partner tapping resume/snooze on one phone reflects on the others. House Mode
+    /// (arm/away/night) was removed — only the alert-mute gate syncs now.
+    func refreshGate() async {
         let relayURL = DeviceTokenStore.relayURL
         guard !relayURL.isEmpty else { return }
         let pairing = DeviceTokenStore.ensurePairingCode()
-        // Stamped BEFORE the request so `adoptClearedHouseholdSnooze` can tell a response that
-        // reflects our latest gate POST from one that was already in flight when we sent it.
         let fetchStartedAt = Date().timeIntervalSince1970
         guard let status = await RelayClient.getMode(relayURL: relayURL, pairingCode: pairing) else { return }
-        let modeChanged = status.mode != houseMode
-        if modeChanged { houseMode = status.mode }
-        let by = status.armed_by?.by ?? ""
-        if by != houseModeArmedBy { houseModeArmedBy = by }
-        let mutes = status.mutes ?? []
-        if mutes != houseModeMutedCameras { houseModeMutedCameras = mutes }
-        let map = status.map ?? [:]
-        if map != houseModeMap { houseModeMap = map }
-        let custom = status.map_custom ?? false
-        if custom != houseModeMapIsCustom { houseModeMapIsCustom = custom }
-        let roster = status.cameras ?? []
-        if roster != houseModeCameraRoster { houseModeCameraRoster = roster }
-        // Household gate visibility: only meaningful when the relay recognized our pairing code
-        // (fields absent otherwise). An active snooze/disarm surfaces as a banner, never silently.
         let snoozed = status.snoozed_until ?? 0
         if snoozed != householdSnoozedUntil { householdSnoozedUntil = snoozed }
         let disarmed = status.disarmed ?? false
         if disarmed != householdDisarmed { householdDisarmed = disarmed }
-        // Attribution for the banner — WHO silenced the house and when. Without this, "why did
-        // notifications stop?" had no answer short of reading the relay by hand.
         let gateBy = status.gate_by ?? ""
         if gateBy != householdGateBy { householdGateBy = gateBy }
         let gateAt = status.gate_at ?? 0
         if gateAt != householdGateAt { householdGateAt = gateAt }
         adoptClearedHouseholdSnooze(relaySnoozedUntil: snoozed, fetchStartedAt: fetchStartedAt)
-        // Mirror to the app group so the Lock Screen widgets + Control Center controls can show it,
-        // and refresh those surfaces the moment the mode actually changes.
-        SharedHouseMode.mode = status.mode
-        SharedHouseMode.armedBy = by
-        // The mute list has to cross into the app group too, or the widget/Watch/Siri feeds — which
-        // are written from extension processes with no access to AppState — keep listing cameras
-        // this mode has silenced, while the Review tab and the relay's push gate both suppress them.
-        // Stamped with the mode it was read for — a list left over from a different mode must not
-        // filter the widget feed (see SharedHouseMode.mutedCameras).
-        SharedHouseMode.setMutedCameras(mutes, for: status.mode)
-        if modeChanged { ApexSurfaceRefresh.reload() }
     }
 
     /// Adopt a household snooze that someone else cleared, so tapping "resume" on ONE phone
@@ -558,22 +500,6 @@ final class AppState: ObservableObject {
         lastConfirmedGate = cleared   // this IS the relay's current state — we just read it
     }
 
-    /// Save the household per-mode alert matrix (from the House Mode Alerts editor). Household-wide:
-    /// the relay stores ONE map per pairing code, the bridge mirrors it into Frigate's per-camera
-    /// alert switches, and every phone (and HA) follows. Refreshes local state on success.
-    func saveHouseModeMap(_ mutes: [String: [String]], reset: Bool = false) async throws {
-        let relayURL = DeviceTokenStore.relayURL
-        let pairing = DeviceTokenStore.ensurePairingCode()
-        guard !relayURL.isEmpty, !pairing.isEmpty else { throw RelayClient.RelayError.invalidURL }
-        // Prefer the live Frigate list; fall back to the relay's stored roster so a save made
-        // before cameras load never posts an empty roster (which would shrink the editor's rows).
-        let roster = cameras.isEmpty ? houseModeCameraRoster : cameras.map(\.name)
-        try await RelayClient.setModeMap(
-            relayURL: relayURL, pairingCode: pairing, mutes: mutes,
-            cameras: roster, by: DeviceTokenStore.deviceName, reset: reset
-        )
-        await refreshHouseMode()
-    }
 
     /// Clear the household snooze/disarm gate so notifications resume for EVERYONE — the action
     /// behind the "notifications snoozed" banner. Clears the local mirrors too so the next
@@ -587,36 +513,9 @@ final class AppState: ObservableObject {
         lastConfirmedGate = ""
         await RelayGate.syncCurrent()
         syncRelayGateIfChanged()
-        await refreshHouseMode()
+        await refreshGate()
     }
 
-    /// Request an arm/disarm. Arming ("away"/"night") rides the pairing code; disarming ("home")
-    /// must carry the Alarmo code (validated by Alarmo). Returns true once the house actually
-    /// reaches `mode`. Throws on a relay-level rejection (e.g. a code-less disarm).
-    ///
-    /// The round trip is real work — relay → bridge (≤1s poll) → MQTT → HA → Alarmo → publish-back
-    /// → relay → us — so ~3–6s, not instant. We poll for convergence up to ~12s instead of checking
-    /// once too early (which would flag a *successful* disarm as failed). A wrong disarm code never
-    /// converges → the caller shows the error; a correct one lands within a couple of polls.
-    @discardableResult
-    func requestHouseMode(_ mode: String, code: String = "") async throws -> Bool {
-        let relayURL = DeviceTokenStore.relayURL
-        let pairing = DeviceTokenStore.ensurePairingCode()
-        let token = DeviceTokenStore.deviceTokenHex ?? ""
-        guard !relayURL.isEmpty, !pairing.isEmpty else { throw RelayClient.RelayError.invalidURL }
-        houseModeBusy = true
-        defer { houseModeBusy = false }
-        try await RelayClient.setMode(relayURL: relayURL, deviceToken: token,
-                                      pairingCode: pairing, mode: mode, code: code)
-        // Lock Screen / Dynamic Island arm banner: countdown on Away arm, "Armed" for Night,
-        // cleared on disarm. 60s matches the Alarmo Away exit delay (Night has none → instant).
-        for _ in 0..<9 {   // ~1.3s × 9 ≈ 12s
-            try? await Task.sleep(nanoseconds: 1_300_000_000)
-            await refreshHouseMode()
-            if houseMode == mode { return true }
-        }
-        return false
-    }
 
     /// Lightweight refresh of just the things that need to feel live: reviews + events.
     func refreshAlerts(retryOnAuthFailure: Bool = true) async {

@@ -79,7 +79,7 @@ struct CamerasTab: View {
     /// camera on the wall — that was continuous wasted network/CPU/battery for the ~6-7 cameras
     /// scrolled out of view. SwiftUI keeps a buffer of just-off-screen tiles alive, and each tile
     /// paints its cached last frame immediately on reappear, so scrolling back shows the frame with
-    /// at most a fresh fetch, not a flicker. Tiles are snapshot-based (CameraCard → LiveSnapshotView),
+    /// at most a fresh fetch, not a flicker. Tiles are LIVE (LiveCameraTile → HLSLivePlayerView, sub stream),
     /// not persistent HLS, so nothing live is being torn down here.
     /// NOTE: this is a behavior change to the wall's scroll/keep-warm model — compiler-verified only;
     /// confirm the scroll-back feel against real Frigate on device (this sim has no credentials).
@@ -134,7 +134,6 @@ struct CamerasTab: View {
             if appState.cameras.isEmpty { await appState.refresh() }
             // Warm snapshots so every tile shows a frame instantly (never black).
             else { appState.prewarmSnapshots() }
-            // Populate the House Mode bar promptly (the 15s poll refreshes it thereafter).
         }
     }
 
