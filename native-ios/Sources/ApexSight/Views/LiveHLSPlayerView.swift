@@ -720,14 +720,16 @@ struct HLSLivePlayerView: View {
             await StreamGate.shared.acquire()
             gateHeld = true
             guard !Task.isCancelled, started else { releaseGate(); return }
-            // A reused tile that's already live never re-fires first-frame, so release now.
-            if realtime.state == .live { releaseGate() }
+            // A reused tile already live never re-fires first-frame — release now and skip the
+            // backstop, or it would park a slot for nothing.
+            if realtime.state == .live { releaseGate(); return }
             syncRealtime()
             startRealtimeFallbackTimer()
-            // The .live path (onChange above) releases the slot on first frame; .failed releases
-            // via fallToMJPEG(). This is only a SAFETY net for a camera that never does either
-            // (a dead/one-second-hung source) so it can't wedge the gate — bounded, not a 10s wait.
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            // BACKSTOP ONLY. Normal release is on first frame (.onChange(realtime.state) above);
+            // .failed releases via fallToMJPEG(). This bounds wedge damage for a source that never
+            // does either — do NOT delete it: StreamGate hands a cancelled waiter a slot it must
+            // return. 3s > a warm sub's first frame, < the controller's 9s watchdog. Idempotent.
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
             releaseGate()
         }
     }
