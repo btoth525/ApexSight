@@ -85,7 +85,7 @@ struct CamerasTab: View {
     /// confirm the scroll-back feel against real Frigate on device (this sim has no credentials).
     private var liveScroll: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14) {
                 if let error = appState.errorMessage {
                     errorCard(error)
                 }

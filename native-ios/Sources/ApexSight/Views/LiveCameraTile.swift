@@ -32,6 +32,7 @@ struct LiveCameraTile: View {
                 HLSLivePlayerView(
                     camera: camera,
                     preferSub: true,
+                    persistent: true,
                     onPlaying: { playing in
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.35)) { isLive = playing }
                     },

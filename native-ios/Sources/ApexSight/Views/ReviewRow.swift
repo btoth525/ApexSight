@@ -109,6 +109,15 @@ struct ReviewRow: View {
             ?? appState.client?.reviewThumbnailURL(review: review)
     }
 
+    /// Animated preview GIF of the moment (Frigate's per-event `preview.gif`) for the review's
+    /// primary detection — the living-thumbnail Brandon wants in the triage feed. nil when there's
+    /// no resolvable detection; the static poster then stands alone.
+    private var previewGifURL: URL? {
+        guard let client = appState.client,
+              let detectionID = FrigateClient.primaryDetectionID(of: review) else { return nil }
+        return client.eventPreviewGifURL(id: detectionID)
+    }
+
     @ViewBuilder
     private var hero: some View {
         if let url = pinnedStill ?? objectStillURL {
@@ -126,6 +135,11 @@ struct ReviewRow: View {
                                 ? appState.client?.reviewThumbnailURL(review: review)
                                 : objectStillURL)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Living thumbnail: the moment's motion plays over the still, fading in when decoded.
+                if let gif = previewGifURL {
+                    AnimatedGIFView(url: gif)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         } else {
             ZStack {
