@@ -29,6 +29,10 @@ final class ClipPlayerModel: ObservableObject {
     /// short-delayed silent retries happen before giving up and showing the error state.
     private var retryAttempt = 0
     private var pendingAutoRetry: Task<Void, Never>?
+    /// Fires if the item never reaches .readyToPlay OR .failed (AVPlayer can stall at .unknown
+    /// on an empty / late VOD manifest) — routes into the same retry/error path so History shows
+    /// a clear "clip unavailable" card instead of an eternal loading shimmer.
+    private var stallTimeout: Task<Void, Never>?
     /// True once we took the shared audio session, so we deactivate it on stop/dealloc and
     /// the user's music/podcast resumes instead of staying ducked after viewing a clip.
     private var didActivateAudio = false
@@ -126,6 +130,8 @@ final class ClipPlayerModel: ObservableObject {
                     self.isReady = true
                     self.hasError = false
                     self.retryAttempt = 0
+                    self.stallTimeout?.cancel()
+                    self.stallTimeout = nil
                 case .failed:
                     self.handleFailure(client: client, url: url)
                 default: break
@@ -144,6 +150,16 @@ final class ClipPlayerModel: ObservableObject {
 
         // First frame the moment it's decodable — don't wait for the buffer target.
         activePlayer.playImmediately(atRate: 1.0)
+
+        // Backstop: if neither .readyToPlay nor .failed arrives (stuck at .unknown), treat it as
+        // a failure so the UI never spins forever on a stream that will never paint.
+        stallTimeout?.cancel()
+        stallTimeout = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard !Task.isCancelled, let self, self.lastURL == url,
+                  !self.isReady, !self.hasError else { return }
+            self.scheduleAutoRetryOrFail(client: client, url: url)
+        }
     }
 
     private func handleFailure(client: FrigateClient, url: URL) {
@@ -210,6 +226,8 @@ final class ClipPlayerModel: ObservableObject {
     }
 
     private func teardown() {
+        stallTimeout?.cancel()
+        stallTimeout = nil
         if let endObs { NotificationCenter.default.removeObserver(endObs) }
         endObs = nil
         statusObs?.invalidate()

@@ -10,8 +10,10 @@ struct ReviewDetailView: View {
 
     @State private var showReviewedConfirmation = false
     @State private var isWorking = false
-    @StateObject private var clipModel = ClipPlayerModel()
-    @State private var mediaMode: MediaMode = .video
+    @State private var mediaMode: MediaMode = .snapshot
+    @State private var highlightTS: Double?
+    @State private var trackingBeats: [TimelineBeat] = []
+    @State private var loadingTracking = false
     /// True while our fullscreen media cover is presented — onDisappear must NOT stop the
     /// clip player then (the cover is displaying that very player).
     @State private var mediaExpanded = false
@@ -29,9 +31,9 @@ struct ReviewDetailView: View {
     }
 
     private enum MediaMode: String, CaseIterable {
-        case video = "Video"
         case snapshot = "Snapshot"
-        case history = "History"
+        case tracking = "Tracking"
+        case history  = "History"
     }
 
     var body: some View {
@@ -40,6 +42,7 @@ struct ReviewDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
                     hero
+                    if mediaMode == .tracking { trackingCard }
                     // Frigate's review-level GenAI story sits directly under the clip: it answers
                     // "should I care about this one", which is the question you have while the
                     // video is still playing. The per-object description below answers the
@@ -63,20 +66,14 @@ struct ReviewDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .task(id: review.id) {
-            guard let client = appState.client, let start = review.startTime else { clipModel.stop(); return }
-            let end = review.endTime ?? (start + 20)
-            // Force a (re)load keyed to THIS review so a reused detail view can never
-            // show the previous review's clip. VOD HLS for the review's time range —
-            // Frigate's documented, iOS-recommended recording source.
-            // URL-keyed: a reused view for a NEW review loads fresh; a re-appear for the
-            // SAME review (returning from fullscreen expand or a push) keeps playback
-            // instead of reloading + ghost-auto-playing under Snapshot mode.
-            clipModel.loadIfNeeded(
-                client: client,
-                url: client.recordingHLSURL(camera: review.camera, start: start, end: end)
-            )
+            // Object lifecycle timeline for the Tracking tab (primary detection; [] hides the rail).
+            highlightTS = nil
+            trackingBeats = []
+            guard let pid = FrigateClient.primaryDetectionID(of: review), let client = appState.client else { return }
+            loadingTracking = true
+            trackingBeats = await client.objectTimeline(eventID: pid)
+            loadingTracking = false
         }
-        .onDisappear { if !mediaExpanded { clipModel.stop() } }
         // Same rule as `ReviewRow`: re-ask while the review is live, once more when it ends.
         .task(id: "\(review.id)|\(review.endTime == nil)") {
             pinnedStill = nil
@@ -124,47 +121,43 @@ struct ReviewDetailView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: mediaMode) { _, mode in
-                    Haptics.select()
-                    if mode == .video { clipModel.play() } else { clipModel.pause() }
-                }
+                .onChange(of: mediaMode) { _, _ in Haptics.select() }
 
                 ZStack {
-                    if mediaMode == .video {
-                        // Holds a loading skeleton until a real frame is ready, then fades the
-                        // clip in — never a black box.
-                        LoadingClipPlayer(model: clipModel)
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
-                    } else if mediaMode == .history, let startTime = review.startTime {
-                        RecordingContextPlayerView(
-                            camera: review.camera,
-                            centerTime: startTime,
-                            eventStart: review.startTime,
-                            eventEnd: review.endTime
-                        )
-                        .frame(maxWidth: .infinity)
-                    } else if let url = snapshotURL {
-                        // Plain image inline (no inner scroll-zoom) so a tap flows through to
-                        // `.expandableMedia`, which opens the full-screen zoomable viewer.
-                        // Falls back to the canonical review thumbnail when the full snapshot
-                        // 404s (snapshots disabled on this camera).
-                        RemoteImage(url: url, contentMode: .fit,
-                                    revalidate: review.endTime == nil,
-                                    fallbackURL: pinnedStill == nil
-                                        ? appState.client?.reviewThumbnailURL(review: review)
-                                        : objectStillURL)
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
-                    } else if let url = appState.client?.latestFrameURL(camera: review.camera) {
-                        // No event snapshot — show the camera's latest frame, never a black box.
-                        RemoteImage(url: url, contentMode: .fit)
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Color.black
-                            .frame(height: 300)
-                            .frame(maxWidth: .infinity)
+                    switch mediaMode {
+                    case .snapshot:
+                        // Best CROPPED image of what was found (the primary detection), review
+                        // thumbnail as the always-available fallback.
+                        if let pid = FrigateClient.primaryDetectionID(of: review),
+                           let url = appState.client?.eventBestCropURL(id: pid) {
+                            RemoteImage(url: url, contentMode: .fit, revalidate: review.endTime == nil,
+                                        fallbackURL: appState.client?.reviewThumbnailURL(review: review))
+                                .mediaAspectFrame(mediaAspect)
+                        } else if let url = snapshotURL {
+                            RemoteImage(url: url, contentMode: .fit, revalidate: review.endTime == nil,
+                                        fallbackURL: appState.client?.reviewThumbnailURL(review: review))
+                                .mediaAspectFrame(mediaAspect)
+                        } else { mediaPlaceholder }
+                    case .tracking:
+                        // Clean full frame + the object's movement tail drawn ON the subject.
+                        if let pid = FrigateClient.primaryDetectionID(of: review),
+                           let url = appState.client?.eventCleanSnapshotURL(id: pid) {
+                            TrackedSnapshot(url: url) { size in
+                                PathTailCanvas(points: primaryEvent?.pathData ?? [],
+                                               snapshotTS: primaryEvent?.snapshotFrameTime,
+                                               highlightTS: highlightTS, size: size)
+                            }
+                            .mediaAspectFrame(mediaAspect)
+                        } else { mediaPlaceholder }
+                    case .history:
+                        if let startTime = review.startTime {
+                            RecordingContextPlayerView(camera: review.camera, centerTime: startTime,
+                                                       eventStart: review.startTime, eventEnd: review.endTime,
+                                                       frameAspect: mediaAspect)
+                                .frame(maxWidth: .infinity)
+                        } else if let url = snapshotURL {
+                            RemoteImage(url: url, contentMode: .fit).mediaAspectFrame(mediaAspect)
+                        } else { mediaPlaceholder }
                     }
                 }
                 .background(Color.black)
@@ -226,17 +219,47 @@ struct ReviewDetailView: View {
     /// clip, or vice-versa) and the history scrubber isn't replaced by a still.
     private var fullscreenMedia: FullscreenMediaView.Media? {
         switch mediaMode {
-        case .video:
-            // The clip is expandable to the zoomable video. While it's still loading
-            // (no player yet) hide the button rather than fall back to the snapshot.
-            guard clipModel.isReady, let player = clipModel.player else { return nil }
-            return .player(player)
         case .snapshot:
             guard let url = snapshotURL else { return nil }
             return .image(url)
+        case .tracking:
+            // Zoom the CLEAN full frame (tail stays on the inline card) — pinch into the subject
+            // like the other tabs.
+            guard let pid = FrigateClient.primaryDetectionID(of: review),
+                  let url = appState.client?.eventCleanSnapshotURL(id: pid) else { return nil }
+            return .image(url)
         case .history:
-            // The history scrubber has its own controls; nothing to expand.
             return nil
+        }
+    }
+
+    private var primaryEvent: FrigateEvent? {
+        guard let pid = FrigateClient.primaryDetectionID(of: review) else { return detectionEvents.first }
+        return detectionEvents.first(where: { $0.id == pid }) ?? detectionEvents.first
+    }
+
+    /// The camera's true frame aspect — drives every media tab's height so ultra-wide / fisheye
+    /// feeds fill without black bars and all three tabs read as one surface.
+    private var mediaAspect: CGFloat {
+        appState.cameras.first(where: { $0.name == review.camera })?.aspectRatio ?? 16.0 / 9.0
+    }
+
+    private var mediaPlaceholder: some View {
+        Color.black.mediaAspectFrame(mediaAspect)
+    }
+
+    @ViewBuilder
+    private var trackingCard: some View {
+        if !trackingBeats.isEmpty {
+            GlassCard {
+                VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
+                    SectionHeader("Tracking")
+                    ObjectTimelineView(beats: trackingBeats, eventStart: review.startTime, highlightTS: $highlightTS)
+                }
+            }
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+        } else if loadingTracking {
+            GlassCard { SkeletonBlock().frame(height: 90) }
         }
     }
 

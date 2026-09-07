@@ -41,6 +41,12 @@ struct EventDetailView: View {
 
     private var hasClip: Bool { event.hasClip != false }
 
+    /// The camera's true frame aspect — drives every media tab's height so ultra-wide /
+    /// fisheye feeds fill without black bars and all three tabs read as one surface.
+    private var mediaAspect: CGFloat {
+        appState.cameras.first(where: { $0.name == event.camera })?.aspectRatio ?? 16.0 / 9.0
+    }
+
     /// What the fullscreen viewer shows — it MUST mirror exactly what the hero is
     /// rendering inline, so expand never opens the wrong medium (a snapshot while the
     /// user is watching the clip, or vice-versa).
@@ -50,9 +56,13 @@ struct EventDetailView: View {
             // Expand shows the FULL frame (zoom out for context from the crop).
             guard let url = appState.client?.eventSnapshotURL(id: event.id) else { return nil }
             return .image(url)
-        case .tracking, .history:
-            // Tracking overlay can't ride the zoom transform (it would detach the tail); the
-            // history scrubber has its own controls. Nothing to expand.
+        case .tracking:
+            // Zoom the CLEAN full frame (the tail overlay can't ride the zoom transform, so it
+            // stays on the inline card) — lets the user pinch into the subject like other tabs.
+            guard let url = appState.client?.eventCleanSnapshotURL(id: event.id) else { return nil }
+            return .image(url)
+        case .history:
+            // The history scrubber has its own controls. Nothing to expand.
             return nil
         }
     }
@@ -231,7 +241,7 @@ struct EventDetailView: View {
     }
 
     private var mediaPlaceholder: some View {
-        Color.black.frame(height: 300).frame(maxWidth: .infinity)
+        Color.black.mediaAspectFrame(mediaAspect)
     }
 
     @ViewBuilder
@@ -269,7 +279,7 @@ struct EventDetailView: View {
                             RemoteImage(url: url, contentMode: .fit,
                                         revalidate: event.endTime == nil,
                                         fallbackURL: appState.client?.eventThumbnailURL(id: event.id))
-                                .frame(height: 300).frame(maxWidth: .infinity)
+                                .mediaAspectFrame(mediaAspect)
                         } else { mediaPlaceholder }
                     case .tracking:
                         // The clean full frame with the object's movement tail drawn ON the subject
@@ -280,16 +290,17 @@ struct EventDetailView: View {
                                                snapshotTS: event.snapshotFrameTime,
                                                highlightTS: highlightTS, size: size)
                             }
-                            .frame(height: 300).frame(maxWidth: .infinity)
+                            .mediaAspectFrame(mediaAspect)
                         } else { mediaPlaceholder }
                     case .history:
                         if let startTime = event.startTime {
                             RecordingContextPlayerView(camera: event.camera, centerTime: startTime,
-                                                       eventStart: event.startTime, eventEnd: event.endTime)
+                                                       eventStart: event.startTime, eventEnd: event.endTime,
+                                                       frameAspect: mediaAspect)
                                 .frame(maxWidth: .infinity)
                         } else if let url = appState.client?.eventThumbnailURL(id: event.id) {
                             RemoteImage(url: url, contentMode: .fit)
-                                .frame(height: 300).frame(maxWidth: .infinity)
+                                .mediaAspectFrame(mediaAspect)
                         } else { mediaPlaceholder }
                     }
                 }

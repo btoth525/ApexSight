@@ -9,6 +9,9 @@ struct RecordingContextPlayerView: View {
     let centerTime: Double
     let eventStart: Double?
     let eventEnd: Double?
+    /// When set, the player fills the camera's true frame aspect (no letterbox) so it matches
+    /// the Snapshot / Tracking tabs. nil keeps the standalone fixed 240pt height.
+    var frameAspect: CGFloat? = nil
     @EnvironmentObject private var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = ClipPlayerModel()
@@ -72,9 +75,7 @@ struct RecordingContextPlayerView: View {
     // MARK: - Video
 
     private var player: some View {
-        LoadingClipPlayer(model: model)
-            .frame(height: 240)
-            .frame(maxWidth: .infinity)
+        clipFrame(LoadingClipPlayer(model: model))
             .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
             .cardStroke(GlassTheme.Radius.card)
@@ -101,6 +102,15 @@ struct RecordingContextPlayerView: View {
                     if t.isFinite { currentTime = min(max(t, 0), max(duration, 1)) }
                 }
             }
+    }
+
+    @ViewBuilder
+    private func clipFrame(_ content: some View) -> some View {
+        if let frameAspect {
+            content.mediaAspectFrame(frameAspect)
+        } else {
+            content.frame(height: 240).frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: - Activity timeline

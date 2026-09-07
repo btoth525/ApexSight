@@ -55,3 +55,19 @@ struct TrackedSnapshot<Overlay: View>: View {
         } catch { failed = (uiImage == nil) }
     }
 }
+
+
+// MARK: - Consistent media sizing
+
+extension View {
+    /// Sizes a detail-media surface to the camera's TRUE frame aspect (full width, height =
+    /// width / aspect) so ultra-wide / fisheye feeds (e.g. 1536×432) fill edge-to-edge with NO
+    /// letterbox bars, capped so a portrait feed can't dominate the screen. Every media tab
+    /// (Snapshot / Tracking / History) routes through this, so all three read as one surface.
+    func mediaAspectFrame(_ aspect: CGFloat) -> some View {
+        self
+            .aspectRatio(aspect > 0 ? aspect : 16.0 / 9.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .frame(maxHeight: 360)
+    }
+}

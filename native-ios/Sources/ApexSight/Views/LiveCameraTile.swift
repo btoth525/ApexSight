@@ -46,6 +46,16 @@ struct LiveCameraTile: View {
 
                 bottomBar
             }
+            .overlay(alignment: .topTrailing) {
+                // Signals the tile opens a pinch-to-zoom full-res viewer (Ring/Reolink-style).
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .liquidGlass(in: Circle(), interactive: false, fallbackMaterial: .ultraThinMaterial)
+                    .padding(GlassTheme.Space.s)
+                    .allowsHitTesting(false)
+            }
             .aspectRatio(16.0 / 9.0, contentMode: .fill)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
