@@ -7,6 +7,7 @@ import SwiftUI
 final class ProgressDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let onProgress: @Sendable (Double) -> Void
     private var continuation: CheckedContinuation<URL, Error>?
+    private var downloadTask: URLSessionDownloadTask?
 
     private init(onProgress: @escaping @Sendable (Double) -> Void) { self.onProgress = onProgress }
 
@@ -15,10 +16,25 @@ final class ProgressDownloader: NSObject, URLSessionDownloadDelegate, @unchecked
     }
 
     private func start(request: URLRequest) async throws -> URL {
-        try await withCheckedThrowingContinuation { cont in
-            self.continuation = cont
-            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-            session.downloadTask(with: request).resume()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                self.continuation = cont
+                // Mirror FrigateClient.downloadSession's caps — never leave a Frigate download on
+                // URLSession's 7-day default, and fail fast offline. (The default .default config
+                // + no cancellation held a Frigate connection open on a stalled WAN transfer.)
+                let config = URLSessionConfiguration.default
+                config.timeoutIntervalForRequest = 30
+                config.timeoutIntervalForResource = 180
+                config.waitsForConnectivity = false
+                let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+                let task = session.downloadTask(with: request)
+                self.downloadTask = task
+                task.resume()
+            }
+        } onCancel: {
+            // Backing out of the sheet (or a cancelled caller Task) actually stops the transfer;
+            // the delegate's didCompleteWithError then resumes the continuation with the error.
+            self.downloadTask?.cancel()
         }
     }
 

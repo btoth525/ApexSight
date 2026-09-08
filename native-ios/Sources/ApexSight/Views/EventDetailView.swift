@@ -90,7 +90,7 @@ struct EventDetailView: View {
         }
         if !pts.isEmpty {
             let xs = pts.map(\.x), ys = pts.map(\.y)
-            return CGPoint(x: (xs.min()! + xs.max()!) / 2, y: (ys.min()! + ys.max()!) / 2)
+            return CGPoint(x: ((xs.min() ?? 0.5) + (xs.max() ?? 0.5)) / 2, y: ((ys.min() ?? 0.5) + (ys.max() ?? 0.5)) / 2)
         }
         return CGPoint(x: 0.5, y: 0.5)
     }

@@ -603,10 +603,13 @@ struct FrigateRecording: Identifiable, Codable, Hashable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        startTime = try c.decodeIfPresent(Double.self, forKey: .startTime)
-        endTime = try c.decodeIfPresent(Double.self, forKey: .endTime)
-        motion = try c.decodeIfPresent(Double.self, forKey: .motion)
-        objects = try c.decodeIfPresent(Double.self, forKey: .objects)
+        // Lenient per-field decode (matches FrigateEvent/TimelineBeat): a present-but-wrong-typed
+        // field degrades to nil instead of THROWING and failing the whole [FrigateRecording] array —
+        // one malformed row must not blank the entire day's recordings.
+        startTime = (try? c.decodeIfPresent(Double.self, forKey: .startTime)) ?? nil
+        endTime = (try? c.decodeIfPresent(Double.self, forKey: .endTime)) ?? nil
+        motion = (try? c.decodeIfPresent(Double.self, forKey: .motion)) ?? nil
+        objects = (try? c.decodeIfPresent(Double.self, forKey: .objects)) ?? nil
         if let s = startTime, let e = endTime {
             id = "\(s)-\(e)"
         } else {

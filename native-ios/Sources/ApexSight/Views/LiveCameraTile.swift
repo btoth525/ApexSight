@@ -56,7 +56,7 @@ struct LiveCameraTile: View {
                     .padding(GlassTheme.Space.s)
                     .allowsHitTesting(false)
             }
-            .aspectRatio(16.0 / 9.0, contentMode: .fill)
+            .aspectRatio(camera.aspectRatio, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
             .overlay(
@@ -77,10 +77,10 @@ struct LiveCameraTile: View {
             Circle()
                 .fill(isLive ? GlassTheme.green : GlassTheme.tertiary)
                 .frame(width: 8, height: 8)
-                .shadow(color: isLive ? GlassTheme.green.opacity(0.8) : .clear, radius: 4)
 
             Text(titleize(camera.name))
-                .font(.system(size: 17, weight: .semibold))
+                .font(.headline.weight(.semibold))
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .shadow(color: .black.opacity(0.5), radius: 4, y: 1)

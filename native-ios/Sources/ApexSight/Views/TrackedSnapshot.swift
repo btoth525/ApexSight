@@ -93,7 +93,7 @@ extension View {
     /// Big inline box for the Tracking tab — paired with `TrackedSnapshot(fill:true)` the ultra-wide
     /// frame is shown large and zoomed on the subject instead of a thin letterboxed strip.
     func trackingFrame() -> some View {
-        self.frame(height: 280).frame(maxWidth: .infinity)
+        self.frame(height: 360).frame(maxWidth: .infinity)
     }
 
     /// Sizes the full-frame Tracking/History surface to the camera's TRUE aspect (full width,

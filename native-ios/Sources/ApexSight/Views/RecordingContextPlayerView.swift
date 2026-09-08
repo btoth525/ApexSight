@@ -115,8 +115,11 @@ struct RecordingContextPlayerView: View {
 
     // MARK: - Activity timeline
 
+    /// The clip's REAL span (recent reviews are clamped to now, so the VOD is shorter than the
+    /// nominal window). Markers + axis scale by this so they line up with the clip-relative playhead.
+    private var displaySeconds: Double { max(duration, 1) }
     private func fraction(for epoch: Double) -> CGFloat {
-        CGFloat(min(max((epoch - windowStart) / windowSeconds, 0), 1))
+        CGFloat(min(max((epoch - windowStart) / displaySeconds, 0), 1))
     }
     private var playheadFraction: CGFloat {
         guard duration > 0 else { return 0 }
@@ -212,9 +215,9 @@ struct RecordingContextPlayerView: View {
             HStack {
                 Text(formatTime(windowStart)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
                 Spacer()
-                Text(formatTime(centerTime)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                Text(formatTime(windowStart + displaySeconds / 2)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
                 Spacer()
-                Text(formatTime(windowEnd)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                Text(formatTime(windowStart + displaySeconds)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
             }
         }
     }
