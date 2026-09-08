@@ -128,7 +128,7 @@ struct LiveSnapshotView: View {
 
 /// A calm "warming up" indicator shown over a camera's cached snapshot until its live stream
 /// produces a first frame, so a tile never reads as frozen or dead-black while connecting.
-/// (Used by CameraCard and the multi-camera wall.)
+/// (Used by LiveCameraTile and the multi-camera wall.)
 struct ConnectingHint: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathe = false

@@ -288,7 +288,7 @@ private struct MultiCameraCell: View {
             // Live feed. This fullscreen grid is an opt-in "watch everything" view, and the
             // LazyVStack stops off-screen rows decoding, so only the visible tiles stream (≈1–2 at
             // the default one-column iPhone layout) — bounding the on-device decode/battery cost that
-            // keeps the main wall (CameraCard) on snapshots. `preferSub` keeps a dense grid light;
+            // keeps the main wall (LiveCameraTile) on snapshots. `preferSub` keeps a dense grid light;
             // `muted` so tiles don't all voice at once; tapping opens that camera full-quality.
             // Startup is StreamGate-serialized (see HLSLivePlayerView.startWebRTCPrimary) so a whole
             // wall of tiles appearing at once doesn't stampede go2rtc.
@@ -308,14 +308,14 @@ private struct MultiCameraCell: View {
                     .transition(.opacity)
             }
 
-            // Bottom scrim so the name stays legible over bright scenes (matches CameraCard).
+            // Bottom scrim so the name stays legible over bright scenes (matches LiveCameraTile).
             LinearGradient(
                 colors: [.clear, .clear, .black.opacity(0.7)],
                 startPoint: .top, endPoint: .bottom
             )
             .allowsHitTesting(false)
 
-            // Camera name — consistent with CameraCard's bottom-leading title.
+            // Camera name — consistent with LiveCameraTile's bottom-leading title.
             Text(titleize(camera.name))
                 .font(.system(size: columns > 2 ? 11 : 14, weight: .semibold))
                 .foregroundStyle(.white)
