@@ -142,25 +142,28 @@ struct BeatBoxView: View {
         let bracket = max(min(r.width, r.height) * 0.28, 7)
         let tint = GlassTheme.accent
         ZStack {
-            // Faint full-box outline so the whole extent reads; the brackets are the hero.
+            // Faint full-box outline so the whole extent reads; the tag rides its top-left corner
+            // (above the edge) so it never covers the subject; the brackets are the hero.
             Rectangle()
                 .stroke(tint.opacity(0.30), lineWidth: 1)
                 .frame(width: r.width, height: r.height)
+                .overlay(alignment: .topLeading) {
+                    if let label {
+                        Text(tagText(label))
+                            .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(tint, in: Capsule())
+                            .fixedSize()
+                            .offset(y: -15)
+                    }
+                }
                 .position(x: r.midX, y: r.midY)
             CornerBrackets(len: bracket)
                 .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                 .frame(width: r.width, height: r.height)
                 .position(x: r.midX, y: r.midY)
                 .shadow(color: tint.opacity(0.75), radius: 5)
-            if let label {
-                Text(tagText(label))
-                    .font(.system(size: 10, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(tint, in: Capsule())
-                    .fixedSize()
-                    .position(x: r.midX, y: max(r.minY - 11, 9))
-            }
         }
         .allowsHitTesting(false)
         .scaleEffect(locked ? 1 : 1.22, anchor: .center)

@@ -64,6 +64,20 @@ struct EventDetailView: View {
         }
         return client.eventCleanSnapshotURL(id: event.id)
     }
+    /// Normalized point the inline Tracking view zooms toward: the tapped beat's box centre, else the
+    /// object's position in the best frame, else the path centroid, else centre.
+    private var trackingFocus: CGPoint {
+        if let b = selectedBeat?.box { return CGPoint(x: b.midX, y: b.midY) }
+        let pts = event.pathData ?? []
+        if let ts = event.snapshotFrameTime, let p = pts.min(by: { abs($0.ts - ts) < abs($1.ts - ts) }) {
+            return CGPoint(x: p.x, y: p.y)
+        }
+        if !pts.isEmpty {
+            let xs = pts.map(\.x), ys = pts.map(\.y)
+            return CGPoint(x: (xs.min()! + xs.max()!) / 2, y: (ys.min()! + ys.max()!) / 2)
+        }
+        return CGPoint(x: 0.5, y: 0.5)
+    }
 
     /// What the fullscreen viewer shows — it MUST mirror exactly what the hero is
     /// rendering inline, so expand never opens the wrong medium (a snapshot while the
@@ -306,7 +320,7 @@ struct EventDetailView: View {
                         // Clean full frame + movement tail. Tapping a lifecycle beat swaps to the
                         // RECORDED frame at that moment and boxes the object where it was.
                         if let url = trackingFrameURL {
-                            TrackedSnapshot(url: url) { size in
+                            TrackedSnapshot(url: url, fill: true, focus: trackingFocus) { size in
                                 ZStack {
                                     PathTailCanvas(points: event.pathData ?? [],
                                                    snapshotTS: event.snapshotFrameTime,
@@ -317,7 +331,7 @@ struct EventDetailView: View {
                                     }
                                 }
                             }
-                            .mediaAspectFrame(mediaAspect)
+                            .trackingFrame()
                         } else { mediaPlaceholder }
                     case .history:
                         if let startTime = event.startTime {

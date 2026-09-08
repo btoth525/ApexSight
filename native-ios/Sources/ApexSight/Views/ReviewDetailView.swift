@@ -142,7 +142,7 @@ struct ReviewDetailView: View {
                         // Clean full frame + tail. Tapping a lifecycle beat swaps to the RECORDED
                         // frame at that moment and boxes the object where it was.
                         if let url = trackingFrameURL {
-                            TrackedSnapshot(url: url) { size in
+                            TrackedSnapshot(url: url, fill: true, focus: trackingFocus) { size in
                                 ZStack {
                                     PathTailCanvas(points: primaryEvent?.pathData ?? [],
                                                    snapshotTS: primaryEvent?.snapshotFrameTime,
@@ -153,7 +153,7 @@ struct ReviewDetailView: View {
                                     }
                                 }
                             }
-                            .mediaAspectFrame(mediaAspect)
+                            .trackingFrame()
                         } else { mediaPlaceholder }
                     case .history:
                         if let startTime = review.startTime {
@@ -269,6 +269,20 @@ struct ReviewDetailView: View {
             return client.recordingFrameURL(camera: review.camera, at: beat.ts, height: trackingCameraHeight)
         }
         return client.eventCleanSnapshotURL(id: pid)
+    }
+    /// Normalized point the inline Tracking view zooms toward: the tapped beat's box centre, else the
+    /// object's position in the best frame, else the path centroid, else centre.
+    private var trackingFocus: CGPoint {
+        if let b = selectedBeat?.box { return CGPoint(x: b.midX, y: b.midY) }
+        let pts = primaryEvent?.pathData ?? []
+        if let ts = primaryEvent?.snapshotFrameTime, let p = pts.min(by: { abs($0.ts - ts) < abs($1.ts - ts) }) {
+            return CGPoint(x: p.x, y: p.y)
+        }
+        if !pts.isEmpty {
+            let xs = pts.map(\.x), ys = pts.map(\.y)
+            return CGPoint(x: (xs.min()! + xs.max()!) / 2, y: (ys.min()! + ys.max()!) / 2)
+        }
+        return CGPoint(x: 0.5, y: 0.5)
     }
 
     private var mediaPlaceholder: some View {

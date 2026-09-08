@@ -10,6 +10,23 @@ enum Letterbox {
         if ia > ca { let h = c.width / ia;  return CGRect(x: 0, y: (c.height - h) / 2, width: c.width, height: h) }
         else       { let w = c.height * ia; return CGRect(x: (c.width - w) / 2, y: 0, width: w, height: c.height) }
     }
+
+    /// Aspect-FILL: the image covers the container (overflow clipped), slid so `focus` (normalized
+    /// object centre) sits at the container centre — clamped so no edge past the image shows. Lets an
+    /// ultra-wide feed be shown BIG, zoomed on the subject, with the overlay still mapping `n * size`.
+    static func filledRect(imageSize s: CGSize, in c: CGSize, focus: CGPoint) -> CGRect {
+        guard s.width > 0, s.height > 0, c.width > 0, c.height > 0 else { return .zero }
+        let ia = s.width / s.height, ca = c.width / c.height
+        if ia > ca {
+            let w = c.height * ia
+            let x = min(0, max(c.width - w, c.width / 2 - focus.x * w))
+            return CGRect(x: x, y: 0, width: w, height: c.height)
+        } else {
+            let h = c.width / ia
+            let y = min(0, max(c.height - h, c.height / 2 - focus.y * h))
+            return CGRect(x: 0, y: y, width: c.width, height: h)
+        }
+    }
 }
 
 /// Shows a snapshot aspect-fit and frames image+overlay to the *fitted rect*, so the overlay is
@@ -17,6 +34,11 @@ enum Letterbox {
 /// never drift into a black bar. Decodes its own UIImage (RemoteImage hides the pixel size).
 struct TrackedSnapshot<Overlay: View>: View {
     let url: URL
+    /// FILL the container (zoomed on `focus`) instead of aspect-fit — used inline so an ultra-wide
+    /// feed is shown big. Fullscreen keeps fit (the whole frame, then pinch-zoom).
+    var fill: Bool = false
+    /// Normalized object centre the fill zooms toward (ignored when `fill` is false).
+    var focus: CGPoint = CGPoint(x: 0.5, y: 0.5)
     @ViewBuilder var overlay: (_ size: CGSize) -> Overlay
     @EnvironmentObject private var appState: AppState
     @State private var uiImage: UIImage?
@@ -27,7 +49,8 @@ struct TrackedSnapshot<Overlay: View>: View {
             ZStack {
                 Color.black
                 if let img = uiImage {
-                    let r = Letterbox.fittedRect(imageSize: img.size, in: geo.size)
+                    let r = fill ? Letterbox.filledRect(imageSize: img.size, in: geo.size, focus: focus)
+                                 : Letterbox.fittedRect(imageSize: img.size, in: geo.size)
                     ZStack {
                         Image(uiImage: img).resizable().interpolation(.high)
                         overlay(r.size).allowsHitTesting(false)
@@ -40,6 +63,7 @@ struct TrackedSnapshot<Overlay: View>: View {
                     ProgressView().tint(GlassTheme.accent)
                 }
             }
+            .clipped()   // hide the fill overflow
         }
         .task(id: url) { await load() }
     }
@@ -64,6 +88,12 @@ extension View {
     /// its OWN aspect (not the ultra-wide camera frame), so the snapshot reads large and clear.
     func snapshotFrame() -> some View {
         self.frame(height: 360).frame(maxWidth: .infinity)
+    }
+
+    /// Big inline box for the Tracking tab — paired with `TrackedSnapshot(fill:true)` the ultra-wide
+    /// frame is shown large and zoomed on the subject instead of a thin letterboxed strip.
+    func trackingFrame() -> some View {
+        self.frame(height: 280).frame(maxWidth: .infinity)
     }
 
     /// Sizes the full-frame Tracking/History surface to the camera's TRUE aspect (full width,
