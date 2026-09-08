@@ -43,6 +43,7 @@ struct LiveStreamView: View {
     // Doorpanel screen via the relay). Usable any time from the full-screen viewer, no ring needed.
     @StateObject private var soundboard = DoorbellSoundboard()
     @State private var showResponses = false
+    @State private var showDeterrent = false
 
     enum StreamMode: String, CaseIterable {
         case live = "Live"
@@ -51,6 +52,8 @@ struct LiveStreamView: View {
 
     private var isBirdseye: Bool { camera.name == "birdseye" }
     private var isDoorbell: Bool { camera.name == "doorbell" }
+    /// Only the driveway has the WLED lights + Reolink siren + speaker wired to the deterrent webhooks.
+    private var hasDeterrent: Bool { camera.name == "Front_Driveway" }
 
     var body: some View {
         ZStack {
@@ -115,6 +118,10 @@ struct LiveStreamView: View {
             DoorbellResponsesSheet(soundboard: soundboard)
         }
         .onChange(of: showResponses) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
+        .sheet(isPresented: $showDeterrent) {
+            DeterrentSheet().environmentObject(appState)
+        }
+        .onChange(of: showDeterrent) { _, shown in shown ? revealChrome() : scheduleHideChrome() }
     }
 
 
@@ -434,6 +441,11 @@ struct LiveStreamView: View {
         if isDoorbell {
             items.append(AnyView(actionButton(icon: "megaphone.fill", label: "Responses") {
                 showResponses = true
+            }))
+        }
+        if hasDeterrent {
+            items.append(AnyView(actionButton(icon: "exclamationmark.shield.fill", label: "Deterrent") {
+                showDeterrent = true
             }))
         }
 

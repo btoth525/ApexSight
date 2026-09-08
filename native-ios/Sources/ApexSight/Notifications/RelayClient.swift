@@ -195,6 +195,22 @@ enum RelayClient {
                        body: AICamerasBody(pairing_code: pairingCode, disabled: disabled))
     }
 
+    private struct DeterrentBody: Encodable {
+        let pairing_code: String
+        let action: String
+        let seconds: Int?
+        let file: String?
+    }
+
+    /// Fire a Front Driveway deterrent (cop lights / siren / voice / combos) via the relay, which
+    /// forwards to the matching HA webhook locally — the app never needs an HA URL or token, just the
+    /// household pairing code it already has.
+    static func deterrent(relayURL: String, pairingCode: String, action: String,
+                          seconds: Int? = nil, file: String? = nil) async throws {
+        try await post(relayURL: relayURL, path: "/v1/deterrent",
+                       body: DeterrentBody(pairing_code: pairingCode, action: action, seconds: seconds, file: file))
+    }
+
     /// Tell the relay which cameras have notifications turned OFF entirely, so app-closed pushes
     /// for those cameras are suppressed at the relay — the in-app per-camera toggle otherwise only
     /// gates foreground delivery, letting closed-app pushes for a muted camera slip through.
