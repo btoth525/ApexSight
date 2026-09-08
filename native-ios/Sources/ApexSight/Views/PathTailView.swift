@@ -124,32 +124,66 @@ struct PathTailCanvas: View {
 }
 
 
-/// A "tracking lock" box drawn on the frame at a lifecycle beat's normalized position — shown when
-/// the user taps a step in the timeline, so the object is boxed exactly where it was at that moment.
-/// Maps with a bare `n * size` onto the same fitted rect the tail uses (zero offset), so it stays
-/// aligned through pinch-zoom in the fullscreen viewer.
+/// Verkada-style "lock-on" box for a tapped lifecycle beat: thin corner brackets (not a heavy
+/// rectangle) that snap onto the object, a faint body outline, and a tag chip with the label +
+/// confidence. Maps with a bare `n * size` onto the same fitted rect the tail uses, so it stays
+/// aligned through pinch-zoom.
 struct BeatBoxView: View {
     let box: CGRect        // normalized [x, y, w, h] on the full detect frame
     let size: CGSize
+    var label: String? = nil
+    var score: Double? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appear = false
+    @State private var locked = false
 
     var body: some View {
         let r = CGRect(x: box.minX * size.width, y: box.minY * size.height,
-                       width: max(box.width * size.width, 6), height: max(box.height * size.height, 6))
-        let corner = min(6, min(r.width, r.height) / 3)
+                       width: max(box.width * size.width, 16), height: max(box.height * size.height, 16))
+        let bracket = max(min(r.width, r.height) * 0.28, 7)
+        let tint = GlassTheme.accent
         ZStack {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(GlassTheme.accent.opacity(0.14))
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .stroke(GlassTheme.accent, lineWidth: 2)
-                .shadow(color: GlassTheme.accent.opacity(0.8), radius: 6)
+            // Faint full-box outline so the whole extent reads; the brackets are the hero.
+            Rectangle()
+                .stroke(tint.opacity(0.30), lineWidth: 1)
+                .frame(width: r.width, height: r.height)
+                .position(x: r.midX, y: r.midY)
+            CornerBrackets(len: bracket)
+                .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .frame(width: r.width, height: r.height)
+                .position(x: r.midX, y: r.midY)
+                .shadow(color: tint.opacity(0.75), radius: 5)
+            if let label {
+                Text(tagText(label))
+                    .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(tint, in: Capsule())
+                    .fixedSize()
+                    .position(x: r.midX, y: max(r.minY - 11, 9))
+            }
         }
-        .frame(width: r.width, height: r.height)
-        .position(x: r.midX, y: r.midY)
-        .scaleEffect(appear ? 1 : 1.18)
-        .opacity(appear ? 1 : 0)
         .allowsHitTesting(false)
-        .onAppear { withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) { appear = true } }
+        .scaleEffect(locked ? 1 : 1.22, anchor: .center)
+        .opacity(locked ? 1 : 0)
+        .onAppear { withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.62)) { locked = true } }
+    }
+
+    private func tagText(_ label: String) -> String {
+        guard let score else { return label.uppercased() }
+        return "\(label.uppercased())  \(Int((score * 100).rounded()))%"
+    }
+}
+
+/// Four L-shaped corner brackets inside the given rect — the Verkada "reticle" look.
+struct CornerBrackets: Shape {
+    var len: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let l = min(len, min(rect.width, rect.height) / 2)
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + l)); p.addLine(to: CGPoint(x: rect.minX, y: rect.minY)); p.addLine(to: CGPoint(x: rect.minX + l, y: rect.minY))
+        p.move(to: CGPoint(x: rect.maxX - l, y: rect.minY)); p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY)); p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + l))
+        p.move(to: CGPoint(x: rect.maxX, y: rect.maxY - l)); p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY)); p.addLine(to: CGPoint(x: rect.maxX - l, y: rect.maxY))
+        p.move(to: CGPoint(x: rect.minX + l, y: rect.maxY)); p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY)); p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - l))
+        return p
     }
 }

@@ -509,7 +509,9 @@ struct FrigateClient {
     /// ~270 KB at 720 rather than an upscaled detect-stream crop).
     func recordingFrameURL(camera: String, at time: Double, height: Int = 720) -> URL {
         baseURL
-            .appending(path: "api/\(camera)/recordings/\(Int(time))/snapshot.jpg")
+            // Sub-second precision — Frigate casts frame_time via float(); truncating to a whole
+            // second put the recorded frame up to ~1s off the object's box (a moving car misaligns).
+            .appending(path: "api/\(camera)/recordings/\(String(format: "%.2f", time))/snapshot.jpg")
             .appending(queryItems: [URLQueryItem(name: "height", value: String(height))])
     }
 

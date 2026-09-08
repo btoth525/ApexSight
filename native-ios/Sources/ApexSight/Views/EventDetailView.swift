@@ -78,7 +78,8 @@ struct EventDetailView: View {
             // Maximize keeps the tail + path (and the selected-beat box) and zooms it all together.
             guard let url = trackingFrameURL else { return nil }
             return .tracked(url: url, points: event.pathData ?? [], snapshotTS: event.snapshotFrameTime,
-                            highlightTS: highlightTS, box: selectedBeat?.box)
+                            highlightTS: highlightTS, box: selectedBeat?.box,
+                            label: event.displayLabel, score: selectedBeat?.score)
         case .history:
             // The history scrubber has its own controls. Nothing to expand.
             return nil
@@ -310,7 +311,10 @@ struct EventDetailView: View {
                                     PathTailCanvas(points: event.pathData ?? [],
                                                    snapshotTS: event.snapshotFrameTime,
                                                    highlightTS: highlightTS, size: size)
-                                    if let box = selectedBeat?.box { BeatBoxView(box: box, size: size) }
+                                    if let box = selectedBeat?.box {
+                                        BeatBoxView(box: box, size: size, label: event.displayLabel, score: selectedBeat?.score)
+                                            .id(selectedBeat?.ts)
+                                    }
                                 }
                             }
                             .mediaAspectFrame(mediaAspect)
