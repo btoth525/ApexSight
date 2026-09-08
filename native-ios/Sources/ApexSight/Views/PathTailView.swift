@@ -190,3 +190,21 @@ struct CornerBrackets: Shape {
         return p
     }
 }
+
+
+/// Object position (bottom-centre, normalized) linearly interpolated to time `t` along the path —
+/// used to advance the selected-beat box to where the object actually is in the recorded frame
+/// (Frigate's recordings run slightly ahead of the detection boxes).
+func pathPosition(_ pts: [PathPoint], at t: Double) -> CGPoint {
+    let s = pts.sorted { $0.ts < $1.ts }
+    guard let first = s.first else { return CGPoint(x: 0.5, y: 0.5) }
+    if t <= first.ts { return CGPoint(x: first.x, y: first.y) }
+    guard let last = s.last else { return CGPoint(x: first.x, y: first.y) }
+    if t >= last.ts { return CGPoint(x: last.x, y: last.y) }
+    for i in 1..<s.count where s[i].ts >= t {
+        let a = s[i - 1], b = s[i]
+        let f = (t - a.ts) / max(1e-6, b.ts - a.ts)
+        return CGPoint(x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y))
+    }
+    return CGPoint(x: last.x, y: last.y)
+}

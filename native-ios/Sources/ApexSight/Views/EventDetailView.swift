@@ -64,10 +64,26 @@ struct EventDetailView: View {
         }
         return client.eventCleanSnapshotURL(id: event.id)
     }
-    /// Normalized point the inline Tracking view zooms toward: the tapped beat's box centre, else the
+    /// Frigate's recorded frames run ~this far AHEAD of the detection boxes, so the box is advanced
+    /// this many seconds along the path to land on the object in the shown recorded frame. Tunable.
+    private static let recordingLead: Double = 1.0
+
+    /// The selected beat's box, ADVANCED along the path to where the object is in the recorded frame.
+    private var trackingBox: CGRect? {
+        guard let beat = selectedBeat, let box0 = beat.box else { return nil }
+        let pts = event.pathData ?? []
+        guard !pts.isEmpty else { return box0 }
+        let pos = pathPosition(pts, at: beat.ts + Self.recordingLead)   // bottom-centre
+        return CGRect(x: pos.x - box0.width / 2, y: pos.y - box0.height, width: box0.width, height: box0.height)
+    }
+    /// The tail's highlight ring rides the same advanced moment so it too sits on the object.
+    private var trackingHighlightTS: Double? {
+        selectedBeat.map { $0.ts + Self.recordingLead }
+    }
+    /// Normalized point the inline Tracking view zooms toward: the advanced box centre, else the
     /// object's position in the best frame, else the path centroid, else centre.
     private var trackingFocus: CGPoint {
-        if let b = selectedBeat?.box { return CGPoint(x: b.midX, y: b.midY) }
+        if let b = trackingBox { return CGPoint(x: b.midX, y: b.midY) }
         let pts = event.pathData ?? []
         if let ts = event.snapshotFrameTime, let p = pts.min(by: { abs($0.ts - ts) < abs($1.ts - ts) }) {
             return CGPoint(x: p.x, y: p.y)
@@ -92,7 +108,7 @@ struct EventDetailView: View {
             // Maximize keeps the tail + path (and the selected-beat box) and zooms it all together.
             guard let url = trackingFrameURL else { return nil }
             return .tracked(url: url, points: event.pathData ?? [], snapshotTS: event.snapshotFrameTime,
-                            highlightTS: highlightTS, box: selectedBeat?.box,
+                            highlightTS: trackingHighlightTS, box: trackingBox,
                             label: event.displayLabel, score: selectedBeat?.score)
         case .history:
             // The history scrubber has its own controls. Nothing to expand.
@@ -324,8 +340,8 @@ struct EventDetailView: View {
                                 ZStack {
                                     PathTailCanvas(points: event.pathData ?? [],
                                                    snapshotTS: event.snapshotFrameTime,
-                                                   highlightTS: highlightTS, size: size)
-                                    if let box = selectedBeat?.box {
+                                                   highlightTS: trackingHighlightTS, size: size)
+                                    if let box = trackingBox {
                                         BeatBoxView(box: box, size: size, label: event.displayLabel, score: selectedBeat?.score)
                                             .id(selectedBeat?.ts)
                                     }
