@@ -66,7 +66,7 @@ struct EventDetailView: View {
     }
     /// Frigate's recorded frames run ~this far AHEAD of the detection boxes, so the box is advanced
     /// this many seconds along the path to land on the object in the shown recorded frame. Tunable.
-    private static let recordingLead: Double = 1.0
+    private static let recordingLead: Double = 0.7
 
     /// The selected beat's box, ADVANCED along the path to where the object is in the recorded frame.
     private var trackingBox: CGRect? {
