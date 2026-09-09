@@ -65,7 +65,16 @@ struct DoorbellCallView: View {
         }
         .preferredColorScheme(.dark)
         .task { if autoAnswer { beginListening() } else { startRinging() } }
-        .onDisappear { ringTask?.cancel() }
+        // Ending the CallKit call here — not only in `end()` — is what keeps the doorbell ringing.
+        // The call UI can go away without End ever being tapped (the cover is dismissed by
+        // `.apexDoorbellEnded`, by a deep link, or by the view being torn down), and a doorbell
+        // call has no remote party to hang it up. Any leftover live call made every subsequent
+        // ring look like a duplicate and got it killed silently. `endCurrentCall()` no-ops when
+        // there is nothing live, so this is safe to run on every dismissal.
+        .onDisappear {
+            ringTask?.cancel()
+            DoorbellCallManager.shared.endCurrentCall()
+        }
     }
 
     private var header: some View {

@@ -23,6 +23,17 @@ final class DoorbellCallManager: NSObject {
     private var currentCallID: UUID?
     /// True once the current call was answered — the ring timeout must never end a live call.
     private var callAnswered = false
+    /// When the current call was reported. A doorbell "call" has no remote party to hang up, so
+    /// nothing ends it except an explicit End tap — answer one and walk away (lock the phone, put
+    /// it down) and it stays live FOREVER. `currentCallID` then never clears, every later ring is
+    /// treated as a duplicate and silently killed, and the doorbell stops ringing that phone until
+    /// the app is relaunched. This timestamp is what lets a stale call be recognised and cleared.
+    private var callStartedAt: Date?
+    /// Backstop that ends an ANSWERED call so it cannot wedge the ring path forever.
+    private var answeredTimeoutTask: Task<Void, Never>?
+    /// Longest a doorbell call may live. Well past any real doorstep conversation, and far short of
+    /// "until the app restarts" — which is how long the wedge used to last.
+    private static let maxCallLifetime: TimeInterval = 300
     /// Ends an unanswered ring after a grace period. Without this a missed ring left
     /// `currentCallID` set forever, so every LATER ring was treated as a "duplicate" and dropped —
     /// and dropping a VoIP push without reporting a call gets the app BLACKLISTED from VoIP pushes
@@ -76,9 +87,24 @@ final class DoorbellCallManager: NSObject {
     /// satisfies the rule without disturbing the live call (different UUID).
     private func reportIncomingDoorbell(completion: @escaping () -> Void) {
         let id = UUID()
+        // Before anything else: if the "live" call is older than any real doorstep conversation, it
+        // is a wedge, not a call. Clear it so THIS ring is treated as fresh and actually rings.
+        // Without this, one answered-and-abandoned call silences the doorbell indefinitely.
+        if let stale = currentCallID,
+           let since = callStartedAt,
+           Date().timeIntervalSince(since) > Self.maxCallLifetime {
+            diag("clearing stale call (\(Int(Date().timeIntervalSince(since)))s old) before reporting new ring")
+            provider.reportCall(with: stale, endedAt: nil, reason: .failed)
+            currentCallID = nil
+            callStartedAt = nil
+            callAnswered = false
+            ringTimeoutTask?.cancel()
+            answeredTimeoutTask?.cancel()
+        }
         let duplicate = currentCallID != nil
         if !duplicate {
             currentCallID = id
+            callStartedAt = Date()
             callAnswered = false
         }
         let update = CXCallUpdate()
@@ -94,11 +120,15 @@ final class DoorbellCallManager: NSObject {
             if duplicate {
                 // Rule satisfied (we reported); now clear the extra call so only the original
                 // keeps ringing. Its UUID differs from the live call's, so this can't end it.
+                self.diag("ring suppressed as duplicate — a call is already live")
                 self.provider.reportCall(with: id, endedAt: nil, reason: .answeredElsewhere)
-            } else if error != nil {
+            } else if let error {
                 // A failed report must not leave a dead ID behind (it would block future rings).
+                self.diag("reportNewIncomingCall FAILED: \(error.localizedDescription)", level: .error)
                 self.currentCallID = nil
+                self.callStartedAt = nil
             } else {
+                self.diag("CallKit ringing")
                 self.scheduleRingTimeout(for: id)
             }
             completion()
@@ -120,6 +150,44 @@ final class DoorbellCallManager: NSObject {
                 guard self.currentCallID == id, !self.callAnswered else { return }
                 self.provider.reportCall(with: id, endedAt: nil, reason: .unanswered)
                 self.currentCallID = nil
+                self.callStartedAt = nil
+            }
+        }
+    }
+
+    /// End an ANSWERED call once it has outlived any plausible doorstep conversation.
+    ///
+    /// The ring timeout deliberately never touches an answered call — but a doorbell call has no
+    /// remote party, so answering one and simply walking away left it live forever. That kept
+    /// `currentCallID` set, which made every subsequent ring look like a duplicate and got it
+    /// killed on arrival: the doorbell went silent on that phone with nothing in any log to say so.
+    /// This is the backstop that makes that state impossible rather than merely unlikely.
+    private func scheduleAnsweredTimeout(for id: UUID) {
+        answeredTimeoutTask?.cancel()
+        answeredTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.maxCallLifetime * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            await MainActor.run {
+                guard self.currentCallID == id else { return }
+                self.diag("auto-ending answered call after \(Int(Self.maxCallLifetime))s so it can't wedge future rings")
+                self.provider.reportCall(with: id, endedAt: nil, reason: .remoteEnded)
+                self.currentCallID = nil
+                self.callStartedAt = nil
+                self.callAnswered = false
+                NotificationCenter.default.post(name: .apexDoorbellEnded, object: nil)
+            }
+        }
+    }
+
+    /// Record a doorbell-call event in the app's own log so the next "my phone didn't ring" is
+    /// answerable from `/v1/diag` instead of by inference. Hops to the main actor rather than
+    /// assuming it: this is called from PushKit and CXProvider callbacks.
+    private func diag(_ message: String, level: DiagnosticLog.Level = .info) {
+        Task { @MainActor in
+            switch level {
+            case .error:   DiagnosticLog.shared.error("doorbell-call", message)
+            case .warning: DiagnosticLog.shared.warning("doorbell-call", message)
+            case .info:    DiagnosticLog.shared.info("doorbell-call", message)
             }
         }
     }
@@ -140,6 +208,10 @@ final class DoorbellCallManager: NSObject {
         // Also tell CallKit directly so the UI clears even if the transaction races.
         provider.reportCall(with: id, endedAt: nil, reason: .remoteEnded)
         currentCallID = nil
+        callStartedAt = nil
+        callAnswered = false
+        ringTimeoutTask?.cancel()
+        answeredTimeoutTask?.cancel()
     }
 }
 
@@ -182,6 +254,10 @@ extension DoorbellCallManager: PKPushRegistryDelegate {
                       for type: PKPushType,
                       completion: @escaping () -> Void) {
         guard type == .voIP else { completion(); return }
+        // First line of the black box: this proves the push REACHED the phone. Its absence after a
+        // relay that logged a successful send is the difference between "APNs never delivered it"
+        // and "we delivered it and the app dropped it" — which used to take a forensic session.
+        diag("VoIP push received")
         // Report to CallKit immediately — required, or the app is killed for swallowing a VoIP push.
         reportIncomingDoorbell(completion: completion)
         // Kick the on-demand doorbell encoder awake now, while the phone rings — so the live video
@@ -195,8 +271,10 @@ extension DoorbellCallManager: PKPushRegistryDelegate {
 extension DoorbellCallManager: CXProviderDelegate {
     func providerDidReset(_ provider: CXProvider) {
         currentCallID = nil
+        callStartedAt = nil
         callAnswered = false
         ringTimeoutTask?.cancel()
+        answeredTimeoutTask?.cancel()
         // Clear the cold-launch answer flag too — a stale one would make MainTabView replay a
         // phantom "answered" into a full-screen call UI for a call that no longer exists.
         pendingAnswer = false
@@ -210,15 +288,20 @@ extension DoorbellCallManager: CXProviderDelegate {
         // on appear and replays the answer.
         callAnswered = true
         ringTimeoutTask?.cancel()
+        // An answered call still needs an end, or it wedges the ring path — see the doc comment.
+        if let id = currentCallID { scheduleAnsweredTimeout(for: id) }
         pendingAnswer = true
+        diag("call answered")
         NotificationCenter.default.post(name: .apexDoorbellAnswered, object: nil)
         action.fulfill()
     }
 
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         currentCallID = nil
+        callStartedAt = nil
         callAnswered = false
         ringTimeoutTask?.cancel()
+        answeredTimeoutTask?.cancel()
         pendingAnswer = false
         NotificationCenter.default.post(name: .apexDoorbellEnded, object: nil)
         action.fulfill()
