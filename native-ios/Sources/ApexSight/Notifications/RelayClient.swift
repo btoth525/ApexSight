@@ -32,6 +32,7 @@ enum RelayClient {
         let voip_token: String
         let pairing_code: String
         let environment: String
+        let device_name: String   // names the phone in the relay's ring log (relay ≥ 1.27.0)
     }
 
     private struct TestBody: Encodable {
@@ -183,9 +184,18 @@ enum RelayClient {
     }
 
     /// Register this device's PushKit VoIP token so the relay can ring it (CallKit) on a doorbell press.
-    static func registerVoIP(relayURL: String, voipToken: String, pairingCode: String, environment: String) async throws {
+    ///
+    /// `deviceName` is sent so the relay's ring log can say WHICH phone Apple accepted a ring for.
+    /// Without it a household's tokens are opaque 64-hex strings, and "sent to 2 phones" cannot be
+    /// checked against the two phones that actually exist — which is exactly the ambiguity that
+    /// made the 2026-09-08 miss so slow to pin down.
+    static func registerVoIP(relayURL: String, voipToken: String, pairingCode: String,
+                             environment: String, deviceName: String = "") async throws {
         try await post(relayURL: relayURL, path: "/v1/register-voip",
-                       body: RegisterVoIPBody(voip_token: voipToken, pairing_code: pairingCode.uppercased(), environment: environment))
+                       body: RegisterVoIPBody(voip_token: voipToken,
+                                              pairing_code: pairingCode.uppercased(),
+                                              environment: environment,
+                                              device_name: deviceName))
     }
 
     /// Tell the relay which cameras have AI descriptions in notifications turned OFF, so the

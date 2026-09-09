@@ -241,7 +241,8 @@ extension DoorbellCallManager: PKPushRegistryDelegate {
             let pairing = DeviceTokenStore.ensurePairingCode()
             guard !relayURL.isEmpty, !pairing.isEmpty else { return }
             try? await RelayClient.registerVoIP(relayURL: relayURL, voipToken: hex, pairingCode: pairing,
-                                                environment: APNSEnvironment.current)
+                                                environment: APNSEnvironment.current,
+                                                deviceName: DeviceTokenStore.deviceName)
         }
     }
 
