@@ -43,7 +43,10 @@ struct RecordingContextPlayerView: View {
             timeline
             controls
         }
-        .task {
+        // Keyed so a REUSED view reloads for the new moment. `loadIfNeeded` already no-ops on an
+        // unchanged URL, but an un-keyed `.task` never re-runs at all — a recycled player would
+        // keep showing the previous review's footage under the new review's header.
+        .task(id: "\(camera)|\(Int(centerTime))") {
             guard let client = appState.client else { return }
             model.loadIfNeeded(client: client, url: client.recordingHLSURL(camera: camera, start: windowStart, end: requestWindowEnd))
             if let es = eventStart {

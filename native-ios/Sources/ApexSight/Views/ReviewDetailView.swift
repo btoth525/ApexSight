@@ -21,6 +21,14 @@ struct ReviewDetailView: View {
     /// Set only when this review's own snapshot belongs to a different moment (`ReviewStillPolicy`).
     @State private var pinnedStill: URL?
     @State private var loadingDetections = false
+    /// The detection the LIST ROW displayed, resolved through the same `ReviewMediaResolver` the row
+    /// used. Opening a row must land on the same object it was captioned with — resolving this
+    /// independently here is how the detail screen ended up describing a different moment.
+    /// Falls back to the synchronous answer until it lands, so nothing waits on the network.
+    @State private var resolvedPrimaryID: String?
+    private var primaryID: String? {
+        resolvedPrimaryID ?? FrigateClient.primaryDetectionID(of: review)
+    }
     /// Frigate's review API has no `description` field (measured: /api/review and
     /// /api/review/<id> return id, camera, start/end_time, severity, thumb_path,
     /// has_been_reviewed, data — nothing else), so this is populated purely from the payload the
@@ -65,11 +73,17 @@ struct ReviewDetailView: View {
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        // Resolve the row's detection FIRST, so every tab below describes the object the row was
+        // captioned with rather than whatever `thumb_time` alone would have picked.
         .task(id: review.id) {
+            resolvedPrimaryID = await ReviewMediaResolver.shared.primaryDetectionID(
+                for: review, client: appState.client)
+        }
+        .task(id: "\(review.id)|\(resolvedPrimaryID ?? "")") {
             // Object lifecycle timeline for the Tracking tab (primary detection; [] hides the rail).
             highlightTS = nil
             trackingBeats = []
-            guard let pid = FrigateClient.primaryDetectionID(of: review), let client = appState.client else { return }
+            guard let pid = primaryID, let client = appState.client else { return }
             loadingTracking = true
             trackingBeats = await client.objectTimeline(eventID: pid)
             loadingTracking = false
@@ -128,14 +142,16 @@ struct ReviewDetailView: View {
                     case .snapshot:
                         // Best CROPPED image of what was found (the primary detection), review
                         // thumbnail as the always-available fallback.
-                        if let pid = FrigateClient.primaryDetectionID(of: review),
+                        if let pid = primaryID,
                            let url = appState.client?.eventBestCropURL(id: pid, height: 1080) {
                             RemoteImage(url: url, contentMode: .fit, maxPixelSize: 1600, revalidate: review.endTime == nil,
-                                        fallbackURL: appState.client?.reviewThumbnailURL(review: review))
+                                        fallbackURL: appState.client?.reviewThumbnailURL(review: review,
+                                                                                          detectionID: primaryID))
                                 .snapshotFrame()
                         } else if let url = snapshotURL {
                             RemoteImage(url: url, contentMode: .fit, maxPixelSize: 1600, revalidate: review.endTime == nil,
-                                        fallbackURL: appState.client?.reviewThumbnailURL(review: review))
+                                        fallbackURL: appState.client?.reviewThumbnailURL(review: review,
+                                                                                          detectionID: primaryID))
                                 .snapshotFrame()
                         } else { mediaPlaceholder }
                     case .tracking:
@@ -214,8 +230,9 @@ struct ReviewDetailView: View {
     /// The object's own snapshot — right for most reviews, and the fallback when a pinned
     /// recording frame can't be served.
     private var objectStillURL: URL? {
-        appState.client?.reviewSnapshotURL(review: review)
-            ?? appState.client?.reviewThumbnailURL(review: review)
+        // Same detection the row showed (see `primaryID`).
+        appState.client?.reviewSnapshotURL(review: review, detectionID: primaryID)
+            ?? appState.client?.reviewThumbnailURL(review: review, detectionID: primaryID)
     }
 
     private var snapshotURL: URL? { pinnedStill ?? objectStillURL }
@@ -243,7 +260,7 @@ struct ReviewDetailView: View {
         // Strictly the primary detection: if it isn't loaded yet, show NO tail rather than
         // drawing a different object's path over the primary detection's frame. The clean
         // snapshot (keyed to `pid` directly) still renders; the tail fills in once loaded.
-        guard let pid = FrigateClient.primaryDetectionID(of: review) else { return detectionEvents.first }
+        guard let pid = primaryID else { return detectionEvents.first }
         return detectionEvents.first(where: { $0.id == pid })
     }
 
@@ -264,7 +281,7 @@ struct ReviewDetailView: View {
     /// The frame the Tracking tab shows: the RECORDED frame at the tapped beat, else the primary
     /// detection's clean best frame.
     private var trackingFrameURL: URL? {
-        guard let client = appState.client, let pid = FrigateClient.primaryDetectionID(of: review) else { return nil }
+        guard let client = appState.client, let pid = primaryID else { return nil }
         if let beat = selectedBeat {
             return client.recordingFrameURL(camera: review.camera, at: beat.ts, height: trackingCameraHeight)
         }

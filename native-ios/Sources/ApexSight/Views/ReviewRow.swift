@@ -15,6 +15,9 @@ struct ReviewRow: View {
     /// Hold the looping preview hidden until it can actually paint, so a not-yet-ready clip never
     /// composites a blank/partial frame over the poster.
     @State private var videoReady = false
+    /// Which detection this row is about, and the clip for it. Starts as the synchronous
+    /// `thumb_time` answer so the row is never empty, then refines — see `ReviewMediaResolver`.
+    @State private var plan = ReviewMediaPlan()
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -32,6 +35,17 @@ struct ReviewRow: View {
         .task(id: "\(review.id)|\(snapshotStillChanging)") {
             pinnedStill = await ReviewStillResolver.shared.pinnedStill(for: review,
                                                                        client: appState.client)
+        }
+        // Resolve WHICH detection this row is about, and whether it has a playable clip.
+        // Keyed on `review.id` so a recycled row can never keep showing the previous review's
+        // clip: the plan is reset to this review's own synchronous answer before anything awaits.
+        .task(id: review.id) {
+            videoReady = false
+            plan = ReviewMediaResolver.quickPlan(for: review, client: appState.client)
+            let resolved = await ReviewMediaResolver.shared.plan(for: review, client: appState.client)
+            guard !Task.isCancelled else { return }
+            if resolved.clipURL != plan.clipURL { videoReady = false }
+            plan = resolved
         }
     }
 
@@ -71,6 +85,46 @@ struct ReviewRow: View {
         }
         .cardStroke()
         .shadow(color: .black.opacity(0.22), radius: 9, y: 4)
+        .overlay(alignment: .bottom) {
+            if Self.showMediaDebug { mediaDebugBadge }
+        }
+    }
+
+    /// Opt-in on-device audit overlay for "this row is showing the wrong thing": the review id, the
+    /// detection actually chosen, and the exact video URL.
+    ///
+    /// **DEBUG-only AND default-off**, so it cannot appear in a TestFlight build even if the key is
+    /// somehow present. The durable version of this diagnostic is the one-line-per-review
+    /// `review-media` entry in `DiagnosticLog`, which survives to the relay and is controlled by
+    /// the existing Settings switch — read that first; this overlay is for eyeballing while scrolling.
+    /// Enable in the simulator with:
+    /// `xcrun simctl spawn booted defaults write group.com.brandontoth.apexsight apex.reviewMediaOverlay -bool YES`
+    private static var showMediaDebug: Bool {
+        #if DEBUG
+        return UserDefaults(suiteName: ApexAppGroup.identifier)?
+            .bool(forKey: "apex.reviewMediaOverlay") ?? false
+        #else
+        return false
+        #endif
+    }
+
+    private var mediaDebugBadge: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("rev \(review.id)")
+            Text("det \(plan.detectionID ?? "none") · \(plan.debug)")
+            Text((plan.clipURL?.path ?? "video: none (still only)")
+                 + (plan.clipVerified ? " ✓probed" : " ~unprobed"))
+        }
+        .font(.system(size: 8, weight: .medium, design: .monospaced))
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.black.opacity(0.72))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     /// Badge for Frigate's review-level GenAI rating, shown only above routine so the list stays
@@ -108,20 +162,10 @@ struct ReviewRow: View {
     /// recording frame can't be served (an aged-out segment must degrade to today's image, never
     /// to an empty card).
     private var objectStillURL: URL? {
-        appState.client?.reviewSnapshotURL(review: review)
-            ?? appState.client?.reviewThumbnailURL(review: review)
-    }
-
-    /// Crisp looping HD clip of the moment (the event's `/vod/event/<id>`) for the review's primary
-    /// detection — the living thumbnail, without the dithered-GIF noise. nil when there's no
-    /// resolvable detection; the static poster then stands alone.
-    private var previewClipURL: URL? {
-        guard let client = appState.client,
-              let detectionID = FrigateClient.primaryDetectionID(of: review) else { return nil }
-        // Clamped builder — the raw /vod/event serves a stationary object's ENTIRE (possibly hours-
-        // long) lifetime; this caps it to a short window so the loop is a preview, not an epic.
-        return client.eventPlaybackURL(id: detectionID, camera: review.camera,
-                                       start: review.startTime, end: review.endTime)
+        // Pinned to the SAME detection the clip plays, so the picture and the video can never
+        // describe two different objects in one row.
+        appState.client?.reviewSnapshotURL(review: review, detectionID: plan.detectionID)
+            ?? appState.client?.reviewThumbnailURL(review: review, detectionID: plan.detectionID)
     }
 
     @ViewBuilder
@@ -138,11 +182,15 @@ struct ReviewRow: View {
                 RemoteImage(url: url, contentMode: .fit, maxPixelSize: 700,
                             revalidate: snapshotStillChanging,
                             fallbackURL: pinnedStill == nil
-                                ? appState.client?.reviewThumbnailURL(review: review)
+                                ? appState.client?.reviewThumbnailURL(review: review,
+                                                                      detectionID: plan.detectionID)
                                 : objectStillURL)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Living thumbnail: the real footage loops (muted, HD) over the still.
-                if let clip = previewClipURL, let client = appState.client {
+                // `plan.clipURL` is nil when the event has no clip or the window holds no
+                // recording — the still then stands alone, which is the ONLY fallback. It never
+                // degrades to a previously loaded clip, because the plan is reset per review id.
+                if let clip = plan.clipURL, let client = appState.client {
                     LoopingVideoView(url: clip, client: client,
                                      onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { videoReady = true } })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

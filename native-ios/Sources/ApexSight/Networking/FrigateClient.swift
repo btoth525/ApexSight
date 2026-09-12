@@ -432,13 +432,16 @@ struct FrigateClient {
     /// `thumb_path` is a server filesystem path (`/media/frigate/clips/review/….webp`);
     /// the file is served at `/clips/review/…`. Falls back to the primary detection's
     /// thumbnail for old reviews without one.
-    func reviewThumbnailURL(review: FrigateReviewItem) -> URL? {
+    /// `detectionID` lets a caller that has already resolved the row's detection (see
+    /// `ReviewMediaResolver`) pin the image to the SAME one its clip uses. Omitting it keeps the
+    /// synchronous `thumb_time` pick, which is right for the large majority of reviews.
+    func reviewThumbnailURL(review: FrigateReviewItem, detectionID: String? = nil) -> URL? {
         // Prefer the chosen detection's own thumbnail — higher-res than the ~318x180 canonical
         // review `.webp`, right subject (thumb_time-selected), and present even when snapshots are
         // disabled. Fall back to the low-res canonical webp only when there's no detection to
         // resolve (build 140 pinned this to the webp for canonical-match; the user wants the
         // higher-res image back).
-        if let detectionID = Self.primaryDetectionID(of: review) {
+        if let detectionID = detectionID ?? Self.primaryDetectionID(of: review) {
             return eventThumbnailURL(id: detectionID)
         }
         if let thumbPath = review.thumbPath,
@@ -452,8 +455,9 @@ struct FrigateClient {
 
     /// A larger snapshot for the review detail view: the primary detection's full-frame
     /// snapshot (falls back to the cropped thumbnail when snapshots are disabled).
-    func reviewSnapshotURL(review: FrigateReviewItem) -> URL? {
-        guard let detectionID = Self.primaryDetectionID(of: review) else { return nil }
+    /// `detectionID` pins the image to an already-resolved detection — see `reviewThumbnailURL`.
+    func reviewSnapshotURL(review: FrigateReviewItem, detectionID: String? = nil) -> URL? {
+        guard let detectionID = detectionID ?? Self.primaryDetectionID(of: review) else { return nil }
         return eventSnapshotURL(id: detectionID)
     }
 
@@ -468,7 +472,14 @@ struct FrigateClient {
     static func primaryDetectionID(of review: FrigateReviewItem) -> String? {
         let ids = review.data?.detections ?? []
         guard !ids.isEmpty else { return nil }
-        if let tt = review.data?.thumbTime {
+        return chooseByThumbTime(ids: ids, thumbTime: review.data?.thumbTime)
+    }
+
+    /// The `thumb_time` rule on its own, so it can also act as the TIEBREAKER once a caller has
+    /// narrowed the candidates (see `titleMatchedDetectionID`).
+    static func chooseByThumbTime(ids: [String], thumbTime: Double?) -> String? {
+        guard !ids.isEmpty else { return nil }
+        if let tt = thumbTime {
             let atOrBefore = ids.filter { eventEpoch($0) <= tt + 1 }
             if let best = atOrBefore.max(by: { eventEpoch($0) < eventEpoch($1) }) { return best }
             // thumb_time precedes every detection (rare) → the closest one.
@@ -476,6 +487,33 @@ struct FrigateClient {
         }
         // No thumb_time yet (in-progress review) → earliest = the trigger detection (old behavior).
         return ids.min { eventEpoch($0) < eventEpoch($1) }
+    }
+
+    /// The detection that actually carries the NAME the row is captioned with, when the review has
+    /// one and its detections disagree about who owns it.
+    ///
+    /// A review's `sub_labels` is deduplicated and NOT positionally paired with `detections`, so
+    /// `thumb_time` alone can land on a detection that has no sub-label at all. Measured live
+    /// 2026-09-12: of 174 reviews, 7 had a sub-label AND more than one detection, and on **4 of
+    /// them the `thumb_time` pick did not carry the title's name** — a row captioned "Dog — Chico"
+    /// whose still and clip came from the *person* beside the dog, and a doorbell row captioned
+    /// "Person — Brandon" resolved to an unnamed package detection.
+    ///
+    /// Deliberately narrow. When the review has no sub-label, or no detection carries it, this
+    /// returns nil and `thumb_time` decides — that rule was measured over 157 reviews for the
+    /// STILL (see `ReviewStillPolicy`) and beats label-matching on the majority, so it must keep
+    /// deciding everything this function can't speak to. Multi-object reviews with no sub-label
+    /// ("Car, Person") have no single title label to match and are intentionally left alone.
+    static func titleMatchedDetectionID(of review: FrigateReviewItem,
+                                       among events: [FrigateEvent]) -> String? {
+        let subs = (review.data?.subLabels ?? []).filter { !$0.isEmpty }
+        guard let want = subs.first else { return nil }
+        let carriers = events.filter {
+            $0.subLabel?.caseInsensitiveCompare(want) == .orderedSame
+                || $0.recognizedLicensePlate?.caseInsensitiveCompare(want) == .orderedSame
+        }
+        guard !carriers.isEmpty else { return nil }
+        return chooseByThumbTime(ids: carriers.map(\.id), thumbTime: review.data?.thumbTime)
     }
 
     private static func eventEpoch(_ id: String) -> Double {
@@ -521,35 +559,42 @@ struct FrigateClient {
         baseURL.appending(path: "vod/event/\(id)/master.m3u8")
     }
 
-    /// Longest event we'll hand to `/vod/event/<id>` before clamping to a time range instead.
+    /// Longest window we'll ever request for a review's preview clip.
     private static let maxEventClipSeconds: Double = 120
-    /// Lead-in kept before the event's start so the object doesn't pop in on the first frame.
+    /// Lead-in kept before the moment's start so the object doesn't pop in on the first frame.
     private static let eventClipLeadIn: Double = 5
+    /// Shortest window we'll request. Frigate 404s a ZERO-LENGTH range (measured 2026-09-12: a
+    /// zero-duration Garage review at 13:33:37 and the 15:27 driveway car both returned 404 at
+    /// `end == start`), and recording segments are ~10s, so a sub-second review still needs a
+    /// real span to resolve to any segment at all.
+    private static let minEventClipSeconds: Double = 12
 
-    /// Playback URL for an event, clamped so a long-lived tracked object doesn't open as an
-    /// hours-long clip.
+    /// Playback URL for the moment a REVIEW describes, always bounded to that review's own window.
     ///
-    /// `/vod/event/<id>` serves the object's ENTIRE lifetime, and Frigate keeps a stationary
-    /// object alive for as long as it can see it — measured on this server, a parked car on the
-    /// driveway produced a single 37.8-minute event (528 segments), and 12 of 199 events in 24h
-    /// ran over two minutes. Opening that endpoint means waiting on a 38-minute playlist whose
-    /// interesting moment is at the very start, which reads as broken footage.
+    /// **This used to serve the wrong footage on ~1 row in 4.** The cap was applied to the
+    /// *review's* duration while the URL it fell through to — `/vod/event/<id>` — serves the
+    /// *event's* ENTIRE lifetime. Frigate keeps a stationary object's track alive for hours and
+    /// re-links it into fresh reviews, so a short review pointing at a long-lived event took the
+    /// "it's short, use the event endpoint" branch and played the whole track.
     ///
-    /// Anything under the cap keeps using Frigate's purpose-built event endpoint, which is
-    /// frame-accurate to the object. Only long events fall back to a time-range VOD anchored a
-    /// few seconds before the object first appeared — the part that's actually worth seeing.
+    /// Measured against the live server 2026-09-12: **41 of 173 reviews** hit this. Worst case was
+    /// a Front_Driveway review lasting **13.7 seconds** whose primary event ran **3h 09m** — the
+    /// row's loop opened a playlist starting at 11:30:26 for a review about 14:39:17, i.e. 189
+    /// minutes of unrelated footage before the moment the row is captioned with.
+    ///
+    /// So: derive the window from the review, never from the event's track length. `/vod/event`
+    /// survives only as the last resort when there's no usable start time to build a range from.
     func eventPlaybackURL(id: String, camera: String, start: Double?, end: Double?) -> URL {
-        // An in-progress review has no end yet; treat it as "now" so a long-lived (parked-object)
-        // event is still CLAMPED to a short recording window instead of falling through to the
-        // uncapped live /vod/event playlist — which mis-composites in the row preview AND is the
-        // unbounded Frigate request class that took the API down for hours.
+        guard let start, start.isFinite, start > 0 else { return eventVodURL(id: id) }
+        // An in-progress review has no end yet; treat it as "now" so it stays bounded rather than
+        // falling through to an uncapped playlist — the unbounded-request class that took the
+        // Frigate API down for hours (see [[apexsight-server-wedge-2026-08-14]]).
         let effectiveEnd = end ?? Date().timeIntervalSince1970
-        guard let start, effectiveEnd - start > Self.maxEventClipSeconds else {
-            return eventVodURL(id: id)
-        }
+        let windowEnd = min(max(effectiveEnd, start + Self.minEventClipSeconds),
+                            start + Self.maxEventClipSeconds)
         return recordingHLSURL(camera: camera,
                                start: start - Self.eventClipLeadIn,
-                               end: start + Self.maxEventClipSeconds)
+                               end: windowEnd)
     }
 
     /// Lightweight preview "frames" Frigate keeps for a recording range — its documented
@@ -1077,6 +1122,39 @@ struct FrigateClient {
 
         let (_, response) = try await session.data(for: request)
         try validate(response)
+    }
+
+    /// Whether Frigate will actually serve this URL.
+    ///
+    /// **Must be GET.** Frigate answers **405 to HEAD** on snapshot/thumbnail URLs (verified
+    /// against 0.18.0 on 2026-09-12), so a HEAD-based check reads every image as missing and would
+    /// strip away pictures that render fine. A one-byte `Range` keeps it cheap where the server
+    /// honours it; `apiSession`'s resource cap bounds it where it doesn't.
+    func urlIsServed(_ url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        applyAuth(to: &request)
+        guard let (_, response) = try? await Self.apiSession.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode)
+    }
+
+    /// Whether an HLS VOD window contains any actual video.
+    ///
+    /// A `master.m3u8` is only a variant list: measured 2026-09-12, a range with **no recordings
+    /// still returns 200** with ~150 bytes and zero `#EXTINF` lines. The variant `index.m3u8` is
+    /// the only response that distinguishes "there is footage here" from "this range is empty",
+    /// so that is what gets probed. Works for both `/vod/<camera>/…` and `/vod/event/<id>/…`.
+    func hlsWindowHasVideo(_ masterURL: URL) async -> Bool {
+        let indexURL = masterURL.deletingLastPathComponent().appending(path: "index.m3u8")
+        var request = URLRequest(url: indexURL)
+        applyAuth(to: &request)
+        guard let (data, response) = try? await Self.apiSession.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let text = String(data: data, encoding: .utf8) else { return false }
+        return text.contains("#EXTINF")
     }
 
     private func applyAuth(to request: inout URLRequest) {

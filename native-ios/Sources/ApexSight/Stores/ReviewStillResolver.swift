@@ -36,12 +36,30 @@ final class ReviewStillResolver {
 
     private init() {}
 
+    /// Remembers which pinned frame URLs Frigate actually serves, so the reachability probe below
+    /// costs one request per distinct moment rather than one per row appearance.
+    private var served: [String: Bool] = [:]
+
     /// The URL to show instead of the review's own snapshot, or nil to keep the existing one.
     /// Built against the CURRENT client, so it always names the host the app is talking to now.
     func pinnedStill(for review: FrigateReviewItem, client: FrigateClient?) async -> URL? {
         guard let client else { return nil }
         guard let pinned = await pinnedFrameTime(for: review, client: client) else { return nil }
-        return client.recordingFrameURL(camera: review.camera, at: pinned)
+        let url = client.recordingFrameURL(camera: review.camera, at: pinned)
+
+        // **A pinned frame is only an improvement if the recording is actually there.** Pinning is
+        // a swap away from the object's own (present, but possibly wrong-moment) snapshot, so
+        // pointing it at a moment Frigate can't serve trades a slightly-wrong picture for a broken
+        // one. Cameras that never record (Frigate's `Front_Driveway_LPR` plate-reader helper) and
+        // moments whose segments have aged out both land here.
+        //
+        // GET, never HEAD — Frigate answers **405 to HEAD** on snapshot URLs (verified 2026-09-12),
+        // so a HEAD probe would reject every frame and silently disable pinning altogether.
+        let key = url.absoluteString
+        if let known = served[key] { return known ? url : nil }
+        let ok = await client.urlIsServed(url)
+        served[key] = ok
+        return ok ? url : nil
     }
 
     private func pinnedFrameTime(for review: FrigateReviewItem, client: FrigateClient) async -> Double? {
@@ -49,8 +67,12 @@ final class ReviewStillResolver {
         if isFinished, let cached = cache[review.id] { return cached }
         if let running = inFlight[review.id] { return await running.value }
 
+        // The SAME detection the row's clip uses, so the still and the video can never describe
+        // two different moments (that divergence is half of "shows the wrong history").
+        let detectionID = await ReviewMediaResolver.shared.primaryDetectionID(for: review,
+                                                                             client: client)
         let task = Task<Double?, Never> { [weak self] in
-            let pinned = await Self.resolve(review: review, client: client)
+            let pinned = await Self.resolve(review: review, detectionID: detectionID, client: client)
             if isFinished { self?.cache[review.id] = pinned }
             self?.inFlight[review.id] = nil
             return pinned
@@ -63,13 +85,15 @@ final class ReviewStillResolver {
     /// belong to a different Frigate.
     func reset() {
         cache.removeAll()
+        served.removeAll()
         inFlight.values.forEach { $0.cancel() }
         inFlight.removeAll()
     }
 
     private nonisolated static func resolve(review: FrigateReviewItem,
+                                            detectionID: String?,
                                             client: FrigateClient) async -> Double? {
-        guard let detectionID = FrigateClient.primaryDetectionID(of: review) else { return nil }
+        guard let detectionID else { return nil }
         guard let event = try? await client.event(id: detectionID) else { return nil }
 
         // An in-progress review's window runs up to NOW; a frame chosen moments ago belongs to it.
