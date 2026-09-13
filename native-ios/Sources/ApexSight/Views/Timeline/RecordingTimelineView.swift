@@ -55,6 +55,12 @@ struct RecordingTimelineView: View {
     @State private var momentFocusID: String?
     /// Local day the follow loop last made sure was loaded.
     @State private var followedDay: Double = 0
+    /// The moment the player still has to land on. Set by every jump, cleared only when AVPlayer
+    /// confirms the seek completed. While it is set the follow loop stays quiet, because the
+    /// player's clock still reports the OLD position — and an HLS item seeked before its playlist
+    /// has parsed clamps to the start, which is exactly how "tap a moment" turned into "play the
+    /// top of the hour".
+    @State private var pendingSeek: Double?
 
     // Playback
     @State private var playingTime: Double?
@@ -100,20 +106,28 @@ struct RecordingTimelineView: View {
                               onScrubEnd: { time in scrubEnded(at: time) },
                               onTapEvent: { event in jump(to: event) })
                     .frame(height: 132)
-                categoryFilters
-                    .padding(.vertical, GlassTheme.Space.s)
-                dayChips
-                    .padding(.bottom, GlassTheme.Space.s)
-                moments
-                    .padding(.top, GlassTheme.Space.xs)
-                if let loadError { errorLine(loadError) }
-                if let feedback { feedbackLine(feedback) }
-                Spacer(minLength: 0)
+                // Everything under the ruler scrolls, so no phone — and no tab bar — can ever push
+                // the Moments strip off the bottom where its taps stop landing.
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        categoryFilters
+                            .padding(.vertical, GlassTheme.Space.s)
+                        dayChips
+                            .padding(.bottom, GlassTheme.Space.s)
+                        moments
+                            .padding(.top, GlassTheme.Space.xs)
+                        if let loadError { errorLine(loadError) }
+                        if let feedback { feedbackLine(feedback) }
+                    }
+                    .padding(.bottom, GlassTheme.Space.l)
+                }
             }
         }
         .navigationTitle(titleize(camera.name))
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        // An instrument, not a page: the tab bar would sit on top of the transport row.
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { actionsMenu }
         }
@@ -126,6 +140,9 @@ struct RecordingTimelineView: View {
             if interacting { syncPreviewPlayer() }
         }
         .onChange(of: engine.visibleSeconds) { _, visible in storedVisibleSeconds = visible }
+        .onChange(of: clipModel.isReady) { _, ready in
+            if ready { performPendingSeek() }
+        }
         .onDisappear(perform: teardown)
         .sheet(item: $sharePayload) { payload in ShareSheet(items: payload.items) }
     }
@@ -560,6 +577,7 @@ struct RecordingTimelineView: View {
         let loadedRecordings = await recordings
         if loadedEvents == nil && loadedRecordings == nil {
             loadError = "Couldn't reach Frigate for that day."
+            return   // deliberately NOT cached: a retry or the next scroll into this day asks again
         }
         days[start] = DayData(events: loadedEvents ?? [],
                               motion: await motion,
@@ -663,16 +681,37 @@ struct RecordingTimelineView: View {
 
         if let window = loadedWindow, window.contains(time),
            clipModel.player != nil, !clipModel.hasError {
-            clipModel.seek(toOffset: time - window.lowerBound, andPlay: false)
-            applyRate()
+            seekWhenReady(to: time)
             return
         }
         let hourStart = floor(time / 3600) * 3600
         let hourEnd = min(hourStart + 3600, Date().timeIntervalSince1970 - 5)
         loadedWindow = hourStart...hourEnd
+        // Hold playback until the jump has landed; otherwise AVPlayer starts at the top of the
+        // hour the instant the playlist parses and the seek arrives a beat later.
+        clipModel.player?.rate = 0
         clipModel.load(client: client, url: client.recordingHLSURL(camera: camera.name, start: hourStart, end: hourEnd))
-        clipModel.seek(toOffset: time - hourStart, andPlay: false)   // honoured once the item is ready
-        applyRate()
+        seekWhenReady(to: time)
+    }
+
+    /// Land on `time` once the item can actually seek there. If it's ready now the seek goes
+    /// immediately; if not, `.onChange(of: clipModel.isReady)` finishes the job.
+    private func seekWhenReady(to time: Double) {
+        pendingSeek = time
+        guard clipModel.isReady else { return }
+        performPendingSeek()
+    }
+
+    private func performPendingSeek() {
+        guard let target = pendingSeek, let window = loadedWindow else { return }
+        clipModel.seek(toOffset: target - window.lowerBound) { finished in
+            Task { @MainActor in
+                // A newer jump superseded this one; its own completion owns the state now.
+                guard pendingSeek == target else { return }
+                pendingSeek = nil
+                if finished { applyRate() } else { performPendingSeek() }
+            }
+        }
     }
 
     /// Keeps the playhead on the picture: while playing, the ruler follows the player; when the
@@ -680,7 +719,7 @@ struct RecordingTimelineView: View {
     private func followPlayback() async {
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 200_000_000)
-            guard !engine.isInteracting, isPlaying,
+            guard !engine.isInteracting, isPlaying, pendingSeek == nil,
                   let window = loadedWindow, let player = clipModel.player, clipModel.isReady else { continue }
             let t = player.currentTime().seconds
             guard t.isFinite, t >= 0 else { continue }

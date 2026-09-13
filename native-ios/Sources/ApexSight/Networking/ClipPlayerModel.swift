@@ -101,6 +101,17 @@ final class ClipPlayerModel: ObservableObject {
         if play { player.play() }
     }
 
+    /// Seek that reports when the jump has actually LANDED. A caller driving a playhead from the
+    /// player's clock must not read `currentTime()` in between — during the seek it still says
+    /// where playback WAS. `finished` is false when a newer seek superseded this one.
+    func seek(toOffset seconds: Double, completion: @escaping (Bool) -> Void) {
+        guard let player else { completion(false); return }
+        player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
+                    toleranceBefore: .zero,
+                    toleranceAfter: CMTime(seconds: 2, preferredTimescale: 600),
+                    completionHandler: completion)
+    }
+
     /// Force (re)load — used by the timeline scrubber to jump to a new moment.
     func load(client: FrigateClient, url: URL) {
         configureAudioSession()
