@@ -114,11 +114,10 @@ struct OnboardingView: View {
                     // PillButtonStyle already fires a press tick; just advance.
                     withAnimation(pageAnimation) { page += 1 }
                 } else {
-                    // A distinct success notification marks finishing onboarding.
+                    // A distinct success notification marks finishing onboarding. Notification
+                    // permission is NOT asked here — there's no server yet, so nothing to alert
+                    // about; sign-in requests it in context (PushRegistrar.ensureRegistered).
                     Haptics.success()
-                    Task {
-                        _ = try? await NativeNotificationManager.requestPermission()
-                    }
                     hasCompletedOnboarding = true
                 }
             } label: {
@@ -136,9 +135,9 @@ struct OnboardingView: View {
             }
             .opacity(page < pages.count - 1 ? 1 : 0)
             // On the last page it's invisible — also stop it intercepting taps below
-            // "Get Started" (a mistap there would finish onboarding and skip the
-            // notification-permission prompt).
+            // "Get Started", and drop it from the VoiceOver tree (opacity 0 doesn't).
             .allowsHitTesting(page < pages.count - 1)
+            .accessibilityHidden(page >= pages.count - 1)
         }
     }
 

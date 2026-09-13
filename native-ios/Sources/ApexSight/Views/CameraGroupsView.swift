@@ -178,10 +178,10 @@ struct CameraGroupEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { Haptics.tap(); dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { save() }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selected.isEmpty)
                 }

@@ -49,7 +49,7 @@ enum BiometricLock {
 @MainActor
 final class AppLockController: ObservableObject {
     /// Persisted user preference (also the key the Settings toggle binds to).
-    static let preferenceKey = "biometricLockEnabled"
+    nonisolated static let preferenceKey = "biometricLockEnabled"   // read by SpotlightIndexer off the main actor
 
     @Published private(set) var isLocked = false
     /// True whenever the app is not active (inactive/background). Drives an unconditional

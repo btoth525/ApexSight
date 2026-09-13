@@ -118,6 +118,7 @@ final class AppState: ObservableObject {
     @Published var liveHLSAvailable = true
     /// One probe per session (re-armed on sign-out/server switch).
     private var liveHLSProbed = false
+    private static func hlsVerdictKey(_ s: FrigateSession) -> String { "apex.liveHLSAvailable|\(s.baseURL.absoluteString)" }
     /// Whether the user is signed into their ApexSight cloud account.
     @Published var accountSignedIn: Bool = false
 
@@ -174,13 +175,32 @@ final class AppState: ObservableObject {
         // so real tiles render immediately (the network refresh replaces it moments later).
         // Together with the on-disk snapshot cache this means a cold launch shows real cameras
         // with their last-known frames right away instead of an empty/black grid.
-        if session != nil {
+        if let s = session {
             cameras = Self.loadPersistedCameras()
+            // The live pipeline this server needs (0.18 = WebRTC-only) was learned last session.
+            // Re-deriving it from scratch cost every cold launch ~1 s on a doomed AVPlayer cascade
+            // (4× m3u8 404s, a login POST, 4 players built and thrown away) before the first
+            // WebRTC offer could leave the phone. The probe still runs and corrects a stale value.
+            if let stored = UserDefaults.standard.object(forKey: Self.hlsVerdictKey(s)) as? Bool {
+                liveHLSAvailable = stored
+            }
+            // Promote last session's frames from disk into memory BEFORE the wall renders, so the
+            // first paint is the last-known picture instead of a spinner. Host-independent keys
+            // (ImageCache.canonicalKey) make this valid whichever URL the session ends up on.
+            let bootstrap = FrigateClient(baseURL: s.baseURL, token: s.token)
+            let urls = cameras.map { bootstrap.latestFrameURL(camera: $0.name) }
+            Task.detached(priority: .userInitiated) {
+                for url in urls { _ = ImageCache.shared.diskImage(for: url) }
+            }
         }
         eventStream.onEvent = { [weak self] event in
             self?.handleStreamEvent(event)
         }
         startLocalNetworkMonitor()
+        // Ask "am I home?" NOW (25 KB /api/stats, ~50 ms on the LAN) instead of after the path
+        // monitor's 0.7 s debounce: until the answer lands every request — including the first
+        // tiles' signaling — goes through the tunnel, and the flip then re-keyed every fetch.
+        if session?.localBaseURL != nil { scheduleLocalProbe() }
         WatchSyncManager.shared.activate()
         // Sweep yesterday's downloaded clips / reel segments out of tmp. iOS only purges tmp
         // opportunistically, so a regular exporter would otherwise accrue gigabytes of
@@ -684,13 +704,6 @@ final class AppState: ObservableObject {
             var heroData: Data?
             if let thumbURL { heroData = try? await client.imageData(from: thumbURL) }
             SharedSnapshotStore.saveRecentAlerts(alerts, heroImageData: heroData)
-            // Keep the single-latest-alert store in sync for any legacy reader.
-            if let first = alerts.first {
-                SharedSnapshotStore.saveLatestAlert(
-                    label: first.label, subLabel: first.subLabel, camera: first.camera,
-                    severity: first.severity, when: first.when, imageData: heroData
-                )
-            }
             WidgetCenter.shared.reloadAllTimelines()
             // Mirror the same recent-activity feed to the paired Apple Watch.
             WatchSyncManager.shared.push(alerts: alerts, heroJPEG: heroData)
@@ -1199,6 +1212,8 @@ final class AppState: ObservableObject {
                 // fallback timer before dropping to low-res MJPEG with no way back but a relaunch.
                 guard let available = probed else { self.liveHLSProbed = false; return }
                 if available != self.liveHLSAvailable { self.liveHLSAvailable = available }
+                // Next launch starts on the right pipeline without waiting for this probe.
+                if let s = self.session { UserDefaults.standard.set(available, forKey: Self.hlsVerdictKey(s)) }
             }
         }
     }
@@ -1315,10 +1330,13 @@ final class AppState: ObservableObject {
 
     /// Fetch the heavy stats + logs only when SystemHealthView (Settings) is actually open —
     /// keeps them off the launch/refresh hot path.
-    func loadSystemHealth() async {
-        guard let client else { return }
-        if let s = try? await client.stats() { stats = s }
+    @discardableResult
+    func loadSystemHealth() async -> Bool {
+        guard let client else { return false }
+        let fetched = try? await client.stats()
+        if let fetched { stats = fetched }
         recentLogs = (try? await client.logs()) ?? recentLogs
+        return fetched != nil
     }
 
     /// Cameras whose snapshot prewarm is in flight, so repeated calls don't re-download.
@@ -1361,7 +1379,12 @@ final class AppState: ObservableObject {
 
         do {
             let data = try await client.imageData(from: client.latestFrameURL(camera: camera.name))
-            SharedSnapshotStore.save(imageData: data, camera: camera.name, serverName: serverName)
+            // The widget process decodes whatever lands here under a ~30 MB ceiling — never a
+            // full-resolution frame. ~800 px is more than the widget's largest family renders.
+            let small = await Task.detached(priority: .utility) {
+                RemoteImage.downsample(data, maxPixel: 800)?.jpegData(compressionQuality: 0.7)
+            }.value
+            SharedSnapshotStore.save(imageData: small ?? data, camera: camera.name, serverName: serverName)
         } catch {}
     }
 
@@ -1448,6 +1471,9 @@ final class AppState: ObservableObject {
         // pipeline (dead HLS on a 0.18 server, or WebRTC-primary on a 0.17 one) until relaunch.
         liveHLSProbed = false
         liveHLSAvailable = true
+        // Camera frames are keyed by path (see ImageCache.canonicalKey) — a different server's
+        // wall must not paint this one's pictures.
+        ImageCache.shared.clearSnapshots()
     }
 
     func switchTo(session: FrigateSession) {

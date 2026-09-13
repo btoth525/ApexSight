@@ -14,7 +14,9 @@ enum SpotlightIndexer {
     static let domain = "apex.events"
 
     static var enabled: Bool {
-        UserDefaults.standard.object(forKey: "spotlightEventsEnabled") as? Bool ?? true
+        // Home Screen search bypasses the in-app biometric lock, so the lock also turns this off.
+        guard !UserDefaults.standard.bool(forKey: AppLockController.preferenceKey) else { return false }
+        return UserDefaults.standard.object(forKey: "spotlightEventsEnabled") as? Bool ?? true
     }
 
     /// Reindex the given events (replaces the domain's contents). Cheap; call on refresh.

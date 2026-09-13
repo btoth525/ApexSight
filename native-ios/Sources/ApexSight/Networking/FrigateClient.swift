@@ -34,6 +34,23 @@ struct FrigateClient {
         return URLSession(configuration: config)
     }()
 
+    /// WebRTC signaling (`/api/go2rtc/webrtc`) on its own small pool. On the LAN the server is
+    /// plain HTTP/1.1, so `apiSession`'s 3-connection cap is a hard serialisation — and at launch
+    /// and on every foreground the offer POST queued behind /api/config (343 KB), the alert lists
+    /// and a burst of `latest.jpg`, ~0.3–1 s per tile. nginx proxies signaling straight to go2rtc
+    /// (no ffmpeg), so a couple of extra connections cost the NVR nothing.
+    static let signalingSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 12
+        config.timeoutIntervalForResource = 15
+        config.httpMaximumConnectionsPerHost = 4
+        config.waitsForConnectivity = false
+        config.urlCache = nil
+        config.httpCookieStorage = .shared
+        config.httpCookieAcceptPolicy = .always
+        return URLSession(configuration: config)
+    }()
+
     /// Dedicated session for large media exports (clip downloads). Streams the response body
     /// straight to disk instead of buffering the whole MP4 in memory, and lifts the resource
     /// timeout above `apiSession`'s 60s cap so a big clip over a slow link isn't killed
@@ -998,7 +1015,7 @@ struct FrigateClient {
         request.timeoutInterval = 12
         request.httpBody = try JSONSerialization.data(withJSONObject: ["type": "offer", "sdp": offerSDP])
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await Self.signalingSession.data(for: request)
         try validate(response)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let sdp = json["sdp"] as? String, !sdp.isEmpty else {

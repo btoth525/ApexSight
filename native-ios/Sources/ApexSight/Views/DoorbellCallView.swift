@@ -174,6 +174,10 @@ struct DoorbellCallView: View {
     /// CallKit call if this ring arrived as one — otherwise the native ringtone keeps playing over
     /// the live audio.
     private func beginListening() {
+        // Stop the ring pulse (a repeatForever animation only ends when its value is set again
+        // WITHOUT animation) — it used to keep breathing through the whole live call.
+        var still = Transaction(); still.disablesAnimations = true
+        withTransaction(still) { pulse = false }
         ringTask?.cancel()
         answered = true
         Haptics.success()

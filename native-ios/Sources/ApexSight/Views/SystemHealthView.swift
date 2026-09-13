@@ -3,11 +3,22 @@ import SwiftUI
 struct SystemHealthView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var telemetry = LiveTelemetry.shared
+    /// This screen's OWN fetch state. It keyed off `appState.isLoading` before, which
+    /// `loadSystemHealth()` never set — so the skeleton never showed and a dead server on
+    /// pull-to-refresh changed nothing.
+    @State private var healthLoading = true
+    @State private var healthFailed = false
 
     /// True before the first successful fetch — drives the loading skeleton rather than
     /// rendering empty "0" metric tiles while the very first stats request is in flight.
     private var isInitialLoad: Bool {
-        appState.isLoading && telemetry.stats == nil && appState.errorMessage == nil
+        healthLoading && telemetry.stats == nil
+    }
+
+    private func reloadHealth() async {
+        if telemetry.stats == nil { healthLoading = true }
+        healthFailed = !(await appState.loadSystemHealth())
+        healthLoading = false
     }
 
     var body: some View {
@@ -20,13 +31,13 @@ struct SystemHealthView: View {
                 HStack(spacing: GlassTheme.Space.m) {
                     Button {
                         Haptics.tap()
-                        Task { await appState.refresh() }
+                        Task { await reloadHealth() }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GlassButtonStyle())
-                    .disabled(appState.isLoading)
+                    .disabled(healthLoading)
                     .accessibilityLabel("Refresh system stats")
 
                     Button {
@@ -157,8 +168,8 @@ struct SystemHealthView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         // Stats + logs are fetched here, on demand, instead of on every app refresh.
-        .task { await appState.loadSystemHealth() }
-        .refreshable { await appState.loadSystemHealth() }
+        .task { await reloadHealth() }
+        .refreshable { await reloadHealth() }
     }
 
     // MARK: - Loading & Error states
@@ -220,7 +231,7 @@ struct SystemHealthView: View {
                 }
                 Button {
                     Haptics.tap()
-                    Task { await appState.refresh() }
+                    Task { await reloadHealth() }
                 } label: {
                     Label("Try Again", systemImage: "arrow.clockwise")
                         .frame(maxWidth: .infinity)

@@ -41,7 +41,7 @@ struct SimilarEventsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { Haptics.tap(); dismiss() }
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GlassTheme.accent)

@@ -21,14 +21,16 @@ struct SelectedCameraProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectCameraIntent, in context: Context) async -> SelectedCameraEntry {
-        await makeEntry(for: configuration, wantsImage: Self.isSystemFamily(context.family))
+        // The widget gallery must not hit the network — scrolling it fired a latest.jpg per size.
+        if context.isPreview { return placeholder(in: context) }
+        return await makeEntry(for: configuration, wantsImage: Self.isSystemFamily(context.family))
     }
 
     func timeline(for configuration: SelectCameraIntent, in context: Context) async -> Timeline<SelectedCameraEntry> {
         // Pull fresh alerts straight from Frigate so this widget (including the Lock Screen
         // accessory families) updates on its OWN WidgetKit schedule — not only when the app is
         // opened or a push arrives. Mirrors the home-screen widget's self-refresh.
-        await WidgetDataFetcher.refresh()
+        if WidgetDataFetcher.recentAlertsAge > 90 { await WidgetDataFetcher.refresh() }
         let entry = await makeEntry(for: configuration, wantsImage: Self.isSystemFamily(context.family))
         let next = Calendar.current.date(byAdding: .minute, value: 15, to: entry.date) ?? entry.date.addingTimeInterval(900)
         return Timeline(entries: [entry], policy: .after(next))
@@ -61,7 +63,13 @@ enum SelectedCameraSnapshotFetcher {
         guard let defaults = UserDefaults(suiteName: ApexAppGroup.identifier),
               let base = defaults.string(forKey: "apex.frigateBaseURL"),
               let baseURL = URL(string: base) else { return nil }
-        let url = baseURL.appendingPathComponent("api/\(camera)/latest.jpg")
+        // Frigate resizes on the server (`height=`, measured on 0.18): ~40 KB instead of a
+        // full-resolution frame (~1.5 MB for a 4K camera) per timeline per widget instance, and
+        // nothing near the widget process's ~30 MB ceiling ever gets decoded.
+        var comps = URLComponents(url: baseURL.appendingPathComponent("api/\(camera)/latest.jpg"),
+                                  resolvingAgainstBaseURL: false)
+        comps?.queryItems = [URLQueryItem(name: "height", value: "480")]
+        guard let url = comps?.url else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         if let token = SharedTokenStore.load(), !token.isEmpty {
@@ -80,9 +88,11 @@ enum SelectedCameraSnapshotFetcher {
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
         ]
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+        // No `UIImage(data:)` fallback: that decodes the WHOLE frame lazily at render time inside
+        // the widget process — a 4K frame is ~33 MB, past the ~30 MB cap → jetsam → blank widget.
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return UIImage(data: data)
+            return nil
         }
         return UIImage(cgImage: cg)
     }
@@ -121,7 +131,7 @@ struct SelectedCameraWidgetView: View {
                     .font(.headline).lineLimit(1)
             }
             if let a = entry.latest {
-                Text(activity(a)).font(.caption).lineLimit(1)
+                Text(activity(a)).font(.caption).lineLimit(1).privacySensitive()
                 Text(a.when, style: .relative).font(.caption2).foregroundStyle(.secondary)
             } else {
                 Text(entry.cameraName == nil ? "Hold to choose" : "No recent activity")
@@ -139,7 +149,7 @@ struct SelectedCameraWidgetView: View {
                 Image(systemName: entry.latest != nil ? "video.badge.waveform" : "video.fill")
                     .font(.system(size: 15, weight: .semibold))
                 if let a = entry.latest {
-                    Text(labelEmoji(a.label)).font(.system(size: 10))
+                    Image(systemName: labelSymbol(a.label)).font(.system(size: 10, weight: .bold))
                 }
             }
         }
@@ -151,7 +161,14 @@ struct SelectedCameraWidgetView: View {
     private var systemView: some View {
         ZStack(alignment: .bottomLeading) {
             if let image = entry.image {
-                Image(uiImage: image).resizable().scaledToFill()
+                if #available(iOS 18.0, *) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .widgetAccentedRenderingMode(.fullColor)   // a tinted Home Screen must not silhouette the frame
+                        .scaledToFill()
+                } else {
+                    Image(uiImage: image).resizable().scaledToFill()
+                }
             } else {
                 Color.black
                 VStack(spacing: 6) {
@@ -167,12 +184,18 @@ struct SelectedCameraWidgetView: View {
             }
             if let name = entry.cameraName {
                 LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
-                Text(WidgetCameraEntity.titleize(name))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-                    .padding(10)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(WidgetCameraEntity.titleize(name))
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    // A frame with no time reads as live; this one may be 15 minutes old.
+                    (Text("Updated ") + Text(entry.date, style: .relative) + Text(" ago"))
+                        .font(.system(size: 10, weight: .medium))
+                        .opacity(0.8)
+                }
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                .padding(10)
             }
         }
         .widgetURL(deepLink)
@@ -185,14 +208,15 @@ struct SelectedCameraWidgetView: View {
         return WidgetCameraEntity.titleize(subject)
     }
 
-    private func labelEmoji(_ label: String) -> String {
+    /// SF Symbols, not emoji: the accessory families render vibrant/accented, where emoji smudge.
+    private func labelSymbol(_ label: String) -> String {
         switch label.lowercased() {
-        case "person": return "🧍"
-        case "car", "truck": return "🚗"
-        case "dog": return "🐕"
-        case "cat": return "🐈"
-        case "package": return "📦"
-        default: return "📹"
+        case "person": return "figure.walk"
+        case "car", "truck": return "car.fill"
+        case "dog": return "dog.fill"
+        case "cat": return "cat.fill"
+        case "package": return "shippingbox.fill"
+        default: return "video.fill"
         }
     }
 

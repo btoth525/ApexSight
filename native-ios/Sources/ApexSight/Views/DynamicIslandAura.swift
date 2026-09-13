@@ -59,7 +59,9 @@ struct DynamicIslandAura: View {
     }
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { timeline in
+        // 30 Hz is plenty for a soft glow, and a calm aura with no ripples is static — pausing the
+        // schedule then stops a full-screen blur pass from running every frame on every screen.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || (threat == .calm && ripples.isEmpty))) { timeline in
             let now = timeline.date.timeIntervalSinceReferenceDate
             Canvas { ctx, size in
                 draw(into: &ctx, size: size, now: now)

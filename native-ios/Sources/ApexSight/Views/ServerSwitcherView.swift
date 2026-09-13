@@ -103,6 +103,7 @@ struct ServerSwitcherView: View {
                 }
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(GlassTheme.accent)
+                .hitTarget()
             }
             Button {
                 Haptics.warning()
@@ -147,6 +148,9 @@ private struct AddServerView: View {
                             field("Server URL", text: $baseURL, keyboard: .URL)
                             field("Username", text: $username, keyboard: .default)
                             SecureField("Password", text: $password)
+                                .textContentType(.password)
+                                .submitLabel(.go)
+                                .onSubmit { Task { await connect() } }
                                 .font(.body)
                                 .foregroundStyle(GlassTheme.primary)
                                 .padding(GlassTheme.Space.m)
@@ -176,8 +180,7 @@ private struct AddServerView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PillButtonStyle())
-                    .disabled(isLoading || baseURL.isEmpty)
-                    .opacity(isLoading || baseURL.isEmpty ? 0.5 : 1)
+                    .disabled(isLoading || baseURL.isEmpty)   // PillButtonStyle already dims disabled
                     .padding(.horizontal, GlassTheme.Space.l)
                     Spacer()
                 }
@@ -198,6 +201,8 @@ private struct AddServerView: View {
     private func field(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType) -> some View {
         TextField(placeholder, text: text)
             .keyboardType(keyboard)
+            .textContentType(keyboard == .URL ? .URL : .username)
+            .submitLabel(.next)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
             .font(.body)

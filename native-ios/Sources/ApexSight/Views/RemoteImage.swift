@@ -24,7 +24,9 @@ struct RemoteImage: View {
     @State private var isFailed = false
 
     /// Re-run the load when the URL changes OR the revalidate flag flips (in-progress → done).
-    private var taskKey: String { "\(url?.absoluteString ?? "")|\(revalidate)" }
+    // Canonical (host-independent for camera frames) so the tunnel→LAN host flip at launch
+    // doesn't re-run every wall tile's load.
+    private var taskKey: String { "\(url.map(ImageCache.canonicalKey(for:)) ?? "")|\(revalidate)" }
 
     var body: some View {
         ZStack {

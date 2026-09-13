@@ -203,7 +203,7 @@ struct LoginView: View {
                 // Swapping SecureField <-> TextField rebuilds the field and drops the
                 // keyboard; re-assert focus so the user can keep typing uninterrupted.
                 if wasFocused {
-                    DispatchQueue.main.async { focus = focusField }
+                    Task { @MainActor in focus = focusField }
                 }
             } label: {
                 Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")

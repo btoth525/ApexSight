@@ -33,6 +33,8 @@ struct CameraSnapshotEntry: TimelineEntry {
     /// widget body several times per render doesn't re-decode from disk on every pass —
     /// important inside the widget extension's tight memory/CPU budget.
     let heroImage: UIImage?
+    /// Smart Stack: a fresh alert should bubble the widget up; a quiet feed shouldn't.
+    var relevance: TimelineEntryRelevance? = nil
 
     /// The most recent event, if any.
     var latest: SharedAlert? { alerts.first }
@@ -51,12 +53,27 @@ struct CameraSnapshotProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<CameraSnapshotEntry>) -> Void) {
         Task {
-            // Pull fresh alerts + hero straight from Frigate so the widget updates in
-            // the background on WidgetKit's schedule — not only when the app is opened.
-            await WidgetDataFetcher.refresh()
-            let current = entry()
-            let refresh = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-            completion(Timeline(entries: [current], policy: .after(refresh)))
+            // Pull fresh alerts + hero straight from Frigate so the widget updates in the
+            // background on WidgetKit's schedule — unless the NSE/app wrote the cache moments ago
+            // (that reload is what brought us here; refetching the same feed was pure waste).
+            if WidgetDataFetcher.recentAlertsAge > 90 { await WidgetDataFetcher.refresh() }
+            let base = entry()
+            // Several entries sharing ONE decoded hero: the static "3m ago" strings redraw at
+            // 2/5/10/15 min without a reload, so a Lock Screen tile can't say "Just now" for a
+            // quarter of an hour. The system families use `Text(_:style: .relative)` and tick live.
+            let now = Date()
+            let entries = [0, 2, 5, 10, 15].map { minutes -> CameraSnapshotEntry in
+                var e = CameraSnapshotEntry(
+                    date: now.addingTimeInterval(Double(minutes) * 60),
+                    snapshot: base.snapshot, snapshotImageURL: base.snapshotImageURL,
+                    alerts: base.alerts, heroImageURL: base.heroImageURL, heroImage: base.heroImage)
+                if minutes == 0, let latest = base.latest {
+                    e.relevance = TimelineEntryRelevance(score: latest.severity == "alert" ? 100 : 20, duration: 1800)
+                }
+                return e
+            }
+            let refresh = now.addingTimeInterval(15 * 60)
+            completion(Timeline(entries: entries, policy: .after(refresh)))
         }
     }
 
@@ -149,9 +166,16 @@ private struct HeroSnapshotImage: View {
 
     var body: some View {
         if let image {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
+            // Tinted / Clear Home Screen (iOS 18+ accented rendering) flattens a photo into a
+            // one-colour silhouette; a camera frame must stay a picture.
+            if #available(iOS 18.0, *) {
+                Image(uiImage: image)
+                    .resizable()                                // Image → Image
+                    .widgetAccentedRenderingMode(.fullColor)    // Image → View
+                    .scaledToFill()
+            } else {
+                Image(uiImage: image).resizable().scaledToFill()
+            }
         } else {
             PlaceholderHero()
         }
@@ -226,10 +250,11 @@ private struct SmallWidgetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let latest = entry.latest {
                     Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
+                        .privacySensitive()
                         .font(.system(size: 14, weight: .black, design: .rounded))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Text("\(titleizeWidget(latest.camera)) · \(relativeShort(latest.when))")
+                    (Text(titleizeWidget(latest.camera)) + Text(" · ") + Text(latest.when, style: .relative) + Text(" ago"))
                         .font(.system(size: 10, weight: .heavy))
                         .foregroundStyle(.white.opacity(0.82))
                         .lineLimit(1)
@@ -334,10 +359,8 @@ private struct MediumWidgetView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, 11)
-        // Percent-encode + no force-unwrap (repo rule). `latest.id` is a review id → apex://review.
-        .widgetURL(entry.latest.flatMap { $0.id }
-            .flatMap { $0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) }
-            .flatMap { URL(string: "apex://review?id=\($0)") })
+        // The whole-widget `.widgetURL` on CameraSnapshotWidgetView is the one route: a second one
+        // here was nil when there was no review id, which lost the camera/app fallback.
     }
 }
 
@@ -408,10 +431,11 @@ private struct LargeWidgetView: View {
                 if let latest = entry.latest {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(alertEmoji(latest.label)) \(titleizeWidget(latest.subLabel ?? latest.label))")
+                        .privacySensitive()
                             .font(.system(size: 16, weight: .black, design: .rounded))
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
-                        Text("\(titleizeWidget(latest.camera)) · \(relativeShort(latest.when))")
+                        (Text(titleizeWidget(latest.camera)) + Text(" · ") + Text(latest.when, style: .relative) + Text(" ago"))
                             .font(.system(size: 11, weight: .heavy))
                             .foregroundStyle(.white.opacity(0.82))
                             .lineLimit(1)
@@ -490,12 +514,13 @@ private struct EventFeedRow: View {
                         .font(.system(size: large ? 11 : 10, weight: .black))
                         .foregroundStyle(severityColor(alert.severity))
                     Text(titleizeWidget(alert.subLabel ?? alert.label))
+                        .privacySensitive()
                         .font(.system(size: large ? 13 : 12, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
-                Text("\(titleizeWidget(alert.camera)) · \(relativeShort(alert.when))")
+                (Text(titleizeWidget(alert.camera)) + Text(" · ") + Text(alert.when, style: .relative) + Text(" ago"))
                     .font(.system(size: large ? 11 : 10, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.62))
                     .lineLimit(1)
@@ -615,9 +640,17 @@ private struct AccessoryInlineView: View {
 
     var body: some View {
         if let alert = entry.latest {
-            Text("\(alertEmoji(alert.label)) \(titleizeWidget(alert.subLabel ?? alert.label)) · \(relativeShort(alert.when))")
+            // Lock Screen renders in vibrant/accented modes where emoji desaturate to smudges —
+            // an SF Symbol reads at a glance; the time ticks live.
+            Label {
+                (Text(titleizeWidget(alert.subLabel ?? alert.label))
+                    + Text(" · ") + Text(alert.when, style: .relative))
+                    .privacySensitive()
+            } icon: {
+                Image(systemName: alertSymbol(alert.label))
+            }
         } else {
-            Text("All clear")
+            Label("All clear", systemImage: "checkmark.shield.fill")
         }
     }
 }
@@ -632,8 +665,9 @@ private struct AccessoryCircularView: View {
             AccessoryWidgetBackground()
             if let alert = entry.latest {
                 VStack(spacing: 0) {
-                    Text(alertEmoji(alert.label))
-                        .font(.system(size: 19))
+                    Image(systemName: alertSymbol(alert.label))
+                        .font(.system(size: 17, weight: .bold))
+                        .widgetAccentable()
                     // Compact static form ("3m") — `.relative` renders longer phrasing that
                     // truncates/illegibly shrinks in this tiny circular tile.
                     Text(relativeShort(alert.when))
@@ -701,6 +735,21 @@ private func alertEmoji(_ label: String) -> String {
     case "package": return "📦"
     case "bird": return "🐦"
     default: return "📹"
+    }
+}
+
+/// SF Symbol for the accessory (Lock Screen / StandBy) families, where emoji render as grey blobs.
+private func alertSymbol(_ label: String) -> String {
+    switch label.lowercased() {
+    case "person": return "figure.walk"
+    case "car", "truck", "vehicle": return "car.fill"
+    case "motorcycle": return "bicycle"
+    case "dog": return "dog.fill"
+    case "cat": return "cat.fill"
+    case "bicycle": return "bicycle"
+    case "package": return "shippingbox.fill"
+    case "bird": return "bird.fill"
+    default: return "video.fill"
     }
 }
 

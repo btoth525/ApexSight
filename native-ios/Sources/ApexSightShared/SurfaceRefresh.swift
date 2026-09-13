@@ -7,12 +7,14 @@ import WidgetKit
 /// `GlobalSnooze` mutators, which every writer funnels through.
 enum ApexSurfaceRefresh {
     static let armControlKind = "com.brandontoth.apexsight.control.arm"
+    static let snoozeControlKind = "com.brandontoth.apexsight.control.snooze"
 
     static func reload() {
         WidgetCenter.shared.reloadAllTimelines()
         #if os(iOS)
         if #available(iOS 18.0, *) {
             ControlCenter.shared.reloadControls(ofKind: armControlKind)
+            ControlCenter.shared.reloadControls(ofKind: snoozeControlKind)
         }
         #endif
     }

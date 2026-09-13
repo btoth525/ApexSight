@@ -8,6 +8,10 @@ import UserNotifications
 /// APNs and with the relay automatically on appear. The screen shows a single
 /// connection status (green/red) and a Test button to verify the pipeline.
 struct PushCompanionSettingsView: View {
+    /// Relay registration backoff — a failed POST used to be retried every 2 s for as long as the
+    /// screen stayed open.
+    @State private var registerAttempt = 0
+    @State private var nextRegisterRetry = Date.distantPast
     @State private var pairingCode = DeviceTokenStore.ensurePairingCode()
     @State private var deviceName = DeviceTokenStore.deviceName
     @FocusState private var deviceNameFocused: Bool
@@ -63,7 +67,8 @@ struct PushCompanionSettingsView: View {
                     guard !Task.isCancelled else { break }
                     token = DeviceTokenStore.deviceTokenHex
                     if let token, !token.isEmpty, token != lastRegisteredToken,
-                       !pairingCode.isEmpty, registerStatus != .registering {
+                       !pairingCode.isEmpty, registerStatus != .registering,
+                       Date() >= nextRegisterRetry {
                         await registerWithRelay()
                     }
                 }
@@ -318,6 +323,10 @@ struct PushCompanionSettingsView: View {
             case let .failed(message):
                 return (GlassTheme.red, "Not connected", message, false, true)
             case .idle:
+                // APNs itself failed (AppDelegate records it) — say so with a retry, not a spinner forever.
+                if let error = DeviceTokenStore.lastError {
+                    return (GlassTheme.red, "Not connected", error, false, true)
+                }
                 return (GlassTheme.orange, "Almost there", "Waiting for the APNs token", true, false)
             }
         }
@@ -365,8 +374,11 @@ struct PushCompanionSettingsView: View {
             )
             lastRegisteredToken = token
             registerStatus = .registered
+            registerAttempt = 0
         } catch {
             registerStatus = .failed(error.localizedDescription)
+            registerAttempt += 1
+            nextRegisterRetry = Date().addingTimeInterval(min(60, pow(2, Double(registerAttempt))))
         }
     }
 

@@ -96,8 +96,15 @@ struct ApexSightApp: App {
                     // .onChange(of: scenePhase) doesn't fire for the initial .active value,
                     // so this ensures the live stream and 15s poller start right away.
                     appState.startRealtime()
+                    // The HLS-alive verdict is remembered per server (see AppState.init); this
+                    // corrects it in the background without waiting for the first alert poll.
+                    appState.probeLiveHLSIfNeeded()
                     appState.startForegroundPolling()
                     appState.consumePendingIntentLink()
+                    // The WebRTC factory (RTCInitializeSSL + three libwebrtc threads + the audio
+                    // device module) was built lazily by the first tile ON THE MAIN ACTOR, ~50–150 ms
+                    // in the middle of the wall's appear animation. `static let` is once-guarded.
+                    Task.detached(priority: .utility) { _ = RealtimeVideoController.factory }
                     // Register for push + (re)send the token to the relay on launch — but only
                     // once signed in, so a brand-new user isn't hit with a notifications prompt
                     // before they've even connected a server (sign-in requests it in context).

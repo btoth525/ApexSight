@@ -300,6 +300,10 @@ struct SettingsTab: View {
             }
             .tint(GlassTheme.accent)
             .sensoryFeedback(.selection, trigger: biometricLockEnabled)
+            .onChange(of: biometricLockEnabled) { _, on in
+                // Spotlight bypasses the lock — clear the index when it goes on, rebuild when off.
+                if on { SpotlightIndexer.clear() } else { SpotlightIndexer.index(appState.events) }
+            }
         }
     }
 

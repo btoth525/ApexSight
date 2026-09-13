@@ -92,11 +92,16 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                 CPListSection(items: items.isEmpty ? [CPListItem(text: "All clear", detailText: "No recent alerts")] : items)
             ])
             for (item, review) in zip(items, reviews) {
-                // Cached per review, so the list doesn't pay a round-trip per row after the first.
-                if let url = await ReviewStillResolver.shared.pinnedStill(for: review, client: client)
-                    ?? client.reviewThumbnailURL(review: review),
+                // The list thumbnail is the review's STATIC thumbnail (tiny, cacheable), decoded
+                // at row size and kept per review id. The pinned recording frame is an ffmpeg
+                // extraction on the NVR — every 30 s tick used to spawn one per row and decode the
+                // full frame; the pinned frame now belongs to the detail screen only.
+                if let cached = rowImages[review.id] { item.setImage(cached); continue }
+                if let url = client.reviewThumbnailURL(review: review),
                    let data = try? await client.imageData(from: url),
-                   let image = UIImage(data: data) {
+                   let image = RemoteImage.downsample(data, maxPixel: Self.rowImagePixels) {
+                    rowImages[review.id] = image
+                    if rowImages.count > 40 { rowImages.removeAll() }
                     item.setImage(image)
                 }
             }
@@ -119,12 +124,22 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             CPListSection(items: camItems.isEmpty ? [CPListItem(text: "No cameras", detailText: nil)] : camItems)
         ])
         for (item, name) in zip(camItems, names) {
-            if let data = try? await client.imageData(from: client.latestFrameURL(camera: name)),
-               let image = UIImage(data: data) {
+            // Frigate resizes on the server (`height=`) — a row thumbnail, not a full-res frame
+            // decoded to ~33 MB per camera and retained by the CPListItem while driving.
+            var comps = URLComponents(url: client.latestFrameURL(camera: name), resolvingAgainstBaseURL: false)
+            comps?.queryItems = [URLQueryItem(name: "height", value: "180")]
+            if let url = comps?.url,
+               let data = try? await client.imageData(from: url),
+               let image = RemoteImage.downsample(data, maxPixel: Self.rowImagePixels) {
                 item.setImage(image)
             }
         }
     }
+
+    /// Row thumbnails at the size CarPlay draws them (`CPListItem.maximumImageSize` is in points).
+    private static var rowImagePixels: CGFloat { CPListItem.maximumImageSize.width * 3 }
+    /// Decoded list thumbnails by review id — a refresh only fetches rows it hasn't seen.
+    private var rowImages: [String: UIImage] = [:]
 
     // MARK: - New-alert pop-up
 
@@ -204,8 +219,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private func snapshotSection(url: URL?, client: FrigateClient, label: String) async -> CPListSection? {
         guard let url,
               let data = try? await client.imageData(from: url),
-              let image = UIImage(data: data) else { return nil }
-        let tile = squarePadded(downscaled(image, maxDimension: 600))
+              let image = RemoteImage.downsample(data, maxPixel: 600) else { return nil }   // ImageIO, never the full frame
+        let tile = squarePadded(image)
         let row = CPListImageRowItem(text: label, images: [tile])
         row.listImageRowHandler = { _, _, completion in completion() }
         return CPListSection(items: [row])

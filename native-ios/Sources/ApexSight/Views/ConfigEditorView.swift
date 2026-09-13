@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A full-screen, mobile-first Frigate config.yml editor — load, edit, validate, save, and
 /// restart, right from the phone (the same power as the Frigate PWA's config editor, built for
@@ -53,11 +54,11 @@ struct ConfigEditorView: View {
             .navigationTitle("Frigate Config")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { if dirty { showDiscardConfirm = true } else { dismiss() } }
                         .foregroundStyle(GlassTheme.secondary)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     if editorFocused {
                         Button("Done") { editorFocused = false }.fontWeight(.semibold).foregroundStyle(GlassTheme.accent)
                     } else if !isLoading, loadError == nil {
@@ -246,7 +247,12 @@ struct ConfigEditorView: View {
     }
 
     private func copyAll() {
-        UIPasteboard.general.string = yaml
+        // config.yml carries rtsp://user:pass@…, MQTT and API keys: keep it off Universal
+        // Clipboard and let it expire, the way the pairing-code copy already does.
+        UIPasteboard.general.setItems(
+            [[UTType.utf8PlainText.identifier: yaml]],
+            options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
+        )
         Haptics.tap()
         showBanner("Whole config copied ✓", ok: true)
     }

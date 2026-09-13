@@ -33,7 +33,7 @@ struct CameraQuickControlsSheet: View {
             .navigationTitle("Camera Controls")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
                         .foregroundStyle(GlassTheme.accent)

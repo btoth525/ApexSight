@@ -121,12 +121,12 @@ struct TriggerEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { Haptics.tap(); dismiss() }
                         .font(.body)
                         .foregroundStyle(GlassTheme.secondary)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { save() }
                         .font(.body)
                         .fontWeight(.semibold)

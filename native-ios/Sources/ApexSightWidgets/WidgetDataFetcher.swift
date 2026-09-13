@@ -35,10 +35,27 @@ enum WidgetDataFetcher {
         let thumbTime: Double?
     }
 
-    static func refresh() async {
+    /// Age of the shared feed cache. Every widget instance used to re-download the review list and
+    /// hero on EVERY reload — including the reload the NSE had just triggered after writing that very
+    /// cache. Providers skip the fetch when the cache is younger than this.
+    static var recentAlertsAge: TimeInterval {
+        let at = appGroup?.double(forKey: "apex.recentAlertsWrittenAt") ?? 0
+        return at == 0 ? .infinity : Date().timeIntervalSince1970 - at
+    }
+
+    /// What the widget actually shows per row — a reload is only worth its budget when this moves.
+    static func feedSignature(_ alerts: [SharedAlert]) -> [String] {
+        alerts.map { "\($0.id ?? "")|\($0.subLabel ?? "")|\($0.severity)" }
+    }
+
+    /// Returns true when the visible feed CHANGED. Callers reload widget timelines only then:
+    /// extension-originated reloads count against WidgetKit's ~40–70/day budget, and each alert
+    /// arrives as 2–3 pushes (alert, final GIF, AI description) of which only the first moves the feed.
+    @discardableResult
+    static func refresh() async -> Bool {
         guard let defaults = appGroup,
               let base = defaults.string(forKey: "apex.frigateBaseURL"),
-              let baseURL = URL(string: base) else { return }
+              let baseURL = URL(string: base) else { return false }
         // Token from the shared Keychain group (no longer plaintext in the App-Group plist);
         // nil simply yields an unauthenticated request, same as before.
         let token = SharedTokenStore.load()
@@ -46,7 +63,7 @@ enum WidgetDataFetcher {
         guard var comps = URLComponents(
             url: baseURL.appendingPathComponent("api/review"),
             resolvingAgainstBaseURL: false
-        ) else { return }
+        ) else { return false }
         comps.queryItems = [
             // Fetch a WINDOW, show the newest `displayCount` of what survives the house-mode
             // filter below. Fetching only 8 and then filtering has no headroom to backfill: the
@@ -57,13 +74,14 @@ enum WidgetDataFetcher {
             URLQueryItem(name: "limit", value: String(fetchWindow)),
             URLQueryItem(name: "reviewed", value: "0")
         ]
-        guard let url = comps.url else { return }
+        guard let url = comps.url else { return false }
 
-        guard let data = await get(url, token: token) else { return }
+        guard let data = await get(url, token: token) else { return false }
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        guard let reviews = try? decoder.decode([WReview].self, from: data) else { return }
+        guard let reviews = try? decoder.decode([WReview].self, from: data) else { return false }
+        let before = feedSignature(SharedSnapshotStore.loadRecentAlerts().alerts)
 
         // Same house-mode filter the Review tab applies and the relay's push gate enforces. Without
         // it the widget hero + feed, the Watch list and Siri's "latest alert" showed activity from
@@ -93,7 +111,7 @@ enum WidgetDataFetcher {
         guard !alerts.isEmpty else {
             // Nothing un-reviewed → show "all clear".
             SharedSnapshotStore.saveRecentAlerts([], heroImageData: nil)
-            return
+            return !before.isEmpty
         }
 
         // Hero = the detection nearest the review's `thumb_time` — the frame Frigate itself
@@ -125,6 +143,7 @@ enum WidgetDataFetcher {
         }
 
         SharedSnapshotStore.saveRecentAlerts(alerts, heroImageData: heroData)
+        return feedSignature(alerts) != before
     }
 
     private static func get(_ url: URL, token: String?) async -> Data? {

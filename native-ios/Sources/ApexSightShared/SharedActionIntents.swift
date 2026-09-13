@@ -1,5 +1,4 @@
 import AppIntents
-import ActivityKit
 import Foundation
 
 // Action intents that live in the shared layer so they can be invoked from the main
@@ -11,6 +10,10 @@ import Foundation
 struct ApexSnoozeIntent: AppIntent {
     static let title: LocalizedStringResource = "Snooze Camera Alerts"
     static let description = IntentDescription("Mute ApexSight alerts for an hour.")
+    // Silencing every camera alert from a LOCKED phone must cost a Face ID / passcode — same rule
+    // as the arm toggle. (SnoozeAlertsIntent is the Shortcuts-facing twin; this one backs controls.)
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+    static let isDiscoverable = false
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.snooze(until: Date().addingTimeInterval(60 * 60))
@@ -23,6 +26,7 @@ struct ApexSnoozeIntent: AppIntent {
 struct ApexResumeIntent: AppIntent {
     static let title: LocalizedStringResource = "Resume Camera Alerts"
     static let description = IntentDescription("Turn ApexSight alerts back on.")
+    static let isDiscoverable = false   // ResumeAlertsIntent is the Shortcuts-facing one
 
     func perform() async throws -> some IntentResult {
         GlobalSnooze.clear()
@@ -86,6 +90,24 @@ struct ApexSetArmModeIntent: AppIntent {
     }
 }
 
+/// Control Center SNOOZE toggle: on = snoozed for an hour, off = resumed. A toggle shows the
+/// current state and offers the way back; the old stateless button re-snoozed silently on every tap.
+@available(iOS 18.0, *)
+struct ApexSnoozeToggleIntent: SetValueIntent {
+    static let title: LocalizedStringResource = "Snooze Camera Alerts"
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+    static let isDiscoverable = false
+
+    @Parameter(title: "Snoozed")
+    var value: Bool
+
+    func perform() async throws -> some IntentResult {
+        if value { GlobalSnooze.snooze(until: Date().addingTimeInterval(60 * 60)) } else { GlobalSnooze.clear() }
+        await SharedRelayGate.syncCurrent()
+        return .result()
+    }
+}
+
 /// Control Center toggle backing intent: on = Away, off = Disarmed.
 @available(iOS 18.0, *)
 struct ApexArmToggleIntent: SetValueIntent {
@@ -113,6 +135,7 @@ struct ApexArmToggleIntent: SetValueIntent {
 struct ApexArmAwayIntent: AppIntent {
     static let title: LocalizedStringResource = "Arm Away"
     static let description = IntentDescription("Arm the house to Away mode.")
+    static let isDiscoverable = false   // no surface wires this yet; keep it out of Shortcuts
 
     func perform() async throws -> some IntentResult {
         await SharedRelayGate.setHouseMode("away")
@@ -128,6 +151,7 @@ struct ApexHouseModeIntent: AppIntent {
     static let title: LocalizedStringResource = "House Mode"
     static let description = IntentDescription("Open ApexSight House Mode to arm or disarm.")
     static let openAppWhenRun = true
+    static let isDiscoverable = false   // `apex://house` has no in-app route; keep it out of Shortcuts
 
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: ApexAppGroup.identifier)?

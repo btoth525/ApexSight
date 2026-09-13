@@ -8,9 +8,17 @@ final class NotificationStyleStore: ObservableObject {
     @Published var style: NotificationStyle {
         didSet {
             save()
-            Task { await sync() }
+            // Coalesce: rapid toggles used to issue N concurrent POST /v1/style and the relay kept
+            // whichever landed LAST — an older style could overwrite a newer one.
+            syncTask?.cancel()
+            syncTask = Task {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled else { return }
+                await sync()
+            }
         }
     }
+    private var syncTask: Task<Void, Never>?
 
     private let key = "apex.notificationStyle"
 

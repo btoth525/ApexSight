@@ -61,7 +61,14 @@ final class KeychainStore {
         }
     }
 
+    /// Forget the ACTIVE session only. The multi-server list survives — "Sign out of this server?"
+    /// and "Remove" used to wipe every saved server too, leaving Switch Server empty.
     func clear() {
+        keychainDelete(key: key)
+    }
+
+    /// Everything, including the saved-server list.
+    func clearAll() {
         keychainDelete(key: key)
         keychainDelete(key: allSessionsKey)
     }

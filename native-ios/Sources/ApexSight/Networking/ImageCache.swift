@@ -16,7 +16,7 @@ import CryptoKit
 final class ImageCache: @unchecked Sendable {
     static let shared = ImageCache()
 
-    private let cache = NSCache<NSURL, UIImage>()
+    private let cache = NSCache<NSString, UIImage>()
 
     /// Disk tier — only camera snapshots land here so the wall paints instantly on cold launch.
     private let diskDir: URL?
@@ -43,12 +43,22 @@ final class ImageCache: @unchecked Sendable {
 
     // MARK: Memory tier
 
+    /// The cache key. Camera frames (`latest.jpg`) are keyed by PATH, not full URL: the app talks
+    /// to the same Frigate through two hosts (the tunnel until the home-network probe answers,
+    /// then the LAN), and a full-URL key threw away every cached frame at the ~1 s host flip on
+    /// each launch — grey placeholders, then ~26 `latest.jpg` fetches in two seconds. Everything
+    /// else keeps its full URL. Server switches call `clearSnapshots()` so two Frigates with the
+    /// same camera names never share a frame.
+    nonisolated static func canonicalKey(for url: URL) -> String {
+        url.lastPathComponent == "latest.jpg" ? url.path : url.absoluteString
+    }
+
     func image(for url: URL) -> UIImage? {
-        cache.object(forKey: url as NSURL)
+        cache.object(forKey: Self.canonicalKey(for: url) as NSString)
     }
 
     func insert(_ image: UIImage, for url: URL) {
-        cache.setObject(image, forKey: url as NSURL, cost: cost(of: image))
+        cache.setObject(image, forKey: Self.canonicalKey(for: url) as NSString, cost: cost(of: image))
         // Persist ONLY camera snapshots so the wall can paint last-known frames on the next cold
         // launch. Scoping to `latest.jpg` keeps the many event/review thumbnails from evicting the
         // handful of camera frames that actually matter here.
@@ -80,13 +90,27 @@ final class ImageCache: @unchecked Sendable {
         guard url.lastPathComponent == "latest.jpg",
               let file = diskFile(for: url),
               let data = try? Data(contentsOf: file),
-              let image = UIImage(data: data) else { return nil }
-        cache.setObject(image, forKey: url as NSURL, cost: cost(of: image))
+              // ImageIO thumbnail with immediate caching → a DECODED bitmap. `UIImage(data:)`
+              // decoded lazily on the main thread at first draw, mid launch animation.
+              let image = RemoteImage.downsample(data, maxPixel: 1000) else { return nil }
+        cache.setObject(image, forKey: Self.canonicalKey(for: url) as NSString, cost: cost(of: image))
         return image
     }
 
+    /// Server switch / sign-out: drop every camera frame (memory + disk) so the next server's
+    /// wall can't paint the previous one's picture under the same camera name.
+    func clearSnapshots() {
+        cache.removeAllObjects()
+        diskQueue.async { [self] in
+            lastPersist.removeAll()
+            guard let diskDir,
+                  let files = try? FileManager.default.contentsOfDirectory(at: diskDir, includingPropertiesForKeys: nil) else { return }
+            files.forEach { try? FileManager.default.removeItem(at: $0) }
+        }
+    }
+
     /// Last disk write per URL — touched only on `diskQueue`.
-    private var lastPersist: [URL: Date] = [:]
+    private var lastPersist: [String: Date] = [:]
 
     /// The disk tier exists for exactly one moment: the cold-launch paint before the first live
     /// frame. So it holds a RECENT frame, not the latest one — a write every 30 s per camera is
@@ -98,9 +122,10 @@ final class ImageCache: @unchecked Sendable {
         // Everything — including the JPEG encode, which used to run on the CALLER's thread, i.e.
         // the main actor for every insert — happens on the serial disk queue. `UIImage` is
         // immutable, so encoding it off-thread is safe.
+        let key = Self.canonicalKey(for: url)
         diskQueue.async { [self] in
-            if let last = lastPersist[url], Date().timeIntervalSince(last) < Self.persistInterval { return }
-            lastPersist[url] = Date()
+            if let last = lastPersist[key], Date().timeIntervalSince(last) < Self.persistInterval { return }
+            lastPersist[key] = Date()
             guard let data = image.jpegData(compressionQuality: 0.7) else { return }
             try? data.write(to: file, options: .atomic)
         }
@@ -108,7 +133,7 @@ final class ImageCache: @unchecked Sendable {
 
     private func diskFile(for url: URL) -> URL? {
         guard let diskDir else { return nil }
-        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        let digest = SHA256.hash(data: Data(Self.canonicalKey(for: url).utf8))
         let name = digest.map { String(format: "%02x", $0) }.joined()
         return diskDir.appendingPathComponent(name).appendingPathExtension("jpg")
     }

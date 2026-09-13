@@ -46,11 +46,19 @@ struct MyExportsView: View {
         .sheet(item: $sharePayload) { ShareSheet(items: $0.items) }
         .alert("Rename export", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $renameText)
-            Button("Save") { Task { await commitRename() } }
+            Button("Save") {
+                // Capture NOW: the binding's set(false) nils `renaming` synchronously on dismissal,
+                // before a Task body runs — so the old `guard let export = renaming` silently no-op'd.
+                let export = renaming, name = renameText
+                Task { await commitRename(export, name: name) }
+            }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
         .confirmationDialog("Delete this export?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await commitDelete() } }
+            Button("Delete", role: .destructive) {
+                let export = pendingDelete
+                Task { await commitDelete(export) }
+            }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: { Text("Removes it from Frigate. This can't be undone.") }
         .overlay(alignment: .bottom) {
@@ -132,9 +140,9 @@ struct MyExportsView: View {
         }
     }
 
-    private func commitRename() async {
-        guard let export = renaming, let client = appState.client else { return }
-        let newName = renameText.trimmingCharacters(in: .whitespaces)
+    private func commitRename(_ export: FrigateExport?, name: String) async {
+        guard let export, let client = appState.client else { return }
+        let newName = name.trimmingCharacters(in: .whitespaces)
         renaming = nil
         guard !newName.isEmpty else { return }
         busyID = export.id
@@ -147,8 +155,8 @@ struct MyExportsView: View {
         }
     }
 
-    private func commitDelete() async {
-        guard let export = pendingDelete, let client = appState.client else { return }
+    private func commitDelete(_ export: FrigateExport?) async {
+        guard let export, let client = appState.client else { return }
         pendingDelete = nil
         busyID = export.id
         defer { busyID = nil }

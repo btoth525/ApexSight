@@ -258,12 +258,12 @@ struct CamerasTab: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         if isEditing {
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { cancelEditing() }
                     .font(.subheadline.weight(.heavy))
                     .foregroundStyle(GlassTheme.secondary)
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { commitEditing() }
                     .font(.subheadline.weight(.black))
                     .foregroundStyle(GlassTheme.accent)

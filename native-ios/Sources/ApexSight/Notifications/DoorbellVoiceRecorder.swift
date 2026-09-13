@@ -48,6 +48,12 @@ final class DoorbellVoiceRecorder: NSObject, ObservableObject {
     }
 
     func start() {
+        // Ask in context — the first Record tap — instead of when the Settings page appears.
+        // Undetermined → prompt now; the next tap records.
+        if AVAudioApplication.shared.recordPermission == .undetermined {
+            Self.requestPermission()
+            return
+        }
         stop()
         let session = AVAudioSession.sharedInstance()
         previousCategory = session.category

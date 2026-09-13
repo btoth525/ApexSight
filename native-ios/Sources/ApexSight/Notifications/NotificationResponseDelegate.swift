@@ -31,6 +31,11 @@ final class NotificationResponseDelegate: NSObject, ObservableObject, @preconcur
         let userInfo = response.notification.request.content.userInfo
         let action = response.actionIdentifier
 
+        // The category opts into `.customDismissAction`, so clearing a notification from the Lock
+        // Screen arrives here too — and used to fall through to the "plain tap" deep link (or
+        // stash it as a pending intent that opened that review on the NEXT launch).
+        guard action != UNNotificationDismissActionIdentifier else { completionHandler(); return }
+
         // Background actions (no .foreground option) do network/state work and must NOT depend on
         // appState (which may not exist when iOS launches us in the background just for the action)
         // or call completionHandler() before that work finishes (iOS would suspend us mid-request).

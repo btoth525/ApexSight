@@ -755,9 +755,9 @@ struct HLSLivePlayerView: View {
     private func startRealtimeFallbackTimer() {
         fallbackTask?.cancel()
         fallbackTask = Task { @MainActor in
-            // Longer than the realtime per-source watchdog (9s) so a cold NVENC stream that's about
-            // to paint full-res isn't yanked to low-res MJPEG a hair before it lands.
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            // Longer than the realtime cascade (5 s + 9 s at home, 9 s + 9 s away) so a cold NVENC
+            // stream that's about to paint full-res isn't yanked to low-res MJPEG a hair before it lands.
+            try? await Task.sleep(nanoseconds: appState.onLocalNetwork ? 15_000_000_000 : 20_000_000_000)
             guard !Task.isCancelled, realtime.state != .live else { return }
             fallToMJPEG()
         }
@@ -842,13 +842,23 @@ struct HLSLivePlayerView: View {
     /// model again. `.playing` lifts the fallback (the snapshot covers until the layer paints);
     /// `.failed` stops it and re-arms this. Doorbell call / WebRTC-primary never reach here.
     private func scheduleHLSReprobe() {
-        guard allowMJPEGFallback, !hlsDead else { return }
+        guard allowMJPEGFallback else { return }
         reprobeTask?.cancel()
         reprobeTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             guard !Task.isCancelled, mjpegFallback, started else { return }
-            configureModel()
-            model.start()
+            if hlsDead {
+                // WebRTC-primary (0.18): re-attempt the sub-second stream. Lifting the fallback
+                // unmounts MJPEG and shows the snapshot until a frame renders; a failed cascade
+                // drops back to MJPEG and re-arms this. One slow cold start used to park the tile
+                // on the detect-resolution stream for as long as it stayed on screen.
+                withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = false }
+                realtime.resetFailures()
+                startWebRTCPrimary()
+            } else {
+                configureModel()
+                model.start()
+            }
         }
     }
 
@@ -1177,6 +1187,12 @@ struct HLSLivePlayerView: View {
             // Self-managed mute (overlay button) — keep realtime in sync too. (Not in real-time
             // A/V mode: there syncRealtime SETS model mute, and reacting here would loop.)
             if !realtimeAudio { syncRealtime() }
+        }
+        .onChange(of: realtime.videoTrack) { _, track in
+            // The answer is in → go2rtc's producer is up, which is the contended resource the gate
+            // exists for. Decoding the first frame is this tile's own business; the next tile can
+            // negotiate now instead of waiting for our pixels (or the 3 s backstop). Idempotent.
+            if hlsDead, track != nil { releaseGate() }
         }
         .onChange(of: realtime.state) { _, newState in
             if newState == .live { completeHandoff() }

@@ -107,20 +107,23 @@ struct LatestAlertIntent: AppIntent {
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
-        guard let latest = SharedSnapshotStore.loadLatestAlert() else {
+        // The same feed the widgets show. The old single-alert store was written only by the app
+        // process, so with the app closed Siri announced an hours-old (or already cleared) alert
+        // while the widget beside it showed the fresh one.
+        let feed = SharedSnapshotStore.loadRecentAlerts()
+        guard let alert = feed.alerts.first else {
             return .result(
                 dialog: "No camera alerts yet.",
                 view: AlertSnippetView(title: "All quiet", subtitle: "No recent alerts", imagePath: nil)
             )
         }
-        let alert = latest.alert
         let subject = AlertPhrasing.subject(for: alert)
         let camera = AlertPhrasing.titleize(alert.camera)
         let ago = AlertPhrasing.relative(alert.when)
         let spoken = "\(subject) at \(camera), \(ago)."
         return .result(
             dialog: IntentDialog(stringLiteral: spoken),
-            view: AlertSnippetView(title: "\(subject) • \(camera)", subtitle: ago, imagePath: latest.imageURL?.path, camera: alert.camera)
+            view: AlertSnippetView(title: "\(subject) • \(camera)", subtitle: ago, imagePath: feed.heroImageURL?.path, camera: alert.camera)
         )
     }
 }
@@ -304,6 +307,8 @@ struct MarkAllReviewedIntent: AppIntent {
     static let title: LocalizedStringResource = "Mark All Reviewed"
     static let description = IntentDescription("Marks every current camera alert as reviewed.")
     static let openAppWhenRun = false
+    // Wipes the whole review queue server-side — not from a locked phone without Face ID / passcode.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let session = KeychainStore().loadSession() else {
@@ -361,6 +366,8 @@ struct SnoozeAlertsIntent: AppIntent {
     static let title: LocalizedStringResource = "Snooze Camera Alerts"
     static let description = IntentDescription("Mutes all ApexSight notifications for a while.")
     static let openAppWhenRun = false
+    // Up to 8 h of silence — same authentication rule as arming/disarming.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
 
     @Parameter(title: "For how long", default: .oneHour)
     var duration: SnoozeDuration

@@ -46,7 +46,7 @@ struct TriggersSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Haptics.tap()
                     isAdding = true

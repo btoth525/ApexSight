@@ -23,6 +23,9 @@ struct LiveAlertBanner: View {
         VStack {
             if let banner = appState.liveBanner {
                 bannerCard(banner)
+                    // New identity per banner: a second alert inside the first one's 4.5 s replaced
+                    // the model but kept the view, so onAppear (and its timer) never re-fired.
+                    .id(banner.id)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     .onAppear {
                         scheduleDismiss(banner)

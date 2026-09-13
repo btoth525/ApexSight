@@ -74,8 +74,11 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         // iOS suspends the extension the moment contentHandler runs, which was silently
         // dropping in-flight refreshes. Both fit comfortably in the ~30s NSE budget.
         widgetRefresh = Task {
-            await WidgetDataFetcher.refresh()
-            WidgetCenter.shared.reloadAllTimelines()
+            // Reload only when the feed actually moved: the final-GIF and AI-description
+            // follow-ups replace an alert in place and would otherwise each spend a reload of
+            // the daily budget — ~20 alerts/day used to exhaust it, and then WidgetKit deferred
+            // the widget's own 15-minute refreshes on exactly the busy days that matter.
+            if await WidgetDataFetcher.refresh() { WidgetCenter.shared.reloadAllTimelines() }
         }
 
         // Prefer a token sent in the payload; otherwise fall back to the one the

@@ -46,7 +46,7 @@ struct MultiCameraGridView: View {
             .navigationTitle(group?.name ?? "Multi-View")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         Haptics.tap()
                         dismiss()

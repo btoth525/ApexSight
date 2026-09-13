@@ -173,8 +173,8 @@ struct PillButtonStyle: ButtonStyle {
                 .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.4)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
-                .onChange(of: configuration.isPressed) { _, pressed in
-                    if pressed && isEnabled { Haptics.tap() }
+                .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { old, new in
+                    new && !old && isEnabled
                 }
         }
     }
@@ -201,8 +201,8 @@ struct GlassButtonStyle: ButtonStyle {
                 .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.4)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
-                .onChange(of: configuration.isPressed) { _, pressed in
-                    if pressed && isEnabled { Haptics.tap() }
+                .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { old, new in
+                    new && !old && isEnabled
                 }
         }
     }

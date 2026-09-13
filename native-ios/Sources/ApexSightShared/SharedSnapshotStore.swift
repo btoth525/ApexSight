@@ -26,8 +26,6 @@ enum SharedSnapshotStore {
     private static let defaultsKey = "latest-camera-snapshot"
     private static let imageFileName = "latest-camera.jpg"
 
-    private static let alertDefaultsKey = "latest-alert"
-    private static let alertImageFileName = "latest-alert.jpg"
 
     private static let recentAlertsKey = "recent-alerts"
     private static let recentHeroFileName = "recent-hero.jpg"
@@ -65,64 +63,12 @@ enum SharedSnapshotStore {
         return (snapshot, containerURL.appendingPathComponent(snapshot.imageFileName))
     }
 
-    static func saveLatestAlert(label: String, subLabel: String?, camera: String, severity: String, when: Date, imageData: Data?) {
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier) else {
-            return
-        }
-
-        var savedImageFileName: String? = nil
-        if let imageData {
-            let imageURL = containerURL.appendingPathComponent(alertImageFileName)
-            do {
-                try imageData.write(to: imageURL, options: [.atomic])
-                savedImageFileName = alertImageFileName
-            } catch {
-                savedImageFileName = nil
-            }
-        }
-
-        let alert = SharedAlert(
-            label: label,
-            subLabel: subLabel,
-            camera: camera,
-            severity: severity,
-            when: when,
-            imageFileName: savedImageFileName
-        )
-
-        do {
-            let encoded = try JSONEncoder().encode(alert)
-            UserDefaults(suiteName: ApexAppGroup.identifier)?.set(encoded, forKey: alertDefaultsKey)
-        } catch {
-            UserDefaults(suiteName: ApexAppGroup.identifier)?.removeObject(forKey: alertDefaultsKey)
-        }
-    }
-
-    static func loadLatestAlert() -> (alert: SharedAlert, imageURL: URL?)? {
-        guard
-            let data = UserDefaults(suiteName: ApexAppGroup.identifier)?.data(forKey: alertDefaultsKey),
-            let alert = try? JSONDecoder().decode(SharedAlert.self, from: data)
-        else {
-            return nil
-        }
-
-        guard
-            let imageFileName = alert.imageFileName,
-            let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ApexAppGroup.identifier)
-        else {
-            return (alert, nil)
-        }
-
-        return (alert, containerURL.appendingPathComponent(imageFileName))
-    }
-
-    // MARK: - Recent activity feed (for the widget)
-
     /// Persists a short list of the most recent alerts plus a single hero image (the
     /// newest event's snapshot). The widget renders the list as a recent-activity feed
     /// and uses the hero as its large image — no live streaming in the widget.
     static func saveRecentAlerts(_ alerts: [SharedAlert], heroImageData: Data?) {
         let defaults = UserDefaults(suiteName: ApexAppGroup.identifier)
+        defaults?.set(Date().timeIntervalSince1970, forKey: "apex.recentAlertsWrittenAt")
 
         // Alerts BEFORE the hero image — `loadRecentAlerts` below reads them in that same order,
         // so a widget timeline reload landing between these two writes sees the NEW captions next

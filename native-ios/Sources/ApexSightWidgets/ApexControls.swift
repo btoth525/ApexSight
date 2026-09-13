@@ -7,13 +7,14 @@ import AppIntents
 @available(iOS 18.0, *)
 struct ApexSnoozeControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "com.brandontoth.apexsight.control.snooze") {
-            ControlWidgetButton(action: ApexSnoozeIntent()) {
-                Label("Snooze Alerts", systemImage: "moon.zzz.fill")
+        StaticControlConfiguration(kind: ApexSurfaceRefresh.snoozeControlKind) {
+            ControlWidgetToggle(isOn: GlobalSnooze.isActive, action: ApexSnoozeToggleIntent()) {
+                Label(GlobalSnooze.isActive ? "Snoozed" : "Snooze Alerts",
+                      systemImage: GlobalSnooze.isActive ? "moon.zzz.fill" : "moon.zzz")
             }
         }
         .displayName("Snooze ApexSight")
-        .description("Mute camera alerts for an hour.")
+        .description("Mute camera alerts for an hour; tap again to resume.")
     }
 }
 

@@ -373,7 +373,8 @@ private struct RecordRow: View {
             }
         }
         .onDisappear { recorder.stop() }
-        .task { DoorbellVoiceRecorder.requestPermission() }
+        // Microphone permission is asked when the user first taps Record (in the recorder), not
+        // the moment this Settings page appears.
     }
 }
 
@@ -473,7 +474,7 @@ struct DoorbellResponsesSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationBackground(.ultraThinMaterial)
+        .legacySheetMaterial()
         .task { await soundboard.refresh() }
     }
 
@@ -509,5 +510,14 @@ struct DoorbellResponsesSheet: View {
                 }
             }
         }
+    }
+}
+
+private extension View {
+    /// On iOS 26+ the system draws the Liquid Glass sheet; a `presentationBackground` material
+    /// would paint a flat panel over it. Older systems keep the frosted material.
+    @ViewBuilder
+    func legacySheetMaterial() -> some View {
+        if #available(iOS 26.0, *) { self } else { presentationBackground(.ultraThinMaterial) }
     }
 }

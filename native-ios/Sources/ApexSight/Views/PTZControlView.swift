@@ -3,6 +3,7 @@ import SwiftUI
 struct PTZControlView: View {
     let cameraName: String
     let client: FrigateClient
+    @State private var feedbackTask: Task<Void, Never>?
     @State private var feedback: String?
     /// Whether `feedback` is reporting a FAILURE. Tracked explicitly rather than string-matched:
     /// the label used to render "Left" (moved) and "Move failed" (didn't move) in the same accent
@@ -106,14 +107,24 @@ struct PTZControlView: View {
         .accessibilityLabel("Stop movement")
     }
 
+    /// Press-and-hold: Frigate's `move_*` is CONTINUOUS until `stop`, so the pad sends the move on
+    /// press and `stop` on release — the way a real PTZ joystick works. The old `Button` with
+    /// `.buttonRepeatBehavior` fired a fresh move request per repeat tick and never sent stop, so
+    /// letting go left the camera panning until the user found the Stop button.
     private func ptzButton(icon: String, action: String, label: String) -> some View {
-        Button {
-            // No explicit per-tap haptic here: button-repeat fires this closure continuously
-            // while held, so a per-tick buzz would feel like a rattle. The unified
-            // .sensoryFeedback (keyed to the feedback label) gives one tick when the move
-            // lands, and the on-screen label confirms it visually.
-            send(action: action)
-        } label: {
+        ptzGlyph(icon)
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 40, perform: {}) { pressing in
+                if pressing { Haptics.tap(); send(action: action) } else { send(action: "stop") }
+            }
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Double-tap to nudge; use Stop to halt")
+            .accessibilityAction { send(action: action) }
+    }
+
+    private func ptzGlyph(_ icon: String) -> some View {
+        Group {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(GlassTheme.accent)
@@ -124,24 +135,22 @@ struct PTZControlView: View {
                     fallbackMaterial: .ultraThinMaterial
                 )
         }
-        .buttonRepeatBehavior(.enabled)
-        .accessibilityLabel(label)
     }
 
     private func send(action: String, extra: [String: String] = [:]) {
-        Task {
+        // One cancellable feedback timer: overlapping ones used to clear a NEWER command's label.
+        feedbackTask?.cancel()
+        feedbackTask = Task {
             do {
                 try await client.ptzMove(camera: cameraName, action: action, extra: extra)
                 feedbackIsError = false
                 withAnimation { feedback = action.replacingOccurrences(of: "_", with: " ").capitalized }
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                withAnimation { feedback = nil }
             } catch {
                 feedbackIsError = true
                 withAnimation { feedback = "Camera didn't move — try again" }
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                withAnimation { feedback = nil }
             }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if !Task.isCancelled { withAnimation { feedback = nil } }
         }
     }
 

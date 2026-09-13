@@ -41,8 +41,7 @@ enum LocalAlertNotifier {
         var userInfo: [String: Any] = [
             "review_id": review.id,
             "camera": review.camera,
-            "apex_url": "apex://review?id=\(review.id)",
-            "frigate_token": session.token
+            "apex_url": "apex://review?id=\(review.id)"
         ]
         // Prefer the animated GIF for the remote-push path too; keep a static fallback.
         if let gifURL { userInfo["snapshot_url"] = gifURL.absoluteString }

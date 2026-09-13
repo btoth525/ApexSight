@@ -26,7 +26,11 @@ final class RealtimeVideoController: NSObject, ObservableObject {
 
     // One factory per process (shared pattern with TwoWayTalkController; also reused by
     // StreamPrewarmer so there's a single heavy factory, not one per subsystem).
-    static let factory: RTCPeerConnectionFactory = {
+    // `nonisolated(unsafe)`: the enclosing class is @MainActor, but the factory is warmed from a
+    // detached task at launch (see ApexSightApp) so its ~50–150 ms init never lands on the main
+    // thread mid-animation. Safe: `static let` init is once-guarded, and libwebrtc's factory is
+    // internally synchronised (it hands out its own worker/network/signaling threads).
+    nonisolated(unsafe) static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
@@ -116,6 +120,10 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// the per-camera lockout: a cold on-demand NVENC stream that simply hasn't painted yet must
     /// stay retryable, or two slow launches would permanently pin the camera to low-res MJPEG.
     private var attemptHardFailure = false
+    /// ICE itself died on this attempt (no media route) — the ONLY case where re-trying the same
+    /// source with STUN+TURN can help. A 404/500 from go2rtc used to trip the same retry, costing
+    /// a doomed source two signaling round-trips, a TURN fetch and a gather before moving on.
+    private var attemptICEFailure = false
 
     /// Turn real-time hearing on/off (doorbell call answer/mute). Idempotent; a no-op until the
     /// audio track exists. Enabling routes playback to the loudspeaker — WebRTC's voice pipeline
@@ -164,22 +172,29 @@ final class RealtimeVideoController: NSObject, ObservableObject {
 
     private func cascade(sources: [String], client: FrigateClient, directLAN: Bool, generation: Int) async {
         var anyHardFailure = false
-        for source in sources {
+        for (index, source) in sources.enumerated() {
             if Task.isCancelled { return }
             Self.rtLog("attempt \(source) (directLAN=\(directLAN))")
             attemptHardFailure = false
-            var rendered = await attempt(source: source, client: client, directLAN: directLAN)
+            attemptICEFailure = false
+            // At home, a non-final source gets 5 s: a warm go2rtc producer answers in well under a
+            // second, a cold `_sub` in 1–2 s, so 9 s was mostly a slow path to the next source —
+            // and 9 + 9 outlasted the tile's 15 s MJPEG timer, which then killed the `main` attempt
+            // mid-flight. The last source keeps the full budget for on-demand NVENC cold starts.
+            let budget: UInt64 = (directLAN && index < sources.count - 1) ? 5_000_000_000 : 9_000_000_000
+            var rendered = await attempt(source: source, client: client, directLAN: directLAN, budget: budget)
             Self.rtLog("attempt \(source) → \(rendered ? "RENDERED ✅" : (attemptHardFailure ? "HARD FAIL ❌" : "timeout ⏱"))")
             // Quality guard: a host-only LAN attempt can HARD-fail if the camera's WebRTC media
             // port (:8555) is firewalled while its HTTP (:5000) is reachable. Rather than let the
             // cascade drop to low-res MJPEG, retry the SAME source once with the full STUN+TURN
             // path — so the speed optimization never costs picture quality. (A timeout, i.e. a
             // cold stream still warming, is NOT retried here — TURN wouldn't help it.)
-            if !rendered && attemptHardFailure && directLAN {
-                Self.rtLog("host-only hard-fail → retry \(source) with STUN+TURN")
+            if !rendered && attemptICEFailure && directLAN {
+                Self.rtLog("host-only ICE failure → retry \(source) with STUN+TURN")
                 teardown(generation: generation)
                 if Task.isCancelled { return }
                 attemptHardFailure = false
+                attemptICEFailure = false
                 rendered = await attempt(source: source, client: client, directLAN: false)
                 Self.rtLog("retry \(source) → \(rendered ? "RENDERED ✅" : (attemptHardFailure ? "HARD FAIL ❌" : "timeout ⏱"))")
             }
@@ -205,7 +220,8 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     }
 
     /// One source: negotiate, then wait for a rendered frame (true) or timeout/failure (false).
-    private func attempt(source: String, client: FrigateClient, directLAN: Bool) async -> Bool {
+    private func attempt(source: String, client: FrigateClient, directLAN: Bool,
+                         budget: UInt64 = 9_000_000_000) async -> Bool {
         attemptStartedAt = Date()
         attemptSource = source
         let config = RTCConfiguration()
@@ -296,7 +312,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
         return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             firstFrameContinuation = cont
             attemptWatchdog = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 9_000_000_000)
+                try? await Task.sleep(nanoseconds: budget)
                 await MainActor.run { self?.resolveAttempt(false) }
             }
         }
@@ -414,6 +430,7 @@ extension RealtimeVideoController: RTCPeerConnectionDelegate {
                     // ICE genuinely died (no media route) — a hard failure, not a cold-start
                     // timeout. Fail THIS attempt so the cascade can try the next source (or give up).
                     self.attemptHardFailure = true
+                    self.attemptICEFailure = true
                     self.resolveAttempt(false)
                 } else if self.state == .live {
                     // A live session dropped — fall back to HLS (still running underneath).

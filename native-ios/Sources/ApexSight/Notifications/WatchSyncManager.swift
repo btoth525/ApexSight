@@ -39,9 +39,21 @@ final class WatchSyncManager: NSObject, WCSessionDelegate, @unchecked Sendable {
             "updatedAt": Date().timeIntervalSince1970,
             "alerts": encoded
         ]
-        // Keep the thumbnail small — application context has a tight size budget.
-        if let heroJPEG, heroJPEG.count < 180_000 { payload["heroJPEG"] = heroJPEG }
-        try? session.updateApplicationContext(payload)
+        // `updateApplicationContext` rejects payloads over ~65 KB (`payloadTooLarge`), and the old
+        // `try?` swallowed that — the watch then got NO update, alerts included. Send a watch-sized
+        // thumbnail (≤320 px, q0.6 ≈ 10–20 KB); if the transfer still throws, retry without it so
+        // the captions always arrive.
+        if let heroJPEG,
+           let small = RemoteImage.downsample(heroJPEG, maxPixel: 320)?.jpegData(compressionQuality: 0.6),
+           small.count < 60_000 {
+            payload["heroJPEG"] = small
+        }
+        do {
+            try session.updateApplicationContext(payload)
+        } catch {
+            payload["heroJPEG"] = nil
+            try? session.updateApplicationContext(payload)
+        }
     }
 
     // MARK: - WCSessionDelegate
