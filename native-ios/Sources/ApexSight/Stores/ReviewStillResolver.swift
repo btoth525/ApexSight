@@ -67,11 +67,13 @@ final class ReviewStillResolver {
         if isFinished, let cached = cache[review.id] { return cached }
         if let running = inFlight[review.id] { return await running.value }
 
-        // The SAME detection the row's clip uses, so the still and the video can never describe
-        // two different moments (that divergence is half of "shows the wrong history").
-        let detectionID = await ReviewMediaResolver.shared.primaryDetectionID(for: review,
-                                                                             client: client)
+        // Resolved INSIDE the task: awaiting it out here would suspend before `inFlight` is
+        // registered below, letting a second row for the same review slip past the guard above.
+        // It's the SAME detection the row's clip uses, so the still and the video can never
+        // describe two different moments (that divergence is half of "shows the wrong history").
         let task = Task<Double?, Never> { [weak self] in
+            let detectionID = await ReviewMediaResolver.shared.primaryDetectionID(for: review,
+                                                                                  client: client)
             let pinned = await Self.resolve(review: review, detectionID: detectionID, client: client)
             if isFinished { self?.cache[review.id] = pinned }
             self?.inFlight[review.id] = nil

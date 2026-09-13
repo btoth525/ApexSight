@@ -70,13 +70,16 @@ final class ReviewMediaResolver {
         if finished, let cached = cache[review.id] { return cached }
         if let running = inFlight[review.id] { return await running.value }
 
-        // Reuse the cached/in-flight detection choice rather than re-deriving it: for the 4% of
-        // reviews that need title-matching that would otherwise fetch every detection's event twice.
-        let choice = await detectionChoice(for: review, client: client)
+        // The detection lookup happens INSIDE the task: awaiting it out here would suspend before
+        // `inFlight` is registered below, letting a second caller for the same review slip past the
+        // guard above and run a duplicate clip probe. Reuses the cached/in-flight choice, so the
+        // 4% of reviews needing title-matching don't fetch every detection's event twice.
         let task = Task<ReviewMediaPlan, Never> { [weak self] in
+            guard let self else { return ReviewMediaPlan() }
+            let choice = await self.detectionChoice(for: review, client: client)
             let plan = await Self.resolveClip(review: review, choice: choice, client: client)
-            if finished { self?.cache[review.id] = plan }
-            self?.inFlight[review.id] = nil
+            if finished { self.cache[review.id] = plan }
+            self.inFlight[review.id] = nil
             // One line per RESOLVED review (not per render — this runs once and is then cached),
             // so a "wrong video" report can be read back off the relay instead of reproduced.
             DiagnosticLog.shared.log(.info, "review-media", Self.describe(review: review, plan: plan))
