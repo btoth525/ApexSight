@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct SearchView: View {
+    /// What VoiceOver says for a thumbnail card — the visible text is only a relative time.
+    static func spokenLabel(_ event: FrigateEvent) -> String {
+        let when = Date(timeIntervalSince1970: event.startTime ?? 0).formatted(date: .abbreviated, time: .shortened)
+        return "\(titleize(event.displayLabel)), \(titleize(event.camera)), \(when)"
+    }
     @EnvironmentObject private var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
@@ -317,6 +322,7 @@ struct SearchView: View {
                             thumbnail(event)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(Self.spokenLabel(event))
                     }
                 }
             }
@@ -481,10 +487,11 @@ struct SearchView: View {
                 Text("Events After")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(GlassTheme.secondary)
-                DatePicker("", selection: Binding(
+                DatePicker("Events after", selection: Binding(
                     get: { afterDate ?? Date().addingTimeInterval(-86400 * 7) },
                     set: { afterDate = $0 }
                 ), displayedComponents: [.date, .hourAndMinute])
+                .labelsHidden()
                 .datePickerStyle(.compact)
                 .colorScheme(.dark)
                 .onAppear { if afterDate == nil { afterDate = Date().addingTimeInterval(-86400 * 7) } }
@@ -578,6 +585,7 @@ struct SearchView: View {
                                     thumbnail(event)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(Self.spokenLabel(event))
                             }
                         }
                     }

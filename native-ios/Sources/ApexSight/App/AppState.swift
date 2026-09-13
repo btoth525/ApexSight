@@ -143,7 +143,7 @@ final class AppState: ObservableObject {
 
     var client: FrigateClient? {
         guard let session else { return nil }
-        let base = (onLocalNetwork && session.localBaseURL != nil) ? session.localBaseURL! : session.baseURL
+        let base = (onLocalNetwork ? session.localBaseURL : nil) ?? session.baseURL
         return FrigateClient(baseURL: base, token: session.token)
     }
 
@@ -280,7 +280,10 @@ final class AppState: ObservableObject {
                 // Fire-and-forget (like the syncs above) so a slow/black-holed relay's house-mode
                 // fetch (8s timeout) can't stretch the 15s alert-poll cadence when Frigate is fine.
                 Task { [weak self] in await self?.refreshGate() }
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                // Offline: back off instead of knocking every 15s (+ timeout) on a server that isn't
+                // there; `isReachable` flips back on the first successful call and the cadence returns.
+                let seconds: UInt64 = (self?.isReachable == false) ? 60 : 15
+                try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             }
         }
     }
@@ -1424,6 +1427,10 @@ final class AppState: ObservableObject {
         stopRealtime()
         stopForegroundPolling()
         cancelInFlightServerWork()
+        // Per-review caches are keyed by review id, and a different Frigate can reuse an id.
+        ReviewMediaResolver.shared.reset()
+        ReviewStillResolver.shared.reset()
+        WallPlayerRegistry.shared.removeAll()
         locallyViewedIDs.removeAll()
         // New server ⇒ re-evaluate its (possibly different / absent) local URL from scratch.
         onLocalNetwork = false
@@ -1454,6 +1461,10 @@ final class AppState: ObservableObject {
         stopRealtime()
         stopForegroundPolling()
         cancelInFlightServerWork()
+        // Per-review caches are keyed by review id, and a different Frigate can reuse an id.
+        ReviewMediaResolver.shared.reset()
+        ReviewStillResolver.shared.reset()
+        WallPlayerRegistry.shared.removeAll()
         locallyViewedIDs.removeAll()
         unreviewedCount = 0
         keychain.clear()

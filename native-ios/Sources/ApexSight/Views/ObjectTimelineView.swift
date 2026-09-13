@@ -53,6 +53,8 @@ struct ObjectTimelineView: View {
                 highlightTS = (selected ? nil : beat.ts)
             }
         }
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { highlightTS = (selected ? nil : beat.ts) }
     }
 
     @ViewBuilder

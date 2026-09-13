@@ -2,7 +2,12 @@ import SwiftUI
 
 struct ReviewRow: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let review: FrigateReviewItem
+
+    /// Looping previews respect Settings → Accessibility → Motion ("Auto-Play Video Previews")
+    /// and Reduce Motion — the same switches Photos and the App Store honour.
+    private var autoplayAllowed: Bool { !reduceMotion && UIAccessibility.isVideoAutoplayEnabled }
     var onOpen: () -> Void = {}
     var onDismiss: () -> Void = {}
 
@@ -84,7 +89,6 @@ struct ReviewRow: View {
             .padding(.trailing, 54)
         }
         .cardStroke()
-        .shadow(color: .black.opacity(0.22), radius: 9, y: 4)
         .overlay(alignment: .bottom) {
             if Self.showMediaDebug { mediaDebugBadge }
         }
@@ -190,9 +194,9 @@ struct ReviewRow: View {
                 // `plan.clipURL` is nil when the event has no clip or the window holds no
                 // recording — the still then stands alone, which is the ONLY fallback. It never
                 // degrades to a previously loaded clip, because the plan is reset per review id.
-                if let clip = plan.clipURL, let client = appState.client {
+                if autoplayAllowed, let clip = plan.clipURL, let client = appState.client {
                     LoopingVideoView(url: clip, client: client,
-                                     onFirstFrame: { withAnimation(.easeIn(duration: 0.25)) { videoReady = true } })
+                                     onFirstFrame: { withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { videoReady = true } })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(videoReady ? 1 : 0)
                         .allowsHitTesting(false)

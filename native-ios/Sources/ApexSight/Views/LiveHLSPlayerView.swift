@@ -372,8 +372,9 @@ final class HLSLiveModel: ObservableObject {
         guard !isStopped else { return }
         if !didTryReauth, let reauth {
             didTryReauth = true
-            Task { @MainActor in
-                if await reauth() { connect() } else { scheduleReconnect(reason: message) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if await reauth() { self.connect() } else { self.scheduleReconnect(reason: message) }
             }
         } else {
             scheduleReconnect(reason: message)
@@ -436,6 +437,9 @@ final class HLSLiveModel: ObservableObject {
     /// the KVO / NotificationCenter observers. All these APIs are thread-safe, so a
     /// nonisolated deinit is fine. Idempotent with `stop()` (everything is already nil then).
     deinit {
+        // AVPlayer.pause() is thread-safe. A model that deallocates without an onDisappear
+        // (its tile replaced by an error card) must not leave an un-paused player pulling HLS.
+        timeObserverPlayer?.pause()
         statusObs?.invalidate()
         timeControlObs?.invalidate()
         sizeObs?.invalidate()
@@ -786,13 +790,18 @@ struct HLSLivePlayerView: View {
         // was dropping it to low-quality MJPEG instead of its full-res main. Until the stream list
         // is known, assume a sub may exist (old behavior) so first-launch tiles keep using subs.
         let hasSub = !appState.subStreamsKnown || appState.subStreamCameras.contains(camera.name)
+        // Capture only what the closures need. Referencing `appState`/`camera` directly would
+        // capture the whole View value — including its @StateObject wrapper — from a closure the
+        // model stores, i.e. model → closure → view copy → model: a cycle that can keep an
+        // HLSLiveModel (and its AVPlayer) alive after SwiftUI has dropped the view.
+        let name = camera.name
         model.configure(
-            cameraName: camera.name,
+            cameraName: name,
             preferSub: preferSub && hasSub,
-            makeURL: { appState.client?.liveHLSURL(camera: camera.name, sub: false) },
-            makeSubURL: hasSub ? { appState.client?.liveHLSURL(camera: camera.name, sub: true) } : nil,
-            makeItem: { url in appState.client?.playerItem(for: url) },
-            reauth: { await appState.reauthenticate() }
+            makeURL: { [weak appState] in appState?.client?.liveHLSURL(camera: name, sub: false) },
+            makeSubURL: hasSub ? { [weak appState] in appState?.client?.liveHLSURL(camera: name, sub: true) } : nil,
+            makeItem: { [weak appState] url in appState?.client?.playerItem(for: url) },
+            reauth: { [weak appState] in await appState?.reauthenticate() ?? false }
         )
         // Full-screen viewer (showControls + autoPiP) keeps playing on background so PiP can
         // start; wall/grid tiles pause to save power.
@@ -990,9 +999,14 @@ struct HLSLivePlayerView: View {
             // A/V mode the sync above owns the HLS mute (WebRTC may be carrying the audio).
             if !realtimeAudio, let muted { model.setMuted(muted) }
             // Returning to a kept-alive player (tab switch back) — just resume, instantly.
-            if started {
+            // Returning to a kept-alive player: resume — UNLESS it fell back to MJPEG while hidden
+            // (the 10s timer ran against a PAUSED player, which can never paint). Then fall through
+            // to the fresh-open cascade below so full-res HLS gets another shot, instead of
+            // stranding the tile on low-res until its next disappear.
+            if started, !mjpegFallback {
                 model.isOffscreen = false
-                if mjpegFallback == false { model.player?.play() }
+                model.player?.play()
+                if !livePixelsShown { startFallbackTimer() }
                 return
             }
             model.isOffscreen = false
@@ -1064,6 +1078,9 @@ struct HLSLivePlayerView: View {
                     // zero-latency handoff — pausing it then would freeze the handoff video;
                     // the viewer pauses it itself once its own stream takes over.
                     model.isOffscreen = true
+                    // A paused player can't reach live pixels, so the fallback timer must not keep
+                    // running against it — it would drop the tile to MJPEG offscreen.
+                    fallbackTask?.cancel(); fallbackTask = nil
                     if !WallPlayerRegistry.shared.isBorrowed(camera.name) {
                         model.player?.pause()
                     }

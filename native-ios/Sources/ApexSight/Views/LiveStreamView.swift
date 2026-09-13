@@ -74,7 +74,7 @@ struct LiveStreamView: View {
             .accessibilityHidden(!showChrome)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showChrome)
         }
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden(!showChrome)
         // Hide the bottom tab pill bar entirely in the full-screen viewer for a clean immersive
         // feed. (iOS only shows the small "minimized" pill as a scroll effect — there's no API
@@ -396,6 +396,9 @@ struct LiveStreamView: View {
                 }
             }
         }
+        // Up to nine adjacent glass circles over live video: one container renders them together
+        // (and lets them morph), instead of nine independent glass samples per frame.
+        .glassGroup(spacing: GlassTheme.Space.m)
         .padding(.horizontal, GlassTheme.Space.l)
     }
 

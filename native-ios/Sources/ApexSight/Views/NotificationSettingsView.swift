@@ -323,7 +323,7 @@ struct NotificationSettingsView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GlassTheme.primary)
                         Spacer()
-                        Picker("", selection: Binding(
+                        Picker("Cooldown for \(titleize(camera.name))", selection: Binding(
                             get: { prefsStore.preferences.cooldown(for: camera.name) },
                             set: { prefsStore.preferences.cooldownSeconds[camera.name] = $0; prefsStore.save() }
                         )) {
@@ -332,6 +332,7 @@ struct NotificationSettingsView: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .labelsHidden()
                         .tint(GlassTheme.accent)
                     }
                 }

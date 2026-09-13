@@ -178,7 +178,7 @@ GlassTheme.Radius.chip    // 11 — small pills
 - `SectionHeader` — bold section label
 - `SkeletonView` — loading placeholder with shimmer
 
-**Tab bar**: `.ultraThinMaterial`, dark color scheme. Never override with a solid color.
+**Tab bar / nav bar**: via `.glassTabBar()` / `.glassNavBar()` — on iOS 26+ the SYSTEM draws the Liquid Glass bar (no custom background: a forced material paints over it); below 26 they keep `.ultraThinMaterial`. Never a solid color.
 **Nav bar**: `.glassNavBar()` modifier. Large title on Cameras, inline on sub-screens.
 
 ---

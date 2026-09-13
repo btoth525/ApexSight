@@ -107,7 +107,7 @@ struct PathTailCanvas: View {
     }
 
     private func pill(_ ctx: GraphicsContext, at p: CGPoint, text: String) {
-        let resolved = ctx.resolve(Text(text).font(.system(size: 9, weight: .semibold)).foregroundColor(.white))
+        let resolved = ctx.resolve(Text(text).font(.system(size: 9, weight: .semibold)).foregroundStyle(.white))
         let m = resolved.measure(in: CGSize(width: 220, height: 40))
         let rect = CGRect(x: p.x - m.width / 2 - 6, y: p.y - m.height / 2 - 3, width: m.width + 12, height: m.height + 6)
         ctx.fill(Path(roundedRect: rect, cornerRadius: 7), with: .color(GlassTheme.orange.opacity(0.92)))

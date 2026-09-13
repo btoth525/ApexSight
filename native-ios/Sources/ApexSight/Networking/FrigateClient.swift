@@ -706,7 +706,27 @@ struct FrigateClient {
         guard let (tmp, response) = try? await Self.downloadSession.download(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         try? FileManager.default.moveItem(at: tmp, to: dest)
+        Self.trimPreviewCache(in: dir)
         return FileManager.default.fileExists(atPath: dest.path) ? dest : nil
+    }
+
+    /// Keeps the packed-preview cache bounded (oldest first). Scrubbing a day across eight cameras
+    /// is ~768 MB of hour files, and nothing else ever trims this directory — iOS only purges
+    /// Caches under storage pressure, and the app's own cache tools don't know about it.
+    private static func trimPreviewCache(in dir: URL, budget: Int = 256 * 1024 * 1024) {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
+        var entries = files.compactMap { url -> (url: URL, date: Date, size: Int)? in
+            guard let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
+            return (url, v.contentModificationDate ?? .distantPast, v.fileSize ?? 0)
+        }
+        var total = entries.reduce(0) { $0 + $1.size }
+        guard total > budget else { return }
+        entries.sort { $0.date < $1.date }
+        for entry in entries where total > budget {
+            try? FileManager.default.removeItem(at: entry.url)
+            total -= entry.size
+        }
     }
 
     // Events with full filter params

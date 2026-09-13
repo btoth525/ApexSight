@@ -85,7 +85,7 @@ struct CamerasTab: View {
     /// confirm the scroll-back feel against real Frigate on device (this sim has no credentials).
     private var liveScroll: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 if let error = appState.errorMessage {
                     errorCard(error)
                 }
@@ -156,7 +156,7 @@ struct CamerasTab: View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(.subheadline.weight(.heavy))
                     .foregroundStyle(GlassTheme.orange)
                 Button {
                     Haptics.tap()

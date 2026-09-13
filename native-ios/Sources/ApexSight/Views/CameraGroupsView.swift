@@ -98,6 +98,8 @@ struct CameraGroupsView: View {
         // Tap anywhere on the card (except the trash button) to edit the group.
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); editingGroup = group }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { editingGroup = group }
     }
 
     private var emptyState: some View {

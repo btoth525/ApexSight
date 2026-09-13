@@ -50,4 +50,8 @@ public enum BoundedSession {
     /// Widget timeline refreshes. These fire on the system's schedule with no regard for whether
     /// the previous batch returned, so a slow server must not let them accumulate.
     public static let widget: URLSession = make(idle: 8, total: 15, maxConnectionsPerHost: 2)
+
+    /// Household relay calls (small JSON, over the tunnel). `URLSession.shared` would let a black-holed
+    /// relay park a task for up to 7 days; this caps a call at 30s wall-clock.
+    public static let relay: URLSession = make(idle: 15, total: 30, maxConnectionsPerHost: 4)
 }

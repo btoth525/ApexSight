@@ -233,7 +233,14 @@ final class NotificationService: UNNotificationServiceExtension {
                 NotificationMediaCache.store(temporaryURL, for: url, appGroup: Self.appGroupSuite)
                 completion(attachment)
             } else {
-                // Fall back to the next candidate (e.g. GIF not ready → static thumbnail).
+                // Fall back to the next candidate (e.g. GIF not ready → static thumbnail) — unless
+                // the notification was ALREADY delivered (serviceExtensionTimeWillExpire cancelled
+                // this task). Opening another Frigate request while iOS is suspending us is the
+                // abandoned ffmpeg-backed request CLAUDE.md warns about: nobody is left to read it.
+                self.deliveryLock.lock()
+                let alreadyDelivered = self.hasDelivered
+                self.deliveryLock.unlock()
+                if alreadyDelivered { return }
                 self.download(remaining, token: token, completion: completion)
             }
         }

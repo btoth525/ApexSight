@@ -106,12 +106,6 @@ enum RelayClient {
         let tz_offset: Int
     }
 
-    private struct ActivityBody: Encodable {
-        let pairing_code: String
-        let token: String
-        let environment: String
-        let kind: String   // "start" = push-to-start token
-    }
 
     private struct SetModeBody: Encodable {
         let mode: String            // "home" (disarm) | "away" | "night"
@@ -158,7 +152,7 @@ enum RelayClient {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await BoundedSession.relay.data(for: request)
             let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
             guard ok else { return nil }
             return try? JSONDecoder().decode(Health.self, from: data)
@@ -289,12 +283,6 @@ enum RelayClient {
                        body: RecapBody(pairing_code: pairingCode, enabled: enabled, hour: hour, minute: minute, tz_offset: tzOffset))
     }
 
-    /// Registers this device's Live Activity push-to-start token so the relay can start an
-    /// incident Live Activity on the Lock Screen even when the app is fully closed.
-    static func registerActivity(relayURL: String, pairingCode: String, token: String, environment: String, kind: String = "start") async throws {
-        try await post(relayURL: relayURL, path: "/v1/activity/register",
-                       body: ActivityBody(pairing_code: pairingCode, token: token, environment: environment, kind: kind))
-    }
 
     /// Requests a house-mode change. Arming rides the pairing code; disarming (mode "home") must
     /// carry the Alarmo `code`, which HA/Alarmo validates server-side. Throws RelayError.server on a
@@ -321,7 +309,7 @@ enum RelayClient {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await BoundedSession.relay.data(for: request)
             let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
             guard ok else { return nil }
             return try? JSONDecoder().decode(HouseModeStatus.self, from: data)
@@ -355,7 +343,7 @@ enum RelayClient {
         request.httpBody = try JSONEncoder().encode(body)
         request.timeoutInterval = 15
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await BoundedSession.relay.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             let msg = String(data: data, encoding: .utf8) ?? ""
@@ -389,7 +377,7 @@ enum RelayClient {
         comps?.queryItems = [URLQueryItem(name: "pairing_code", value: pairingCode)]
         guard let url = comps?.url else { return nil }
         var req = URLRequest(url: url); req.timeoutInterval = 12
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+        guard let (data, resp) = try? await BoundedSession.relay.data(for: req),
               (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
               let s = try? JSONDecoder().decode(Status.self, from: data) else { return nil }
         return (s.configured, s.reachable)
@@ -402,7 +390,7 @@ enum RelayClient {
         comps?.queryItems = [URLQueryItem(name: "pairing_code", value: pairingCode)]
         guard let url = comps?.url else { return [] }
         var req = URLRequest(url: url); req.timeoutInterval = 10
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+        guard let (data, resp) = try? await BoundedSession.relay.data(for: req),
               (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
               let r = try? JSONDecoder().decode(Resp.self, from: data) else { return [] }
         return r.clips
@@ -425,7 +413,7 @@ enum RelayClient {
         request.httpBody = try JSONEncoder().encode(Body(pairing_code: pairingCode))
         request.timeoutInterval = 150   // ≥ the relay's 120s per-hold backstop
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await BoundedSession.relay.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             throw RelayError.server(code, String(data: data, encoding: .utf8) ?? "")
@@ -463,20 +451,20 @@ enum RelayClient {
         }
         var body = Data()
         func field(_ name: String, _ value: String) {
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
-            body.append("\(value.components(separatedBy: .newlines).joined(separator: " "))\r\n".data(using: .utf8)!)
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
+            body.append(Data("\(value.components(separatedBy: .newlines).joined(separator: " "))\r\n".utf8))
         }
         field("pairing_code", pairingCode)
         if !saveAs.isEmpty { field("save_as", saveAs) }
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"\(headerSafe(filename))\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"audio\"; filename=\"\(headerSafe(filename))\"\r\n".utf8))
+        body.append(Data("Content-Type: application/octet-stream\r\n\r\n".utf8))
         body.append(audio)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         req.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await BoundedSession.relay.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             throw RelayError.server(code, String(data: data, encoding: .utf8) ?? "")

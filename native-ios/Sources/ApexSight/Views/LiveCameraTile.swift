@@ -63,7 +63,6 @@ struct LiveCameraTile: View {
                 RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
                     .stroke(GlassTheme.separator, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
             .contentShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         }
         .buttonStyle(.plain)

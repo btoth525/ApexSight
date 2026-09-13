@@ -143,6 +143,7 @@ struct RecordingTimelineView: View {
         .onChange(of: clipModel.isReady) { _, ready in
             if ready { performPendingSeek() }
         }
+        .onChange(of: clipModel.reachedEndCount) { _, _ in hourEnded() }
         .onDisappear(perform: teardown)
         .sheet(item: $sharePayload) { payload in ShareSheet(items: payload.items) }
     }
@@ -191,7 +192,8 @@ struct RecordingTimelineView: View {
                     .foregroundStyle(GlassTheme.secondary)
                 Text(Date(timeIntervalSince1970: engine.center)
                         .formatted(.dateTime.hour().minute().second()))
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.title.weight(.bold))
+                    .fontDesign(.rounded)
                     .monospacedDigit()
                     .foregroundStyle(GlassTheme.primary)
                     .contentTransition(.numericText())
@@ -530,7 +532,6 @@ struct RecordingTimelineView: View {
     private func bootstrap() async {
         guard let client = appState.client else { return }
         clipModel.loopsAtEnd = false
-        clipModel.onReachedEnd = { hourEnded() }
         engine.zoom(to: storedVisibleSeconds)
         let now = Date().timeIntervalSince1970
         let today = calendar.startOfDay(for: Date())

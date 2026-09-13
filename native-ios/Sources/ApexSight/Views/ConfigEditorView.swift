@@ -134,7 +134,7 @@ struct ConfigEditorView: View {
                 .submitLabel(.search)
                 .onSubmit { findNext += 1 }
             Button { findNext += 1 } label: {
-                Image(systemName: "chevron.down.circle.fill").foregroundStyle(GlassTheme.accent)
+                Image(systemName: "chevron.down.circle.fill").foregroundStyle(GlassTheme.accent).hitTarget()
             }
             .accessibilityLabel("Find next")
             .disabled(findQuery.isEmpty)
@@ -155,7 +155,7 @@ struct ConfigEditorView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button { withAnimation { validationError = nil } } label: {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(GlassTheme.tertiary)
+                Image(systemName: "xmark.circle.fill").foregroundStyle(GlassTheme.tertiary).hitTarget()
             }
             .accessibilityLabel("Dismiss error")
         }
@@ -192,6 +192,7 @@ struct ConfigEditorView: View {
                 Image(systemName: "ellipsis.circle.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(GlassTheme.secondary)
+                    .hitTarget()
                     .accessibilityLabel("More actions")
             }
         }

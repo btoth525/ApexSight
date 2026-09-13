@@ -66,8 +66,6 @@
 	<string>ApexSight uses your microphone for two-way talk — speaking through cameras that support it. Audio is streamed live to the camera and never stored.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>ApexSight saves camera clips you download to your photo library.</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

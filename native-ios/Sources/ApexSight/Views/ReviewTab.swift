@@ -111,7 +111,6 @@ struct ReviewTab: View {
             .padding(.horizontal, GlassTheme.Space.l)
             .padding(.vertical, GlassTheme.Space.m)
             .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
             .padding(.horizontal, GlassTheme.Space.l)
             .padding(.bottom, GlassTheme.Space.l)
             .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -273,7 +272,7 @@ struct ReviewTab: View {
                     Task {
                         await appState.markAllReviewsViewed()
                         detectionItems = []
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        Haptics.success()
                     }
                 }
                 Button("Cancel", role: .cancel) {}

@@ -74,11 +74,26 @@ final class DiagnosticLog {
         let entry = Entry(ts: Date().timeIntervalSince1970,
                           level: level.rawValue,
                           category: category,
-                          message: Self.redact(message))
+                          message: Self.redact(message, secrets: [DeviceTokenStore.pairingCode ?? ""]))
         entries.append(entry)
         if entries.count > Self.maxEntries { entries.removeFirst(entries.count - Self.maxEntries) }
-        persist()
+        schedulePersist()
         scheduleFlush()
+    }
+
+    private var persistTask: Task<Void, Never>?
+    private var lastFullBufferFlush = Date.distantPast
+    /// Coalesces disk writes. A burst of stream errors (eight tiles reconnecting) logs many lines
+    /// in a second, and each used to encode + atomically rewrite the whole 600-entry file on the
+    /// main actor, mid-relayout. Two seconds of batching keeps the crash trail while removing the I/O
+    /// from the hot path.
+    private func schedulePersist() {
+        guard persistTask == nil else { return }
+        persistTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.persistTask = nil
+            self?.persist()
+        }
     }
 
     func info(_ category: String, _ message: String) { log(.info, category, message) }
@@ -102,7 +117,7 @@ final class DiagnosticLog {
     /// `nonisolated` on purpose: it is a pure string transform with no state, it must be callable
     /// from the notification-service extension and background contexts, and a test shouldn't have
     /// to hop to the main actor to check that a token cannot leak.
-    nonisolated static func redact(_ text: String) -> String {
+    nonisolated static func redact(_ text: String, secrets: [String] = []) -> String {
         var s = text
         // JWTs (the Frigate session token) — three dot-separated base64url runs.
         s = s.replacingOccurrences(
@@ -119,9 +134,7 @@ final class DiagnosticLog {
             of: #"(?i)frigate_token=[^;\s]+"#,
             with: "frigate_token=‹redacted›", options: .regularExpression)
         // The household pairing code and the Alarmo disarm code, wherever they appear verbatim.
-        for secret in [RelayConfig.defaultPairingCode,
-                       UserDefaults(suiteName: ApexAppGroup.identifier)?.string(forKey: "apex.pairingCode") ?? ""]
-        where secret.count >= 4 {
+        for secret in [RelayConfig.defaultPairingCode] + secrets where secret.count >= 4 {
             s = s.replacingOccurrences(of: secret, with: "‹pairing›")
         }
         // Basic-auth style credentials embedded in a URL.
@@ -147,7 +160,13 @@ final class DiagnosticLog {
 
     private func scheduleFlush() {
         // Getting close to full → send now rather than lose the oldest lines to the ring buffer.
-        if entries.count >= Self.maxBatch { Task { await flush() }; return }
+        // …but not on EVERY line while full: with the relay unreachable that spawned a 12s POST
+        // attempt per log line. One immediate attempt per minute; the regular cadence covers the rest.
+        if entries.count >= Self.maxBatch, Date().timeIntervalSince(lastFullBufferFlush) > 60 {
+            lastFullBufferFlush = Date()
+            Task { await flush() }
+            return
+        }
         guard flushTask == nil else { return }
         flushTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.flushInterval))
@@ -184,7 +203,7 @@ final class DiagnosticLog {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
         request.timeoutInterval = 12
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
+        guard let (_, response) = try? await BoundedSession.relay.data(for: request),
               let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else { return }
         // Only drop what the relay actually accepted, and only the exact lines we sent — new ones

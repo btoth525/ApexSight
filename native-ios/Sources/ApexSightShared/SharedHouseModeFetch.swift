@@ -33,7 +33,7 @@ public enum SharedHouseModeFetch {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await BoundedSession.relay.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
 

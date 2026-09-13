@@ -67,7 +67,6 @@ targets:
         NSPhotoLibraryAddUsageDescription: ApexSight saves camera clips you download to your photo library.
         NSCameraUsageDescription: ApexSight uses real-time video components to play your live camera feeds instantly. It does not capture or record from this device's camera.
         NSMicrophoneUsageDescription: ApexSight uses your microphone for two-way talk — speaking through cameras that support it. Audio is streamed live to the camera and never stored.
-        NSSupportsLiveActivities: true
         UIBackgroundModes:
           - audio
           - fetch
@@ -169,7 +168,6 @@ targets:
       # push payload, so the host is remote-controlled (Foundation only, extension-safe).
       - path: Sources/ApexSightShared/CredentialHostPolicy.swift
       # On-device Vision scene summary for AI-enriched alerts (Vision + ImageIO, extension-safe).
-      - path: Sources/ApexSightShared/SceneVision.swift
       # Widget cache + fetcher (Foundation/WidgetKit — extension-safe): on every alert push the
       # NSE refreshes the home/Lock-Screen widgets with the current Frigate state, so they update
       # on alerts and clear reviewed ones without the app being opened.

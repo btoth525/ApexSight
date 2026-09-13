@@ -150,8 +150,7 @@ struct MainTabView: View {
                     .tag(tab)
             }
         }
-        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-        .toolbarColorScheme(.dark, for: .tabBar)
+        .glassTabBar()
         // iOS 26: the Liquid Glass tab bar shrinks away as you scroll the cameras,
         // giving the content even more room — then returns on scroll-up.
         .modifier(TabBarMinimizeOnScroll())

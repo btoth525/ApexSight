@@ -253,6 +253,7 @@ struct MultiCameraGridView: View {
         switch columns {
         case 1:  return "rectangle"
         case 3:  return "rectangle.grid.3x2"
+        case 4:  return "rectangle.split.2x2"
         default: return "rectangle.grid.2x2"
         }
     }

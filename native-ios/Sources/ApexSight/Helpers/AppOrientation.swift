@@ -10,7 +10,10 @@ enum AppOrientation {
     nonisolated(unsafe) static var allowsLandscape = false
 
     static var mask: UIInterfaceOrientationMask {
-        allowsLandscape ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait
+        // iPad: never lock. The sidebar layout exists for landscape, and a portrait-only iPad app
+        // opts out of multitasking / Stage Manager.
+        if UIDevice.current.userInterfaceIdiom == .pad { return .all }
+        return allowsLandscape ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait
     }
 
     /// Enter landscape-capable mode (full-screen video). If the phone is ALREADY held sideways,
@@ -28,6 +31,7 @@ enum AppOrientation {
 
     /// Leave landscape mode and force back to portrait (full-screen viewer closing).
     @MainActor static func lockPortrait() {
+        guard UIDevice.current.userInterfaceIdiom != .pad else { return }
         allowsLandscape = false
         requestGeometryUpdate(.portrait)
     }

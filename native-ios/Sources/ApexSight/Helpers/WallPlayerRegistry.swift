@@ -34,5 +34,13 @@ final class WallPlayerRegistry {
     }
 
     func endBorrow(_ camera: String) { borrowed.remove(camera) }
+
+    /// Server switch / sign-out: nothing here belongs to the next session. Pause first so a player
+    /// that only the registry still references stops pulling the OLD server's stream.
+    func removeAll() {
+        players.values.forEach { $0.pause() }
+        players.removeAll()
+        borrowed.removeAll()
+    }
     func isBorrowed(_ camera: String) -> Bool { borrowed.contains(camera) }
 }

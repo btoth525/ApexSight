@@ -395,11 +395,32 @@ extension View {
 
     /// Apple-style frosted navigation bar: translucent material so content scrolls under it,
     /// with a dark scheme so titles/buttons stay legible over the dark UI.
+    /// iOS 26+: the system draws the Liquid Glass bar and its scroll-edge effect itself — a forced
+    /// material strip paints OVER it (Apple, Adopting Liquid Glass: "prefer to remove custom effects
+    /// and let the system determine the background appearance … for tab bars and toolbars").
+    /// Earlier iOS keeps the frosted material so the bar never goes solid.
+    @ViewBuilder
     func glassNavBar() -> some View {
-        self
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+        if #available(iOS 26.0, *) {
+            self.toolbarColorScheme(.dark, for: .navigationBar)
+        } else {
+            self
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+    }
+
+    /// Same rule for the tab bar — see `glassNavBar()`.
+    @ViewBuilder
+    func glassTabBar() -> some View {
+        if #available(iOS 26.0, *) {
+            self.toolbarColorScheme(.dark, for: .tabBar)
+        } else {
+            self
+                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+                .toolbarColorScheme(.dark, for: .tabBar)
+        }
     }
 
     /// Standard content-card chrome (radius + top-lit glass edge) for views that don't use GlassCard.

@@ -102,9 +102,6 @@ struct ApexSightApp: App {
                     // once signed in, so a brand-new user isn't hit with a notifications prompt
                     // before they've even connected a server (sign-in requests it in context).
                     if appState.session != nil { PushRegistrar.ensureRegistered() }
-                    // Stream the Live Activity push-to-start token to the relay so incident
-                    // banners can appear on the Lock Screen even when the app is closed.
-                    LiveActivityPushManager.start()
                     // Cold-launch Face ID prompt when the lock is enabled.
                     appLock.unlock()
                     // Pull preferences from iCloud (no-op until iCloud KVS is enabled).

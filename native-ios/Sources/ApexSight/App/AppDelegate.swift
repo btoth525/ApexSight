@@ -39,6 +39,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
+        // CarPlay: hand back the plist's NAMED configuration so UIKit seeds `delegateClass` from
+        // its `UISceneDelegateClassName` (CarPlaySceneDelegate). A nameless config here — which
+        // is what every role used to get — never consults the plist entry, so the CarPlay scene
+        // connected with no delegate and nothing to draw.
+        if connectingSceneSession.role.rawValue == "CPTemplateApplicationSceneSessionRoleApplication" {
+            return UISceneConfiguration(name: "CarPlay", sessionRole: connectingSceneSession.role)
+        }
         let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         if connectingSceneSession.role == .windowApplication {
             config.delegateClass = ApexSceneDelegate.self

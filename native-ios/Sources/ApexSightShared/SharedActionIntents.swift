@@ -31,20 +31,6 @@ struct ApexResumeIntent: AppIntent {
     }
 }
 
-/// Dismisses the current incident Live Activity from its own "Dismiss" button — runs
-/// in the widget process and ends the activity immediately so it gets out of the way.
-@available(iOS 17.0, *)
-struct ApexDismissIncidentIntent: AppIntent {
-    static let title: LocalizedStringResource = "Dismiss Alert"
-    static let description = IntentDescription("Clear the current camera alert from the Lock Screen / Dynamic Island.")
-
-    func perform() async throws -> some IntentResult {
-        for activity in Activity<IncidentActivityAttributes>.activities {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
-        return .result()
-    }
-}
 
 @available(iOS 17.0, *)
 struct ApexOpenAppIntent: AppIntent {

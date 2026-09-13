@@ -24,6 +24,16 @@
 				<string>1C8F.1</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- File timestamps: cache trimming reads modification dates of files in the app /
+			     app-group containers (oldest-first eviction). Reason C617.1. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

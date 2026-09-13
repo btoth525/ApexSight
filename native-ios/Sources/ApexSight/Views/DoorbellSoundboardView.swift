@@ -155,6 +155,8 @@ struct DoorbellSoundboardStrip: View {
             .padding(.horizontal, GlassTheme.Space.m)
             .padding(.vertical, GlassTheme.Space.s)
             .background(.white.opacity(0.16), in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

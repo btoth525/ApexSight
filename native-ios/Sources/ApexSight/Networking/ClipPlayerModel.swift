@@ -22,8 +22,9 @@ final class ClipPlayerModel: ObservableObject {
     /// off: its items are hour-long manifests and "the hour ended" means "load the next hour",
     /// never "start the hour over".
     var loopsAtEnd = true
-    /// Fired instead of looping when `loopsAtEnd` is false.
-    var onReachedEnd: (() -> Void)?
+    /// Bumped instead of looping when `loopsAtEnd` is false — observe with `.onChange`. A stored
+    /// closure would capture the owning View (and its @StateObject wrapper) in a cycle.
+    @Published private(set) var reachedEndCount = 0
 
     private var lastURL: URL?
     private var lastClient: FrigateClient?
@@ -166,7 +167,7 @@ final class ClipPlayerModel: ObservableObject {
                     self.player?.seek(to: .zero)
                     self.player?.play()
                 } else {
-                    self.onReachedEnd?()
+                    self.reachedEndCount += 1
                 }
             }
         }

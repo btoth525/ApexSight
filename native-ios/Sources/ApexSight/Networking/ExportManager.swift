@@ -117,14 +117,31 @@ final class ExportManager: ObservableObject {
         // cancels the owning Task, and the throwing sleep exits the loop instead of spinning
         // out the remaining ~2 minutes of polling in the background.
         var ready: [FrigateExport] = []
-        let deadline = 80   // ~80 * 1.5s ≈ 2 min
-        for _ in 0..<deadline {
-            do { try await Task.sleep(nanoseconds: 1_500_000_000) }
+        let deadlineDate = Date().addingTimeInterval(120)
+        var delay: UInt64 = 1_500_000_000
+        var failures = 0
+        while Date() < deadlineDate {
+            do { try await Task.sleep(nanoseconds: delay) }
             catch { phase = .idle; return [] }   // cancelled — the render finishes server-side (My Exports)
-            let current = (try? await client.exports()) ?? []
-            ready = current.filter { ids.contains($0.id) && $0.isReady }
-            phase = .rendering(done: ready.count, total: ids.count)
-            if ready.count == ids.count { break }
+            do {
+                let current = try await client.exports()
+                failures = 0
+                delay = 1_500_000_000
+                ready = current.filter { ids.contains($0.id) && $0.isReady }
+                phase = .rendering(done: ready.count, total: ids.count)
+                if ready.count == ids.count { break }
+            } catch {
+                // A failing /api/exports is not "still rendering": back off so a struggling Frigate
+                // isn't polled at full cadence (the fixed-tick pattern that once helped take it down),
+                // and stop after a few misses instead of hammering for the full two minutes.
+                if error.isCancellation { phase = .idle; return [] }
+                failures += 1
+                delay = min(delay * 2, 12_000_000_000)
+                if failures >= 4 {
+                    phase = .failed("Frigate isn't answering — check My Exports later.")
+                    return []
+                }
+            }
         }
         guard !ready.isEmpty else {
             phase = .failed("Frigate is still rendering — check My Exports in a moment."); return []

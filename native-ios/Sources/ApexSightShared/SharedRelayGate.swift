@@ -60,7 +60,7 @@ public enum SharedRelayGate {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = httpBody
         request.timeoutInterval = 15
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
+        guard let (_, response) = try? await BoundedSession.relay.data(for: request),
               let http = response as? HTTPURLResponse else { return false }
         return (200..<300).contains(http.statusCode)
     }
@@ -94,7 +94,7 @@ public enum SharedRelayGate {
         // failed arm (off the tunnel, relay down, Alarmo refused) still repainted the Lock Screen
         // widget as "Away · All cameras armed" for a house that was never armed, and nothing
         // corrected it until the next 30-minute timeline fetch or an app foreground.
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
+        guard let (_, response) = try? await BoundedSession.relay.data(for: request),
               let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else { return }
         if !mode.isEmpty { SharedHouseMode.mode = mode }

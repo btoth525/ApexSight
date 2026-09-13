@@ -51,7 +51,11 @@ final class FrigateEventStream {
     /// and the shared cookie jar carries the same `frigate_token` auth as REST/AVFoundation.
     nonisolated private static let streamSession: URLSession = {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
+        // Must exceed the heartbeat period (20s): the request timer resets only on inbound data, and
+        // on a quiet night Frigate's /ws can go >15s between messages — at 15s the socket timed out
+        // BEFORE the first ping, so every quiet stretch became a disconnect/reconnect (Live dot and
+        // Dynamic Island aura flicker, a /ws upgrade every ~20s per phone).
+        config.timeoutIntervalForRequest = 60
         config.waitsForConnectivity = true
         config.httpCookieStorage = .shared
         config.httpCookieAcceptPolicy = .always

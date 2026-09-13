@@ -257,6 +257,8 @@ struct ActivityTab: View {
             .overlay {
                 if !selected { Capsule().strokeBorder(GlassTheme.separator, lineWidth: 1) }
             }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -446,7 +448,6 @@ struct ActivityTab: View {
                 .padding(.horizontal, GlassTheme.Space.l)
                 .padding(.vertical, GlassTheme.Space.m)
                 .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
-                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 .padding(.bottom, GlassTheme.Space.l)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         }

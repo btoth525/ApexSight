@@ -41,7 +41,7 @@ enum TurnSettings {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["pairing_code": cfg.pairing])
         req.timeoutInterval = 10
-        if let (data, resp) = try? await URLSession.shared.data(for: req),
+        if let (data, resp) = try? await BoundedSession.relay.data(for: req),
            (resp as? HTTPURLResponse)?.statusCode == 200,
            let fetched = try? JSONDecoder().decode([IceServerConfig].self, from: data) {
             cache(fetched)

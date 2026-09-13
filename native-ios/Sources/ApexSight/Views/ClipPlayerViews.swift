@@ -69,13 +69,14 @@ struct ClipSkeleton: View {
 /// smooth reveal" behavior every clip surface wants.
 struct LoadingClipPlayer: View {
     @ObservedObject var model: ClipPlayerModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             if let player = model.player {
                 ZoomableClipPlayer(player: player)
                     .opacity(model.isReady ? 1 : 0)
-                    .animation(.easeIn(duration: 0.25), value: model.isReady)
+                    .animation(reduceMotion ? nil : .easeIn(duration: 0.25), value: model.isReady)
             }
             if model.hasError {
                 ClipErrorView(retry: model.retry)

@@ -107,6 +107,8 @@ struct TriggersSettingsView: View {
                 // Only the info area opens the editor, so it can't fight the Toggle's tap.
                 .contentShape(Rectangle())
                 .onTapGesture { Haptics.tap(); editingTrigger = trigger }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { editingTrigger = trigger }
 
                 Spacer()
 

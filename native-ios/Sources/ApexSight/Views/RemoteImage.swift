@@ -48,6 +48,7 @@ struct RemoteImage: View {
             Image(systemName: "photo")
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(GlassTheme.secondary)
+                .accessibilityHidden(true)
         }
     }
 

@@ -188,7 +188,7 @@ struct TriggerEditorView: View {
                                 .foregroundStyle(isSelected ? .black : tint)
                                 .padding(.horizontal, GlassTheme.Space.m)
                                 .padding(.vertical, GlassTheme.Space.s - 1)
-                                .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity, minHeight: 44)
                                 .background(isSelected ? tint : tint.opacity(0.12), in: Capsule())
                                 .overlay {
                                     if !isSelected {

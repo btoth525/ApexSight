@@ -124,8 +124,8 @@ struct DoorbellCallView: View {
                 .padding(.horizontal, GlassTheme.Space.xl)
             }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: answered)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: soundboard.available)
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85), value: answered)
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85), value: soundboard.available)
     }
 
     private func callButton(system: String, tint: Color, label: String, action: @escaping () -> Void) -> some View {
