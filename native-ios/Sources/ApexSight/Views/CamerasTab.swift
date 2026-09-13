@@ -197,7 +197,7 @@ struct CamerasTab: View {
                 }
             } header: {
                 Text("Drag the handle to reorder · tap a camera to show or hide it on your wall.")
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(.caption.weight(.heavy))
                     .foregroundStyle(GlassTheme.secondary)
                     .textCase(nil)
             }
@@ -227,7 +227,7 @@ struct CamerasTab: View {
             .opacity(isHidden ? 0.4 : 1)
 
             Text(titleize(camera.name))
-                .font(.system(size: 15, weight: .bold))
+                .font(.subheadline.weight(.bold))
                 .foregroundStyle(isHidden ? GlassTheme.secondary : GlassTheme.primary)
                 .lineLimit(1)
 
@@ -269,26 +269,23 @@ struct CamerasTab: View {
                     .foregroundStyle(GlassTheme.accent)
             }
         } else {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 14) {
-                    if appState.isLoading {
-                        ProgressView().tint(GlassTheme.accent)
-                    }
-                    if appState.cameras.count > 1 {
-                        Button {
-                            Haptics.tap()
-                            beginEditing()
-                        } label: {
-                            Image(systemName: "arrow.up.arrow.down.circle")
-                                .font(.system(size: 18, weight: .black))
-                                .foregroundStyle(GlassTheme.accent)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel("Arrange cameras")
-                    }
-                    multiViewMenu
+            // One toolbar item per action: on iOS 26 each gets its own glass capsule and the system
+            // sizes and tints the glyph, so they read like the system's own bar buttons rather than
+            // a hand-packed pill of 44pt cells.
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if appState.isLoading {
+                    ProgressView()
                 }
+                if appState.cameras.count > 1 {
+                    Button {
+                        Haptics.tap()
+                        beginEditing()
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down.circle")
+                    }
+                    .accessibilityLabel("Arrange cameras")
+                }
+                multiViewMenu
             }
         }
     }
@@ -347,10 +344,6 @@ struct CamerasTab: View {
             }
         } label: {
             Image(systemName: "rectangle.grid.2x2.fill")
-                .font(.system(size: 18, weight: .black))
-                .foregroundStyle(GlassTheme.accent)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
         }
         .accessibilityLabel("Multi-camera views")
     }

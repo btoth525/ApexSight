@@ -232,9 +232,8 @@ struct ReviewTab: View {
             .glassNavBar()
             .overlay(alignment: .bottom) { undoToast }
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: GlassTheme.Space.m) {
-                        if appState.isLoading { ProgressView().tint(GlassTheme.accent) }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                        if appState.isLoading { ProgressView() }
                         // Gate on the VISIBLE list, not just reviews — the Detections filter renders
                         // from `detectionItems` (which mark-all also clears), so keying off
                         // appState.reviews hid the button while detections were on screen.
@@ -243,7 +242,6 @@ struct ReviewTab: View {
                                 showMarkAllConfirm = true
                             } label: {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 18, weight: .semibold))
                                     .foregroundStyle(GlassTheme.green)
                             }
                             .accessibilityLabel("Mark all reviewed")
@@ -253,12 +251,9 @@ struct ReviewTab: View {
                             sortNewest.toggle()
                         } label: {
                             Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(GlassTheme.accent)
                         }
                         .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
                         .accessibilityHint("Toggles sort order")
-                    }
                 }
             }
             .confirmationDialog(

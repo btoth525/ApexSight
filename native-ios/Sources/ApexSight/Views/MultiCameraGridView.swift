@@ -59,18 +59,13 @@ struct MultiCameraGridView: View {
                     }
                     .accessibilityLabel("Close wall")
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: GlassTheme.Space.l) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                         if appState.hasBirdseye {
                             Button {
                                 Haptics.tap()
                                 showBirdseye = true
                             } label: {
                                 Image(systemName: "squareshape.split.2x2")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(GlassTheme.accent)
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
                             }
                             .accessibilityLabel("Birdseye view")
                         }
@@ -90,7 +85,6 @@ struct MultiCameraGridView: View {
                         }
                         .accessibilityLabel(smartFocus ? "Smart Focus on" : "Smart Focus off")
                         columnPicker
-                    }
                 }
             }
             .glassNavBar()

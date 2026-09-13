@@ -18,7 +18,8 @@ enum TurnSettings {
     /// disk-persisted cache added no real resilience — a relaunch's stale creds would likely be
     /// expired anyway — while leaving the credential sitting in an unencrypted `UserDefaults` plist.
     /// In-memory keeps it as a within-session fallback without persisting the secret.
-    private static var memoryCache: [IceServerConfig]?
+    // Written once per session after a successful fetch, read on the same path — no concurrent writers.
+    private nonisolated(unsafe) static var memoryCache: [IceServerConfig]?
 
     /// The relay base URL + pairing code, read from the same App Group keys the rest of the
     /// relay integration uses (`apex.relayURL` / `apex.pairingCode`).

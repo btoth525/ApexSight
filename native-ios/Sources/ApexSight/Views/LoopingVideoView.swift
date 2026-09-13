@@ -40,6 +40,7 @@ struct LoopingVideoView: UIViewRepresentable {
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
     }
 
+    @MainActor
     final class Coordinator {
         private(set) var url: URL?
         private var player: AVPlayer?
@@ -69,9 +70,11 @@ struct LoopingVideoView: UIViewRepresentable {
             layerObs = view.playerLayer.observe(\.isReadyForDisplay, options: [.new, .initial]) { [weak self] layer, _ in
                 guard layer.isReadyForDisplay else { return }
                 DispatchQueue.main.async {
-                    guard let self, !self.firstFrameFired else { return }
-                    self.firstFrameFired = true
-                    onFirstFrame?()
+                    MainActor.assumeIsolated {
+                        guard let self, !self.firstFrameFired else { return }
+                        self.firstFrameFired = true
+                        onFirstFrame?()
+                    }
                 }
             }
             // Loop: HLS VOD fires end-of-playlist; rewind + play again (AVPlayerLooper won't do HLS).

@@ -26,7 +26,8 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     private var pc: RTCPeerConnection?
     private var micTrack: RTCAudioTrack?
     private var gatheringContinuation: CheckedContinuation<Void, Never>?
-    private var bgObserver: NSObjectProtocol?
+    // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
+    private nonisolated(unsafe) var bgObserver: NSObjectProtocol?
     /// Fails an attempt that never connects (remote with no reachable media path) instead of
     /// spinning forever, with copy that points at the actual fix (TURN on the relay).
     private var connectWatchdog: Task<Void, Never>?

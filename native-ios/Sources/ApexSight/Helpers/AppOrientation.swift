@@ -12,7 +12,8 @@ enum AppOrientation {
     static var mask: UIInterfaceOrientationMask {
         // iPad: never lock. The sidebar layout exists for landscape, and a portrait-only iPad app
         // opts out of multitasking / Stage Manager.
-        if UIDevice.current.userInterfaceIdiom == .pad { return .all }
+        // Read on the main thread (UIApplicationDelegate asks from there); asserted, not assumed.
+        if MainActor.assumeIsolated({ UIDevice.current.userInterfaceIdiom == .pad }) { return .all }
         return allowsLandscape ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait
     }
 

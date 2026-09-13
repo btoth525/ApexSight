@@ -21,7 +21,8 @@ final class DoorbellVoiceRecorder: NSObject, ObservableObject {
     /// Backstop: no push-to-talk hold should run longer than this — a gesture that was cancelled
     /// without release (List scroll steal, view teardown) must never leave a hot mic.
     static let maxSeconds: TimeInterval = 30
-    private var backgroundObserver: NSObjectProtocol?
+    // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
+    private nonisolated(unsafe) var backgroundObserver: NSObjectProtocol?
 
     override init() {
         super.init()

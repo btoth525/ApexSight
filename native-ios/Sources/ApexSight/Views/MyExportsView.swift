@@ -55,10 +55,8 @@ struct MyExportsView: View {
         } message: { Text("Removes it from Frigate. This can't be undone.") }
         .overlay(alignment: .bottom) {
             if let toast {
-                Text(toast).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, GlassTheme.Space.l).padding(.vertical, GlassTheme.Space.s)
-                    .background((toastIsError ? GlassTheme.red : GlassTheme.green).opacity(0.92), in: Capsule())
-                    .padding(.bottom, 40).transition(.opacity)
+                GlassToast(text: toast, isError: toastIsError,
+                           systemImage: toastIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
             }
         }
     }

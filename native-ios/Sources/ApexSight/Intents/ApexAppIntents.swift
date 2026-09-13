@@ -199,7 +199,7 @@ struct OpenCameraIntent: OpenIntent {
 /// gets indexed into Spotlight so typing "front door" opens it.
 struct CameraEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Camera"
-    static var defaultQuery = CameraQuery()
+    static let defaultQuery = CameraQuery()
 
     var id: String
     var displayRepresentation: DisplayRepresentation {

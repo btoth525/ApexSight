@@ -301,7 +301,7 @@ struct LiveStreamView: View {
         }
         .padding(.horizontal, GlassTheme.Space.l)
         .glassGroup(spacing: GlassTheme.Space.s)
-        .padding(.top, 54)
+        .padding(.top, GlassTheme.Space.m)
     }
 
     /// Status indicator: StatusDot for live/connecting states, a small solid dot for snapshot.

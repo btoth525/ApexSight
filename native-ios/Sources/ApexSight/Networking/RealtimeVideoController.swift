@@ -43,7 +43,8 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     /// also the before/after signal for the pre-warm work: a warmed camera paints in a fraction.
     private var attemptStartedAt: Date?
     private var attemptSource: String?
-    private var bgObserver: NSObjectProtocol?
+    // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
+    private nonisolated(unsafe) var bgObserver: NSObjectProtocol?
     private(set) var isSuspendedByBackground = false
     /// Per-camera failure count — a camera whose sources all fail (no H264 path, no media route)
     /// stops being retried after 2 rounds this session instead of hammering go2rtc on every

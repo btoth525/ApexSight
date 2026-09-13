@@ -19,9 +19,10 @@ enum SettingsSync {
         "biometricLockEnabled",
     ]
 
-    private static let cloud = NSUbiquitousKeyValueStore.default
-    private static let local = UserDefaults.standard
-    private static var started = false
+    // Both stores are thread-safe by contract; `started` is only touched from `start()` on launch.
+    private nonisolated(unsafe) static let cloud = NSUbiquitousKeyValueStore.default
+    private nonisolated(unsafe) static let local = UserDefaults.standard
+    private nonisolated(unsafe) static var started = false
 
     static func start() {
         guard !started else { return }

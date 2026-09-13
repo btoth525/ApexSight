@@ -45,15 +45,8 @@ struct ConfigEditorView: View {
                 if let banner {
                     VStack {
                         Spacer()
-                        Text(banner.text)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, GlassTheme.Space.l)
-                            .padding(.vertical, GlassTheme.Space.m)
-                            .background((banner.ok ? GlassTheme.green : GlassTheme.red).opacity(0.9), in: Capsule())
-                            .padding(.bottom, 90)
-                            .shadow(radius: 12)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        GlassToast(text: banner.text, isError: !banner.ok,
+                                   systemImage: banner.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                     }
                 }
             }
@@ -129,7 +122,7 @@ struct ConfigEditorView: View {
             TextField("Find in config", text: $findQuery)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .font(.system(size: 14, design: .monospaced))
+                .font(.system(.subheadline, design: .monospaced))
                 .foregroundStyle(.white)
                 .submitLabel(.search)
                 .onSubmit { findNext += 1 }
@@ -150,7 +143,7 @@ struct ConfigEditorView: View {
         HStack(alignment: .top, spacing: GlassTheme.Space.s) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(GlassTheme.red)
             Text(message)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(.caption, design: .monospaced).weight(.medium))
                 .foregroundStyle(.white.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -169,7 +162,7 @@ struct ConfigEditorView: View {
                 Task { await save(restart: false) }
             } label: {
                 Label("Save", systemImage: "square.and.arrow.down.fill")
-                    .font(.system(size: 13, weight: .heavy)).frame(maxWidth: .infinity)
+                    .font(.footnote.weight(.heavy)).frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .tint(GlassTheme.accent)
@@ -179,7 +172,7 @@ struct ConfigEditorView: View {
                 showSaveRestartConfirm = true
             } label: {
                 Label("Save & Restart", systemImage: "bolt.fill")
-                    .font(.system(size: 13, weight: .heavy)).frame(maxWidth: .infinity)
+                    .font(.footnote.weight(.heavy)).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(GlassTheme.accent)

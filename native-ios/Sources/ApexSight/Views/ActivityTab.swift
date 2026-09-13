@@ -166,17 +166,13 @@ struct ActivityTab: View {
             }
             .onDisappear { toastTask?.cancel(); toastTask = nil }
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: GlassTheme.Space.m) {
-                        if appState.isLoading || loadingFiltered { ProgressView().tint(GlassTheme.accent) }
-                        Button { Haptics.select(); sortNewest.toggle() } label: {
-                            Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(GlassTheme.accent)
-                        }
-                        .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
-                        .accessibilityHint("Toggles sort order")
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if appState.isLoading || loadingFiltered { ProgressView() }
+                    Button { Haptics.select(); sortNewest.toggle() } label: {
+                        Image(systemName: sortNewest ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                     }
+                    .accessibilityLabel(sortNewest ? "Sorted newest first" : "Sorted oldest first")
+                    .accessibilityHint("Toggles sort order")
                 }
             }
             .navigationDestination(for: FrigateEvent.self) { event in
@@ -442,14 +438,7 @@ struct ActivityTab: View {
     @ViewBuilder
     private var activityToast: some View {
         if let toast {
-            Text(toast)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, GlassTheme.Space.l)
-                .padding(.vertical, GlassTheme.Space.m)
-                .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
-                .padding(.bottom, GlassTheme.Space.l)
-                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            GlassToast(text: toast)
         }
     }
 }

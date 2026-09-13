@@ -11,7 +11,8 @@ import CryptoKit
 /// grows unbounded; the disk tier is scoped to `latest.jpg` (the camera wall) and size-capped so
 /// event thumbnails can't churn it out.
 final class ImageCache {
-    static let shared = ImageCache()
+    // NSCache is thread-safe and the disk tier is serialised on `diskQueue`.
+    nonisolated(unsafe) static let shared = ImageCache()
 
     private let cache = NSCache<NSURL, UIImage>()
 

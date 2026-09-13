@@ -6,7 +6,7 @@ import Foundation
 /// routes through the existing `apex://event?id=…` deep link (the same one `SpotlightIndexer` uses).
 struct EventEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Camera Event"
-    static var defaultQuery = EventQuery()
+    static let defaultQuery = EventQuery()
 
     var id: String
     var camera: String

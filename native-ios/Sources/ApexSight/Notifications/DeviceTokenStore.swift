@@ -21,7 +21,8 @@ enum DeviceTokenStore {
 
     /// App-only Keychain for the account bearer token (a per-user secret that shouldn't sit in the
     /// unencrypted app-group plist). No extension reads the account token, so no access group.
-    private static let keychain = KeychainStore()
+    // Security.framework is thread-safe; the store holds no mutable state of its own.
+    private nonisolated(unsafe) static let keychain = KeychainStore()
 
     static var deviceTokenHex: String? {
         get { defaults?.string(forKey: tokenKey) }

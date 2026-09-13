@@ -67,7 +67,13 @@ final class DoorbellCallManager: NSObject {
         // (what Ring/Nest do; otherwise every visitor press clutters call history).
         config.includesCallsInRecents = false
         // Ringtone-style incoming call; the ApexSight icon shows on the CallKit screen.
-        if let icon = UIImage(named: "AppIcon")?.pngData() { config.iconTemplateImageData = icon }
+        // CallKit draws this as a TEMPLATE (alpha mask) on the call screen; the full-colour app icon
+        // came out as a flat square silhouette. A symbol renders as glyph-on-transparent, which is
+        // exactly the mask CallKit wants — and it costs no asset and ~no launch time.
+        let glyph = UIImage.SymbolConfiguration(pointSize: 64, weight: .bold)
+        if let icon = UIImage(systemName: "video.doorbell.fill", withConfiguration: glyph)?.pngData() {
+            config.iconTemplateImageData = icon
+        }
         provider = CXProvider(configuration: config)
         super.init()
         provider.setDelegate(self, queue: nil)

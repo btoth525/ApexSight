@@ -39,7 +39,7 @@ enum Haptics {
     /// The synchronous fast path is deliberate: haptics have to fire on the same turn of the
     /// run loop as the touch, or the buzz lags the tap and the whole app feels loose. Hopping
     /// through a Task even when already on main would cost that.
-    private static func run(_ work: @MainActor @escaping () -> Void) {
+    private static func run(_ work: @MainActor @Sendable @escaping () -> Void) {
         let fire: @MainActor () -> Void = {
             // Respect Reduce Motion — people who enable it generally want less buzz too. One
             // guard here covers every Haptics call across the app. (Reading this flag is itself

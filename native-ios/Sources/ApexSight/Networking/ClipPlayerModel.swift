@@ -28,9 +28,11 @@ final class ClipPlayerModel: ObservableObject {
 
     private var lastURL: URL?
     private var lastClient: FrigateClient?
-    private var endObs: NSObjectProtocol?
+    // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
+    private nonisolated(unsafe) var endObs: NSObjectProtocol?
     private var statusObs: NSKeyValueObservation?
-    private var lifecycleObservers: [NSObjectProtocol] = []
+    // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
+    private nonisolated(unsafe) var lifecycleObservers: [NSObjectProtocol] = []
     private var wasPlayingBeforeBackground = false
     /// Bounded auto-retry state for a fresh load — a failure right after a just-fired detection
     /// is often transient (Frigate hasn't finished flushing that segment yet), so a couple of

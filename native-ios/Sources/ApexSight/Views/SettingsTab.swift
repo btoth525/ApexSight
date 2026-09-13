@@ -390,10 +390,7 @@ struct SettingsTab: View {
         }
         .overlay(alignment: .bottom) {
             if let restartToast {
-                Text(restartToast)
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, GlassTheme.Space.l).padding(.vertical, GlassTheme.Space.s)
-                    .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
+                GlassToast(text: restartToast, systemImage: "arrow.triangle.2.circlepath")
             }
         }
     }

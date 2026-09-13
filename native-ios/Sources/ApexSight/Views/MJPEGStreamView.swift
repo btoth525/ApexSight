@@ -61,7 +61,8 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     private var isDisplayPending = false
     /// Kept so we can re-open the stream after returning from background.
     private var currentRequest: URLRequest?
-    private var lifecycleObservers: [NSObjectProtocol] = []
+    // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
+    private nonisolated(unsafe) var lifecycleObservers: [NSObjectProtocol] = []
     /// JPEG frames decode here, off the main thread — decoding once per delivered frame
     /// per camera on main is what janks a multi-camera wall on the MJPEG fallback path.
     private let decodeQueue = DispatchQueue(label: "com.brandontoth.apexsight.mjpeg.decode", qos: .userInitiated)
@@ -125,12 +126,12 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
         lifecycleObservers.append(center.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            self?.suspend()
+            MainActor.assumeIsolated { self?.suspend() }
         })
         lifecycleObservers.append(center.addObserver(
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            self?.openConnection()
+            MainActor.assumeIsolated { self?.openConnection() }
         })
     }
 
@@ -222,7 +223,7 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
     }
 
     /// Decode a JPEG frame to a fully-decoded UIImage on the calling (background) queue.
-    private static func decode(_ data: Data) -> UIImage? {
+    private nonisolated static func decode(_ data: Data) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(
                 source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary

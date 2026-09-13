@@ -486,7 +486,9 @@ private struct EventFeedRow: View {
                 .font(.system(size: large ? 18 : 15))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    SeverityDot(severity: alert.severity)
+                    Image(systemName: alert.severity == "alert" ? "bell.badge.fill" : "scope")
+                        .font(.system(size: large ? 11 : 10, weight: .black))
+                        .foregroundStyle(severityColor(alert.severity))
                     Text(titleizeWidget(alert.subLabel ?? alert.label))
                         .font(.system(size: large ? 13 : 12, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
@@ -501,6 +503,8 @@ private struct EventFeedRow: View {
             }
             Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(alert.severity == "alert" ? "Alert" : "Detection"). \(titleizeWidget(alert.subLabel ?? alert.label)), \(titleizeWidget(alert.camera)), \(relativeShort(alert.when))")
     }
 }
 
@@ -560,15 +564,6 @@ private struct SeverityChip: View {
     }
 }
 
-private struct SeverityDot: View {
-    let severity: String
-
-    var body: some View {
-        Circle()
-            .fill(severityColor(severity))
-            .frame(width: 7, height: 7)
-    }
-}
 
 // MARK: - Lock screen
 

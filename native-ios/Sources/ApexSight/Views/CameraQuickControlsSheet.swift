@@ -46,14 +46,7 @@ struct CameraQuickControlsSheet: View {
         .preferredColorScheme(.dark)
         .overlay(alignment: .bottom) {
             if let msg = toastMessage {
-                Text(msg)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, GlassTheme.Space.l)
-                    .padding(.vertical, GlassTheme.Space.s)
-                    .liquidGlass(in: Capsule(), fallbackMaterial: .ultraThinMaterial)
-                    .padding(.bottom, 50)
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                GlassToast(text: msg)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: toastMessage)

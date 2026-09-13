@@ -6,7 +6,7 @@ import AppIntents
 /// into the App Group via `SharedSnapshotStore.saveCameraNames(_:)`.
 struct WidgetCameraEntity: AppEntity, Identifiable {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Camera"
-    static var defaultQuery = WidgetCameraQuery()
+    static let defaultQuery = WidgetCameraQuery()
 
     /// The Frigate camera name (also the entity id).
     var id: String
