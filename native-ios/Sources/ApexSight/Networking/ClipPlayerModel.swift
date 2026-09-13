@@ -104,7 +104,7 @@ final class ClipPlayerModel: ObservableObject {
     /// Seek that reports when the jump has actually LANDED. A caller driving a playhead from the
     /// player's clock must not read `currentTime()` in between — during the seek it still says
     /// where playback WAS. `finished` is false when a newer seek superseded this one.
-    func seek(toOffset seconds: Double, completion: @escaping (Bool) -> Void) {
+    func seek(toOffset seconds: Double, completion: @escaping @Sendable (Bool) -> Void) {
         guard let player else { completion(false); return }
         player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
                     toleranceBefore: .zero,
