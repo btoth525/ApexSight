@@ -420,7 +420,7 @@ struct LiveStreamView: View {
         }))
         items.append(AnyView(
             NavigationLink {
-                RecordingBrowserView(camera: camera)
+                RecordingTimelineView(camera: camera)
             } label: {
                 actionButtonContent(icon: "clock.arrow.circlepath", label: "Timeline")
             }

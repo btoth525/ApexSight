@@ -200,7 +200,7 @@ struct RecordingContextPlayerView: View {
             .frame(height: 44)
             // VoiceOver: the scrubber is a gesture-only track (drag + tap markers) a VoiceOver user
             // can't operate. Expose it as one adjustable element so it's movable via the rotor, the
-            // way RecordingBrowserView's timeline already is.
+            // way the camera's recording timeline already is.
             .accessibilityElement()
             .accessibilityLabel("Playback timeline")
             .accessibilityValue("\(Int((playheadFraction * 100).rounded())) percent")

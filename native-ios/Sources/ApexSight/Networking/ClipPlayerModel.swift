@@ -18,6 +18,13 @@ final class ClipPlayerModel: ObservableObject {
     /// error + retry instead of a skeleton that spins forever.
     @Published private(set) var hasError = false
 
+    /// Loop short clips (review/event players) — the default. The recording timeline turns this
+    /// off: its items are hour-long manifests and "the hour ended" means "load the next hour",
+    /// never "start the hour over".
+    var loopsAtEnd = true
+    /// Fired instead of looping when `loopsAtEnd` is false.
+    var onReachedEnd: (() -> Void)?
+
     private var lastURL: URL?
     private var lastClient: FrigateClient?
     private var endObs: NSObjectProtocol?
@@ -143,8 +150,13 @@ final class ClipPlayerModel: ObservableObject {
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.player?.seek(to: .zero)
-                self?.player?.play()
+                guard let self else { return }
+                if self.loopsAtEnd {
+                    self.player?.seek(to: .zero)
+                    self.player?.play()
+                } else {
+                    self.onReachedEnd?()
+                }
             }
         }
 

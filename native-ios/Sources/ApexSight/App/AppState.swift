@@ -10,6 +10,7 @@ enum AppDeepLink: Hashable {
     case review(String)
     case event(String)
     case camera(String)
+    case timeline(String)   // a camera's recording timeline ("show me what happened on the driveway")
     case cameras   // jump to the Cameras tab (e.g. Siri "Show my cameras")
     case activity  // jump to the Activity feed (e.g. tapping the Daily Recap push)
     case doorbell  // present the full-screen doorbell call (doorbell-ring push)
@@ -1537,6 +1538,10 @@ final class AppState: ObservableObject {
         case "camera":
             if let name = items.first(where: { $0.name == "name" })?.value {
                 deepLink = .camera(name)
+            }
+        case "timeline":
+            if let name = items.first(where: { $0.name == "name" })?.value {
+                deepLink = .timeline(name)
             }
         case "cameras":
             deepLink = .cameras

@@ -88,7 +88,7 @@ struct LoadingClipPlayer: View {
 
 /// Shown when a clip can't load (no recording for that time, auth, server down) — a clear
 /// dead-end message + Retry instead of a skeleton that spins forever. Shared by every clip
-/// surface (`LoadingClipPlayer` and `RecordingBrowserView`) so a failed VOD load is never
+/// surface (`LoadingClipPlayer`, the recording timeline) so a failed VOD load is never
 /// silently invisible.
 struct ClipErrorView: View {
     let retry: () -> Void

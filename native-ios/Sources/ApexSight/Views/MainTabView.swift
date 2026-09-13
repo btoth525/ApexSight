@@ -39,12 +39,14 @@ struct MainTabView: View {
         case event(FrigateEvent)
         case review(FrigateReviewItem)
         case camera(FrigateCamera)
+        case timeline(FrigateCamera)
 
         var id: String {
             switch self {
             case .event(let event): return "event-\(event.id)"
             case .review(let review): return "review-\(review.id)"
             case .camera(let camera): return "camera-\(camera.name)"
+            case .timeline(let camera): return "timeline-\(camera.name)"
             }
         }
     }
@@ -121,6 +123,7 @@ struct MainTabView: View {
                 case .event(let event): EventDetailView(event: event)
                 case .review(let review): ReviewDetailView(review: review)
                 case .camera(let camera): LiveStreamView(camera: camera)
+                case .timeline(let camera): RecordingTimelineView(camera: camera)
                 }
             }
             .environmentObject(appState)
@@ -209,6 +212,15 @@ struct MainTabView: View {
                 // loaded yet. Fetch it (with retry) so the tile still opens.
                 resolveDeepLink {
                     (try? await appState.client?.cameras())?.first { $0.name == name }.map { .camera($0) }
+                }
+            }
+        case .timeline(let name):
+            selectedTab = .cameras
+            if let camera = appState.cameras.first(where: { $0.name == name }) {
+                detailSheet = .timeline(camera)
+            } else {
+                resolveDeepLink {
+                    (try? await appState.client?.cameras())?.first { $0.name == name }.map { .timeline($0) }
                 }
             }
         case .review(let id):

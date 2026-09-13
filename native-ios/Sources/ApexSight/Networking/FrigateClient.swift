@@ -626,6 +626,44 @@ struct FrigateClient {
         }
     }
 
+    // MARK: - Timeline data
+
+    /// One motion-activity bucket from `GET api/review/activity/motion` — `motion` is 0–100,
+    /// already normalised by Frigate against the camera's busiest bucket in the range.
+    struct MotionSample: Decodable, Hashable {
+        let startTime: Double
+        let motion: Double
+        let camera: String
+
+        enum CodingKeys: String, CodingKey {
+            case startTime = "start_time"
+            case motion, camera
+        }
+    }
+
+    /// Motion density over a range, in `scale`-second buckets — the heat strip under the
+    /// timeline. Verified live on 0.18: a 24h day at scale 300 returns ~60–290 buckets, each
+    /// `{start_time, motion (0–100), camera}`. Best-effort: `[]` on any failure, so the timeline
+    /// simply draws without heat rather than failing.
+    func motionActivity(camera: String, after: Double, before: Double, scale: Int = 300) async -> [MotionSample] {
+        let path = "api/review/activity/motion?cameras=\(camera)&after=\(Int(after))&before=\(Int(before))&scale=\(scale)"
+        return (try? await get(path) as [MotionSample]) ?? []
+    }
+
+    /// One day of `GET api/<camera>/recordings/summary` — the per-day chip data (how many
+    /// tracked objects that day). `hours` is present but unused here; decoding it stays lenient.
+    struct RecordingDaySummary: Decodable, Hashable {
+        let day: String        // "2026-09-12" in the SERVER's local timezone
+        let events: Int
+    }
+
+    /// Which days have recordings, newest first — drives the day chips so a day with nothing
+    /// recorded is never offered. Best-effort `[]`.
+    func recordingSummary(camera: String) async -> [RecordingDaySummary] {
+        let path = "api/\(camera)/recordings/summary"
+        return (try? await get(path) as [RecordingDaySummary]) ?? []
+    }
+
     /// Thumbnail of one preview frame — served per-FILENAME (`api/preview/<file>/thumbnail.jpg`),
     /// not per-timestamp. Pairs with `previewFrames` for the scrub-preview strip.
     func previewFrameURL(filename: String) -> URL {
