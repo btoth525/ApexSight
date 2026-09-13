@@ -616,7 +616,7 @@ struct RecordingTimelineView: View {
     /// half an hour so the moment and what surrounds it are readable. Never zooms OUT.
     private func zoomInForEvent() {
         guard engine.visibleSeconds > 1800 else { return }
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { engine.zoom(to: 1800) }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { _ = engine.zoom(to: 1800) }
     }
 
     private func jumpToEvent(direction: Int) {

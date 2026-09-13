@@ -224,7 +224,7 @@ struct TimelineRuler: View {
         Button {
             Haptics.select()
             let next = Self.zoomPresets.first { $0 > engine.visibleSeconds + 1 } ?? Self.zoomPresets[0]
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { engine.zoom(to: next) }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { _ = engine.zoom(to: next) }
         } label: {
             Text(zoomLabel)
                 .font(.system(size: 11, weight: .bold, design: .rounded))
