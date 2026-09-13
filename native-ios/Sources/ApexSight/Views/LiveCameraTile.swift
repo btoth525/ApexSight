@@ -23,10 +23,11 @@ struct LiveCameraTile: View {
             ZStack(alignment: .bottom) {
                 Color.black
 
-                // Instant paint: the camera's cached last frame, covered the moment live paints.
-                LiveSnapshotView(camera: camera)
-                    .opacity(isLive ? 0 : 1)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: isLive)
+                // The instant paint (cached last frame → disk → network, fading out when live
+                // pixels land) is the player view's own placeholder. A separate `LiveSnapshotView`
+                // used to sit UNDER it — fully covered by the player's opaque background, yet
+                // polling `latest.jpg` every 3 s per visible tile, decoding it, and JPEG-encoding
+                // it to disk on the main thread. Pixels nobody could ever see.
 
                 // The live feed — sub-second WebRTC (falls back to HLS/MJPEG), muted on the wall.
                 HLSLivePlayerView(

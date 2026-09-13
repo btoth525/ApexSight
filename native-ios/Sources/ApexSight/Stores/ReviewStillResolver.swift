@@ -36,30 +36,18 @@ final class ReviewStillResolver {
 
     private init() {}
 
-    /// Remembers which pinned frame URLs Frigate actually serves, so the reachability probe below
-    /// costs one request per distinct moment rather than one per row appearance.
-    private var served: [String: Bool] = [:]
 
     /// The URL to show instead of the review's own snapshot, or nil to keep the existing one.
     /// Built against the CURRENT client, so it always names the host the app is talking to now.
     func pinnedStill(for review: FrigateReviewItem, client: FrigateClient?) async -> URL? {
         guard let client else { return nil }
         guard let pinned = await pinnedFrameTime(for: review, client: client) else { return nil }
-        let url = client.recordingFrameURL(camera: review.camera, at: pinned)
-
-        // **A pinned frame is only an improvement if the recording is actually there.** Pinning is
-        // a swap away from the object's own (present, but possibly wrong-moment) snapshot, so
-        // pointing it at a moment Frigate can't serve trades a slightly-wrong picture for a broken
-        // one. Cameras that never record (Frigate's `Front_Driveway_LPR` plate-reader helper) and
-        // moments whose segments have aged out both land here.
-        //
-        // GET, never HEAD — Frigate answers **405 to HEAD** on snapshot URLs (verified 2026-09-12),
-        // so a HEAD probe would reject every frame and silently disable pinning altogether.
-        let key = url.absoluteString
-        if let known = served[key] { return known ? url : nil }
-        let ok = await client.urlIsServed(url)
-        served[key] = ok
-        return ok ? url : nil
+        // No reachability probe. Frigate ignores `Range` (measured: 200 + the full body), and
+        // a recordings `snapshot.jpg` is an ffmpeg frame extraction — so the "one-byte" check
+        // was a second full ffmpeg run per pinned row, plus the download. `RemoteImage` already
+        // falls back to the review's own thumbnail on a 404 (a camera that never records, a
+        // moment whose segments aged out), which is exactly what the probe was guarding.
+        return client.recordingFrameURL(camera: review.camera, at: pinned)
     }
 
     private func pinnedFrameTime(for review: FrigateReviewItem, client: FrigateClient) async -> Double? {
@@ -87,7 +75,6 @@ final class ReviewStillResolver {
     /// belong to a different Frigate.
     func reset() {
         cache.removeAll()
-        served.removeAll()
         inFlight.values.forEach { $0.cancel() }
         inFlight.removeAll()
     }

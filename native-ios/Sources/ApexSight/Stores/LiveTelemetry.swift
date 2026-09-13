@@ -9,5 +9,7 @@ final class LiveTelemetry: ObservableObject {
     static let shared = LiveTelemetry()
     @Published var liveDetections: [String: [LiveDetection]] = [:]
     @Published var cameraControlStates: [String: CameraControlState] = [:]
+    /// Frigate's periodic stats frame. Read only by the Health screen.
+    @Published var stats: FrigateStats?
     private init() {}
 }

@@ -42,6 +42,17 @@ struct ReviewTab: View {
 
     private func loadDetections(silent: Bool = false) async {
         guard let client = appState.client else { return }
+        // AppState's poll already holds the unreviewed list (both severities, limit 100). When
+        // that list isn't truncated, the detections are simply a filter of it — no second
+        // 15-second poll of the same endpoint. Only a full page (possibly truncated) still asks
+        // the server for the severity-scoped list.
+        if appState.reviews.count < 100 {
+            detectionItems = appState.reviews
+                .filter { $0.severity == "detection" && !($0.hasBeenReviewed ?? false)
+                    && !appState.locallyViewedIDs.contains($0.id) }
+            if !silent { loadingDetections = false }
+            return
+        }
         if !silent { loadingDetections = true }
         // Only overwrite on success. Assigning the `?? []` fallback meant one failed 15s silent
         // poll (Wi-Fi hiccup, a 401 before re-auth lands, Frigate restarting) emptied the list —
@@ -279,6 +290,11 @@ struct ReviewTab: View {
                 EventDetailView(event: event)
             }
             .task { if appState.reviews.isEmpty { await appState.refresh() } }
+            .onChange(of: appState.reviews) { _, _ in
+                // The socket / poll moved the list → the derived detections follow instantly.
+                guard selectedSeverity == "detection", appState.reviews.count < 100 else { return }
+                Task { await loadDetections(silent: true) }
+            }
             .task(id: "\(selectedSeverity)-\(scenePhase)") {
                 // Re-keyed on scenePhase so backgrounding cancels the loop and foreground
                 // restarts it — no 15s polling while the app is in the background.

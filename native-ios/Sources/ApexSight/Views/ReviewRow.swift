@@ -23,6 +23,11 @@ struct ReviewRow: View {
     /// Which detection this row is about, and the clip for it. Starts as the synchronous
     /// `thumb_time` answer so the row is never empty, then refines — see `ReviewMediaResolver`.
     @State private var plan = ReviewMediaPlan()
+    /// True once the row has rested on screen for a beat. `List` builds rows as they enter the
+    /// preload window, so a fast flick used to create an `AVPlayer` + HLS session per row that
+    /// scrolled past unseen — the classic per-cell-video scroll hitch. The still is up
+    /// immediately; only the looping preview waits.
+    @State private var settled = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -45,6 +50,7 @@ struct ReviewRow: View {
         // Keyed on `review.id` so a recycled row can never keep showing the previous review's
         // clip: the plan is reset to this review's own synchronous answer before anything awaits.
         .task(id: review.id) {
+            settled = false
             videoReady = false
             plan = ReviewMediaResolver.quickPlan(for: review, client: appState.client)
             let resolved = await ReviewMediaResolver.shared.plan(for: review, client: appState.client)
@@ -52,14 +58,20 @@ struct ReviewRow: View {
             if resolved.clipURL != plan.clipURL { videoReady = false }
             plan = resolved
         }
+        .task(id: review.id) {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            if !Task.isCancelled { settled = true }
+        }
     }
 
     /// A spoken summary of the card so VoiceOver doesn't read the layered image + gradient as
     /// separate fragments: "Alert. Person — Alex. Front Door • Zone: Porch."
     private var accessibilityLabel: String {
         let kind = isAlert ? "Alert" : "Detection"
-        return "\(kind). \(NotificationCopy.combinedTitle(for: review)). \(subtitle)"
+        return "\(kind). \(title). \(subtitle)"
     }
+
+    private var title: String { NotificationCopy.combinedTitle(for: review) }
 
     // MARK: - Big glanceable card
 
@@ -194,7 +206,7 @@ struct ReviewRow: View {
                 // `plan.clipURL` is nil when the event has no clip or the window holds no
                 // recording — the still then stands alone, which is the ONLY fallback. It never
                 // degrades to a previously loaded clip, because the plan is reset per review id.
-                if autoplayAllowed, let clip = plan.clipURL, let client = appState.client {
+                if autoplayAllowed, settled, let clip = plan.clipURL, let client = appState.client {
                     LoopingVideoView(url: clip, client: client,
                                      onFirstFrame: { withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { videoReady = true } })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -216,7 +228,7 @@ struct ReviewRow: View {
 
     private var info: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(NotificationCopy.combinedTitle(for: review))
+            Text(title)
                 .font(.headline)
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -240,11 +252,11 @@ struct ReviewRow: View {
     private var severityBadge: some View {
         HStack(spacing: 5) {
             Image(systemName: isAlert ? "bell.badge.fill" : "scope")
-                .font(.system(size: 10, weight: .black))
+                .font(.caption2.weight(.black))
             Text(isAlert ? "ALERT" : "DETECTION")
-                .font(.system(size: 10, weight: .black))
+                .font(.caption2.weight(.black))
             if let count = review.data?.detections?.count, count > 1 {
-                Text("· \(count)").font(.system(size: 10, weight: .black))
+                Text("· \(count)").font(.caption2.weight(.black))
             }
         }
         .foregroundStyle(.black)

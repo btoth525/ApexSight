@@ -54,7 +54,13 @@ final class AppState: ObservableObject {
     @Published var reviews: [FrigateReviewItem] = []
     @Published var labels: [String] = []
     @Published var subLabels: [String] = []
-    @Published var stats: FrigateStats?
+    /// Frigate's stats frame (every WS tick). Lives on `LiveTelemetry` — only the Health screen
+    /// reads it, and publishing it through AppState re-rendered every tab for a number nobody
+    /// on screen was showing. Forwarded so existing call sites are unchanged.
+    var stats: FrigateStats? {
+        get { LiveTelemetry.shared.stats }
+        set { LiveTelemetry.shared.stats = newValue }
+    }
     @Published var capabilities: [CameraCapability] = []
     @Published var recentLogs: [String] = []
     @Published var deepLink: AppDeepLink?
@@ -288,7 +294,11 @@ final class AppState: ObservableObject {
                 Task { [weak self] in await self?.refreshGate() }
                 // Offline: back off instead of knocking every 15s (+ timeout) on a server that isn't
                 // there; `isReachable` flips back on the first successful call and the cadence returns.
-                let seconds: UInt64 = (self?.isReachable == false) ? 60 : 15
+                // While the WebSocket is live it already delivers every event and review change
+                // the instant it happens; the poll is then only a safety net for anything it
+                // missed, and 15 s of ~170 KB list fetches (≈40 MB/h over the tunnel) buys
+                // nothing. Without a socket (a proxy that doesn't pass /ws) it IS the feed.
+                let seconds: UInt64 = (self?.isReachable == false) ? 60 : (self?.isLive == true ? 45 : 15)
                 try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             }
         }
@@ -1217,7 +1227,10 @@ final class AppState: ObservableObject {
 
             let loadedCameras = try await nextCameras
             guard serverGeneration == gen else { isLoading = false; return }
-            cameras = loadedCameras
+            // refresh() runs on every launch / foreground / pull. Each of these publishes re-runs
+            // body for every AppState observer — the wall, every tile's player view, Review,
+            // Activity, Search — so, like refreshAlerts, only publish what actually changed.
+            if cameras != loadedCameras { cameras = loadedCameras }
             Self.persistCameras(loadedCameras)
             prewarmSnapshots()
             // refresh() runs on every foreground / pull / poll, so only re-publish the camera
@@ -1246,7 +1259,7 @@ final class AppState: ObservableObject {
             let fetchedEvents = (try? await nextEvents) ?? events
             guard serverGeneration == gen else { isLoading = false; return }
             pendingEvents = nil  // full refresh is authoritative over any staged WS copy
-            events = fetchedEvents
+            if events != fetchedEvents { events = fetchedEvents }
             // Await the rest FIRST, then publish in one block behind a single generation check —
             // a switch/sign-out landing on any of these `try?` awaits must not get a half-updated
             // AppState carrying the previous server's reviews and stream capabilities.
@@ -1256,28 +1269,33 @@ final class AppState: ObservableObject {
             let streams = (try? await nextStreams) ?? [:]
             guard serverGeneration == gen else { isLoading = false; return }
             if let fetchedReviews {
-                reviews = visibleReviews(fetchedReviews)
+                let visible = visibleReviews(fetchedReviews)
+                if visible != reviews { reviews = visible }
             }
-            labels = fetchedLabels ?? labels
-            subLabels = fetchedSubLabels ?? subLabels
+            if let fetchedLabels, fetchedLabels != labels { labels = fetchedLabels }
+            if let fetchedSubLabels, fetchedSubLabels != subLabels { subLabels = fetchedSubLabels }
 
-            hasBirdseye = streams["birdseye"] != nil
-            twoWayCameras = Set(streams.keys.filter { $0.hasSuffix("_twoway") }
+            let birdseye = streams["birdseye"] != nil
+            if hasBirdseye != birdseye { hasBirdseye = birdseye }
+            let twoWay = Set(streams.keys.filter { $0.hasSuffix("_twoway") }
                 .map { String($0.dropLast("_twoway".count)) })
-            subStreamCameras = Set(streams.keys.filter { $0.hasSuffix("_sub") }
+            if twoWayCameras != twoWay { twoWayCameras = twoWay }
+            let subs = Set(streams.keys.filter { $0.hasSuffix("_sub") }
                 .map { String($0.dropLast("_sub".count)) })
-            subStreamsKnown = true
+            if subStreamCameras != subs { subStreamCameras = subs }
+            if !subStreamsKnown { subStreamsKnown = true }
             probeLiveHLSIfNeeded()
             // Fire-and-forget so refresh() (and the launch spinner) doesn't block on an extra
             // image round-trip for the widget snapshot.
             Task { await cacheWidgetSnapshot(from: loadedCameras) }
-            capabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
+            let baseCapabilities = buildBaseCapabilities(cameras: loadedCameras, streams: streams)
+            if capabilities != baseCapabilities { capabilities = baseCapabilities }
             // NOTE: capability diagnostics (latest-frame / recordings / PTZ probes) are NOT run
             // here. Firing N×3 requests at the Frigate server the moment the wall is loading its
             // live streams measurably slowed first-frame time. PTZ is now detected lazily, per
             // camera, only when you open it full-screen (see LiveStreamView); the deeper probe
             // stays behind the manual Diagnostics button on the Health screen.
-            isReachable = true
+            if !isReachable { isReachable = true }
         } catch {
             // Token expired mid-session: silently re-login once and retry the whole
             // refresh with a fresh client, so the user never lands on blank screens.

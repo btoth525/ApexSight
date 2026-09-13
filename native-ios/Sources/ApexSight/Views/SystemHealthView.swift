@@ -2,11 +2,12 @@ import SwiftUI
 
 struct SystemHealthView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var telemetry = LiveTelemetry.shared
 
     /// True before the first successful fetch — drives the loading skeleton rather than
     /// rendering empty "0" metric tiles while the very first stats request is in flight.
     private var isInitialLoad: Bool {
-        appState.isLoading && appState.stats == nil && appState.errorMessage == nil
+        appState.isLoading && telemetry.stats == nil && appState.errorMessage == nil
     }
 
     var body: some View {
@@ -61,8 +62,8 @@ struct SystemHealthView: View {
                             .foregroundStyle(GlassTheme.primary)
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: GlassTheme.Space.m)], spacing: GlassTheme.Space.m) {
-                            metric("Cameras", value: "\(appState.stats?.cameras?.count ?? appState.cameras.count)")
-                            metric("Detectors", value: "\(appState.stats?.detectors?.count ?? 0)")
+                            metric("Cameras", value: "\(telemetry.stats?.cameras?.count ?? appState.cameras.count)")
+                            metric("Detectors", value: "\(telemetry.stats?.detectors?.count ?? 0)")
                             metric("Events", value: "\(appState.events.count)")
                             // Realtime reflects the live WebSocket, not just the last REST call —
                             // so a `/ws` that's silently dropped by a reverse proxy reads
@@ -81,7 +82,7 @@ struct SystemHealthView: View {
                     }
                 }
 
-                if let detectors = appState.stats?.detectors, !detectors.isEmpty {
+                if let detectors = telemetry.stats?.detectors, !detectors.isEmpty {
                     GlassCard {
                         VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                             Text("Detectors")
@@ -98,7 +99,7 @@ struct SystemHealthView: View {
                     }
                 }
 
-                if let cameras = appState.stats?.cameras, !cameras.isEmpty {
+                if let cameras = telemetry.stats?.cameras, !cameras.isEmpty {
                     GlassCard {
                         VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                             Text("Camera Performance")
@@ -115,7 +116,7 @@ struct SystemHealthView: View {
                     }
                 }
 
-                if let storage = appState.stats?.service?.storage, !storage.isEmpty {
+                if let storage = telemetry.stats?.service?.storage, !storage.isEmpty {
                     GlassCard {
                         VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
                             Text("Storage")

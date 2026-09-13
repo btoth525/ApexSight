@@ -392,7 +392,9 @@ struct LiveStreamView: View {
                     // Fixed-width cells → circles are evenly spaced no matter how wide each
                     // label is ("Refresh" vs "Hold to Talk"). Without this the gaps between
                     // circles varied with label width.
-                    ForEach(rows[r], id: \.self) { items[$0].frame(width: Self.actionCellWidth) }
+                    ForEach(rows[r], id: \.self) { i in
+                        actionCell(items[i]).frame(width: Self.actionCellWidth)
+                    }
                 }
             }
         }
@@ -406,22 +408,48 @@ struct LiveStreamView: View {
     /// like "Hold to Talk" sit under it without changing the button's footprint.
     private static let actionCellWidth: CGFloat = 74
 
-    /// The live-view action buttons, in order — collected so they can render as one row or
-    /// wrap to two (see `ViewThatFits` above). Type-erased because the set is conditional
-    /// (birdseye, two-way audio).
-    private var actionItems: [AnyView] {
-        var items: [AnyView] = [
-            AnyView(actionButton(icon: "arrow.clockwise", label: "Refresh") {
+    /// Every control the viewer can show, as a value. The grid used to hold `[AnyView]` keyed by
+    /// index: type erasure defeats SwiftUI's structural diffing, so every body pass (each AppState
+    /// publish, every talk / PiP state change) rebuilt all nine glass circles and re-attached the
+    /// talk gesture; and index identity meant a conditional button (PiP, Deterrent) appearing
+    /// shifted every later cell's identity. A stable enum lets each cell be diffed and reused.
+    private enum LiveAction: String, Hashable {
+        case refresh, snapshot, timeline, controls, share, talk, responses, deterrent, audio, pip
+    }
+
+    /// The live-view action buttons, in order — the set is conditional (birdseye, two-way audio,
+    /// doorbell responses, deterrent, PiP support).
+    private var actionItems: [LiveAction] {
+        var items: [LiveAction] = [.refresh]
+        guard !isBirdseye else { return items }
+        items += [.snapshot, .timeline, .controls, .share]
+        if appState.twoWayCameras.contains(camera.name) { items.append(.talk) }
+        // Doorbell only: a scrollable menu of spoken responses (No Soliciting, Be Right There,
+        // Leave the Package, …) — each speaks at the door AND flips the matching Doorpanel screen.
+        if isDoorbell { items.append(.responses) }
+        if hasDeterrent { items.append(.deterrent) }
+        // Player controls — same uniform buttons, no separate floating cluster.
+        items.append(.audio)
+        // PiP shows on the plain HLS presentation. Gated on STABLE inputs only (device support),
+        // NOT on `pip.isPossible` — that flips true at connect, which was making the whole grid
+        // re-chunk and shift when the camera went connecting→connected.
+        if pip.isSupported { items.append(.pip) }
+        return items
+    }
+
+    /// One cell type for every action — a single `switch` inside one `View`, so rows stay unary
+    /// and diffable.
+    @ViewBuilder
+    private func actionCell(_ action: LiveAction) -> some View {
+        switch action {
+        case .refresh:
+            actionButton(icon: "arrow.clockwise", label: "Refresh") {
                 isLive = false
                 reloadToken = UUID()
-            })
-        ]
-        guard !isBirdseye else { return items }
-
-        items.append(AnyView(actionButton(icon: "photo", label: "Snapshot") {
-            streamMode = .snapshot
-        }))
-        items.append(AnyView(
+            }
+        case .snapshot:
+            actionButton(icon: "photo", label: "Snapshot") { streamMode = .snapshot }
+        case .timeline:
             NavigationLink {
                 RecordingTimelineView(camera: camera)
             } label: {
@@ -429,48 +457,22 @@ struct LiveStreamView: View {
             }
             .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             .accessibilityLabel("Open recording timeline")
-        ))
-        items.append(AnyView(actionButton(icon: "slider.horizontal.3", label: "Controls") {
-            showCameraControls = true
-        }))
-        items.append(AnyView(actionButton(icon: "square.and.arrow.up", label: "Share") {
-            Task { await shareSnapshot() }
-        }))
-        if appState.twoWayCameras.contains(camera.name) {
-            items.append(AnyView(talkButton))
+        case .controls:
+            actionButton(icon: "slider.horizontal.3", label: "Controls") { showCameraControls = true }
+        case .share:
+            actionButton(icon: "square.and.arrow.up", label: "Share") { Task { await shareSnapshot() } }
+        case .talk:
+            talkButton
+        case .responses:
+            actionButton(icon: "megaphone.fill", label: "Responses") { showResponses = true }
+        case .deterrent:
+            actionButton(icon: "exclamationmark.shield.fill", label: "Deterrent") { showDeterrent = true }
+        case .audio:
+            actionButton(icon: isMutedUI ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                         label: isMutedUI ? "Muted" : "Audio") { isMutedUI.toggle() }
+        case .pip:
+            actionButton(icon: pip.isActive ? "pip.exit" : "pip.enter", label: "PiP") { pip.toggle() }
         }
-        // Doorbell only: a scrollable menu of spoken responses (No Soliciting, Be Right There,
-        // Leave the Package, …) — each speaks at the door AND flips the matching Doorpanel screen.
-        if isDoorbell {
-            items.append(AnyView(actionButton(icon: "megaphone.fill", label: "Responses") {
-                showResponses = true
-            }))
-        }
-        if hasDeterrent {
-            items.append(AnyView(actionButton(icon: "exclamationmark.shield.fill", label: "Deterrent") {
-                showDeterrent = true
-            }))
-        }
-
-        // Player controls — same uniform buttons, no separate floating cluster.
-        items.append(AnyView(actionButton(
-            icon: isMutedUI ? "speaker.slash.fill" : "speaker.wave.2.fill",
-            label: isMutedUI ? "Muted" : "Audio"
-        ) {
-            isMutedUI.toggle()
-        }))
-        // PiP shows on the plain HLS presentation. Gated on STABLE inputs only (device support),
-        // NOT on `pip.isPossible` — that flips true at connect, which was making the whole grid
-        // re-chunk and shift when the camera went connecting→connected.
-        if pip.isSupported {
-            items.append(AnyView(actionButton(
-                icon: pip.isActive ? "pip.exit" : "pip.enter",
-                label: "PiP"
-            ) {
-                pip.toggle()
-            }))
-        }
-        return items
     }
 
     private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {

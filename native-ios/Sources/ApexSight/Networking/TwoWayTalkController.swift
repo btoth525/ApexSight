@@ -15,14 +15,9 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     enum Status: Equatable { case idle, connecting, talking, failed(String) }
     @Published private(set) var status: Status = .idle
 
-    // One factory for the process (initializing SSL repeatedly is wasteful/unsafe).
-    private static let factory: RTCPeerConnectionFactory = {
-        RTCInitializeSSL()
-        return RTCPeerConnectionFactory(
-            encoderFactory: RTCDefaultVideoEncoderFactory(),
-            decoderFactory: RTCDefaultVideoDecoderFactory()
-        )
-    }()
+    // One factory for the process — a second one meant a second set of worker / network /
+    // signaling threads resident for the app's lifetime and a second RTCInitializeSSL().
+    private static var factory: RTCPeerConnectionFactory { RealtimeVideoController.factory }
 
     private var pc: RTCPeerConnection?
     private var micTrack: RTCAudioTrack?

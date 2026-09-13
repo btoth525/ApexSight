@@ -49,12 +49,18 @@ struct RecordingContextPlayerView: View {
         .task(id: "\(camera)|\(Int(centerTime))") {
             guard let client = appState.client else { return }
             model.loadIfNeeded(client: client, url: client.recordingHLSURL(camera: camera, start: windowStart, end: requestWindowEnd))
-            if let es = eventStart {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if let player = model.player {
-                    _ = await player.seek(to: CMTime(seconds: max(0, es - windowStart - 5), preferredTimescale: 600),
-                                          toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
-                }
+            guard let es = eventStart else { return }
+            // Seek once the item can actually seek. A fixed 500 ms wait was a guess that the
+            // playlists had parsed; over the tunnel they often hadn't, and an HLS item seeked
+            // before that clamps to offset 0 — "This Event" started five minutes early. Same bug,
+            // same fix as the timeline's pendingSeek.
+            while !model.isReady {
+                if model.hasError || Task.isCancelled { return }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            if let player = model.player {
+                _ = await player.seek(to: CMTime(seconds: max(0, es - windowStart - 5), preferredTimescale: 600),
+                                      toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
             }
         }
         .task {

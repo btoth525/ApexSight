@@ -143,12 +143,54 @@ final class HLSLiveModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !self.isStopped, !self.isOffscreen else { return }
+                // The focused viewer never paused (it keeps running for auto-PiP) — a player that
+                // is still playing must not be rebuilt: that dropped the video to its snapshot for
+                // the reconnect, and with PiP floating it blanked the PiP window, which is bound
+                // to this very layer.
+                if !self.pausesOnBackground, self.state == .playing,
+                   self.player?.timeControlStatus != .paused { return }
                 // The live edge moved on while suspended — reconnect fresh rather than
                 // resuming a stale buffer. (Off-screen persistent tiles skip this and
                 // reconnect in onAppear instead.)
                 self.retryCount = 0
                 self.totalAttempts = 0
                 self.didTryReauth = false
+                self.connect()
+            }
+        })
+        // A phone call, Siri, an alarm, another app taking the audio session: iOS pauses the
+        // AVPlayer and nothing above notices — `timeControlStatus` goes .paused, the guard in
+        // evaluatePlaying() returns, the periodic observer stops ticking, and PlaybackStalled never
+        // fires for a paused player. The view sat on the last frame with the LIVE pill lit until
+        // the user tapped Refresh — a stale picture claiming to be live, the worst state for a
+        // security viewer. Drop to .connecting on .began (the snapshot re-covers), reconnect on .ended.
+        lifecycleObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            Task { @MainActor in
+                guard let self, !self.isStopped, !self.isOffscreen else { return }
+                switch type {
+                case .began:
+                    if self.state == .playing { self.state = .connecting }
+                case .ended:
+                    self.retryCount = 0
+                    self.totalAttempts = 0
+                    self.connect()
+                @unknown default:
+                    break
+                }
+            }
+        })
+        // mediaserverd restarted: every AVPlayer in the process is dead and reports nothing.
+        lifecycleObservers.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isStopped, !self.isOffscreen else { return }
+                self.retryCount = 0
+                self.totalAttempts = 0
                 self.connect()
             }
         })
@@ -181,7 +223,9 @@ final class HLSLiveModel: ObservableObject {
 
     /// Host-driven mute state (the viewer's uniform Audio button routes here).
     func setMuted(_ muted: Bool) {
-        guard muted != isMuted || player?.isMuted != muted else { return }
+        // `nil != true` is true, so with no player yet every tile's first setMuted(true) walked the
+        // release path — compare against what the player actually is, or our own flag if none.
+        guard muted != isMuted || (player?.isMuted ?? isMuted) != muted else { return }
         isMuted = muted
         if !muted {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
@@ -217,7 +261,9 @@ final class HLSLiveModel: ObservableObject {
         let primary = preferSub ? makeSubURL : makeURL
         let fallback = preferSub ? makeURL : makeSubURL
         let urlSource = (usingFallback ? fallback : primary) ?? makeURL
-        guard !isStopped, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
+        // An off-screen persistent tile whose backoff fired must not build and PLAY a player
+        // nobody can see; its onAppear reloads it when it is actually back on screen.
+        guard !isStopped, !isOffscreen, let makeItem, let url = urlSource?(), let item = makeItem(url) else { return }
         teardownObservers(player: player)
         stallGraceTask?.cancel(); stallGraceTask = nil
         player?.pause()
@@ -275,7 +321,8 @@ final class HLSLiveModel: ObservableObject {
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserverPlayer = newPlayer
         timeObserver = newPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            Task { @MainActor in
+            // Delivered on `.main` — say so, rather than paying a Task hop twice a second per tile.
+            MainActor.assumeIsolated {
                 guard let self, !self.isStopped else { return }
                 let secs = time.seconds
                 if let last = self.lastProgressTime, secs > last + 0.05 { self.advancingConfirmed = true }
@@ -311,6 +358,10 @@ final class HLSLiveModel: ObservableObject {
     private func evaluatePlaying() {
         guard let player, player.timeControlStatus == .playing,
               let item = player.currentItem, item.presentationSize != .zero else { return }
+        // Called from the 0.5 s periodic observer for as long as the stream plays. `@Published`
+        // emits on every assignment, equal or not — so an unguarded write here re-rendered every
+        // visible tile's body twice a second, forever. Only the transition is news.
+        guard state != .playing else { return }
         state = .playing
         // A stream that stalled, scheduled a reconnect, then recovered on its own must cancel
         // that pending reconnect — otherwise it fires later and needlessly rebuilds a live,
@@ -528,6 +579,10 @@ struct HLSLivePlayerView: View {
     /// (re)enter the MJPEG path or retry.
     @State private var mjpegFailed = false
     @State private var fallbackTask: Task<Void, Never>?
+    /// While on MJPEG, periodically re-attempts full-res HLS underneath (the AVPlayer layer isn't
+    /// mounted in that state, so the probe costs no pixels). One slow start used to park a view
+    /// on the low-res detect stream for the rest of the session.
+    @State private var reprobeTask: Task<Void, Never>?
     /// Drives the staggered startup through StreamGate so a wall of cameras doesn't all begin
     /// negotiating + decoding at once on launch.
     @State private var startTask: Task<Void, Never>?
@@ -780,6 +835,21 @@ struct HLSLivePlayerView: View {
         // invisible in the log while being one of the commonest "why does it look bad" causes.
         DiagnosticLog.shared.warning("live", "\(camera.name): fell back to MJPEG (no live pixels in time)")
         withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = true }
+        scheduleHLSReprobe()
+    }
+
+    /// MJPEG is a last resort, so keep looking for the way out: every 30 s, quietly start the HLS
+    /// model again. `.playing` lifts the fallback (the snapshot covers until the layer paints);
+    /// `.failed` stops it and re-arms this. Doorbell call / WebRTC-primary never reach here.
+    private func scheduleHLSReprobe() {
+        guard allowMJPEGFallback, !hlsDead else { return }
+        reprobeTask?.cancel()
+        reprobeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled, mjpegFallback, started else { return }
+            configureModel()
+            model.start()
+        }
     }
 
     /// Point the model at this camera's HLS endpoints. Idempotent — just installs closures —
@@ -873,8 +943,10 @@ struct HLSLivePlayerView: View {
     /// disappear, its own `model.stop()` already paused that player; if it did not, it was
     /// decoding before the borrow and should keep decoding.
     private func completeHandoff() {
-        guard warmPlayer != nil else { return }
-        WallPlayerRegistry.shared.endBorrow(camera.name)
+        guard let warm = warmPlayer else { return }
+        // …unless the tile DID go off-screen mid-borrow and skipped its pause for our sake: then
+        // that pause is ours to make, or the wall's sub stream keeps decoding under this viewer.
+        if WallPlayerRegistry.shared.endBorrow(camera.name) { warm.pause() }
         warmPlayer = nil
     }
 
@@ -1005,7 +1077,9 @@ struct HLSLivePlayerView: View {
             // stranding the tile on low-res until its next disappear.
             if started, !mjpegFallback {
                 model.isOffscreen = false
-                model.player?.play()
+                // A backoff that fired while the tile was off-screen was refused by connect(); a
+                // tile that is not on a live player now needs a fresh connect, not a play().
+                if model.state == .playing { model.player?.play() } else { model.reload() }
                 if !livePixelsShown { startFallbackTimer() }
                 return
             }
@@ -1042,12 +1116,13 @@ struct HLSLivePlayerView: View {
         }
         .onDisappear {
             startTask?.cancel(); startTask = nil
+            reprobeTask?.cancel(); reprobeTask = nil
             releaseGate()
             realtime.stop()
             // Hand an un-claimed warm player back, running — same reasoning as completeHandoff():
             // a `.sheet` presenter's onAppear never re-fires, so pausing here froze the tile.
-            if warmPlayer != nil {
-                WallPlayerRegistry.shared.endBorrow(camera.name)
+            if let warm = warmPlayer {
+                if WallPlayerRegistry.shared.endBorrow(camera.name) { warm.pause() }
                 warmPlayer = nil
             }
             // Stop publishing to the system playback UI when the full-screen viewer closes.
@@ -1081,7 +1156,9 @@ struct HLSLivePlayerView: View {
                     // A paused player can't reach live pixels, so the fallback timer must not keep
                     // running against it — it would drop the tile to MJPEG offscreen.
                     fallbackTask?.cancel(); fallbackTask = nil
-                    if !WallPlayerRegistry.shared.isBorrowed(camera.name) {
+                    if WallPlayerRegistry.shared.isBorrowed(camera.name) {
+                        WallPlayerRegistry.shared.deferPause(camera.name)
+                    } else {
                         model.player?.pause()
                     }
                 }
@@ -1147,6 +1224,14 @@ struct HLSLivePlayerView: View {
         .onChange(of: model.state) { _, newState in
             onPlaying?(newState == .playing)
             switch newState {
+            case .playing where mjpegFallback:
+                // The re-probe found HLS again: leave the low-res stream. `videoReady` stays false
+                // until the fresh layer paints, so the snapshot — not black — covers the swap.
+                reprobeTask?.cancel(); reprobeTask = nil
+                DiagnosticLog.shared.info("live", "\(camera.name): HLS recovered, leaving MJPEG")
+                withAnimation(reduceMotion ? nil : .easeIn(duration: 0.25)) { mjpegFallback = false }
+                syncRealtime()
+                fallthrough   // …and then everything a normal .playing does (gate, handoff, Now Playing)
             case .playing:
                 fallbackTask?.cancel(); fallbackTask = nil; releaseGate()  // up — free the slot
                 completeHandoff()   // real stream is up — release the borrowed wall player
@@ -1161,6 +1246,10 @@ struct HLSLivePlayerView: View {
                     )
                     nowPlayingPlayer = player
                 }
+            case .failed where mjpegFallback:
+                // The re-probe didn't find HLS yet — stay on MJPEG, try again later.
+                model.stop()
+                scheduleHLSReprobe()
             case .failed:
                 releaseGate(); fallToMJPEG()                                          // gave up — free + MJPEG
                 videoReady = false
@@ -1341,9 +1430,11 @@ struct ZoomablePlayerView: UIViewRepresentable {
                   let controller = AVPictureInPictureController(playerLayer: layer) else { return }
             // PiP REQUIRES the app audio session category to be .playback — without it,
             // startPictureInPicture() silently no-ops. The app only set it on UNMUTE, so
-            // PiP never worked on a muted stream (the default). Category only — the session
-            // is activated by the unmute flow, so this doesn't duck other apps' audio.
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            // PiP never worked on a muted stream (the default). `.mixWithOthers` because the
+            // player is MUTED at this point: AVPlayer activates the session when it renders, and
+            // a non-mixable .playback would stop the user's music for a silent camera. The unmute
+            // path re-sets the category without the option and takes the session properly.
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
             controller.canStartPictureInPictureAutomaticallyFromInline = autoPiP
             controller.delegate = self
             self.controller = controller

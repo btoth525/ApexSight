@@ -20,6 +20,11 @@ enum TurnSettings {
     /// In-memory keeps it as a within-session fallback without persisting the secret.
     // Written once per session after a successful fetch, read on the same path — no concurrent writers.
     private nonisolated(unsafe) static var memoryCache: [IceServerConfig]?
+    private nonisolated(unsafe) static var cachedAt: Date?
+    /// Cloudflare Realtime TURN credentials are minted with a multi-hour lifetime; inside this
+    /// window the cached set is returned immediately and refreshed quietly, instead of a relay
+    /// round-trip sitting on the critical path to first frame on every WebRTC start.
+    private static let cacheLifetime: TimeInterval = 30 * 60
 
     /// The relay base URL + pairing code, read from the same App Group keys the rest of the
     /// relay integration uses (`apex.relayURL` / `apex.pairingCode`).
@@ -37,6 +42,19 @@ enum TurnSettings {
         guard let cfg = relayConfig() else {
             return [stun] + (loadCache()?.map(rtc) ?? [])
         }
+        if let fresh = loadCache(), let cachedAt, Date().timeIntervalSince(cachedAt) < cacheLifetime {
+            if Date().timeIntervalSince(cachedAt) > cacheLifetime / 2 {
+                Task { await refresh(cfg) }   // second half of the window: top up in the background
+            }
+            return [stun] + fresh.map(rtc)
+        }
+        if let fetched = await refresh(cfg) { return [stun] + fetched.map(rtc) }
+        if let cached = loadCache() { return [stun] + cached.map(rtc) }
+        return [stun]   // LAN-only fallback; the connect watchdog explains a remote failure
+    }
+
+    @discardableResult
+    private static func refresh(_ cfg: (url: URL, pairing: String)) async -> [IceServerConfig]? {
         var req = URLRequest(url: cfg.url.appendingPathComponent("v1/turn-credentials"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -46,10 +64,9 @@ enum TurnSettings {
            (resp as? HTTPURLResponse)?.statusCode == 200,
            let fetched = try? JSONDecoder().decode([IceServerConfig].self, from: data) {
             cache(fetched)
-            return [stun] + fetched.map(rtc)
+            return fetched
         }
-        if let cached = loadCache() { return [stun] + cached.map(rtc) }
-        return [stun]   // LAN-only fallback; the connect watchdog explains a remote failure
+        return nil
     }
 
     /// Whether we've ever successfully fetched TURN creds — drives the watchdog's error copy.
@@ -60,6 +77,7 @@ enum TurnSettings {
     }
     private static func cache(_ s: [IceServerConfig]) {
         memoryCache = s
+        cachedAt = Date()
     }
     private static func loadCache() -> [IceServerConfig]? {
         memoryCache

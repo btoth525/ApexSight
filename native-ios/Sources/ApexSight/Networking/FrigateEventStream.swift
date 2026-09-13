@@ -68,6 +68,11 @@ final class FrigateEventStream {
     }
 
     func connect(session: FrigateSession) {
+        // A healthy socket for this same session stays up. `.active` fires after every banner,
+        // Control Centre pull and Face ID prompt as well as a real foreground; each one used to
+        // tear down and reopen /ws, with Frigate replaying its retained state every time.
+        // `.background` disconnects explicitly, so a real return still reconnects.
+        if isActive, task != nil, self.session == session, !isReconnecting { return }
         // Tear down any existing socket so repeated foreground events don't orphan tasks.
         if isActive { teardownSocket() }
         self.session = session

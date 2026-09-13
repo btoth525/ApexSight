@@ -28,6 +28,9 @@ final class ClipPlayerModel: ObservableObject {
 
     private var lastURL: URL?
     private var lastClient: FrigateClient?
+    /// Seconds of forward buffer to ask for. 2 s is right for a short review clip (first frame
+    /// fast); the timeline's hour-long manifests played at 2×/4× over the tunnel want more.
+    var preferredForwardBufferDuration: Double = 2
     // Removed from a nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
     private nonisolated(unsafe) var endObs: NSObjectProtocol?
     private var statusObs: NSKeyValueObservation?
@@ -134,7 +137,7 @@ final class ClipPlayerModel: ObservableObject {
         // Start with a small forward buffer instead of AVPlayer's generous VOD default —
         // event clips are short and local-network, so waiting to buffer half the clip
         // before the first frame was most of the perceived "loading" time.
-        item.preferredForwardBufferDuration = 2
+        item.preferredForwardBufferDuration = preferredForwardBufferDuration
         // Reuse the existing AVPlayer instance so the bound SwiftUI view swaps content
         // seamlessly when the scrubber jumps to a new time.
         let activePlayer = player ?? AVPlayer()

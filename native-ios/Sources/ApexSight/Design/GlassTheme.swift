@@ -165,7 +165,7 @@ struct PillButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 15, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, GlassTheme.Space.l)
                 .padding(.vertical, GlassTheme.Space.m)

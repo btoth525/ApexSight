@@ -260,12 +260,12 @@ struct CamerasTab: View {
         if isEditing {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Cancel") { cancelEditing() }
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.subheadline.weight(.heavy))
                     .foregroundStyle(GlassTheme.secondary)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") { commitEditing() }
-                    .font(.system(size: 15, weight: .black))
+                    .font(.subheadline.weight(.black))
                     .foregroundStyle(GlassTheme.accent)
             }
         } else {

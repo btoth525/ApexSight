@@ -107,7 +107,7 @@ Cameras load via **HLS → MJPEG cascade**, with an optional **sub-second WebRTC
   WebRTC video for ANY camera — even a known-good one logs `no frame ❌`); confirm on a real device.
 - **Fallback**: `MJPEGStreamView` (frame-by-frame MJPEG, off-main decode — Frigate's LOW-RES detect
   stream, so this is a quality downgrade; it should be a genuine last resort, never a hair-trigger)
-- **Static**: `CameraSnapshotView` / `RemoteImage` (latest.jpg from Frigate)
+- **Static**: `RemoteImage` (latest.jpg from Frigate; the player view's own placeholder — memory → disk → network)
 - **Full-screen viewer**: `LiveStreamView` (wraps HLSLivePlayerView with chrome overlay, PTZ, timeline)
 
 **go2rtc source gotcha (cost several builds — do not rediscover):** iOS AVPlayer can only decode go2rtc

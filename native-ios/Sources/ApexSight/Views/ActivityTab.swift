@@ -18,6 +18,12 @@ struct ActivityTab: View {
     @State private var loadingFiltered = false
     // A 24h window powering the summary chips, independent of the active filter.
     @State private var last24h: [FrigateEvent] = []
+    @State private var lastSummaryAt: Date?
+    /// Derived from `displayedEvents` / `last24h` ONCE per change of their inputs (see the
+    /// `.onChange`s below) rather than on every body pass — body runs on every AppState publish,
+    /// and each pass used to re-group up to 300 events by day and re-tally 500 with two sorts.
+    @State private var daySections: [DaySection] = []
+    @State private var tallyList: [Tally] = []
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
     @State private var sharePayload: SharePayload?
@@ -29,6 +35,18 @@ struct ActivityTab: View {
 
     private var isFilterActive: Bool {
         selectedCamera != "all" || selectedLabel != "all" || selectedSubLabel != "all"
+    }
+
+    /// Everything `sections(for:)` depends on. The base list is whichever one is in use, so an
+    /// update to the other one (a server query landing while unfiltered) doesn't re-group.
+    private struct FeedInputs: Equatable {
+        let events: [FrigateEvent]
+        let filterActive: Bool
+        let sortNewest: Bool
+    }
+    private var feedInputs: FeedInputs {
+        FeedInputs(events: isFilterActive ? serverResults : appState.events,
+                   filterActive: isFilterActive, sortNewest: sortNewest)
     }
 
     private var displayedEvents: [FrigateEvent] {
@@ -97,12 +115,9 @@ struct ActivityTab: View {
         // the 15s foreground poll, re-triggered all of it). Mirrors ReviewTab's `let visible =
         // filtered` fix (commit 4cdba5d), just never applied here.
         let events = displayedEvents
-        // …and only for the mode that actually renders them. `sections(for:)` groups + sorts up
-        // to 100 events and `tallies` loops the 500-event last24h window plus two dictionaries
-        // and two sorts; in Incidents mode neither value is used (header(tallies:) and the day
-        // ForEach are both in the else branch), so both were pure waste on every AppState publish.
-        let daySections = sections(for: events)
-        let tallyList = tallies
+        // Cached per input change (see the .onChange set below); the first pass — before .task
+        // has filled the cache — computes inline so the feed never renders empty for a frame.
+        let grouped = resolvedSections(for: events)
         NavigationStack(path: $path) {
             ZStack {
                 GlassBackground()
@@ -116,25 +131,9 @@ struct ActivityTab: View {
                         if events.isEmpty {
                             emptyOrLoading
                         } else {
-                            ForEach(daySections) { section in
+                            ForEach(grouped) { section in
                                 sectionHeader(section.title, count: section.events.count)
-                                ForEach(section.events) { event in
-                                    Button { path.append(event) } label: { EventRow(event: event) }
-                                        .buttonStyle(.plain)
-                                        .contextMenu {
-                                            Button { path.append(event) } label: {
-                                                Label("Open", systemImage: "arrow.up.forward.app")
-                                            }
-                                            if event.hasClip == true {
-                                                Button { Task { await shareClip(event) } } label: {
-                                                    Label("Share Clip", systemImage: "square.and.arrow.up")
-                                                }
-                                                Button { saveClip(event) } label: {
-                                                    Label("Save Clip to Photos", systemImage: "square.and.arrow.down")
-                                                }
-                                            }
-                                        }
-                                }
+                                ForEach(section.events) { event in eventRow(event) }
                             }
                         }
                     }
@@ -148,13 +147,19 @@ struct ActivityTab: View {
                 .softScrollEdges()
                 .refreshable {
                     await appState.refresh()
-                    await loadSummary()
+                    await loadSummary(force: true)
                     await loadFiltered()
                 }
                 .task {
                     if appState.events.isEmpty { await appState.refresh() }
+                    daySections = sections(for: displayedEvents)
                     await loadSummary()
                 }
+                // One keyed onChange instead of five chained ones — five tipped the 6.3 type-checker
+                // over its budget for this body. `FeedInputs` is exactly the set of values that can
+                // change the grouped list.
+                .onChange(of: feedInputs) { _, _ in daySections = sections(for: displayedEvents) }
+                .onChange(of: last24h) { _, _ in tallyList = tallies }
                 .task(id: "\(selectedCamera)|\(selectedLabel)|\(selectedSubLabel)") { await loadFiltered() }
             }
             .navigationTitle("Activity")
@@ -179,6 +184,31 @@ struct ActivityTab: View {
                 EventDetailView(event: event)
             }
         }
+    }
+
+    /// The cached grouping, or an inline one on the very first pass before `.task` has filled it.
+    private func resolvedSections(for events: [FrigateEvent]) -> [DaySection] {
+        daySections.isEmpty ? sections(for: events) : daySections
+    }
+
+    /// One feed row with its context menu — its own function so the body expression stays inside
+    /// the type-checker's budget.
+    private func eventRow(_ event: FrigateEvent) -> some View {
+        Button { path.append(event) } label: { EventRow(event: event) }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button { path.append(event) } label: {
+                    Label("Open", systemImage: "arrow.up.forward.app")
+                }
+                if event.hasClip == true {
+                    Button { Task { await shareClip(event) } } label: {
+                        Label("Share Clip", systemImage: "square.and.arrow.up")
+                    }
+                    Button { saveClip(event) } label: {
+                        Label("Save Clip to Photos", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
     }
 
     // MARK: - Header (cameras + last-24h chips)
@@ -357,11 +387,15 @@ struct ActivityTab: View {
 
     // MARK: - Data
 
-    private func loadSummary() async {
+    /// The chips' 24-hour window is ~500 KB; it used to be re-pulled on EVERY tab appearance.
+    /// Counts drift by a handful per hour at most, so five minutes between pulls is invisible.
+    private func loadSummary(force: Bool = false) async {
         guard let client = appState.client else { return }
+        if !force, let lastSummaryAt, Date().timeIntervalSince(lastSummaryAt) < 300 { return }
         let since = Date().addingTimeInterval(-86_400)
         if let fetched = try? await client.events(after: since, limit: 500) {
             last24h = fetched
+            lastSummaryAt = Date()
         }
     }
 

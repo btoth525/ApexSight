@@ -85,9 +85,23 @@ final class ImageCache: @unchecked Sendable {
         return image
     }
 
+    /// Last disk write per URL — touched only on `diskQueue`.
+    private var lastPersist: [URL: Date] = [:]
+
+    /// The disk tier exists for exactly one moment: the cold-launch paint before the first live
+    /// frame. So it holds a RECENT frame, not the latest one — a write every 30 s per camera is
+    /// plenty, where every insert used to be an atomic temp-file + rename per fetch.
+    private static let persistInterval: TimeInterval = 30
+
     private func persistToDisk(_ image: UIImage, for url: URL) {
-        guard let file = diskFile(for: url), let data = image.jpegData(compressionQuality: 0.7) else { return }
-        diskQueue.async {
+        guard let file = diskFile(for: url) else { return }
+        // Everything — including the JPEG encode, which used to run on the CALLER's thread, i.e.
+        // the main actor for every insert — happens on the serial disk queue. `UIImage` is
+        // immutable, so encoding it off-thread is safe.
+        diskQueue.async { [self] in
+            if let last = lastPersist[url], Date().timeIntervalSince(last) < Self.persistInterval { return }
+            lastPersist[url] = Date()
+            guard let data = image.jpegData(compressionQuality: 0.7) else { return }
             try? data.write(to: file, options: .atomic)
         }
     }

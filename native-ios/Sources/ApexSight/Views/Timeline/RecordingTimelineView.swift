@@ -17,12 +17,12 @@ struct RecordingTimelineView: View {
     let camera: FrigateCamera
     @EnvironmentObject private var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @StateObject private var engine: TimelineEngine
+    @State private var engine: TimelineEngine
     @StateObject private var clipModel = ClipPlayerModel()
 
     init(camera: FrigateCamera) {
         self.camera = camera
-        _engine = StateObject(wrappedValue: TimelineEngine(center: Date().timeIntervalSince1970 - 15))
+        _engine = State(initialValue: TimelineEngine(center: Date().timeIntervalSince1970 - 15))
     }
 
     /// Everything the ruler needs for one local day, fetched together and kept so crossing back
@@ -34,6 +34,24 @@ struct RecordingTimelineView: View {
         var segments: [FrigateClient.PreviewSegment] = []
         var frames: [FrigateClient.PreviewFrame] = []
     }
+
+    /// The loaded days flattened, filtered and sorted ONCE per data change (`remerge()`), instead of
+    /// on every body pass. These used to be computed properties — `flatMap` + `sorted` over every
+    /// motion sample and event of two or three days, plus a category tally — re-evaluated on each
+    /// scrub tick. Now a day landing or a filter chip flipping rebuilds them; a drag reads them.
+    private struct MergedDays {
+        var events: [FrigateEvent] = []
+        /// `events` minus the categories the user switched off.
+        var visibleEvents: [FrigateEvent] = []
+        /// Newest first — the Moments strip order.
+        var momentItems: [FrigateEvent] = []
+        var categoryCounts: [TimelineStyle.Category: Int] = [:]
+        var motion: [FrigateClient.MotionSample] = []
+        var coverage: [ClosedRange<Double>] = []
+        var segments: [FrigateClient.PreviewSegment] = []
+        var frames: [FrigateClient.PreviewFrame] = []
+    }
+    @State private var merged = MergedDays()
 
     /// Object categories the user has switched off — hidden from the ruler, the Moments strip and
     /// prev/next, so "just show me people" is one tap. Empty = everything.
@@ -63,7 +81,6 @@ struct RecordingTimelineView: View {
     @State private var pendingSeek: Double?
 
     // Playback
-    @State private var playingTime: Double?
     /// Epoch range of the hour manifest currently in `clipModel` — a seek inside it is local.
     @State private var loadedWindow: ClosedRange<Double>?
     @State private var isPlaying = true
@@ -97,12 +114,12 @@ struct RecordingTimelineView: View {
             GlassBackground()
             VStack(spacing: 0) {
                 videoSurface
-                readout
+                TimelineReadout(engine: engine, isPlaying: isPlaying, goLive: goLive)
                     .padding(.horizontal, GlassTheme.Space.l)
                     .padding(.top, GlassTheme.Space.m)
                 transport
                     .padding(.vertical, GlassTheme.Space.s)
-                TimelineRuler(engine: engine, events: visibleEvents, motion: allMotion, coverage: allCoverage,
+                TimelineRuler(engine: engine, events: merged.visibleEvents, motion: merged.motion, coverage: merged.coverage,
                               onScrubEnd: { time in scrubEnded(at: time) },
                               onTapEvent: { event in jump(to: event) })
                     .frame(height: 132)
@@ -112,9 +129,13 @@ struct RecordingTimelineView: View {
                     VStack(spacing: 0) {
                         categoryFilters
                             .padding(.vertical, GlassTheme.Space.s)
-                        dayChips
-                            .padding(.bottom, GlassTheme.Space.s)
-                        moments
+                        DayChipsRow(days: summaryDays, counts: dayCounts, engine: engine) { day in
+                            Task { await select(day: day) }
+                        }
+                        .padding(.bottom, GlassTheme.Space.s)
+                        MomentsStrip(items: merged.momentItems, engine: engine, focusID: momentFocusID,
+                                     thumbURL: { id in appState.client?.eventThumbnailURL(id: id) },
+                                     jump: { event in jump(to: event) })
                             .padding(.top, GlassTheme.Space.xs)
                         if let loadError { errorLine(loadError) }
                         if let feedback { feedbackLine(feedback) }
@@ -133,13 +154,12 @@ struct RecordingTimelineView: View {
         }
         .task { await bootstrap() }
         .task { await followPlayback() }
-        .onChange(of: engine.center) { _, _ in
-            if engine.isInteracting { syncPreviewPlayer() }
-        }
+        // The zoom is persisted when the pinch ENDS. Reading `engine.visibleSeconds` in body would
+        // subscribe this whole view to every pinch tick; `isInteracting` flips twice per gesture.
         .onChange(of: engine.isInteracting) { _, interacting in
-            if interacting { syncPreviewPlayer() }
+            if !interacting { storedVisibleSeconds = engine.visibleSeconds }
         }
-        .onChange(of: engine.visibleSeconds) { _, visible in storedVisibleSeconds = visible }
+        .onChange(of: hiddenCategories) { _, _ in remerge() }
         .onChange(of: clipModel.isReady) { _, ready in
             if ready { performPendingSeek() }
         }
@@ -157,78 +177,16 @@ struct RecordingTimelineView: View {
     private var videoSurface: some View {
         ZStack {
             LoadingClipPlayer(model: clipModel)
-            if engine.isInteracting { scrubOverlay }
+            if engine.isInteracting {
+                ScrubOverlay(engine: engine, previewPlayer: previewPlayer, loadedSegment: loadedSegment,
+                             nearestStill: nearestStillURL(at:), onCenterChanged: syncPreviewPlayer)
+            }
         }
         .aspectRatio(videoAspect, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .background(Color.black)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: engine.isInteracting)
         .expandableMedia(clipModel.player.map { FullscreenMediaView.Media.player($0) })
-    }
-
-    /// While the finger is down the video surface IS the scrubber: the packed preview seeks under
-    /// the finger; where none is packed yet (the current hour) the nearest loose preview frame
-    /// stands in; failing that, the nearest detection's thumbnail.
-    @ViewBuilder
-    private var scrubOverlay: some View {
-        if let previewPlayer, let seg = loadedSegment,
-           engine.center >= seg.start, engine.center <= seg.end {
-            PreviewPlayerLayerView(player: previewPlayer)
-                .transition(.opacity)
-        } else if let url = nearestStillURL(at: engine.center) {
-            RemoteImage(url: url, contentMode: .fill)
-                .transition(.opacity)
-        }
-    }
-
-    // MARK: - Readout + transport
-
-    private var readout: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Date(timeIntervalSince1970: engine.center)
-                        .formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(GlassTheme.secondary)
-                Text(Date(timeIntervalSince1970: engine.center)
-                        .formatted(.dateTime.hour().minute().second()))
-                    .font(.title.weight(.bold))
-                    .fontDesign(.rounded)
-                    .monospacedDigit()
-                    .foregroundStyle(GlassTheme.primary)
-                    .contentTransition(.numericText())
-            }
-            Spacer()
-            livePill
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var isLive: Bool {
-        guard let playingTime, isPlaying, !engine.isInteracting else { return false }
-        return engine.latest - playingTime < 45
-    }
-
-    private var livePill: some View {
-        Button(action: goLive) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(isLive ? GlassTheme.green : GlassTheme.tertiary)
-                    .frame(width: 8, height: 8)
-                Text("LIVE")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(isLive ? GlassTheme.green : GlassTheme.secondary)
-            }
-            .padding(.horizontal, GlassTheme.Space.m)
-            .frame(height: 34)
-            .background {
-                Capsule().fill(isLive ? GlassTheme.green.opacity(0.16) : GlassTheme.surface)
-                Capsule().strokeBorder(isLive ? GlassTheme.green.opacity(0.5) : GlassTheme.separator, lineWidth: 1)
-            }
-            .hitTarget()
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isLive ? "Live" : "Go live")
     }
 
     private var transport: some View {
@@ -274,7 +232,8 @@ struct RecordingTimelineView: View {
             applyRate()
         } label: {
             Text("\(Int(speed))×")
-                .font(.system(size: 13, weight: .black, design: .rounded))
+                .font(.footnote.weight(.black))
+                .fontDesign(.rounded)
                 .monospacedDigit()
                 .foregroundStyle(speed == 1 ? GlassTheme.secondary : .black)
                 .frame(width: 40, height: 30)
@@ -297,8 +256,7 @@ struct RecordingTimelineView: View {
     /// One row that is both the legend and the filter: each chip is a category present on the
     /// loaded days, with its colour and count. Tap to hide it everywhere; tap again to bring it back.
     private var categoryFilters: some View {
-        let counts = Dictionary(grouping: allEvents, by: { TimelineStyle.category(for: $0.label) })
-            .mapValues(\.count)
+        let counts = merged.categoryCounts
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: GlassTheme.Space.s) {
                 ForEach(TimelineStyle.Category.allCases) { category in
@@ -345,126 +303,6 @@ struct RecordingTimelineView: View {
         .accessibilityHint("Double tap to \(hidden ? "show" : "hide") on the timeline")
     }
 
-    // MARK: - Day chips
-
-    private var dayChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: GlassTheme.Space.s) {
-                ForEach(summaryDays, id: \.self) { day in dayChip(day) }
-            }
-            .padding(.horizontal, GlassTheme.Space.l)
-        }
-    }
-
-    private func dayChip(_ day: Date) -> some View {
-        let key = day.timeIntervalSince1970
-        let selected = calendar.isDate(day, inSameDayAs: Date(timeIntervalSince1970: engine.center))
-        let isToday = calendar.isDateInToday(day)
-        return Button {
-            Task { await select(day: day) }
-        } label: {
-            VStack(spacing: 2) {
-                Text(isToday ? "TODAY" : day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(selected ? .black.opacity(0.7) : GlassTheme.tertiary)
-                Text(day.formatted(.dateTime.day()))
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(selected ? .black : GlassTheme.primary)
-                if let count = dayCounts[key], count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(selected ? .black.opacity(0.7) : GlassTheme.secondary)
-                } else {
-                    Text(" ").font(.system(size: 10))
-                }
-            }
-            .frame(width: 58, height: 66)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                        .fill(GlassTheme.accent)
-                } else {
-                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                        .fill(GlassTheme.surface)
-                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(day.formatted(date: .complete, time: .omitted))
-        .accessibilityValue(dayCounts[key].map { "\($0) detections" } ?? "")
-    }
-
-    // MARK: - Moments
-
-    /// The visual index Nest gets right: every detection of the loaded days as a thumbnail you
-    /// can flick through and tap, newest first. The card nearest the playhead is outlined.
-    private var moments: some View {
-        let items = visibleEvents
-            .filter { $0.startTime != nil }
-            .sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
-        let nearestID = items.min { abs(($0.startTime ?? 0) - engine.center) < abs(($1.startTime ?? 0) - engine.center) }?.id
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: GlassTheme.Space.s) {
-                    ForEach(items) { event in
-                        momentCard(event, highlighted: event.id == nearestID)
-                            .id(event.id)
-                    }
-                }
-                .padding(.horizontal, GlassTheme.Space.l)
-            }
-            .frame(height: 74)
-            .onChange(of: momentFocusID) { _, id in
-                guard let id else { return }
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                    proxy.scrollTo(id, anchor: .center)
-                }
-            }
-        }
-    }
-
-    private func momentCard(_ event: FrigateEvent, highlighted: Bool) -> some View {
-        Button {
-            Haptics.tap()
-            jump(to: event)
-        } label: {
-            ZStack(alignment: .bottomLeading) {
-                if let url = appState.client?.eventThumbnailURL(id: event.id) {
-                    RemoteImage(url: url, contentMode: .fill)
-                } else {
-                    GlassTheme.surfaceHigh
-                }
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(TimelineStyle.color(for: event.label))
-                        .frame(width: 6, height: 6)
-                    Text(Date(timeIntervalSince1970: event.startTime ?? 0)
-                            .formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                }
-                .padding(6)
-            }
-            .frame(width: 104, height: 66)
-            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
-                    .strokeBorder(highlighted ? GlassTheme.accent : GlassTheme.separator,
-                                  lineWidth: highlighted ? 2 : 1)
-            }
-            .scaleEffect(highlighted ? 1.0 : 0.96)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: highlighted)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(titleize(event.displayLabel)) at \(Date(timeIntervalSince1970: event.startTime ?? 0).formatted(date: .omitted, time: .shortened))")
-    }
-
     // MARK: - Menu + messages
 
     private var actionsMenu: some View {
@@ -472,11 +310,11 @@ struct RecordingTimelineView: View {
             Button { Task { await shareCurrent() } } label: {
                 Label(isPreparingShare ? "Preparing…" : "Share 5-minute clip", systemImage: "square.and.arrow.up")
             }
-            .disabled(isPreparingShare || playingTime == nil)
+            .disabled(isPreparingShare || loadedWindow == nil)
             Button { Task { await saveCurrent() } } label: {
                 Label(isDownloading ? "Saving…" : "Save 5 minutes to Photos", systemImage: "arrow.down.circle")
             }
-            .disabled(isDownloading || playingTime == nil)
+            .disabled(isDownloading || loadedWindow == nil)
         } label: {
             Image(systemName: "ellipsis.circle")
         }
@@ -494,6 +332,7 @@ struct RecordingTimelineView: View {
             }
             .font(.footnote.weight(.bold))
             .foregroundStyle(GlassTheme.accent)
+            .hitTarget()
         }
         .padding(.horizontal, GlassTheme.Space.l)
         .padding(.top, GlassTheme.Space.s)
@@ -510,18 +349,30 @@ struct RecordingTimelineView: View {
 
     // MARK: - Merged data
 
-    private var allEvents: [FrigateEvent] { days.values.flatMap(\.events) }
-    /// `allEvents` minus the categories the user switched off.
-    private var visibleEvents: [FrigateEvent] {
-        guard !hiddenCategories.isEmpty else { return allEvents }
-        return allEvents.filter { !hiddenCategories.contains(TimelineStyle.category(for: $0.label)) }
+    private var allEvents: [FrigateEvent] { merged.events }
+    private var visibleEvents: [FrigateEvent] { merged.visibleEvents }
+    private var allSegments: [FrigateClient.PreviewSegment] { merged.segments }
+    private var allFrames: [FrigateClient.PreviewFrame] { merged.frames }
+
+    /// Rebuilds `merged` from `days` + `hiddenCategories`. Called when a day lands and when a filter
+    /// chip flips — the only two things that change the answer.
+    private func remerge() {
+        var m = MergedDays()
+        m.events = days.values.flatMap(\.events)
+        m.motion = days.values.flatMap(\.motion).sorted { $0.startTime < $1.startTime }
+        m.coverage = days.values.flatMap(\.coverage)
+        m.segments = days.values.flatMap(\.segments)
+        m.frames = days.values.flatMap(\.frames)
+        m.visibleEvents = hiddenCategories.isEmpty
+            ? m.events
+            : m.events.filter { !hiddenCategories.contains(TimelineStyle.category(for: $0.label)) }
+        m.momentItems = m.visibleEvents
+            .filter { $0.startTime != nil }
+            .sorted { ($0.startTime ?? 0) > ($1.startTime ?? 0) }
+        m.categoryCounts = Dictionary(grouping: m.events, by: { TimelineStyle.category(for: $0.label) })
+            .mapValues(\.count)
+        merged = m
     }
-    private var allMotion: [FrigateClient.MotionSample] {
-        days.values.flatMap(\.motion).sorted { $0.startTime < $1.startTime }
-    }
-    private var allCoverage: [ClosedRange<Double>] { days.values.flatMap(\.coverage) }
-    private var allSegments: [FrigateClient.PreviewSegment] { days.values.flatMap(\.segments) }
-    private var allFrames: [FrigateClient.PreviewFrame] { days.values.flatMap(\.frames) }
 
     private func dayStart(_ t: Double) -> Double {
         calendar.startOfDay(for: Date(timeIntervalSince1970: t)).timeIntervalSince1970
@@ -532,6 +383,7 @@ struct RecordingTimelineView: View {
     private func bootstrap() async {
         guard let client = appState.client else { return }
         clipModel.loopsAtEnd = false
+        clipModel.preferredForwardBufferDuration = 8   // hour-long VOD at up to 4×, often over the tunnel
         engine.zoom(to: storedVisibleSeconds)
         let now = Date().timeIntervalSince1970
         let today = calendar.startOfDay(for: Date())
@@ -585,6 +437,7 @@ struct RecordingTimelineView: View {
                               coverage: Self.mergeCoverage(loadedRecordings ?? []),
                               segments: await segments,
                               frames: await frames)
+        remerge()
     }
 
     /// Frigate lists ~10-second segments — thousands per day. Merged into continuous ranges so the
@@ -661,7 +514,7 @@ struct RecordingTimelineView: View {
     }
 
     private func goLive() {
-        guard !isLive else { return }
+        guard !engine.isLive(playing: isPlaying) else { return }
         Haptics.press()
         isPlaying = true
         playFrom(time: engine.latest - liveMargin)
@@ -677,7 +530,7 @@ struct RecordingTimelineView: View {
         guard let client = appState.client else { return }
         let time = engine.clamped(min(rawTime, Date().timeIntervalSince1970 - liveMargin))
         engine.center = time
-        playingTime = time
+        engine.playingTime = time
         feedback = nil
 
         if let window = loadedWindow, window.contains(time),
@@ -726,7 +579,7 @@ struct RecordingTimelineView: View {
             guard t.isFinite, t >= 0 else { continue }
             let absolute = window.lowerBound + t
             engine.center = absolute
-            playingTime = absolute
+            engine.playingTime = absolute
             let day = dayStart(absolute)
             if day != followedDay {
                 followedDay = day
@@ -813,7 +666,7 @@ struct RecordingTimelineView: View {
     // MARK: - Share / save
 
     private func shareCurrent() async {
-        guard let client = appState.client, let start = playingTime else { return }
+        guard let client = appState.client, let start = engine.playingTime else { return }
         Haptics.tap()
         isPreparingShare = true
         defer { isPreparingShare = false }
@@ -829,7 +682,7 @@ struct RecordingTimelineView: View {
     }
 
     private func saveCurrent() async {
-        guard let client = appState.client, let start = playingTime else { return }
+        guard let client = appState.client, let start = engine.playingTime else { return }
         Haptics.tap()
         isDownloading = true
         defer { isDownloading = false }
@@ -859,6 +712,235 @@ struct RecordingTimelineView: View {
         previewPlayer?.pause()
         previewPlayer = nil
         loadedSegment = nil
+    }
+}
+
+// MARK: - Hot-path children
+//
+// Each of these reads `engine.center` (or `playingTime`), the values that change at scrub and
+// playback rate. Keeping those reads OUT of `RecordingTimelineView.body` is what lets a drag redraw
+// just the ruler, the clock and the highlighted moment instead of the whole screen.
+
+/// The clock under the video and the LIVE pill.
+private struct TimelineReadout: View {
+    let engine: TimelineEngine
+    let isPlaying: Bool
+    let goLive: () -> Void
+
+    var body: some View {
+        let isLive = engine.isLive(playing: isPlaying)
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Date(timeIntervalSince1970: engine.center)
+                        .formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(GlassTheme.secondary)
+                Text(Date(timeIntervalSince1970: engine.center)
+                        .formatted(.dateTime.hour().minute().second()))
+                    .font(.title.weight(.bold))
+                    .fontDesign(.rounded)
+                    .monospacedDigit()
+                    .foregroundStyle(GlassTheme.primary)
+                    .contentTransition(.numericText())
+            }
+            Spacer()
+            Button(action: goLive) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isLive ? GlassTheme.green : GlassTheme.tertiary)
+                        .frame(width: 8, height: 8)
+                    Text("LIVE")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(isLive ? GlassTheme.green : GlassTheme.secondary)
+                }
+                .padding(.horizontal, GlassTheme.Space.m)
+                .frame(height: 34)
+                .background {
+                    Capsule().fill(isLive ? GlassTheme.green.opacity(0.16) : GlassTheme.surface)
+                    Capsule().strokeBorder(isLive ? GlassTheme.green.opacity(0.5) : GlassTheme.separator, lineWidth: 1)
+                }
+                .hitTarget()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isLive ? "Live" : "Go live")
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// While the finger is down the video surface IS the scrubber: the packed preview seeks under
+/// the finger; where none is packed yet (the current hour) the nearest loose preview frame
+/// stands in; failing that, the nearest detection's thumbnail.
+private struct ScrubOverlay: View {
+    let engine: TimelineEngine
+    let previewPlayer: AVPlayer?
+    let loadedSegment: FrigateClient.PreviewSegment?
+    let nearestStill: (Double) -> URL?
+    /// Fires on appear and on every playhead move while scrubbing — the owner seeks the preview.
+    let onCenterChanged: () -> Void
+
+    var body: some View {
+        Group {
+            if let previewPlayer, let seg = loadedSegment,
+               engine.center >= seg.start, engine.center <= seg.end {
+                PreviewPlayerLayerView(player: previewPlayer)
+                    .transition(.opacity)
+            } else if let url = nearestStill(engine.center) {
+                RemoteImage(url: url, contentMode: .fill)
+                    .transition(.opacity)
+            }
+        }
+        .onAppear(perform: onCenterChanged)
+        .onChange(of: engine.center) { _, _ in onCenterChanged() }
+    }
+}
+
+/// One chip per day that has recordings; the day under the playhead is filled.
+private struct DayChipsRow: View {
+    let days: [Date]
+    let counts: [Double: Int]
+    let engine: TimelineEngine
+    let select: (Date) -> Void
+
+    private let calendar = Calendar.current
+
+    var body: some View {
+        // One calendar lookup per pass, not one per chip.
+        let selectedDay = calendar.startOfDay(for: Date(timeIntervalSince1970: engine.center))
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: GlassTheme.Space.s) {
+                ForEach(days, id: \.self) { day in chip(day, selected: day == selectedDay) }
+            }
+            .padding(.horizontal, GlassTheme.Space.l)
+        }
+    }
+
+    private func chip(_ day: Date, selected: Bool) -> some View {
+        let key = day.timeIntervalSince1970
+        let isToday = calendar.isDateInToday(day)
+        return Button {
+            select(day)
+        } label: {
+            VStack(spacing: 2) {
+                Text(isToday ? "TODAY" : day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(selected ? .black.opacity(0.7) : GlassTheme.tertiary)
+                Text(day.formatted(.dateTime.day()))
+                    .font(.title3.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(selected ? .black : GlassTheme.primary)
+                if let count = counts[key], count > 0 {
+                    Text("\(count)")
+                        .font(.caption2.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(selected ? .black.opacity(0.7) : GlassTheme.secondary)
+                } else {
+                    Text(" ").font(.caption2)
+                }
+            }
+            .fontDesign(.rounded)
+            .frame(minWidth: 58, minHeight: 66)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                        .fill(GlassTheme.accent)
+                } else {
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                        .fill(GlassTheme.surface)
+                    RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                        .strokeBorder(GlassTheme.separator, lineWidth: 1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(day.formatted(date: .complete, time: .omitted))
+        .accessibilityValue(counts[key].map { "\($0) detections" } ?? "")
+    }
+}
+
+/// The visual index Nest gets right: every detection of the loaded days as a thumbnail you
+/// can flick through and tap, newest first. The card nearest the playhead is outlined.
+private struct MomentsStrip: View {
+    /// Newest first (pre-sorted by the owner, once per data change).
+    let items: [FrigateEvent]
+    let engine: TimelineEngine
+    /// The moment card to scroll into view after a deliberate jump.
+    let focusID: String?
+    let thumbURL: (String) -> URL?
+    let jump: (FrigateEvent) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let c = engine.center
+        let nearestID = items.min { abs(($0.startTime ?? 0) - c) < abs(($1.startTime ?? 0) - c) }?.id
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: GlassTheme.Space.s) {
+                    ForEach(items) { event in
+                        MomentCard(event: event, highlighted: event.id == nearestID,
+                                   thumbURL: thumbURL(event.id), jump: jump)
+                            .id(event.id)
+                    }
+                }
+                .padding(.horizontal, GlassTheme.Space.l)
+            }
+            .frame(height: 74)
+            .onChange(of: focusID) { _, id in
+                guard let id else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
+        }
+    }
+}
+
+private struct MomentCard: View {
+    let event: FrigateEvent
+    let highlighted: Bool
+    let thumbURL: URL?
+    let jump: (FrigateEvent) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            jump(event)
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                if let thumbURL {
+                    RemoteImage(url: thumbURL, contentMode: .fill)
+                } else {
+                    GlassTheme.surfaceHigh
+                }
+                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(TimelineStyle.color(for: event.label))
+                        .frame(width: 6, height: 6)
+                    Text(Date(timeIntervalSince1970: event.startTime ?? 0)
+                            .formatted(.dateTime.hour().minute()))
+                        .font(.caption2.weight(.bold))
+                        .fontDesign(.rounded)
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                }
+                .padding(6)
+            }
+            .frame(width: 104, height: 66)
+            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous)
+                    .strokeBorder(highlighted ? GlassTheme.accent : GlassTheme.separator,
+                                  lineWidth: highlighted ? 2 : 1)
+            }
+            .scaleEffect(highlighted ? 1.0 : 0.96)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: highlighted)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(titleize(event.displayLabel)) at \(Date(timeIntervalSince1970: event.startTime ?? 0).formatted(date: .omitted, time: .shortened))")
     }
 }
 

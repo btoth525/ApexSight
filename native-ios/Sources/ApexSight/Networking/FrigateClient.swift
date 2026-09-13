@@ -94,7 +94,11 @@ struct FrigateClient {
         let probeSession = URLSession(configuration: config)
         defer { probeSession.invalidateAndCancel() }
 
-        var request = URLRequest(url: baseURL.appending(path: "api/config"))
+        // `/api/stats` carries the same `cameras` keys as `/api/config` at ~25 KB instead of
+        // ~343 KB (measured on 0.18). This probe runs on every network-path change and every
+        // foreground with a 1.5 s budget — the config body alone could blow that over the tunnel
+        // and read as "not home".
+        var request = URLRequest(url: baseURL.appending(path: "api/stats"))
         request.timeoutInterval = timeout
         applyAuth(to: &request)
         do {
@@ -1183,22 +1187,6 @@ struct FrigateClient {
 
         let (_, response) = try await session.data(for: request)
         try validate(response)
-    }
-
-    /// Whether Frigate will actually serve this URL.
-    ///
-    /// **Must be GET.** Frigate answers **405 to HEAD** on snapshot/thumbnail URLs (verified
-    /// against 0.18.0 on 2026-09-12), so a HEAD-based check reads every image as missing and would
-    /// strip away pictures that render fine. A one-byte `Range` keeps it cheap where the server
-    /// honours it; `apiSession`'s resource cap bounds it where it doesn't.
-    func urlIsServed(_ url: URL) async -> Bool {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-        applyAuth(to: &request)
-        guard let (_, response) = try? await Self.apiSession.data(for: request),
-              let http = response as? HTTPURLResponse else { return false }
-        return (200..<300).contains(http.statusCode)
     }
 
     /// Whether an HLS VOD window contains any actual video.

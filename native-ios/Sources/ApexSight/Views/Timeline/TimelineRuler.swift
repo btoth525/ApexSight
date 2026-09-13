@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The scrolling ruler under the video: motion heat, recording coverage, colour-coded event
 /// bars, adaptive tick labels, and a fixed centre playhead. Drag to scrub (with a flick that
@@ -8,7 +9,7 @@ import SwiftUI
 /// a single redraw of the visible window — there is no scroll view to fight and no per-event view
 /// to lay out, which is what keeps a day with 500 detections smooth at 60 fps.
 struct TimelineRuler: View {
-    @ObservedObject var engine: TimelineEngine
+    let engine: TimelineEngine
     let events: [FrigateEvent]
     let motion: [FrigateClient.MotionSample]
     /// Merged recording coverage — gaps between ranges are honest "no footage here".
@@ -21,7 +22,8 @@ struct TimelineRuler: View {
 
     @State private var dragStartCenter: Double?
     @State private var pinchStartVisible: Double?
-    @State private var coastTask: Task<Void, Never>?
+    /// Drives the post-flick coast, one step per display refresh.
+    @State private var coastDriver = CoastDriver()
     @State private var lastHapticEventID: String?
     @State private var lastHapticHour: Int?
     @State private var hitEdge = false
@@ -75,7 +77,7 @@ struct TimelineRuler: View {
         }
         .onAppear { assignLanes() }
         .onChange(of: events) { _, _ in assignLanes() }
-        .onDisappear { coastTask?.cancel() }
+        .onDisappear { coastDriver.stop() }
     }
 
     // MARK: - Drawing
@@ -337,8 +339,7 @@ struct TimelineRuler: View {
     // MARK: - Interaction lifecycle
 
     private func beginInteraction() {
-        coastTask?.cancel()
-        coastTask = nil
+        coastDriver.stop()
         engine.isInteracting = true
         lastHapticEventID = nil
         lastHapticHour = Int(floor(engine.center / 3600))
@@ -361,23 +362,22 @@ struct TimelineRuler: View {
     }
 
     private func coast(velocityPointsPerSecond: Double, spp: Double) {
-        coastTask?.cancel()
-        coastTask = Task { @MainActor in
-            var v = velocityPointsPerSecond * spp   // seconds per second
-            let dt = 1.0 / 60
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 16_000_000)
-                v *= 0.93
-                let next = engine.center + v * dt
-                let clamped = engine.clamped(next)
-                if clamped != next { engine.center = clamped; break }   // hit an edge: stop dead
-                engine.center = next
-                haptics(spp: spp, atEdge: false)
-                if abs(v * dt) < spp * 0.35 { break }                 // sub-pixel: settled
+        // Velocity in timeline seconds per wall-clock second; decays 7 % per 60 Hz frame — the
+        // same feel as before, now integrated against the REAL elapsed time of each vsync.
+        var v = velocityPointsPerSecond * spp
+        coastDriver.start { dt in
+            v *= pow(0.93, dt * 60)
+            let next = engine.center + v * dt
+            let clamped = engine.clamped(next)
+            if clamped != next { engine.center = clamped; endInteraction(); return false }   // hit an edge: stop dead
+            engine.center = next
+            haptics(spp: spp, atEdge: false)
+            if abs(v * dt) < spp * 0.35 {                                                  // sub-pixel: settled
+                engine.center = engine.clamped(engine.center)
+                endInteraction()
+                return false
             }
-            guard !Task.isCancelled else { return }
-            engine.center = engine.clamped(engine.center)
-            endInteraction()
+            return true
         }
     }
 
@@ -452,5 +452,41 @@ private struct Triangle: Shape {
         p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
         p.closeSubpath()
         return p
+    }
+}
+
+/// A `CADisplayLink`-paced stepper for the flick coast. The previous `Task.sleep(16 ms)` loop woke
+/// late and unevenly — sleep has no frame alignment — which on a ProMotion phone reads as a one- or
+/// two-frame stutter on every flick, at the exact moment the user is watching the ruler move. The
+/// display link fires on vsync and hands the step the real elapsed time, so the motion is smooth
+/// and the physics don't depend on how promptly the scheduler came back.
+@MainActor
+final class CoastDriver: NSObject {
+    private var link: CADisplayLink?
+    /// Returns false to stop.
+    private var step: ((Double) -> Bool)?
+    private var lastTimestamp: CFTimeInterval = 0
+
+    func start(_ step: @escaping (Double) -> Bool) {
+        stop()
+        self.step = step
+        lastTimestamp = 0
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+        step = nil
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        // First frame after start: use the link's own frame duration rather than a zero/huge dt.
+        let dt = lastTimestamp == 0 ? link.targetTimestamp - link.timestamp
+                                    : min(0.05, link.timestamp - lastTimestamp)
+        lastTimestamp = link.timestamp
+        if step?(max(dt, 0.001)) != true { stop() }
     }
 }
