@@ -87,6 +87,13 @@ final class ExportManager: ObservableObject {
 
     @Published var phase: Phase = .idle
 
+    /// The message from the last `.failed` phase, or a sensible default — so a caller that shows
+    /// its own toast/feedback (rather than the phase bar) can surface why an export didn't land.
+    var failureMessage: String {
+        if case .failed(let m) = phase { return m }
+        return "Couldn't export that clip."
+    }
+
     var isBusy: Bool {
         switch phase {
         case .rendering, .downloading, .composing, .saving: return true

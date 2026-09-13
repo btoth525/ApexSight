@@ -27,6 +27,10 @@ struct ActivityTab: View {
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
     @State private var sharePayload: SharePayload?
+    /// Server-side export (render → poll → download a static file). The old path hit Frigate's
+    /// `clip.mp4` ffmpeg-pipe endpoint; abandoning one of those is what orphaned 40 ffmpeg
+    /// processes and took the NVR down for ~7 h. This never leaves a pipe open on the server.
+    @StateObject private var exporter = ExportManager()
 
     private static let carriers: Set<String> = [
         "amazon", "ups", "usps", "fedex", "dhl", "an_post", "purolator",
@@ -415,48 +419,37 @@ struct ActivityTab: View {
 
     private func saveClip(_ event: FrigateEvent) {
         guard let client = appState.client else { return }
-        // Offline: fail NOW with a clear message. The download session's
-        // waitsForConnectivity would otherwise park this unstructured Task silently
-        // for up to an hour with no error and no cancel path.
+        // Offline: fail NOW with a clear message rather than parking a request that can't complete.
         guard appState.isReachable else {
-            showToast(ClipDownloadError.noConnection.localizedDescription)
+            showToast("No Frigate connection.")
             return
         }
         Haptics.tap()
-        showToast("Saving clip…")
+        showToast("Rendering clip…")
         Task { @MainActor in
-            do {
-                try await ClipDownloader.downloadToPhotos(
-                    url: client.eventClipURL(id: event.id),
-                    client: client,
-                    fileName: "Apex-\(event.camera)-\(event.id)"
-                )
-                Haptics.success()
-                showToast("Saved to Photos ✓")
-            } catch {
-                showToast(error.localizedDescription)
-            }
+            let urls = await exporter.exportEvent(event, name: exportName(event), client: client)
+            guard !urls.isEmpty else { showToast(exporter.failureMessage); return }
+            let failed = await exporter.saveToPhotos(urls)
+            if failed.isEmpty { Haptics.success(); showToast("Saved to Photos ✓") }
+            else { showToast("Saved to My Exports (Photos couldn't import it).") }
         }
     }
 
     private func shareClip(_ event: FrigateEvent) async {
         guard let client = appState.client else { return }
         guard appState.isReachable else {
-            showToast(ClipDownloadError.noConnection.localizedDescription)
+            showToast("No Frigate connection.")
             return
         }
         Haptics.tap()
-        showToast("Preparing clip…")
-        do {
-            let url = try await ClipDownloader.downloadToTempFile(
-                url: client.eventClipURL(id: event.id),
-                client: client,
-                fileName: "Apex-\(event.camera)-\(event.id)"
-            )
-            sharePayload = SharePayload(url: url)
-        } catch {
-            showToast(error.localizedDescription)
-        }
+        showToast("Rendering clip…")
+        let urls = await exporter.exportEvent(event, name: exportName(event), client: client)
+        guard let url = urls.first else { showToast(exporter.failureMessage); return }
+        sharePayload = SharePayload(url: url)
+    }
+
+    private func exportName(_ event: FrigateEvent) -> String {
+        "Apex \(titleize(event.camera)) \(Date(timeIntervalSince1970: event.startTime ?? Date().timeIntervalSince1970).formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func showToast(_ message: String) {

@@ -15,6 +15,8 @@ struct EventDetailView: View {
     @State private var downloadFeedback: String?
     @State private var isPreparingShare = false
     @State private var sharePayload: SharePayload?
+    /// Server-side export instead of the `clip.mp4` ffmpeg pipe (see the note in ActivityTab).
+    @StateObject private var exporter = ExportManager()
     @State private var mediaMode: MediaMode = .snapshot
     /// True while our fullscreen media cover is presented — onDisappear must NOT stop the
     /// clip player then (the cover is displaying that very player).
@@ -179,13 +181,12 @@ struct EventDetailView: View {
         Haptics.tap()
         isPreparingShare = true
         defer { isPreparingShare = false }
-        do {
-            let url = try await ClipDownloader.downloadToTempFile(
-                url: client.eventClipURL(id: event.id), client: client, fileName: "Apex-\(event.id)"
-            )
+        let name = "Apex \(titleize(event.camera)) \(Date(timeIntervalSince1970: event.startTime ?? Date().timeIntervalSince1970).formatted(date: .abbreviated, time: .shortened))"
+        let urls = await exporter.exportEvent(event, name: name, client: client)
+        if let url = urls.first {
             sharePayload = SharePayload(url: url)
-        } catch {
-            withAnimation { downloadFeedback = (error as? ClipDownloadError)?.errorDescription ?? "Could not prepare the clip." }
+        } else {
+            withAnimation { downloadFeedback = exporter.failureMessage }
         }
     }
 

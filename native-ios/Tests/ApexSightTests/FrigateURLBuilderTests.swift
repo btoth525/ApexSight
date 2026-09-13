@@ -61,7 +61,6 @@ struct FrigateURLBuilderTests {
         #expect(client.eventSnapshotURL(id: id).path == "/api/events/\(id)/snapshot.jpg")
         #expect(client.eventThumbnailURL(id: id).path == "/api/events/\(id)/thumbnail.jpg")
         #expect(client.eventPreviewGifURL(id: id).path == "/api/events/\(id)/preview.gif")
-        #expect(client.eventClipURL(id: id).path == "/api/events/\(id)/clip.mp4")
         #expect(client.eventVodURL(id: id).path == "/vod/event/\(id)/master.m3u8")
     }
 
@@ -71,8 +70,8 @@ struct FrigateURLBuilderTests {
         let end = 1_700_000_060.123
         #expect(client.recordingHLSURL(camera: "yard", start: start, end: end).path
             == "/vod/yard/start/1700000000/end/1700000060/master.m3u8")
-        #expect(client.recordingClipURL(camera: "yard", start: start, end: end).path
-            == "/api/yard/start/1700000000/end/1700000060/clip.mp4")
+        // (recordingClipURL / eventClipURL deleted — Save/Share render server-side via the
+        // export API now, never the abandon-prone clip.mp4 ffmpeg pipe.)
     }
 
     @Test("Preview frame URL path")

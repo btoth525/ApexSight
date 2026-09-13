@@ -100,6 +100,8 @@ struct RecordingTimelineView: View {
     @State private var feedback: String?
     @State private var feedbackIsError = false
     @State private var sharePayload: SharePayload?
+    /// Server-side export instead of the `start/end/clip.mp4` ffmpeg pipe (see the note in ActivityTab).
+    @StateObject private var exporter = ExportManager()
 
     private let calendar = Calendar.current
     private let clipSeconds: Double = 300
@@ -665,34 +667,39 @@ struct RecordingTimelineView: View {
 
     // MARK: - Share / save
 
+    private var clipWindow: ExportManager.Window? {
+        guard let start = engine.playingTime else { return nil }
+        return ExportManager.Window(camera: camera.name, start: start, end: start + clipSeconds)
+    }
+
+    private func exportName(at start: Double) -> String {
+        "Apex \(titleize(camera.name)) \(Date(timeIntervalSince1970: start).formatted(date: .abbreviated, time: .shortened))"
+    }
+
     private func shareCurrent() async {
-        guard let client = appState.client, let start = engine.playingTime else { return }
+        guard let client = appState.client, let window = clipWindow else { return }
         Haptics.tap()
         isPreparingShare = true
         defer { isPreparingShare = false }
-        do {
-            let url = try await ClipDownloader.downloadToTempFile(
-                url: client.recordingClipURL(camera: camera.name, start: start, end: start + clipSeconds),
-                client: client, fileName: "Apex-\(camera.name)-\(Int(start))"
-            )
+        let urls = await exporter.export(windows: [window], name: exportName(at: window.start), client: client)
+        if let url = urls.first {
             sharePayload = SharePayload(url: url)
-        } catch {
-            show(feedback: error.localizedDescription, isError: true)
+        } else {
+            show(feedback: exporter.failureMessage, isError: true)
         }
     }
 
     private func saveCurrent() async {
-        guard let client = appState.client, let start = engine.playingTime else { return }
+        guard let client = appState.client, let window = clipWindow else { return }
         Haptics.tap()
         isDownloading = true
         defer { isDownloading = false }
-        do {
-            let url = client.recordingClipURL(camera: camera.name, start: start, end: start + clipSeconds)
-            try await ClipDownloader.downloadToPhotos(url: url, client: client, fileName: "Apex-\(camera.name)-\(Int(start))")
-            show(feedback: "Saved 5 minutes to Photos.", isError: false)
-        } catch {
-            show(feedback: error.localizedDescription, isError: true)
-        }
+        let urls = await exporter.export(windows: [window], name: exportName(at: window.start), client: client)
+        guard !urls.isEmpty else { show(feedback: exporter.failureMessage, isError: true); return }
+        let failed = await exporter.saveToPhotos(urls)
+        show(feedback: failed.isEmpty ? "Saved 5 minutes to Photos."
+                                      : "Saved to My Exports (Photos couldn't import it).",
+             isError: false)
     }
 
     private func show(feedback message: String, isError: Bool) {

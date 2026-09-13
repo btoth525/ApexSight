@@ -428,9 +428,6 @@ struct FrigateClient {
         return eventPreviewGifURL(id: detectionID)
     }
 
-    func eventClipURL(id: String) -> URL {
-        baseURL.appending(path: "api/events/\(id)/clip.mp4")
-    }
 
     /// A review's best static image: the cropped thumbnail of its first detection.
     /// Stock Frigate has no `/review/{id}/preview` JPEG — `thumb_path` is a server
@@ -528,17 +525,7 @@ struct FrigateClient {
         return t
     }
 
-    /// Direct MP4 clip for a review — AVPlayer plays this progressive file reliably.
-    func reviewClipURL(id: String) -> URL {
-        baseURL.appending(path: "api/review/\(id)/clip.mp4")
-    }
 
-    /// Progressive MP4 export of a recording range — used only for downloading a clip to
-    /// Photos (a file, not a stream). For in-app *playback* use `recordingHLSURL`; Frigate's
-    /// docs advise against progressive clip.mp4 for iOS playback.
-    func recordingClipURL(camera: String, start: Double, end: Double) -> URL {
-        baseURL.appending(path: "api/\(camera)/start/\(Int(start))/end/\(Int(end))/clip.mp4")
-    }
 
     /// VOD HLS playlist for a recording time range — Frigate's documented endpoint
     /// (`/vod/<camera>/start/<start>/end/<end>/master.m3u8`). The iOS-recommended source
@@ -1265,4 +1252,12 @@ private extension JSONDecoder {
 private extension JSONEncoder {
     /// Shared request-body encoder, mirroring `JSONDecoder.frigate`.
     static let frigate = JSONEncoder()
+}
+
+/// The one download failure the clip/export path can raise locally (the write to the temp
+/// directory failed). Everything else surfaces as a URLSession / `FrigateError`. This used to live
+/// in `ClipDownloader.swift`, removed when Save/Share moved to the server-side export API.
+enum ClipDownloadError: LocalizedError {
+    case writeFailed
+    var errorDescription: String? { "Could not save the clip file." }
 }
