@@ -138,18 +138,39 @@ struct MainTabView: View {
 
     // MARK: - Layouts
 
-    private var tabLayout: some View {
-        TabView(selection: Binding(
-            get: { selectedTab ?? .cameras },
-            set: { selectedTab = $0 }
-        )) {
-            ForEach(Tab.allCases) { tab in
-                view(for: tab)
-                    .tabItem { Label(tab.title, systemImage: tab.icon) }
-                    .badge(tab == .review ? appState.unreviewedCount : 0)
-                    .tag(tab)
+    private var tabSelection: Binding<Tab> {
+        Binding(get: { selectedTab ?? .cameras }, set: { selectedTab = $0 })
+    }
+
+    /// iOS 18+: the semantic `Tab` API, with Explore as the SEARCH tab — the system separates it
+    /// at the trailing edge and, on iOS 26, morphs it into the keyboard-docked search field (Apple:
+    /// "use the standard system APIs for indicating which tab is the search tab"). `SwiftUI.Tab`
+    /// is qualified because this view's own `Tab` enum shadows it.
+    @ViewBuilder
+    private var tabs: some View {
+        if #available(iOS 18.0, *) {
+            TabView(selection: tabSelection) {
+                SwiftUI.Tab(Tab.cameras.title, systemImage: Tab.cameras.icon, value: Tab.cameras) { view(for: .cameras) }
+                SwiftUI.Tab(Tab.review.title, systemImage: Tab.review.icon, value: Tab.review) { view(for: .review) }
+                    .badge(appState.unreviewedCount)
+                SwiftUI.Tab(Tab.activity.title, systemImage: Tab.activity.icon, value: Tab.activity) { view(for: .activity) }
+                SwiftUI.Tab(Tab.settings.title, systemImage: Tab.settings.icon, value: Tab.settings) { view(for: .settings) }
+                SwiftUI.Tab(value: Tab.explore, role: .search) { view(for: .explore) }
+            }
+        } else {
+            TabView(selection: tabSelection) {
+                ForEach(Tab.allCases) { tab in
+                    view(for: tab)
+                        .tabItem { Label(tab.title, systemImage: tab.icon) }
+                        .badge(tab == .review ? appState.unreviewedCount : 0)
+                        .tag(tab)
+                }
             }
         }
+    }
+
+    private var tabLayout: some View {
+        tabs
         .glassTabBar()
         // iOS 26: the Liquid Glass tab bar shrinks away as you scroll the cameras,
         // giving the content even more room — then returns on scroll-up.

@@ -40,7 +40,7 @@ struct TrackedSnapshot<Overlay: View>: View {
     /// Normalized object centre the fill zooms toward (ignored when `fill` is false).
     var focus: CGPoint = CGPoint(x: 0.5, y: 0.5)
     @ViewBuilder var overlay: (_ size: CGSize) -> Overlay
-    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var imageSession = ImageSession.shared
     @State private var uiImage: UIImage?
     @State private var failed = false
 
@@ -71,7 +71,7 @@ struct TrackedSnapshot<Overlay: View>: View {
     private func load() async {
         failed = false
         if let cached = ImageCache.shared.image(for: url) { uiImage = cached; return }
-        guard let client = appState.client else { failed = (uiImage == nil); return }
+        guard let client = imageSession.client else { failed = (uiImage == nil); return }
         do {
             let data = try await client.imageData(from: url)
             let decoded = await Task.detached(priority: .utility) { RemoteImage.downsample(data, maxPixel: 1600) }.value

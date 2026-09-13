@@ -78,7 +78,12 @@ final class AppState: ObservableObject {
     /// Republished at most ~7 Hz (see `scheduleDetectionFlush`) — the raw WebSocket feed mutates
     /// this several times per second per tracked object, and every mutation re-renders EVERY view
     /// observing AppState (Settings, Search, the tab bar…). Coalescing kills that app-wide churn.
-    @Published private(set) var liveDetections: [String: [LiveDetection]] = [:]
+    /// Forwarded to `LiveTelemetry` (see that type): reads/writes here are unchanged, but the feed no
+    /// longer publishes through AppState, so the whole app stops re-rendering at ~7 Hz during motion.
+    private(set) var liveDetections: [String: [LiveDetection]] {
+        get { LiveTelemetry.shared.liveDetections }
+        set { LiveTelemetry.shared.liveDetections = newValue }
+    }
     /// Working copy that absorbs the high-frequency updates; flushed into `liveDetections` on a tick.
     private var pendingDetections: [String: [LiveDetection]] = [:]
     private var detectionFlushScheduled = false
@@ -196,6 +201,7 @@ final class AppState: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.consumePendingIntentLink() }
         }
+        ImageSession.shared.bind(self)
     }
 
     deinit {
@@ -709,7 +715,10 @@ final class AppState: ObservableObject {
     /// WebSocket topics (Frigate sends the retained current values on connect, then updates on
     /// every change). This is the SOURCE OF TRUTH for the Controls sheet — `/api/config` only
     /// reflects the config file, not the running toggles.
-    @Published var cameraControlStates: [String: CameraControlState] = [:]
+    var cameraControlStates: [String: CameraControlState] {
+        get { LiveTelemetry.shared.cameraControlStates }
+        set { LiveTelemetry.shared.cameraControlStates = newValue }
+    }
 
     private func applyControlState(camera: String, feature: String, on: Bool) {
         var state = cameraControlStates[camera] ?? CameraControlState()

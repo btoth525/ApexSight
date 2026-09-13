@@ -62,7 +62,9 @@ struct SearchView: View {
                 GlassBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: GlassTheme.Space.l) {
-                        searchBar
+                        // iOS 18+: the query lives in the system search field (search tab / nav bar);
+                        // only the Filters toggle stays in the content. Older iOS keeps the inline bar.
+                        if #available(iOS 18.0, *) { filtersOnlyBar } else { searchBar }
                         if showFilters { filterSection }
                         if showDateFilter { dateFilterCard }
 
@@ -88,6 +90,16 @@ struct SearchView: View {
             .navigationTitle("Explore")
             .navigationBarTitleDisplayMode(.inline)
             .glassNavBar()
+            .modifier(NativeSearchField(query: $query) { Haptics.tap(); Task { await performSearch() } })
+            // The system field's Cancel/clear empties the query; mirror what the old ✕ did so stale
+            // results and silent filters don't outlive the text that produced them.
+            .onChange(of: query) { _, text in
+                if text.isEmpty, hasSearched, !isSearching {
+                    results = []
+                    hasSearched = false
+                    clearFilters()
+                }
+            }
             .navigationDestination(for: FrigateEvent.self) { event in
                 EventDetailView(event: event)
             }
@@ -101,6 +113,25 @@ struct SearchView: View {
     }
 
     // MARK: - Search bar
+
+    /// iOS 18+ companion to the system search field: just the Filters toggle, trailing.
+    private var filtersOnlyBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                Haptics.select()
+                withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) { showFilters.toggle() }
+            } label: {
+                Label(showFilters ? "Hide Filters" : "Filters",
+                      systemImage: "line.3.horizontal.decrease.circle\(showFilters ? ".fill" : "")")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(showFilters ? GlassTheme.accent : GlassTheme.secondary)
+                    .hitTarget()
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(showFilters ? "Shown" : "Hidden")
+        }
+    }
 
     private var searchBar: some View {
         HStack(spacing: GlassTheme.Space.s) {
@@ -850,4 +881,22 @@ struct SearchView: View {
         return labels
     }
 
+}
+
+
+/// `.searchable` on iOS 18+ (where Explore is the system search tab), nothing older — so the view
+/// never shows two search fields.
+private struct NativeSearchField: ViewModifier {
+    @Binding var query: String
+    let submit: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content
+                .searchable(text: $query, prompt: "Ask anything…")
+                .onSubmit(of: .search, submit)
+        } else {
+            content
+        }
+    }
 }

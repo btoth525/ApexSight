@@ -12,7 +12,7 @@ import UIKit
 /// and keeps the last good frame through a transient fetch failure instead of blanking. The
 /// refresh loop is a cancellable `.task` — it stops automatically when the tile scrolls away.
 struct LiveSnapshotView: View {
-    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var imageSession = ImageSession.shared
     @Environment(\.scenePhase) private var scenePhase
     let camera: FrigateCamera
     /// A **floor** on the gap between fetches, not the cadence itself — `SnapshotPollPolicy` owns
@@ -52,7 +52,7 @@ struct LiveSnapshotView: View {
     private func loop() async {
         guard camera.name != "birdseye" else { return }   // birdseye has no latest.jpg
         // Instant paint from cache (memory, then disk) so the tile is never black on appear.
-        if let url = appState.client?.latestFrameURL(camera: camera.name) {
+        if let url = imageSession.client?.latestFrameURL(camera: camera.name) {
             if let cached = ImageCache.shared.image(for: url) {
                 image = Image(uiImage: cached); onFrame?(true)
             } else if let disk = await Task.detached(priority: .utility, operation: {
@@ -106,8 +106,8 @@ struct LiveSnapshotView: View {
 
     /// Returns whether a frame actually arrived — the caller uses that to pace the next request.
     private func fetchOnce() async -> Bool {
-        guard let client = appState.client,
-              let url = appState.client?.latestFrameURL(camera: camera.name) else { return false }
+        guard let client = imageSession.client,
+              let url = imageSession.client?.latestFrameURL(camera: camera.name) else { return false }
         do {
             let data = try await client.imageData(from: url)
             let decoded = await Task.detached(priority: .utility) {
@@ -120,7 +120,7 @@ struct LiveSnapshotView: View {
             return true
         } catch {
             // Keep the last good frame on a transient blip / re-auth window rather than blanking.
-            if error.isUnauthorized { _ = await appState.reauthenticate() }
+            if error.isUnauthorized { _ = await imageSession.reauthenticate() }
             return false
         }
     }

@@ -14,6 +14,12 @@ extension Notification.Name {
 /// Turns a doorbell ring into a real iOS phone call: a VoIP (PushKit) push from the relay reports a
 /// CallKit incoming call, so the native full-screen call UI rings even on the Lock Screen. Answering
 /// foregrounds the app into the live doorbell view + two-way talk; declining/ending clears the call.
+/// Main-actor isolated: every entry point already ran on main (the PushKit registry is created with
+/// `queue: .main`, the CXProvider delegate with `queue: nil` = main, and the UI calls it from views),
+/// so this changes nothing at runtime — it makes the compiler enforce the invariant the comments
+/// only described. The delegate conformances are `@preconcurrency`, so each callback is checked
+/// to be on the main actor on entry — it traps rather than silently racing if a queue is ever changed.
+@MainActor
 final class DoorbellCallManager: NSObject {
     static let shared = DoorbellCallManager()
 
@@ -115,7 +121,9 @@ final class DoorbellCallManager: NSObject {
         update.supportsGrouping = false
         update.supportsUngrouping = false
         update.supportsDTMF = false
+        // Completion arrives on the provider's delegate queue (nil → main).
         provider.reportNewIncomingCall(with: id, update: update) { [weak self] error in
+          MainActor.assumeIsolated {
             guard let self else { completion(); return }
             if duplicate {
                 // Rule satisfied (we reported); now clear the extra call so only the original
@@ -132,6 +140,7 @@ final class DoorbellCallManager: NSObject {
                 self.scheduleRingTimeout(for: id)
             }
             completion()
+          }
         }
     }
 
@@ -146,12 +155,10 @@ final class DoorbellCallManager: NSObject {
         ringTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 45_000_000_000)
             guard !Task.isCancelled, let self else { return }
-            await MainActor.run {
-                guard self.currentCallID == id, !self.callAnswered else { return }
-                self.provider.reportCall(with: id, endedAt: nil, reason: .unanswered)
-                self.currentCallID = nil
-                self.callStartedAt = nil
-            }
+            guard self.currentCallID == id, !self.callAnswered else { return }
+            self.provider.reportCall(with: id, endedAt: nil, reason: .unanswered)
+            self.currentCallID = nil
+            self.callStartedAt = nil
         }
     }
 
@@ -167,15 +174,13 @@ final class DoorbellCallManager: NSObject {
         answeredTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.maxCallLifetime * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
-            await MainActor.run {
-                guard self.currentCallID == id else { return }
-                self.diag("auto-ending answered call after \(Int(Self.maxCallLifetime))s so it can't wedge future rings")
-                self.provider.reportCall(with: id, endedAt: nil, reason: .remoteEnded)
-                self.currentCallID = nil
-                self.callStartedAt = nil
-                self.callAnswered = false
-                NotificationCenter.default.post(name: .apexDoorbellEnded, object: nil)
-            }
+            guard self.currentCallID == id else { return }
+            self.diag("auto-ending answered call after \(Int(Self.maxCallLifetime))s so it can't wedge future rings")
+            self.provider.reportCall(with: id, endedAt: nil, reason: .remoteEnded)
+            self.currentCallID = nil
+            self.callStartedAt = nil
+            self.callAnswered = false
+            NotificationCenter.default.post(name: .apexDoorbellEnded, object: nil)
         }
     }
 
@@ -183,12 +188,10 @@ final class DoorbellCallManager: NSObject {
     /// answerable from `/v1/diag` instead of by inference. Hops to the main actor rather than
     /// assuming it: this is called from PushKit and CXProvider callbacks.
     private func diag(_ message: String, level: DiagnosticLog.Level = .info) {
-        Task { @MainActor in
-            switch level {
-            case .error:   DiagnosticLog.shared.error("doorbell-call", message)
-            case .warning: DiagnosticLog.shared.warning("doorbell-call", message)
-            case .info:    DiagnosticLog.shared.info("doorbell-call", message)
-            }
+        switch level {
+        case .error:   DiagnosticLog.shared.error("doorbell-call", message)
+        case .warning: DiagnosticLog.shared.warning("doorbell-call", message)
+        case .info:    DiagnosticLog.shared.info("doorbell-call", message)
         }
     }
 
@@ -217,7 +220,10 @@ final class DoorbellCallManager: NSObject {
 
 // MARK: - PushKit
 
-extension DoorbellCallManager: PKPushRegistryDelegate {
+// `@preconcurrency`: the requirements are nonisolated ObjC, the implementations are main-actor
+// (the registry's queue IS main). Swift asserts the isolation on entry — the same guarantee as
+// `assumeIsolated`, without wrapping every body or shipping the parameters across a boundary.
+extension DoorbellCallManager: @preconcurrency PKPushRegistryDelegate {
     func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
         guard type == .voIP else { return }
         let hex = credentials.token.map { String(format: "%02x", $0) }.joined()
@@ -269,7 +275,8 @@ extension DoorbellCallManager: PKPushRegistryDelegate {
 
 // MARK: - CallKit
 
-extension DoorbellCallManager: CXProviderDelegate {
+// See the PushKit extension: delegate queue nil → main, conformance is `@preconcurrency`.
+extension DoorbellCallManager: @preconcurrency CXProviderDelegate {
     func providerDidReset(_ provider: CXProvider) {
         currentCallID = nil
         callStartedAt = nil

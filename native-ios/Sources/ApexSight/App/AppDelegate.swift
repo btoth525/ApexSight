@@ -114,7 +114,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     /// Monotonic id for relay-registration attempts; only the newest may write the outcome.
     /// Touched only on the main thread (delegate callback + @MainActor tasks).
-    private nonisolated(unsafe) static var registerGeneration = 0
+    @MainActor private static var registerGeneration = 0
 
     func application(
         _ application: UIApplication,

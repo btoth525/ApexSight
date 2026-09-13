@@ -56,6 +56,9 @@ struct FrigateClient {
         return URLSession(configuration: config)
     }()
 
+    /// Cheap change detection for observers that only care WHICH server/token they talk to.
+    var identity: String { "\(baseURL.absoluteString)|\(token ?? "")" }
+
     init(baseURL: URL, token: String? = nil,
          session: URLSession = FrigateClient.apiSession) {
         self.baseURL = baseURL

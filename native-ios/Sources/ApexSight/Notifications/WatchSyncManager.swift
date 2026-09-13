@@ -5,7 +5,9 @@ import WatchConnectivity
 /// App groups don't span devices, so the phone pushes recent alerts (+ a small
 /// hero thumbnail) to the watch via `updateApplicationContext`, and handles
 /// snooze/resume requests the watch sends back. A no-op when there's no watch.
-final class WatchSyncManager: NSObject, WCSessionDelegate {
+/// `@unchecked Sendable` is honest here: the only state is the (thread-safe) WCSession default and
+/// app-group defaults — no mutable stored properties — and WCSession delivers on its own queue.
+final class WatchSyncManager: NSObject, WCSessionDelegate, @unchecked Sendable {
     static let shared = WatchSyncManager()
 
     private var session: WCSession? {

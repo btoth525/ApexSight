@@ -19,7 +19,7 @@ struct RemoteImage: View {
     /// are disabled on that camera → fall back to the always-available cropped thumbnail).
     var fallbackURL: URL? = nil
 
-    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var imageSession = ImageSession.shared
     @State private var image: Image?
     @State private var isFailed = false
 
@@ -98,7 +98,7 @@ struct RemoteImage: View {
     private func fetch(_ url: URL) async -> Bool {
         let maxPixel = maxPixelSize
         for attempt in 0..<3 {
-            guard let client = appState.client else { break }
+            guard let client = imageSession.client else { break }
             do {
                 let data = try await client.imageData(from: url)
                 // Decode/downsample OFF the main actor — the JPEG decode is the expensive
@@ -119,7 +119,7 @@ struct RemoteImage: View {
                 if error.isNotFound { return false }
                 // On an expired token, actually trigger a re-auth so the next pass picks
                 // up a fresh session instead of only hoping another path refreshed it.
-                if error.isUnauthorized { _ = await appState.reauthenticate() }
+                if error.isUnauthorized { _ = await imageSession.reauthenticate() }
             }
             if attempt < 2 {
                 try? await Task.sleep(nanoseconds: 600_000_000)

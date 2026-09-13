@@ -10,6 +10,7 @@ import SwiftUI
 /// reads as a tasteful status light behind the notch/camera area.
 struct DynamicIslandAura: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var telemetry = LiveTelemetry.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Dynamic Island pill geometry, in points, measured from the very top of the screen.
@@ -46,14 +47,14 @@ struct DynamicIslandAura: View {
             return [0: Threat.calm, 1: .motion, 2: .alert][raw] ?? .calm
         }
         #endif
-        let labels = appState.liveDetections.values.flatMap { $0 }.map { $0.label.lowercased() }
+        let labels = telemetry.liveDetections.values.flatMap { $0 }.map { $0.label.lowercased() }
         if labels.contains(where: { $0.contains("person") || $0.contains("face") }) { return .alert }
         return labels.isEmpty ? .calm : .motion
     }
 
     /// Count of person-level detections, to fire a ripple only when a NEW one appears.
     private var alertCount: Int {
-        appState.liveDetections.values.flatMap { $0 }
+        telemetry.liveDetections.values.flatMap { $0 }
             .filter { $0.label.lowercased().contains("person") }.count
     }
 

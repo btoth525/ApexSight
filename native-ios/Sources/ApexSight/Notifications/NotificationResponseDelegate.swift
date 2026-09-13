@@ -3,7 +3,11 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-final class NotificationResponseDelegate: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+/// Main-actor isolated: UNUserNotificationCenter delivers its delegate callbacks on the main thread,
+/// and everything here touches AppState. The conformance is `@preconcurrency`, so the delegate
+/// methods are main-actor and checked on entry, with signatures exactly as UIKit expects.
+@MainActor
+final class NotificationResponseDelegate: NSObject, ObservableObject, @preconcurrency UNUserNotificationCenterDelegate {
     @MainActor private weak var appState: AppState?
 
     override init() {

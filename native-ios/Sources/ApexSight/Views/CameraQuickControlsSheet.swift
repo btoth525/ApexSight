@@ -7,6 +7,7 @@ import SwiftUI
 /// `<camera>/<feature>/state` topics that `AppState.cameraControlStates` keeps current.
 struct CameraQuickControlsSheet: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var telemetry = LiveTelemetry.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -20,7 +21,7 @@ struct CameraQuickControlsSheet: View {
     /// retained state arrives — which is usually already present, since the socket is connected
     /// the whole time the app is open.
     private var state: CameraControlState {
-        appState.cameraControlStates[camera.name] ?? CameraControlState()
+        telemetry.cameraControlStates[camera.name] ?? CameraControlState()
     }
 
     var body: some View {
@@ -153,10 +154,10 @@ struct CameraQuickControlsSheet: View {
     /// config file as a first approximation. Once a `<camera>/<feature>/state` message arrives
     /// it overrides this. Usually the map is already populated (socket connected on launch).
     private func seedStateIfNeeded() async {
-        guard appState.cameraControlStates[camera.name] == nil else { return }
+        guard telemetry.cameraControlStates[camera.name] == nil else { return }
         if let seed = try? await appState.client?.cameraControlState(camera: camera.name),
-           appState.cameraControlStates[camera.name] == nil {
-            appState.cameraControlStates[camera.name] = seed
+           telemetry.cameraControlStates[camera.name] == nil {
+            telemetry.cameraControlStates[camera.name] = seed
         }
     }
 

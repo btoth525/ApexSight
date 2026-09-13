@@ -65,6 +65,8 @@ private final class SpeechWriter: @unchecked Sendable {
     private var wroteFrames = false
     private var resumed = false
     private var continuation: CheckedContinuation<URL?, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var graceTask: Task<Void, Never>?
 
     func write(_ text: String, voice: AVSpeechSynthesisVoice?) async -> URL? {
         await withCheckedContinuation { (cont: CheckedContinuation<URL?, Never>) in
@@ -73,8 +75,9 @@ private final class SpeechWriter: @unchecked Sendable {
             utterance.voice = voice
             synth.write(utterance) { [weak self] buffer in self?.handle(buffer) }
             // In case the trailing empty buffer never arrives, resolve on what we have.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
-                guard let self else { return }
+            timeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                guard !Task.isCancelled, let self else { return }
                 self.finish(self.wroteFrames ? self.url : nil)
             }
         }
@@ -89,8 +92,9 @@ private final class SpeechWriter: @unchecked Sendable {
                 // Empty with nothing written: either the LEADING empty buffer (real audio follows)
                 // or a failed synthesis that will never produce frames. Give it a short grace
                 // window instead of stalling out the full 15s timeout.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                    guard let self, !self.wroteFrames else { return }
+                graceTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    guard !Task.isCancelled, let self, !self.wroteFrames else { return }
                     self.finish(nil)
                 }
             }
@@ -106,6 +110,8 @@ private final class SpeechWriter: @unchecked Sendable {
     }
 
     private func finish(_ result: URL?) {
+        timeoutTask?.cancel()
+        graceTask?.cancel()
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.resumed else { return }
             self.resumed = true

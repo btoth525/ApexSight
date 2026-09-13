@@ -131,6 +131,11 @@ targets:
         # Match the app — the widget fetches camera snapshots from the same user-supplied host.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+          NSExceptionDomains:
+            relay.plexserver525.com:
+              NSExceptionAllowsInsecureHTTPLoads: false
+              NSExceptionMinimumTLSVersion: TLSv1.2
+              NSIncludesSubdomains: false
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
@@ -203,6 +208,11 @@ targets:
         # image. Adding the app's arbitrary-loads scope here is purely additive — it fixes that.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+          NSExceptionDomains:
+            relay.plexserver525.com:
+              NSExceptionAllowsInsecureHTTPLoads: false
+              NSExceptionMinimumTLSVersion: TLSv1.2
+              NSIncludesSubdomains: false
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
