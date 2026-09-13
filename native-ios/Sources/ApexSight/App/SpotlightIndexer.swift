@@ -1,5 +1,7 @@
 import Foundation
-import CoreSpotlight
+// CoreSpotlight is thread-safe by contract (non-batch index calls from any thread; items are
+// hand-off model objects; completions run on its private queue) but carries no Sendable annotations.
+@preconcurrency import CoreSpotlight
 import UniformTypeIdentifiers
 
 /// Indexes recent Frigate events into iOS Spotlight so the user can search "package", "UPS",

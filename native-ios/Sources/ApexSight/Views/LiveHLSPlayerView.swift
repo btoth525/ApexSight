@@ -1303,6 +1303,9 @@ struct ZoomablePlayerView: UIViewRepresentable {
         view.playerLayer.videoGravity = videoGravity
     }
 
+    /// Main-actor: built and driven only from make/updateUIView. The PiP delegate stubs stay
+    /// `nonisolated` — they touch only the Sendable `pip` reference and hop to main themselves.
+    @MainActor
     final class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
         private let pip: LivePiPController?
         private let autoPiP: Bool
@@ -1356,7 +1359,7 @@ struct ZoomablePlayerView: UIViewRepresentable {
             }
         }
 
-        func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
             let pip = self.pip
             Task { @MainActor in
                 pip?.isActive = true
@@ -1364,7 +1367,7 @@ struct ZoomablePlayerView: UIViewRepresentable {
             }
         }
 
-        func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
             let pip = self.pip
             Task { @MainActor in
                 pip?.isActive = false

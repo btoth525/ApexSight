@@ -48,10 +48,12 @@ struct LoopingVideoView: UIViewRepresentable {
         private var layerObs: NSKeyValueObservation?
         private var endObs: NSObjectProtocol?
         private var firstFrameFired = false
+        private var onFirstFrame: (() -> Void)?
 
         func attach(url: URL, client: FrigateClient, to view: PlayerLayerView, onFirstFrame: (() -> Void)?) {
             teardown()
             self.url = url
+            self.onFirstFrame = onFirstFrame
             let item = client.playerItem(for: url)
             let p = AVPlayer(playerItem: item)
             p.isMuted = true
@@ -69,12 +71,10 @@ struct LoopingVideoView: UIViewRepresentable {
             // poster (the broken in-progress review card).
             layerObs = view.playerLayer.observe(\.isReadyForDisplay, options: [.new, .initial]) { [weak self] layer, _ in
                 guard layer.isReadyForDisplay else { return }
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        guard let self, !self.firstFrameFired else { return }
-                        self.firstFrameFired = true
-                        onFirstFrame?()
-                    }
+                Task { @MainActor [weak self] in
+                    guard let self, !self.firstFrameFired else { return }
+                    self.firstFrameFired = true
+                    self.onFirstFrame?()
                 }
             }
             // Loop: HLS VOD fires end-of-playlist; rewind + play again (AVPlayerLooper won't do HLS).
@@ -93,6 +93,7 @@ struct LoopingVideoView: UIViewRepresentable {
             if let endObs { NotificationCenter.default.removeObserver(endObs) }; endObs = nil
             player?.pause(); player = nil
             firstFrameFired = false
+            onFirstFrame = nil
             url = nil
         }
     }

@@ -3,7 +3,11 @@ import UniformTypeIdentifiers
 import UserNotifications
 import WidgetKit
 
-final class NotificationService: UNNotificationServiceExtension {
+/// `@unchecked Sendable`: the system calls `didReceive` and `serviceExtensionTimeWillExpire` on
+/// different threads, and URLSession/Tasks call back on theirs. Shared state is either written once
+/// in `didReceive` before any concurrent reader exists and only read afterwards (`bestAttemptContent`,
+/// `widgetRefresh`) or guarded by `deliveryLock` (`contentHandler`, `hasDelivered`, `downloadTask`).
+final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
     private var downloadTask: URLSessionDownloadTask?
@@ -34,6 +38,15 @@ final class NotificationService: UNNotificationServiceExtension {
             group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
             await group.next()
             group.cancelAll()
+        }
+    }
+
+    /// Wait (bounded) for the widget refresh, then deliver whatever `bestAttemptContent` holds.
+    /// Reads the content back off `self` so the Task captures nothing but `self`.
+    private func deliverBestAttemptAfterWidgetRefresh() {
+        Task {
+            await Self.awaitBounded(widgetRefresh, seconds: 3)
+            if let content = bestAttemptContent { deliverOnce(content) }
         }
     }
 
@@ -72,10 +85,7 @@ final class NotificationService: UNNotificationServiceExtension {
         let token = (payloadToken?.isEmpty == false) ? payloadToken : Self.appGroupToken()
         let candidates = attachmentURLs(from: request.content.userInfo)
         guard !candidates.isEmpty else {
-            Task {
-                await Self.awaitBounded(self.widgetRefresh, seconds: 3)
-                self.deliverOnce(mutableContent)
-            }
+            deliverBestAttemptAfterWidgetRefresh()
             return
         }
 
@@ -85,17 +95,17 @@ final class NotificationService: UNNotificationServiceExtension {
         download(candidates, token: token) { [weak self] attachment in
             guard let self else { return }
             if let attachment {
-                mutableContent.attachments = [attachment]
+                self.bestAttemptContent?.attachments = [attachment]
             }
-            Task {
-                await Self.awaitBounded(self.widgetRefresh, seconds: 3)
-                self.deliverOnce(mutableContent)
-            }
+            self.deliverBestAttemptAfterWidgetRefresh()
         }
     }
 
     override func serviceExtensionTimeWillExpire() {
-        downloadTask?.cancel()
+        deliveryLock.lock()
+        let inflight = downloadTask
+        deliveryLock.unlock()
+        inflight?.cancel()
         widgetRefresh?.cancel()
         if let bestAttemptContent {
             deliverOnce(bestAttemptContent)
@@ -183,7 +193,7 @@ final class NotificationService: UNNotificationServiceExtension {
         UserDefaults(suiteName: appGroupSuite)?.string(forKey: "apex.frigateBaseURL")
     }
 
-    private func download(_ urls: [URL], token: String?, completion: @escaping (UNNotificationAttachment?) -> Void) {
+    private func download(_ urls: [URL], token: String?, completion: @escaping @Sendable (UNNotificationAttachment?) -> Void) {
         guard let url = urls.first else {
             completion(nil)
             return
@@ -222,7 +232,7 @@ final class NotificationService: UNNotificationServiceExtension {
             urlRequest.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
         }
 
-        downloadTask = BoundedSession.notificationMedia.downloadTask(with: urlRequest) { [weak self] temporaryURL, response, _ in
+        let task = BoundedSession.notificationMedia.downloadTask(with: urlRequest) { [weak self] temporaryURL, response, _ in
             guard let self else { return }
             // Require a genuine 2xx. `?? false` so a non-HTTP response — or a reverse
             // proxy that answers auth failures with a 200 + HTML login page — is
@@ -244,7 +254,10 @@ final class NotificationService: UNNotificationServiceExtension {
                 self.download(remaining, token: token, completion: completion)
             }
         }
-        downloadTask?.resume()
+        deliveryLock.lock()
+        downloadTask = task
+        deliveryLock.unlock()
+        task.resume()
     }
 
     private func copyAttachment(from temporaryURL: URL, originalURL: URL) -> UNNotificationAttachment? {

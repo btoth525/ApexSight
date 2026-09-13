@@ -56,6 +56,10 @@ struct WatchAlert: Identifiable {
 
 // MARK: - Store (receives pushes from the iPhone)
 
+/// Main-actor: it drives SwiftUI. WCSession calls its delegate on a background queue, so the
+/// delegate methods are `nonisolated`, parse the non-Sendable `[String: Any]` there, and hop to
+/// main carrying only Sendable values (`[WatchAlert]`, `UIImage`).
+@MainActor
 final class WatchAlertStore: NSObject, ObservableObject, WCSessionDelegate {
     @Published var alerts: [WatchAlert] = []
     @Published var heroImage: UIImage?
@@ -78,38 +82,40 @@ final class WatchAlertStore: NSObject, ObservableObject, WCSessionDelegate {
         snoozedUntil = Date().addingTimeInterval(TimeInterval(minutes * 60))
     }
 
-    private func apply(_ context: [String: Any]) {
-        DispatchQueue.main.async {
-            if let raw = context["alerts"] as? [[String: Any]] {
-                self.alerts = raw.compactMap { dict in
-                    guard let label = dict["label"] as? String,
-                          let camera = dict["camera"] as? String,
-                          let when = dict["when"] as? Double else { return nil }
-                    return WatchAlert(
-                        id: dict["id"] as? String ?? UUID().uuidString,
-                        label: label,
-                        subLabel: dict["subLabel"] as? String,
-                        camera: camera,
-                        severity: dict["severity"] as? String ?? "alert",
-                        when: Date(timeIntervalSince1970: when)
-                    )
-                }
+    nonisolated private func apply(_ context: [String: Any]) {
+        let alerts: [WatchAlert]? = (context["alerts"] as? [[String: Any]]).map { raw in
+            raw.compactMap { dict in
+                guard let label = dict["label"] as? String,
+                      let camera = dict["camera"] as? String,
+                      let when = dict["when"] as? Double else { return nil }
+                return WatchAlert(
+                    id: dict["id"] as? String ?? UUID().uuidString,
+                    label: label,
+                    subLabel: dict["subLabel"] as? String,
+                    camera: camera,
+                    severity: dict["severity"] as? String ?? "alert",
+                    when: Date(timeIntervalSince1970: when)
+                )
             }
-            // Set unconditionally (nil when this update carries no hero) — the phone omits heroJPEG
-            // when the thumbnail download fails/oversizes, and leaving the OLD image up would pair the
-            // previous alert's photo with the new alert's caption.
-            self.heroImage = (context["heroJPEG"] as? Data).flatMap { UIImage(data: $0) }
+        }
+        // Set unconditionally (nil when this update carries no hero) — the phone omits heroJPEG
+        // when the thumbnail download fails/oversizes, and leaving the OLD image up would pair the
+        // previous alert's photo with the new alert's caption.
+        let hero = (context["heroJPEG"] as? Data).flatMap { UIImage(data: $0) }
+        Task { @MainActor in
+            if let alerts { self.alerts = alerts }
+            self.heroImage = hero
         }
     }
 
     // MARK: WCSessionDelegate (watchOS)
 
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         let context = session.receivedApplicationContext
         if !context.isEmpty { apply(context) }
     }
 
-    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         apply(applicationContext)
     }
 }

@@ -127,6 +127,11 @@ final class DoorbellCallManager: NSObject {
         update.supportsGrouping = false
         update.supportsUngrouping = false
         update.supportsDTMF = false
+        // PushKit's completion is a non-Sendable ObjC block that PushKit expects on the registry
+        // queue. That queue and the provider's delegate queue are both main (see the class doc),
+        // and the `assumeIsolated` below asserts it — so carrying it into CallKit's @Sendable
+        // completion is safe by contract.
+        nonisolated(unsafe) let completion = completion
         // Completion arrives on the provider's delegate queue (nil → main).
         provider.reportNewIncomingCall(with: id, update: update) { [weak self] error in
           MainActor.assumeIsolated {

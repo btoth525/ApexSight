@@ -49,7 +49,7 @@ struct CameraSnapshotProvider: TimelineProvider {
         completion(entry())
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<CameraSnapshotEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<CameraSnapshotEntry>) -> Void) {
         Task {
             // Pull fresh alerts + hero straight from Frigate so the widget updates in
             // the background on WidgetKit's schedule — not only when the app is opened.

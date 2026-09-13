@@ -1,5 +1,6 @@
 import Foundation
-import WebRTC
+// WebRTC's ObjC API is thread-safe by contract (see RealtimeVideoController) — no Sendable annotations.
+@preconcurrency import WebRTC
 
 /// One job: when the doorbell RINGS, start the doorbell's on-demand go2rtc encoder so the video is
 /// already flowing by the time the call is answered. go2rtc runs one producer per stream and fans it
@@ -21,7 +22,9 @@ import WebRTC
 final class StreamPrewarmer: NSObject {
     static let shared = StreamPrewarmer()
 
-    private final class Warm {
+    /// Main-actor: created, awaited and torn down only from this class's isolated methods (the
+    /// delegate hops to main before touching it), so it is confined by construction.
+    @MainActor private final class Warm {
         let pc: RTCPeerConnection
         var gatherCont: CheckedContinuation<Void, Never>?
         var ttlTask: Task<Void, Never>?
@@ -103,14 +106,17 @@ final class StreamPrewarmer: NSObject {
     private func waitForGathering(_ warm: Warm) async {
         if warm.pc.iceGatheringState == .complete { return }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in warm.gatherCont = c }
-            }
+            group.addTask { await Self.awaitGathering(warm) }
             group.addTask { try? await Task.sleep(nanoseconds: 600_000_000) }
             await group.next()
             warm.gatherCont?.resume(); warm.gatherCont = nil
             group.cancelAll()
         }
+    }
+
+    /// Parks until the delegate's `.complete` (or the cap in `waitForGathering`) resumes it.
+    private static func awaitGathering(_ warm: Warm) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in warm.gatherCont = c }
     }
 
     private func stop(camera: String) {
@@ -125,8 +131,10 @@ final class StreamPrewarmer: NSObject {
 extension StreamPrewarmer: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         guard newState == .complete else { return }
+        // Only the identity crosses to the main actor — the lookup never needs the object itself.
+        let pcID = ObjectIdentifier(pc)
         Task { @MainActor [weak self] in
-            guard let self, let warm = self.warms.values.first(where: { $0.pc === pc }) else { return }
+            guard let self, let warm = self.warms.values.first(where: { ObjectIdentifier($0.pc) == pcID }) else { return }
             warm.gatherCont?.resume(); warm.gatherCont = nil
         }
     }

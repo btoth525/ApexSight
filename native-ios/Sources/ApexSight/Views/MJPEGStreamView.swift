@@ -43,7 +43,15 @@ struct MJPEGStreamView: UIViewRepresentable {
     }
 }
 
-final class MJPEGUIView: UIView, URLSessionDataDelegate {
+/// Owns the stream: the `URLSession`, its data task, the multipart byte buffer and the
+/// frame-drop gate, plus the lifecycle policy (suspend on background, re-open on foreground,
+/// stop on dismantle).
+///
+/// Concurrency: everything in here is main-actor, including the `URLSessionDataDelegate`
+/// callbacks — see the `@preconcurrency` extension below for why that is honest and not a
+/// hack. The one thing that must NOT run on main, the JPEG decode, is hoisted onto
+/// `decodeQueue` and only hops back to apply the finished `UIImage`.
+final class MJPEGUIView: UIView {
     let imageView = UIImageView()
     var onFirstFrame: (() -> Void)?
     var onError: (() -> Void)?
@@ -104,12 +112,25 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
         hasDeliveredFrame = false
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
+        // Deliberately unbounded — the one exception to the "every Frigate session has a
+        // wall-clock cap" rule (see BoundedSession). A live multipart stream is SUPPOSED to
+        // stay open for as long as the tile is on screen; a resource cap would just kill a
+        // healthy picture every N minutes. What bounds it instead is the lifecycle below:
+        // `suspend()` on background and `stop()` on dismantle cancel the task and invalidate
+        // the session, closing the socket so Frigate stops pushing frames. The response is
+        // never abandoned — every byte is read until we cancel.
         config.timeoutIntervalForResource = .infinity
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         // Deliver delegate callbacks on main so `buffer`/`isDisplayPending` are only ever
         // touched there — including from suspend()/stop() — with no cross-thread data race.
         // The expensive part (JPEG decode) still runs off-main on `decodeQueue`; only the
         // cheap multipart byte-scan happens on main.
+        //
+        // ⚠️ `.main` here is load-bearing for the `@preconcurrency URLSessionDataDelegate`
+        // conformance at the bottom of this file: that conformance asserts main-actor
+        // isolation on entry to every delegate method. Change this queue and those methods
+        // trap at runtime instead of failing to compile — split the networking into a
+        // nonisolated object first.
         let session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
         self.session = session
         let task = session.dataTask(with: request)
@@ -154,12 +175,42 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
         buffer.removeAll()
     }
 
+    /// Surface a stream failure to the caller exactly once per connection attempt.
+    private func reportError() {
+        guard !isTearingDown, !hasReportedError else { return }
+        hasReportedError = true
+        onError?()
+    }
+
+    /// Decode a JPEG frame to a fully-decoded UIImage on the calling (background) queue.
+    private nonisolated static func decode(_ data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateImageAtIndex(
+                source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+              ) else { return UIImage(data: data) }
+        return UIImage(cgImage: cg)
+    }
+}
+
+/// `URLSessionDataDelegate` is a nonisolated protocol, and a `UIView` subclass is `@MainActor`, so
+/// under `-strict-concurrency=complete` a plain conformance reports "crosses into main actor-isolated
+/// code". That diagnostic is accepted here, and here is why the obvious fixes are wrong:
+/// - An ISOLATED conformance (`@MainActor URLSessionDataDelegate`) is impossible — `URLSessionDelegate`
+///   inherits `Sendable`, and the compiler rejects a main-actor-isolated conformance for it.
+/// - `@preconcurrency` on the conformance is a no-op in the Swift 5 language mode (it warns as such).
+/// - Splitting the networking into a `@unchecked Sendable` connection object would move a byte-scan
+///   that costs ~0.1% of one core per camera, at the price of less compiler verification.
+/// What actually makes this correct is `openConnection()` creating the session with
+/// `delegateQueue: .main`: every callback below runs on the main thread, so touching `buffer`,
+/// `isDisplayPending`, `isTearingDown` and `hasReportedError` here is genuine main-actor access.
+/// If that queue ever changes, this reasoning no longer holds — split the networking out first.
+extension MJPEGUIView: URLSessionDataDelegate {
     /// Reject a non-2xx response (offline camera → 502/504 from the proxy, 401 on a stale token)
     /// before it's mistaken for stream data — surface it as an error so a retry can appear.
     func urlSession(
         _ session: URLSession, dataTask: URLSessionDataTask,
         didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
     ) {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             completionHandler(.cancel)
@@ -193,13 +244,18 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
             // Force the JPEG decode here (off main) via ImageIO; UIImage(data:) alone would
             // defer the decode to the main thread at display time.
             let image = Self.decode(frameData)
+            // Back to main to apply it. `DispatchQueue.main` is FIFO, so a frame and a trailing
+            // error land in the order they were produced; `assumeIsolated` is what lets the
+            // compiler see that this block really is main-actor state access.
             DispatchQueue.main.async {
-                defer { self.isDisplayPending = false }
-                guard let image else { return }
-                self.imageView.image = image
-                if !self.hasDeliveredFrame {
-                    self.hasDeliveredFrame = true
-                    self.onFirstFrame?()
+                MainActor.assumeIsolated {
+                    defer { self.isDisplayPending = false }
+                    guard let image else { return }
+                    self.imageView.image = image
+                    if !self.hasDeliveredFrame {
+                        self.hasDeliveredFrame = true
+                        self.onFirstFrame?()
+                    }
                 }
             }
         }
@@ -213,21 +269,5 @@ final class MJPEGUIView: UIView, URLSessionDataDelegate {
         if isTearingDown { return }
         if let error = error as NSError?, error.code == NSURLErrorCancelled { return }
         reportError()
-    }
-
-    /// Surface a stream failure to the caller exactly once per connection attempt.
-    private func reportError() {
-        guard !isTearingDown, !hasReportedError else { return }
-        hasReportedError = true
-        onError?()
-    }
-
-    /// Decode a JPEG frame to a fully-decoded UIImage on the calling (background) queue.
-    private nonisolated static func decode(_ data: Data) -> UIImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let cg = CGImageSourceCreateImageAtIndex(
-                source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-              ) else { return UIImage(data: data) }
-        return UIImage(cgImage: cg)
     }
 }

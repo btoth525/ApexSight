@@ -27,6 +27,11 @@ enum BackgroundRefreshManager {
     private static func handle(task: BGAppRefreshTask) {
         schedule() // always queue the next run
 
+        // BGTask is thread-safe by contract: the scheduler hands it over on its own queue, fires
+        // `expirationHandler` on a background queue, and `setTaskCompleted` may be called from any
+        // thread — the `completed` lock below is what makes the two callers exclusive.
+        nonisolated(unsafe) let task = task
+
         // Complete the task EXACTLY once. Cancelling `work` on expiration doesn't stop
         // `performRefresh` (it swallows cancellation via `try?`), so without this guard the
         // work Task's `setTaskCompleted(true)` would fire a SECOND completion after the

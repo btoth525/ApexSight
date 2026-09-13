@@ -10,9 +10,11 @@ import CryptoKit
 /// instead of flashing black while a fresh download runs. The memory tier is bounded so it never
 /// grows unbounded; the disk tier is scoped to `latest.jpg` (the camera wall) and size-capped so
 /// event thumbnails can't churn it out.
-final class ImageCache {
-    // NSCache is thread-safe and the disk tier is serialised on `diskQueue`.
-    nonisolated(unsafe) static let shared = ImageCache()
+/// `@unchecked Sendable`: every stored property is a `let`. The only mutable state is the NSCache
+/// (thread-safe) and the files under `diskDir`, written `.atomic` on the serial `diskQueue` and read
+/// with `Data(contentsOf:)` — a reader sees the old file or the new one, never a partial write.
+final class ImageCache: @unchecked Sendable {
+    static let shared = ImageCache()
 
     private let cache = NSCache<NSURL, UIImage>()
 

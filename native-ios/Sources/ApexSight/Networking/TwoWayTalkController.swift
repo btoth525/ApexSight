@@ -1,6 +1,7 @@
 import AVFoundation
 import UIKit
-import WebRTC
+// WebRTC's ObjC API is thread-safe by contract (see RealtimeVideoController) — no Sendable annotations.
+@preconcurrency import WebRTC
 
 /// Push-to-talk over Frigate/go2rtc's WebRTC backchannel: captures the mic and sends it to a
 /// camera's speaker via `/api/go2rtc/api/webrtc?src=<camera>_twoway`.
@@ -256,11 +257,7 @@ final class TwoWayTalkController: NSObject, ObservableObject {
     private func waitForIceGathering(_ pc: RTCPeerConnection) async {
         if pc.iceGatheringState == .complete { return }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                    self.gatheringContinuation = cont
-                }
-            }
+            group.addTask { await self.awaitGatheringComplete() }
             group.addTask {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
             }
@@ -270,6 +267,13 @@ final class TwoWayTalkController: NSObject, ObservableObject {
             gatheringContinuation?.resume()
             gatheringContinuation = nil
             group.cancelAll()
+        }
+    }
+
+    /// Parks until the delegate's `.complete` (or the cap in `waitForIceGathering`) resumes it.
+    private func awaitGatheringComplete() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            gatheringContinuation = cont
         }
     }
 

@@ -1,6 +1,8 @@
 import AVFoundation
 import UIKit
-import WebRTC
+// WebRTC's ObjC API is thread-safe by contract (RTCSessionDescription is immutable; peer
+// connections / tracks are internally synchronised libwebrtc wrappers) but has no Sendable annotations.
+@preconcurrency import WebRTC
 
 /// Sub-second live video over go2rtc's WebRTC — the same signaling path two-way talk already
 /// uses, receiving the camera's VIDEO instead of sending mic audio. Tries fast and fails
@@ -350,11 +352,7 @@ final class RealtimeVideoController: NSObject, ObservableObject {
     private func waitForIceGathering(_ pc: RTCPeerConnection) async {
         if pc.iceGatheringState == .complete { return }
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                    self.gatheringContinuation = cont
-                }
-            }
+            group.addTask { await self.awaitGatheringComplete() }
             // Cap the wait short: host (LAN) candidates gather in a few ms, and a STUN/TURN
             // server-reflexive/relay candidate normally fires `.complete` well under this. The cap
             // only truncates a STALLED gather (e.g. an unreachable/slow STUN) — which was silently
@@ -365,6 +363,13 @@ final class RealtimeVideoController: NSObject, ObservableObject {
             gatheringContinuation?.resume()
             gatheringContinuation = nil
             group.cancelAll()
+        }
+    }
+
+    /// Parks until the delegate's `.complete` (or the cap in `waitForIceGathering`) resumes it.
+    private func awaitGatheringComplete() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            gatheringContinuation = cont
         }
     }
 
@@ -462,6 +467,10 @@ struct RealtimeVideoView: UIViewRepresentable {
         coordinator.attached = nil
     }
 
+    /// Main-actor: `attached` is only touched from make/update/dismantleUIView, and RTCMTLVideoView
+    /// delivers `videoView(_:didChangeVideoSize:)` via `dispatch_async(main)` (RTCMTLVideoView.m
+    /// -setSize:), so the hop is asserted on entry instead of assumed.
+    @MainActor
     final class Coordinator: NSObject, RTCVideoViewDelegate {
         var attached: RTCVideoTrack?
         private let onFirstFrame: @MainActor () -> Void
@@ -471,10 +480,12 @@ struct RealtimeVideoView: UIViewRepresentable {
             self.onFirstFrame = onFirstFrame
         }
 
-        func videoView(_ videoView: any RTCVideoRenderer, didChangeVideoSize size: CGSize) {
-            guard !fired, size.width > 0 else { return }
-            fired = true
-            Task { @MainActor in self.onFirstFrame() }
+        nonisolated func videoView(_ videoView: any RTCVideoRenderer, didChangeVideoSize size: CGSize) {
+            MainActor.assumeIsolated {
+                guard !fired, size.width > 0 else { return }
+                fired = true
+                onFirstFrame()
+            }
         }
     }
 }
