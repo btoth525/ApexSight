@@ -316,6 +316,25 @@ Current watch-items (from the build-158 streaming work):
 
 ---
 
+## CarPlay (read before touching `CarPlaySceneDelegate` or `CarPlayVideo/`)
+
+The app holds **`com.apple.developer.carplay-driving-task`** — NOT the navigation entitlement
+(`carplay-maps`). A signing probe on 2026-09-15 confirmed Apple has not granted `carplay-maps` to this
+App ID ("Entitlement … not found and could not be included in profile"); only Apple can, via the
+CarPlay entitlement request. Consequences, enforced by CarPlay itself, not by us:
+- Full-screen video (`CPWindow` + `CPMapTemplate`), the Dashboard scene and phone mirroring only run
+  once Apple grants `carplay-maps`. The code is complete and armed: `CarPlaySceneDelegate` implements
+  BOTH connect callbacks and CarPlay calls the window one only for a navigation-entitled app.
+- Until then the car gets **template mode**: Alerts / Cameras / Feeds tabs and a "near-live" detail
+  (the largest list image, refreshed ~1 fps). That is the maximum CarPlay allows for driving-task.
+- `Sources/ApexSight/CarPlayVideo/CarPlayWindowFix.m` uses private CarPlay selectors. It compiles ONLY
+  with `APEX_CARPLAY_WINDOW` defined — `scratchpad/sideload.sh` does that and exports a development-signed
+  `.ipa` (`scratchpad/ApexSight-sideload.ipa`), installing via `xcrun devicectl` when the phone is plugged
+  in. **Never** pass that define to the TestFlight ship — App Store Connect's scanner rejects private API.
+  `sideload.sh` tries `ApexSightNative+Maps.entitlements` first and falls back to the standard file.
+- `ApexMirror` is a ReplayKit Broadcast Upload Extension (public API); the `Transcoding` package's
+  adaptors keep their `videoEncoder` / `videoDecoder` internal — hold the instance yourself.
+
 ## Git
 
 **`feature/ios27-platform` IS the default branch** (set 2026-07-27). It is the trunk — commit and
