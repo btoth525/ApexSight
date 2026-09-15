@@ -66,6 +66,7 @@ struct SettingsTab: View {
                 else if value == "push" { PushCompanionSettingsView() }
                 else if value == "triggers" { TriggersSettingsView(store: appState.triggerStore).environmentObject(appState) }
                 else if value == "doorbell_talk" { DoorbellSoundboardView() }
+                else if value == "feeds" { FeedsSettingsView() }
             }
         }
     }
@@ -311,6 +312,9 @@ struct SettingsTab: View {
 
     private var configurationSection: some View {
         VStack(spacing: GlassTheme.Space.m) {
+            settingsRow(icon: "car.fill", title: "Video Feeds & CarPlay", subtitle: "Feeds for the car, phone player with PiP, mirror") {
+                path.append("feeds")
+            }
             settingsRow(icon: "waveform.path.ecg", title: "System Health", subtitle: "Cameras, detectors, storage") {
                 path.append("system")
             }

@@ -46,6 +46,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         if connectingSceneSession.role.rawValue == "CPTemplateApplicationSceneSessionRoleApplication" {
             return UISceneConfiguration(name: "CarPlay", sessionRole: connectingSceneSession.role)
         }
+        // CarPlay Dashboard (navigation entitlement only — never requested for a driving-task app).
+        if connectingSceneSession.role.rawValue == "CPTemplateApplicationDashboardSceneSessionRoleApplication" {
+            return UISceneConfiguration(name: "ApexDashboard", sessionRole: connectingSceneSession.role)
+        }
         let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         if connectingSceneSession.role == .windowApplication {
             config.delegateClass = ApexSceneDelegate.self
