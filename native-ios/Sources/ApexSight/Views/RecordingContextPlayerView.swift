@@ -296,8 +296,11 @@ struct RecordingContextPlayerView: View {
                 Text(formatTime(playheadEpoch))
                     .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(GlassTheme.primary)
+                    .lineLimit(1)
                 Text(subtitle)
                     .font(.caption2).foregroundStyle(GlassTheme.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
 
             Spacer(minLength: GlassTheme.Space.s)
@@ -322,6 +325,8 @@ struct RecordingContextPlayerView: View {
                   systemImage: mode == .event ? "timeline.selection" : "scope")
                 .font(.footnote.weight(.semibold)).labelStyle(.titleAndIcon)
                 .foregroundStyle(GlassTheme.accent)
+                .lineLimit(1)
+                .fixedSize()
         }
         .buttonStyle(GlassButtonStyle())
         .accessibilityHint(mode == .event
