@@ -225,12 +225,20 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             CPListSection(items: camItems.isEmpty ? [CPListItem(text: "No cameras", detailText: nil)] : camItems)
         ])
         for (item, name) in zip(camItems, names) {
-            // Frigate resizes on the server (`height=`) — a row thumbnail, not a full-res frame
-            // decoded to ~33 MB per camera and retained by the CPListItem while driving.
+            // Reuse a recent thumbnail (≤90s) instead of re-downloading every camera every 30s for
+            // the whole drive; keep the last good image if Frigate is briefly unreachable. Frigate
+            // resizes on the server (`height=`) — a row thumbnail, not a ~33MB full frame per camera.
+            if let cached = camImages[name], Date().timeIntervalSince(cached.at) < 90 {
+                item.setImage(cached.image); continue
+            }
             if let url = Self.sizedFrameURL(client.latestFrameURL(camera: name), height: 180),
                let data = try? await client.imageData(from: url),
                let image = RemoteImage.downsample(data, maxPixel: Self.rowImagePixels) {
+                camImages[name] = (image, Date())
+                if camImages.count > 24 { camImages.removeAll() }
                 item.setImage(image)
+            } else if let cached = camImages[name] {
+                item.setImage(cached.image)   // keep last good on a failed tick
             }
         }
         rebuildFeedsTab()
@@ -257,6 +265,10 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     private static var rowImagePixels: CGFloat { CPListItem.maximumImageSize.width * 3 }
     /// Decoded list thumbnails by review id — a refresh only fetches rows it hasn't seen.
     private var rowImages: [String: UIImage] = [:]
+    /// Camera list thumbnails with the time they were fetched — so the 30s refresh doesn't
+    /// re-download every camera's frame on every tick for the whole drive (these are list
+    /// previews; the live view is the detail screen).
+    private var camImages: [String: (image: UIImage, at: Date)] = [:]
 
     private static func sizedFrameURL(_ url: URL, height: Int) -> URL? {
         var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)

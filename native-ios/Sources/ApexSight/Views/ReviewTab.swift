@@ -75,6 +75,8 @@ struct ReviewTab: View {
             hiddenIDs.insert(review.id)
             pendingReview = review
         }
+        // VoiceOver otherwise gets no confirmation and can't find the Undo bar before it auto-commits.
+        AccessibilityNotification.Announcement("Marked reviewed. Undo is available at the bottom of the screen.").post()
         pendingWork = Task {
             try? await Task.sleep(nanoseconds: 4_500_000_000)
             guard !Task.isCancelled else { return }

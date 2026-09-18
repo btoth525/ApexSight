@@ -142,7 +142,7 @@ struct CamerasTab: View {
     private var loadingSkeleton: some View {
         VStack(spacing: GlassTheme.Space.m) {
             ForEach(0..<4, id: \.self) { _ in
-                SkeletonBlock(cornerRadius: GlassTheme.Radius.tile)
+                SkeletonBlock(cornerRadius: GlassTheme.Radius.card)
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
                     .frame(maxWidth: .infinity)
             }

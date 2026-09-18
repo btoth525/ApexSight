@@ -68,7 +68,7 @@ struct OnboardingView: View {
             }
             VStack(spacing: GlassTheme.Space.m) {
                 Text(item.title)
-                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    .font(.system(.largeTitle).weight(.bold))
                     .foregroundStyle(GlassTheme.primary)
                     .multilineTextAlignment(.center)
                 Text(item.subtitle)

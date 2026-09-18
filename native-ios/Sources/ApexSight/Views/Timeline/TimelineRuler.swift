@@ -37,6 +37,13 @@ struct TimelineRuler: View {
     private static let labelBand: CGFloat = 16
     private static let eventTop: CGFloat = 36
     private static let laneHeight: CGFloat = 9
+
+    // Cached once: `Canvas.draw` runs on every scrub tick / 60fps coast, and building a Calendar and
+    // three Date.FormatStyles per tick label (8-10 a frame) was pure per-frame allocation.
+    private static let cal = Calendar.current
+    private static let hourAMPMStyle = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .abbreviated))
+    private static let hourMinStyle = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()
+    private static let dayStyle = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
     private static let motionMax: CGFloat = 26
     private static let bottomInset: CGFloat = 8
 
@@ -113,7 +120,7 @@ struct TimelineRuler: View {
         let steps: [Double] = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600]
         let minor = steps.first { $0 / spp >= 9 } ?? 21600
         let label = steps.first { $0 / spp >= 64 } ?? 21600
-        let cal = Calendar.current
+        let cal = Self.cal
         let dayStart = cal.startOfDay(for: Date(timeIntervalSince1970: left)).timeIntervalSince1970
         var t = dayStart + floor((left - dayStart) / minor) * minor
         while t <= right {
@@ -138,8 +145,7 @@ struct TimelineRuler: View {
                 let px = x(midnight)
                 ctx.fill(Path(CGRect(x: px - 0.5, y: Self.labelBand, width: 1, height: size.height - Self.labelBand - 2)),
                          with: .color(.white.opacity(0.22)))
-                let text = Text(Date(timeIntervalSince1970: midnight)
-                        .formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                let text = Text(Date(timeIntervalSince1970: midnight).formatted(Self.dayStyle))
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(GlassTheme.primary)
                 ctx.draw(text, at: CGPoint(x: px + 4, y: Self.labelBand + 14), anchor: .topLeading)
@@ -180,11 +186,11 @@ struct TimelineRuler: View {
 
     private func tickLabel(_ t: Double, step: Double) -> String {
         let date = Date(timeIntervalSince1970: t)
-        let minute = Calendar.current.component(.minute, from: date)
+        let minute = Self.cal.component(.minute, from: date)
         if step >= 3600 || minute == 0 {
-            return date.formatted(.dateTime.hour(.defaultDigits(amPM: .abbreviated)))
+            return date.formatted(Self.hourAMPMStyle)
         }
-        return date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+        return date.formatted(Self.hourMinStyle)
     }
 
     /// The fixed playhead, with the exact time riding on it — so the number you read is always

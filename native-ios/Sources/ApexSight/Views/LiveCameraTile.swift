@@ -60,10 +60,9 @@ struct LiveCameraTile: View {
             .aspectRatio(camera.aspectRatio, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous)
-                    .stroke(GlassTheme.separator, lineWidth: 1)
-            )
+            // The app-wide top-lit glass edge (was a flat separator hairline) so the hero camera
+            // tiles match every other card in the app.
+            .cardStroke(GlassTheme.Radius.card)
             .contentShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
         }
         .buttonStyle(.plain)
