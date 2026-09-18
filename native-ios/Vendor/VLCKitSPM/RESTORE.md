@@ -22,3 +22,14 @@ cd ../../.. && cd native-ios && xcodegen generate
 Do **not** re-point this at the remote SPM URL: SwiftPM's binary-artifact downloader hangs
 on this 778 MB file when run headless (reproduced twice — 0 B, no network, no timeout).
 Fetching by URL + `path:` binaryTarget is deliberate.
+
+## After restoring: thin the device slice to arm64
+
+The upstream device slice is a fat `arm64 armv7 armv7s` binary; App Store Connect rejects the
+32-bit slices (ITMS unsupported-architecture). Strip it before archiving for upload:
+
+```bash
+DEV="VLCKit-all.xcframework/ios-arm64_armv7_armv7s/MobileVLCKit.framework/MobileVLCKit"
+lipo "$DEV" -thin arm64 -output "$DEV.arm64" && mv "$DEV.arm64" "$DEV"
+lipo -info "$DEV"   # -> arm64
+```
