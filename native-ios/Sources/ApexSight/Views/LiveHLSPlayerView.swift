@@ -589,6 +589,10 @@ struct HLSLivePlayerView: View {
     /// negotiating + decoding at once on launch.
     @State private var startTask: Task<Void, Never>?
     @State private var gateHeld = false
+    /// Bumped on every (re)start. StreamGate hands even a cancelled waiter a real slot (its
+    /// cancellation invariant), so without this a superseded acquire would clobber the successor's
+    /// `gateHeld` and leak a permit — enough leaks drive `active` to the limit and stall the wall.
+    @State private var gateToken = 0
     /// True once the standard AVPlayer layer actually has a frame on screen (`isReadyForDisplay`).
     /// The snapshot cross-fades to live only when this is set, so a slow-starting stream that
     /// reports "playing" before its first frame renders keeps showing its snapshot, never black.
@@ -777,10 +781,17 @@ struct HLSLivePlayerView: View {
             return
         }
         startTask?.cancel()
+        releaseGate()                       // return any slot we still hold before taking another
+        gateToken &+= 1
+        let myToken = gateToken
         startTask = Task { @MainActor in
             await StreamGate.shared.acquire()
+            // Superseded while we waited (or torn down)? Give the slot straight back — don't touch
+            // gateHeld, which now belongs to the newer start.
+            guard myToken == gateToken, !Task.isCancelled, started else {
+                await StreamGate.shared.release(); return
+            }
             gateHeld = true
-            guard !Task.isCancelled, started else { releaseGate(); return }
             // A reused tile already live never re-fires first-frame — release now and skip the
             // backstop, or it would park a slot for nothing.
             if realtime.state == .live { releaseGate(); return }
@@ -1115,10 +1126,16 @@ struct HLSLivePlayerView: View {
                 return
             }
             // Stagger startup behind the shared gate so a full wall doesn't stampede at once.
+            startTask?.cancel()
+            releaseGate()                   // return any slot we still hold before taking another
+            gateToken &+= 1
+            let myToken = gateToken
             startTask = Task { @MainActor in
                 await StreamGate.shared.acquire()
+                guard myToken == gateToken, !Task.isCancelled, started else {
+                    await StreamGate.shared.release(); return
+                }
                 gateHeld = true
-                guard !Task.isCancelled, started else { releaseGate(); return }
                 model.start()
                 startFallbackTimer()
                 // Safety release if the stream never reports playing/failed (don't wedge the gate).
