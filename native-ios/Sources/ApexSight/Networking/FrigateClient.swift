@@ -353,25 +353,6 @@ struct FrigateClient {
         return components?.url ?? endpoint
     }
 
-    /// go2rtc's raw RTSP endpoint for a stream (`rtsp://<host>:8554/<name>`), for the native VLC
-    /// player. This is LAN-ONLY: port 8554 is go2rtc's own RTSP listener on the NVR, NOT proxied
-    /// through Frigate's HTTPS reverse proxy — so it's reachable at home, not over the tunnel.
-    ///
-    /// The host is taken from THIS client's `baseURL`. `AppState.client` swaps its base to the
-    /// confirmed-reachable `localBaseURL` whenever `onLocalNetwork` is true (see AppState.client),
-    /// so on the home network this resolves to the LAN Frigate host automatically — the caller
-    /// gates on `onLocalNetwork`, and it needs no separate RTSP setting to type in. Non-standard
-    /// HTTP ports on the base URL are irrelevant here: RTSP always lives on 8554.
-    func rtspURL(streamName: String) -> URL? {
-        guard let host = baseURL.host(), !host.isEmpty else { return nil }
-        var components = URLComponents()
-        components.scheme = "rtsp"
-        components.host = host
-        components.port = 8554
-        components.percentEncodedPath = "/" + streamName
-        return components.url
-    }
-
     func latestFrameURL(camera: String) -> URL {
         baseURL.appending(path: "api/\(camera)/latest.jpg")
     }

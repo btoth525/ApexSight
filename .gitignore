@@ -47,10 +47,3 @@ native-ios/tap
 /detect/
 /ui/
 /SERVER_BUILD_SPEC.md
-
-# Vendored VLCKit binary xcframework (2.1 GB) — restored via native-ios/Vendor/VLCKitSPM/RESTORE.md.
-# The local Package.swift, re-export shim, and RESTORE.md ARE tracked; only the binary is ignored.
-native-ios/Vendor/**/*.xcframework
-native-ios/Vendor/**/*.xcframework.zip
-native-ios/Vendor/VLCKit/
-native-ios/Vendor/**/.swiftpm

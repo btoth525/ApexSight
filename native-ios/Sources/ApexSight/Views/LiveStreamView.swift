@@ -187,11 +187,7 @@ struct LiveStreamView: View {
 
     private var liveHLS: some View {
         ZStack {
-            // Full-quality single camera: native RTSP on the home network (VLC/VideoToolbox) plays
-            // the Driveway's 16 MP HEVC main via Front_Driveway_raw — sub-first for an instant frame,
-            // then swaps to full-res. Off-LAN / fallback = the WebRTC+HLS cascade (Front_Driveway_hd
-            // remotely), unchanged.
-            VLCLivePlayerView(
+            HLSLivePlayerView(
                 camera: camera,
                 showControls: true,
                 overlayControlsVisible: showChrome,
