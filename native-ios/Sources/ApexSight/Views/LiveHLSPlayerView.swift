@@ -917,7 +917,16 @@ struct HLSLivePlayerView: View {
                 let sub = "\(camera.name)_sub"
                 let sources: [String]
                 if showControls {
-                    sources = hasSub ? [camera.name, sub] : [camera.name]   // quality first
+                    // Full-screen quality. The Driveway's 16 MP main is HEVC (iPhone WebRTC can't
+                    // carry H.265), so play the CUDA-transcoded Front_Driveway_hd (H.264 3840x1080)
+                    // as the SINGLE stream. The 2560x720 main + sub stay only as ordered fallbacks
+                    // (first-wins, so normally just ONE stream loads); the cached snapshot covers the
+                    // ~1-2 s spin-up. LAN-only — the HD transcode isn't reachable over the tunnel.
+                    if camera.name == "Front_Driveway", session.onLocalNetwork {
+                        sources = hasSub ? ["Front_Driveway_hd", camera.name, sub] : ["Front_Driveway_hd", camera.name]
+                    } else {
+                        sources = hasSub ? [camera.name, sub] : [camera.name]   // quality first
+                    }
                 } else {
                     sources = (preferSub && hasSub) ? [sub, camera.name] : [camera.name]
                 }
