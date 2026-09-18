@@ -6,14 +6,16 @@ import SwiftUI
 /// snapshot sits underneath for an instant paint; the live picture fades in over it. Tapping opens
 /// the full-quality single-camera viewer.
 struct LiveCameraTile: View {
-    @EnvironmentObject private var appState: AppState
+    // Observe the narrow ImageSession (client + wall inputs), NOT AppState — so a wall of tiles
+    // doesn't re-render `body` on every live-detection/event tick during motion.
+    @ObservedObject private var session = ImageSession.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
 
     @State private var isLive = false
 
     private var capability: CameraCapability? {
-        appState.capabilities.first(where: { $0.camera == camera.name })
+        session.capabilities[camera.name]
     }
 
     var body: some View {

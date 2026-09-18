@@ -509,7 +509,9 @@ final class HLSLiveModel: ObservableObject {
 // MARK: - Live HLS view
 
 struct HLSLivePlayerView: View {
-    @EnvironmentObject private var appState: AppState
+    // Observe the narrow ImageSession (client + wall inputs) rather than AppState, so each live tile
+    // on the wall stops re-evaluating `body` on every motion-driven detection/event publish.
+    @ObservedObject private var session = ImageSession.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let camera: FrigateCamera
     var showControls: Bool = false
@@ -613,7 +615,7 @@ struct HLSLivePlayerView: View {
     /// Frigate 0.18 removed go2rtc HLS live — WebRTC is the ONLY live path there. When the
     /// session probe says HLS is gone, the realtime layer stops being a focused-viewer overlay
     /// and becomes the PRIMARY renderer for every tile (with MJPEG as the last resort).
-    private var hlsDead: Bool { !appState.liveHLSAvailable }
+    private var hlsDead: Bool { !session.liveHLSAvailable }
 
     /// Realtime (WebRTC) is attempted for the focused viewer, on normal cameras, while muted
     /// (unmuting switches to HLS so audio+video stay in sync from one pipeline) — or whenever the
@@ -631,7 +633,7 @@ struct HLSLivePlayerView: View {
     /// Birdseye has no latest.jpg, so it never has a cached snapshot.
     private var hasSnapshot: Bool {
         guard camera.name != "birdseye",
-              let url = appState.client?.latestFrameURL(camera: camera.name) else { return false }
+              let url = session.client?.latestFrameURL(camera: camera.name) else { return false }
         return ImageCache.shared.image(for: url) != nil
     }
 
@@ -757,7 +759,7 @@ struct HLSLivePlayerView: View {
         fallbackTask = Task { @MainActor in
             // Longer than the realtime cascade (5 s + 9 s at home, 9 s + 9 s away) so a cold NVENC
             // stream that's about to paint full-res isn't yanked to low-res MJPEG a hair before it lands.
-            try? await Task.sleep(nanoseconds: appState.onLocalNetwork ? 15_000_000_000 : 20_000_000_000)
+            try? await Task.sleep(nanoseconds: session.onLocalNetwork ? 15_000_000_000 : 20_000_000_000)
             guard !Task.isCancelled, realtime.state != .live else { return }
             fallToMJPEG()
         }
@@ -869,19 +871,19 @@ struct HLSLivePlayerView: View {
         // one (e.g. the doorbell, a single-stream feed) must never chase a 404 sub — that's what
         // was dropping it to low-quality MJPEG instead of its full-res main. Until the stream list
         // is known, assume a sub may exist (old behavior) so first-launch tiles keep using subs.
-        let hasSub = !appState.subStreamsKnown || appState.subStreamCameras.contains(camera.name)
-        // Capture only what the closures need. Referencing `appState`/`camera` directly would
-        // capture the whole View value — including its @StateObject wrapper — from a closure the
-        // model stores, i.e. model → closure → view copy → model: a cycle that can keep an
-        // HLSLiveModel (and its AVPlayer) alive after SwiftUI has dropped the view.
+        let hasSub = !session.subStreamsKnown || session.subStreamCameras.contains(camera.name)
+        // Capture the ImageSession SINGLETON, never the View. Referencing the view would capture
+        // its @StateObject wrapper from a closure the model stores (model → closure → view → model:
+        // a cycle that can outlive an HLSLiveModel + its AVPlayer). ImageSession.shared is a global,
+        // so capturing it holds no view and creates no cycle.
         let name = camera.name
         model.configure(
             cameraName: name,
             preferSub: preferSub && hasSub,
-            makeURL: { [weak appState] in appState?.client?.liveHLSURL(camera: name, sub: false) },
-            makeSubURL: hasSub ? { [weak appState] in appState?.client?.liveHLSURL(camera: name, sub: true) } : nil,
-            makeItem: { [weak appState] url in appState?.client?.playerItem(for: url) },
-            reauth: { [weak appState] in await appState?.reauthenticate() ?? false }
+            makeURL: { ImageSession.shared.client?.liveHLSURL(camera: name, sub: false) },
+            makeSubURL: hasSub ? { ImageSession.shared.client?.liveHLSURL(camera: name, sub: true) } : nil,
+            makeItem: { url in ImageSession.shared.client?.playerItem(for: url) },
+            reauth: { await ImageSession.shared.reauthenticate() }
         )
         // Full-screen viewer (showControls + autoPiP) keeps playing on background so PiP can
         // start; wall/grid tiles pause to save power.
@@ -893,14 +895,14 @@ struct HLSLivePlayerView: View {
     /// pipeline, so sound is never out of sync with the picture.
     private func syncRealtime() {
         RealtimeVideoController.rtLog("sync \(camera.name): eligible=\(realtimeEligible) muted=\(effectiveMuted) mjpeg=\(mjpegFallback) rtAudio=\(realtimeAudio)")
-        guard realtimeEligible, let client = appState.client else { realtime.stop(); return }
+        guard realtimeEligible, let client = session.client else { realtime.stop(); return }
         if hlsDead && !realtimeAudio {
             // WebRTC-primary (Frigate 0.18): realtime carries the picture for every tile — and
             // the sound for the focused viewer — because there is no HLS to fall back on for
             // audio. Mute doesn't stop the stream (there's nothing else to show); it just gates
             // the audio track. Wall tiles prefer the lighter sub stream, exactly like HLS did.
             if realtime.state == .idle || realtime.state == .failed {
-                let hasSub = !appState.subStreamsKnown || appState.subStreamCameras.contains(camera.name)
+                let hasSub = !session.subStreamsKnown || session.subStreamCameras.contains(camera.name)
                 let sub = "\(camera.name)_sub"
                 let sources: [String]
                 if showControls {
@@ -908,7 +910,7 @@ struct HLSLivePlayerView: View {
                 } else {
                     sources = (preferSub && hasSub) ? [sub, camera.name] : [camera.name]
                 }
-                realtime.start(sources: sources, client: client, withAudio: showControls, directLAN: appState.onLocalNetwork)
+                realtime.start(sources: sources, client: client, withAudio: showControls, directLAN: session.onLocalNetwork)
             }
             if showControls { realtime.setAudioEnabled(!effectiveMuted) }
             return
@@ -917,7 +919,7 @@ struct HLSLivePlayerView: View {
             // Doorbell call: WebRTC carries A/V regardless of mute; mute just gates the audio
             // track (ring = silent, answered = hear the visitor sub-second).
             if realtime.state == .idle || realtime.state == .failed {
-                realtime.start(sources: [camera.name], client: client, withAudio: true, directLAN: appState.onLocalNetwork)
+                realtime.start(sources: [camera.name], client: client, withAudio: true, directLAN: session.onLocalNetwork)
             }
             realtime.setAudioEnabled(!effectiveMuted)
             syncHLSMuteForRealtimeAudio()
@@ -927,7 +929,7 @@ struct HLSLivePlayerView: View {
                 // So an H264-main camera gets full-quality sub-second video; an HEVC-main camera
                 // (Front Driveway — iOS can't WebRTC-decode HEVC) simply stays on its full-res
                 // HLS main. Either way the picture is always full quality — no downgrade.
-                realtime.start(sources: [camera.name], client: client, directLAN: appState.onLocalNetwork)
+                realtime.start(sources: [camera.name], client: client, directLAN: session.onLocalNetwork)
             }
         } else {
             realtime.stop()
@@ -990,7 +992,7 @@ struct HLSLivePlayerView: View {
             // Sits behind the video layer and fades out the moment the stream is live.
             // Birdseye has no latest.jpg, so skip the attempt to avoid a guaranteed 404.
             if camera.name != "birdseye",
-               let url = appState.client?.latestFrameURL(camera: camera.name) {
+               let url = session.client?.latestFrameURL(camera: camera.name) {
                 // `latest.jpg` changes constantly — stale-while-revalidate so the placeholder
                 // behind a connecting/reconnecting stream is the CURRENT frame, not the one
                 // cached at app launch (which could be hours old).
@@ -1012,7 +1014,7 @@ struct HLSLivePlayerView: View {
             // AVPlayer layer — invisible until actually playing, then fades in cleanly.
             // Pinch / pan / double-tap zoom handled via SwiftUI gestures when showControls.
             // Once HLS is deemed unavailable, the MJPEG fallback takes over instead.
-            if mjpegFallback, let client = appState.client {
+            if mjpegFallback, let client = session.client {
                 mjpegPlayer(client)
             } else if let player = model.player {
                 playerLayer(player)
@@ -1211,7 +1213,7 @@ struct HLSLivePlayerView: View {
                 if newState == .failed { fallToMJPEG() }   // fallToMJPEG() releases the slot too
             }
         }
-        .onChange(of: appState.liveHLSAvailable) { _, available in
+        .onChange(of: session.liveHLSAvailable) { _, available in
             // The session probe can land AFTER tiles started (first launch): a 0.18 tile that
             // began the doomed HLS cascade switches to WebRTC-primary the moment we know.
             guard !available, !mjpegFallback else { return }
