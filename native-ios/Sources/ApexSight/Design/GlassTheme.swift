@@ -23,8 +23,19 @@ enum GlassTheme {
 
     // MARK: - Text
     static let primary   = Color(red: 0.97, green: 0.97, blue: 0.99)
-    static let secondary = Color.white.opacity(0.62)
-    static let tertiary  = Color.white.opacity(0.34)
+    // Dynamic (like `separator`/`hairline`) so body text thickens under Settings → Accessibility →
+    // Increase Contrast. `tertiary` at 0.34 over the near-black background is only ~3:1 — under the
+    // 4.5:1 AA floor at the caption sizes it's used — so High contrast raises both toward AA.
+    static let secondary = Color(UIColor { traits in
+        traits.accessibilityContrast == .high
+            ? UIColor.white.withAlphaComponent(0.82)
+            : UIColor.white.withAlphaComponent(0.62)
+    })
+    static let tertiary  = Color(UIColor { traits in
+        traits.accessibilityContrast == .high
+            ? UIColor.white.withAlphaComponent(0.62)
+            : UIColor.white.withAlphaComponent(0.40)
+    })
 
     /// 1px hairline used to separate cards/rows instead of colored or heavy shadows. Backed by a
     /// dynamic UIColor (not a flat SwiftUI Color) so every existing call site automatically
@@ -196,7 +207,7 @@ struct GlassButtonStyle: ButtonStyle {
                 .padding(.horizontal, GlassTheme.Space.m)
                 .padding(.vertical, 10)
                 // Interactive Liquid Glass on iOS 26+ (scales/shimmers on press); frosted below.
-                .liquidGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                .liquidGlass(in: RoundedRectangle(cornerRadius: GlassTheme.Radius.chip, style: .continuous),
                              interactive: true, fallbackMaterial: .ultraThinMaterial)
                 .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.4)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)

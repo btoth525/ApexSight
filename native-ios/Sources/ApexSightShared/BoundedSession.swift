@@ -54,4 +54,9 @@ public enum BoundedSession {
     /// Household relay calls (small JSON, over the tunnel). `URLSession.shared` would let a black-holed
     /// relay park a task for up to 7 days; this caps a call at 30s wall-clock.
     public static let relay: URLSession = make(idle: 15, total: 30, maxConnectionsPerHost: 4)
+
+    /// Push-to-talk hold to the doorbell. The relay long-polls up to ~120s per hold, so this call
+    /// needs a WALL-CLOCK cap ABOVE that — on `relay` (30s total) a long talk was silently cut off
+    /// mid-sentence regardless of its 150s idle setting. Idle-bounded so a dead link still gives up.
+    public static let talk: URLSession = make(idle: 20, total: 180, maxConnectionsPerHost: 2)
 }

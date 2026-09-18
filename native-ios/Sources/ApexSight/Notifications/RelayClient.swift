@@ -405,15 +405,19 @@ enum RelayClient {
         struct Body: Encodable { let pairing_code: String }
         var trimmed = relayURL.trimmingCharacters(in: .whitespaces)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let baseURL = URL(string: trimmed), baseURL.scheme != nil, baseURL.host != nil,
+        // Require https: this call carries the household pairing_code, and a user-configured relay
+        // over plain http is not covered by the app's single ATS exception.
+        guard let baseURL = URL(string: trimmed), baseURL.scheme == "https", baseURL.host != nil,
               let url = URL(string: trimmed + "/v1/doorbell/talk-live") else { throw RelayError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(Body(pairing_code: pairingCode))
-        request.timeoutInterval = 150   // ≥ the relay's 120s per-hold backstop
+        request.timeoutInterval = 150   // idle cap ≥ the relay's 120s per-hold backstop
 
-        let (data, response) = try await BoundedSession.relay.data(for: request)
+        // Dedicated session: the relay holds this open ~120s, so it must NOT use BoundedSession.relay
+        // (30s wall-clock) which would cut a long talk off mid-sentence.
+        let (data, response) = try await BoundedSession.talk.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             throw RelayError.server(code, String(data: data, encoding: .utf8) ?? "")

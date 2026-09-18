@@ -187,11 +187,11 @@ struct RecordingContextPlayerView: View {
                 let width = geo.size.width
                 ZStack(alignment: .leading) {
                     // Track.
-                    Capsule().fill(GlassTheme.surfaceHigh).frame(height: 8)
+                    Capsule().fill(GlassTheme.surfaceHigh).frame(height: 10)
                         .frame(maxHeight: .infinity, alignment: .center)
                     // Played portion.
                     Capsule().fill(GlassTheme.accent.opacity(0.55))
-                        .frame(width: width * playheadFraction, height: 8)
+                        .frame(width: width * playheadFraction, height: 10)
                         .frame(maxHeight: .infinity, alignment: .center)
 
                     // Detection markers — Full mode only (one per event, colored by object).
@@ -210,11 +210,11 @@ struct RecordingContextPlayerView: View {
                         }
                     }
 
-                    // Playhead.
+                    // Playhead — larger so it's an easy grab target on the scrubber.
                     Circle().fill(.white)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 22, height: 22)
                         .shadow(color: .black.opacity(0.5), radius: 3)
-                        .offset(x: width * playheadFraction - 8)
+                        .offset(x: width * playheadFraction - 11)
 
                     // Scrub-preview thumbnail bubble — Full mode only.
                     if mode == .full, isSliding, let url = scrubPreviewURL {
@@ -251,7 +251,7 @@ struct RecordingContextPlayerView: View {
                         }
                 )
             }
-            .frame(height: 44)
+            .frame(height: 54)
             .accessibilityElement()
             .accessibilityLabel(mode == .event ? "Event playback timeline" : "Recording timeline")
             .accessibilityValue("\(Int((playheadFraction * 100).rounded())) percent")
@@ -265,13 +265,17 @@ struct RecordingContextPlayerView: View {
                 }
             }
 
-            // Time axis — spans the current mode's window, so it always matches the scrubber.
-            HStack {
-                Text(formatTime(spanStart)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
-                Spacer()
-                Text(formatTime(spanStart + displaySeconds / 2)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
-                Spacer()
-                Text(formatTime(spanStart + displaySeconds)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+            // Time axis only in Full mode, where the ±5-min span makes three clock labels
+            // meaningful. On a short event clip all three read the same minute — noise — so it
+            // is dropped, and the scrubber gets the vertical space instead.
+            if mode == .full {
+                HStack {
+                    Text(formatTime(spanStart)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                    Spacer()
+                    Text(formatTime(spanStart + displaySeconds / 2)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                    Spacer()
+                    Text(formatTime(spanStart + displaySeconds)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                }
             }
         }
     }
@@ -293,14 +297,24 @@ struct RecordingContextPlayerView: View {
             .accessibilityLabel(isPlaying ? "Pause" : "Play")
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(formatTime(playheadEpoch))
-                    .font(.subheadline.weight(.bold).monospacedDigit())
-                    .foregroundStyle(GlassTheme.primary)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.caption2).foregroundStyle(GlassTheme.tertiary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                // Event mode: one meaningful line ("Tracked event · 9s") — the exact clock time is
+                // already on the card below, and a per-frame playhead clock on a 9s clip just reads
+                // the same minute over and over. Full mode: the moving playhead clock earns its
+                // place while you scrub five minutes of footage.
+                if mode == .full {
+                    Text(formatTime(playheadEpoch))
+                        .font(.subheadline.weight(.bold).monospacedDigit())
+                        .foregroundStyle(GlassTheme.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption2).foregroundStyle(GlassTheme.tertiary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                } else {
+                    Text(subtitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GlassTheme.primary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                }
             }
 
             Spacer(minLength: GlassTheme.Space.s)

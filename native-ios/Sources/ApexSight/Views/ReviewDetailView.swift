@@ -63,7 +63,6 @@ struct ReviewDetailView: View {
                         aiCard(reviewAIDescription)
                             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
-                    timelineCard
                     objectsCard
                     actionsCard
                 }
@@ -73,6 +72,17 @@ struct ReviewDetailView: View {
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .glassNavBar()
+        .onAppear {
+            #if DEBUG
+            // Sim-driving hook (matches EventDetailView): synthetic taps can't switch a segmented
+            // Picker, so tests inject the media tab via the app group (0=snapshot 1=tracking 2=history).
+            let modes: [MediaMode] = [.snapshot, .tracking, .history]
+            if let raw = UserDefaults(suiteName: ApexAppGroup.identifier)?.object(forKey: "apex.debug.mediaMode") as? Int,
+               modes.indices.contains(raw) {
+                mediaMode = modes[raw]
+            }
+            #endif
+        }
         // Resolve the row's detection FIRST, so every tab below describes the object the row was
         // captioned with rather than whatever `thumb_time` alone would have picked.
         .task(id: review.id) {
@@ -189,6 +199,9 @@ struct ReviewDetailView: View {
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
                 .expandableMedia(fullscreenMedia, isPresented: $mediaExpanded)
+                // Bleed the media to the card's edges (cancel GlassCard's inset) so the video/still
+                // is as large as it can be without cropping — the footage stays full-frame.
+                .padding(.horizontal, -GlassTheme.Space.l)
 
                 HStack(alignment: .top, spacing: GlassTheme.Space.m) {
                     VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
@@ -343,20 +356,6 @@ struct ReviewDetailView: View {
         }
     }
 
-    private var timelineCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                SectionHeader("Timeline")
-
-                HStack(spacing: GlassTheme.Space.s) {
-                    timelineMetric("Start", value: timestamp(review.startTime), icon: "play.fill", tint: GlassTheme.green)
-                    timelineMetric("End", value: timestamp(review.endTime), icon: "stop.fill", tint: GlassTheme.orange)
-                    timelineMetric("Duration", value: duration, icon: "timer", tint: GlassTheme.accent)
-                }
-            }
-        }
-    }
-
     private var objectsCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
@@ -455,12 +454,6 @@ struct ReviewDetailView: View {
             .background(tint.opacity(0.14), in: Capsule())
     }
 
-    private var duration: String {
-        guard let start = review.startTime, let end = review.endTime else { return "n/a" }
-        let seconds = max(0, Int(end - start))
-        if seconds < 60 { return "\(seconds)s" }
-        return "\(seconds / 60)m \(seconds % 60)s"
-    }
 
     private func markReviewed() async {
         isWorking = true
@@ -487,26 +480,6 @@ struct ReviewDetailView: View {
         .accessibilityHidden(true)
     }
 
-    private func timelineMetric(_ title: String, value: String, icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: GlassTheme.Space.s) {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(GlassTheme.tertiary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(GlassTheme.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(GlassTheme.Space.m)
-        .background(GlassTheme.surface, in: RoundedRectangle(cornerRadius: GlassTheme.Radius.tile, style: .continuous))
-        .cardStroke(GlassTheme.Radius.tile)
-    }
-
     @ViewBuilder
     private func tagSection(title: String, values: [String]) -> some View {
         if !values.isEmpty {
@@ -520,10 +493,6 @@ struct ReviewDetailView: View {
         }
     }
 
-    private func timestamp(_ epoch: Double?) -> String {
-        guard let epoch else { return "n/a" }
-        return Date(timeIntervalSince1970: epoch).formatted(date: .omitted, time: .shortened)
-    }
 }
 
 struct FlowTags: View {

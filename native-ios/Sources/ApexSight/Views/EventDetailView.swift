@@ -365,6 +365,9 @@ struct EventDetailView: View {
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: GlassTheme.Radius.card, style: .continuous))
                 .expandableMedia(fullscreenMedia, isPresented: $mediaExpanded)
+                // Bleed the media to the card's edges (cancel GlassCard's inset) so the video/still
+                // is as large as it can be without cropping — the footage stays full-frame.
+                .padding(.horizontal, -GlassTheme.Space.l)
 
                 HStack(alignment: .top, spacing: GlassTheme.Space.m) {
                     VStack(alignment: .leading, spacing: GlassTheme.Space.xs) {
@@ -386,7 +389,7 @@ struct EventDetailView: View {
                             Image(systemName: "square.and.arrow.up.circle.fill")
                                 .font(.system(size: 26, weight: .semibold))
                                 .foregroundStyle(GlassTheme.accent)
-                                .symbolEffect(.pulse, isActive: isPreparingShare)
+                                .symbolEffect(.pulse, options: reduceMotion ? .nonRepeating : .repeating, isActive: isPreparingShare)
                                 .hitTarget()
                         }
                         .buttonStyle(.plain)

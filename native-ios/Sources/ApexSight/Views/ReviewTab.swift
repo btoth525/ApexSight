@@ -46,7 +46,7 @@ struct ReviewTab: View {
         // that list isn't truncated, the detections are simply a filter of it — no second
         // 15-second poll of the same endpoint. Only a full page (possibly truncated) still asks
         // the server for the severity-scoped list.
-        if appState.reviews.count < 100 {
+        if appState.reviews.count < 200 {
             detectionItems = appState.reviews
                 .filter { $0.severity == "detection" && !($0.hasBeenReviewed ?? false)
                     && !appState.locallyViewedIDs.contains($0.id) }
@@ -59,7 +59,7 @@ struct ReviewTab: View {
         // and because the fetch was silent, `busy` was false and `appState.isReachable` was still
         // true, so the view settled on "No Detections", a security app affirmatively reporting
         // nothing was detected when it had simply failed to ask.
-        if let items = try? await client.reviews(limit: 100, severity: "detection", reviewed: false) {
+        if let items = try? await client.reviews(limit: 200, severity: "detection", reviewed: false) {
             detectionItems = items
                 .filter { !($0.hasBeenReviewed ?? false) && !appState.locallyViewedIDs.contains($0.id) }
         }
@@ -292,7 +292,7 @@ struct ReviewTab: View {
             .task { if appState.reviews.isEmpty { await appState.refresh() } }
             .onChange(of: appState.reviews) { _, _ in
                 // The socket / poll moved the list → the derived detections follow instantly.
-                guard selectedSeverity == "detection", appState.reviews.count < 100 else { return }
+                guard selectedSeverity == "detection", appState.reviews.count < 200 else { return }
                 Task { await loadDetections(silent: true) }
             }
             .task(id: "\(selectedSeverity)-\(scenePhase)") {

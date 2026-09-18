@@ -338,7 +338,7 @@ struct SettingsTab: View {
     private var serverToolsCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: GlassTheme.Space.m) {
-                SectionHeader("Server")
+                SectionHeader("Server Tools")
 
                 Button {
                     Haptics.tap()

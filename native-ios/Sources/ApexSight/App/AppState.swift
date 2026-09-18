@@ -561,7 +561,7 @@ final class AppState: ObservableObject {
     func refreshAlerts(retryOnAuthFailure: Bool = true) async {
         guard let client else { return }
         do {
-            async let nextReviews = client.reviews(limit: 100, reviewed: false)
+            async let nextReviews = client.reviews(limit: 200, reviewed: false)
             async let nextEvents = client.events(limit: 100)
             let r = try await nextReviews
             let e = try await nextEvents
@@ -1231,7 +1231,7 @@ final class AppState: ObservableObject {
         do {
             async let nextCameras = client.cameras()
             async let nextEvents = client.events(limit: 100)
-            async let nextReviews = client.reviews(limit: 100, reviewed: false)
+            async let nextReviews = client.reviews(limit: 200, reviewed: false)
             async let nextLabels = client.labels()
             async let nextSubLabels = client.subLabels()
             async let nextStreams = client.go2rtcStreams()
