@@ -13,6 +13,14 @@ packages:
   Transcoding:
     url: https://github.com/finnvoor/Transcoding.git
     from: "0.0.2"
+  # MobileVLCKit 3.6 — native RTSP + VideoToolbox HW H.265/H.264 decode, the way the Reolink app
+  # plays the 16MP Driveway. AVPlayer/WebRTC on iPhone can't carry H.265; this can. Used by
+  # VLCLivePlayerView for LAN live (sub-first → main swap); WebRTC stays the off-LAN fallback.
+  # LOCAL path (not the remote SPM URL) on purpose: SwiftPM's downloader hangs on upstream's
+  # 778 MB binary artifact headless. We vendored the byte-identical, checksum-verified xcframework
+  # and reference it by path — offline, deterministic. See Vendor/VLCKitSPM/RESTORE.md.
+  VLCKitSPM:
+    path: Vendor/VLCKitSPM
 settings:
   base:
     MARKETING_VERSION: 1.0.0
@@ -111,6 +119,7 @@ targets:
         embed: true
       - package: WebRTC
       - package: Transcoding
+      - package: VLCKitSPM
       # Explicitly link AppIntents so `appintentsmetadataprocessor` actually runs and extracts
       # the AppShortcutsProvider metadata. Without a hard framework dependency the build logged
       # "Metadata extraction skipped. No AppIntents.framework dependency found", which meant the

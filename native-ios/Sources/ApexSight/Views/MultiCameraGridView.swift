@@ -287,7 +287,7 @@ private struct MultiCameraCell: View {
             // `muted` so tiles don't all voice at once; tapping opens that camera full-quality.
             // Startup is StreamGate-serialized (see HLSLivePlayerView.startWebRTCPrimary) so a whole
             // wall of tiles appearing at once doesn't stampede go2rtc.
-            HLSLivePlayerView(
+            VLCLivePlayerView(
                 camera: camera,
                 preferSub: true,
                 onPlaying: { playing in

@@ -31,8 +31,9 @@ struct LiveCameraTile: View {
                 // polling `latest.jpg` every 3 s per visible tile, decoding it, and JPEG-encoding
                 // it to disk on the main thread. Pixels nobody could ever see.
 
-                // The live feed — sub-second WebRTC (falls back to HLS/MJPEG), muted on the wall.
-                HLSLivePlayerView(
+                // The live feed — native RTSP on the home network (VLC/VideoToolbox, sub stream),
+                // WebRTC/HLS off-LAN or as fallback. Sub-only on the wall so nine tiles stay smooth.
+                VLCLivePlayerView(
                     camera: camera,
                     preferSub: true,
                     persistent: true,
