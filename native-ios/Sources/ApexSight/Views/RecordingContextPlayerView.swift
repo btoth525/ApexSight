@@ -1,20 +1,38 @@
 import SwiftUI
 import AVFoundation
 
-/// The event "History" view: plays the recording around an event on a real **activity timeline** —
-/// every detection in the window shown as a tappable marker (color-coded by object), a live
-/// playhead, a crisp scrub-preview thumbnail while dragging, and a full-screen expand button.
+/// The event "History" player, built around the tracked object rather than the wall clock.
+///
+/// Two modes, one AVPlayer:
+///
+/// - **Event** (default): a tight VOD bounded to the object's OWN window — `recordingHLSURL(start,
+///   end)`, which Frigate clips to the requested range (measured 2026-09-17: a 22 s request returns
+///   23.9 s of media starting at the requested second, not whole ~10 s segments). It loops. The
+///   scrubber underneath spans exactly that window, so every pixel of the track means something and
+///   the object is on screen from the first frame. This replaces the old behaviour where History
+///   opened a 5-minute window and seeked to `start − 5 s`, which dropped you ~10 s before the object
+///   and was slow to load a clip 15× longer than the moment you cared about.
+/// - **Full recording**: the ±5-minute context — every detection in the window as a tappable
+///   marker, a crisp scrub-preview thumbnail while dragging, and a jump back to the tracked event.
+///   For searching back before the moment and forward after it. One tap from Event mode.
 struct RecordingContextPlayerView: View {
     let camera: String
+    /// Centre of the FULL-recording context window (the review / event start).
     let centerTime: Double
+    /// The tracked object's own window — the Event-mode clip is bounded to this. For a Review this
+    /// is the primary detection's span (not the bundled review window); for an Event it's the event.
     let eventStart: Double?
     let eventEnd: Double?
     /// When set, the player fills the camera's true frame aspect (no letterbox) so it matches
     /// the Snapshot / Tracking tabs. nil keeps the standalone fixed 240pt height.
     var frameAspect: CGFloat? = nil
+
     @EnvironmentObject private var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = ClipPlayerModel()
+
+    enum Mode: String { case event, full }
+    @State private var mode: Mode = .event
     @State private var currentTime: Double = 0
     @State private var duration: Double = 1
     @State private var isSliding = false
@@ -24,18 +42,44 @@ struct RecordingContextPlayerView: View {
     @State private var showExpanded = false
     @State private var scrubPreviewURL: URL?
 
+    // Full-recording context span.
     private let windowSeconds: Double = 300  // ±5 minutes
     private let seekTolerance = CMTime(seconds: 1, preferredTimescale: 600)
+    // Event-clip bounds. The floor extends the clip AFTER the event (a very short track still needs
+    // a real span — Frigate 404s a zero-length range, measured 2026-09-12) — never a lead-in, which
+    // is the dead pre-roll this rebuild exists to remove. The cap stops a re-linked, hours-long
+    // parked track (measured worst case 3 h 09 m) from opening an enormous clip.
+    private let minEventSeconds: Double = 8
+    private let maxEventSeconds: Double = 120
 
     private var windowStart: Double { centerTime - windowSeconds / 2 }
     private var windowEnd: Double { centerTime + windowSeconds / 2 }
-    /// Clamped for the actual VOD request only — Frigate may not have flushed segments this
-    /// recent to its recordings DB yet (a review opened right after it fires can center within
-    /// seconds of "now"). The displayed timeline keeps the true, un-clamped span so labels and
-    /// markers don't jump; only the network request is capped.
+    /// Clamped for the actual VOD request only — Frigate may not have flushed segments this recent
+    /// to its recordings DB yet. The displayed timeline keeps the true span so labels don't jump.
     private var requestWindowEnd: Double { min(windowEnd, Date().timeIntervalSince1970) }
-    /// Epoch of the current playhead (window-relative time → absolute).
-    private var playheadEpoch: Double { windowStart + currentTime }
+
+    /// The tracked object's clip window, clamped to a sane, playable span.
+    private var eventClipStart: Double { eventStart ?? centerTime }
+    private var eventClipEnd: Double {
+        let start = eventClipStart
+        let rawEnd = eventEnd ?? Date().timeIntervalSince1970
+        let floored = max(rawEnd, start + minEventSeconds)
+        return min(min(floored, start + maxEventSeconds), Date().timeIntervalSince1970)
+    }
+
+    /// The span the timeline represents in the current mode.
+    private var spanStart: Double { mode == .event ? eventClipStart : windowStart }
+    private var displaySeconds: Double { max(duration, 1) }
+    /// Epoch of the current playhead (span-relative → absolute).
+    private var playheadEpoch: Double { spanStart + currentTime }
+
+    private func clipURL(for mode: Mode) -> URL? {
+        guard let client = appState.client else { return nil }
+        switch mode {
+        case .event: return client.recordingHLSURL(camera: camera, start: eventClipStart, end: eventClipEnd)
+        case .full:  return client.recordingHLSURL(camera: camera, start: windowStart, end: requestWindowEnd)
+        }
+    }
 
     var body: some View {
         VStack(spacing: GlassTheme.Space.m) {
@@ -43,37 +87,42 @@ struct RecordingContextPlayerView: View {
             timeline
             controls
         }
-        // Keyed so a REUSED view reloads for the new moment. `loadIfNeeded` already no-ops on an
-        // unchanged URL, but an un-keyed `.task` never re-runs at all — a recycled player would
-        // keep showing the previous review's footage under the new review's header.
-        .task(id: "\(camera)|\(Int(centerTime))") {
-            guard let client = appState.client else { return }
-            model.loadIfNeeded(client: client, url: client.recordingHLSURL(camera: camera, start: windowStart, end: requestWindowEnd))
-            guard let es = eventStart else { return }
-            // Seek once the item can actually seek. A fixed 500 ms wait was a guess that the
-            // playlists had parsed; over the tunnel they often hadn't, and an HLS item seeked
-            // before that clamps to offset 0 — "This Event" started five minutes early. Same bug,
-            // same fix as the timeline's pendingSeek.
+        // Keyed so a REUSED view — or a mode switch, or the primary detection resolving after load
+        // (which moves eventStart) — reloads for the right window. `loadIfNeeded` no-ops on an
+        // unchanged URL, so flipping back to a mode you already loaded is instant.
+        .task(id: "\(camera)|\(Int(centerTime))|\(mode.rawValue)|\(Int(eventClipStart))|\(Int(eventClipEnd))") {
+            guard let client = appState.client, let url = clipURL(for: mode) else { return }
+            model.loopsAtEnd = (mode == .event)   // the tracked event loops; the context plays through
+            currentTime = 0
+            model.loadIfNeeded(client: client, url: url)
+            guard mode == .full, let es = eventStart else { return }
+            // Full mode opens on the event, not 5 s early. Seek once the item can actually seek — a
+            // fixed wait was a guess the playlists had parsed; over the tunnel they often hadn't and
+            // an HLS item seeked too early clamps to offset 0.
             while !model.isReady {
                 if model.hasError || Task.isCancelled { return }
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
             if let player = model.player {
-                _ = await player.seek(to: CMTime(seconds: max(0, es - windowStart - 5), preferredTimescale: 600),
+                _ = await player.seek(to: CMTime(seconds: max(0, es - windowStart), preferredTimescale: 600),
                                       toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
             }
         }
-        .task {
-            previewFrames = await appState.client?.previewFrames(camera: camera, start: windowStart, end: windowEnd) ?? []
-        }
-        .task {
-            // Every detection in this window → timeline markers.
-            windowEvents = (try? await appState.client?.events(
-                camera: camera,
-                after: Date(timeIntervalSince1970: windowStart),
-                before: Date(timeIntervalSince1970: windowEnd),
-                limit: 50
-            )) ?? []
+        // Context data (markers + scrub thumbnails) is only meaningful — and only worth the network
+        // — in Full mode, so it loads lazily the first time you switch there. Event mode stays fast.
+        .task(id: mode) {
+            guard mode == .full else { return }
+            if previewFrames.isEmpty {
+                previewFrames = await appState.client?.previewFrames(camera: camera, start: windowStart, end: windowEnd) ?? []
+            }
+            if windowEvents.isEmpty {
+                windowEvents = (try? await appState.client?.events(
+                    camera: camera,
+                    after: Date(timeIntervalSince1970: windowStart),
+                    before: Date(timeIntervalSince1970: windowEnd),
+                    limit: 50
+                )) ?? []
+            }
         }
         .onDisappear { if !showExpanded { model.stop() } }
         .fullScreenCover(isPresented: $showExpanded, onDismiss: { model.play() }) {
@@ -122,13 +171,10 @@ struct RecordingContextPlayerView: View {
         }
     }
 
-    // MARK: - Activity timeline
+    // MARK: - Timeline
 
-    /// The clip's REAL span (recent reviews are clamped to now, so the VOD is shorter than the
-    /// nominal window). Markers + axis scale by this so they line up with the clip-relative playhead.
-    private var displaySeconds: Double { max(duration, 1) }
     private func fraction(for epoch: Double) -> CGFloat {
-        CGFloat(min(max((epoch - windowStart) / displaySeconds, 0), 1))
+        CGFloat(min(max((epoch - spanStart) / displaySeconds, 0), 1))
     }
     private var playheadFraction: CGFloat {
         guard duration > 0 else { return 0 }
@@ -148,17 +194,19 @@ struct RecordingContextPlayerView: View {
                         .frame(width: width * playheadFraction, height: 8)
                         .frame(maxHeight: .infinity, alignment: .center)
 
-                    // Detection markers — one per event, colored by object.
-                    ForEach(windowEvents) { ev in
-                        if let s = ev.startTime {
-                            let isThis = eventStart.map { abs($0 - s) < 1 } ?? false
-                            Capsule()
-                                .fill(markerColor(ev.label))
-                                .frame(width: isThis ? 5 : 3, height: isThis ? 26 : 18)
-                                .overlay(isThis ? Capsule().stroke(.white, lineWidth: 1.5) : nil)
-                                .shadow(color: .black.opacity(0.4), radius: 1.5)
-                                .offset(x: width * fraction(for: s) - (isThis ? 2.5 : 1.5))
-                                .onTapGesture { seek(toEpoch: s + 0.5) }
+                    // Detection markers — Full mode only (one per event, colored by object).
+                    if mode == .full {
+                        ForEach(windowEvents) { ev in
+                            if let s = ev.startTime {
+                                let isThis = eventStart.map { abs($0 - s) < 1 } ?? false
+                                Capsule()
+                                    .fill(markerColor(ev.label))
+                                    .frame(width: isThis ? 5 : 3, height: isThis ? 26 : 18)
+                                    .overlay(isThis ? Capsule().stroke(.white, lineWidth: 1.5) : nil)
+                                    .shadow(color: .black.opacity(0.4), radius: 1.5)
+                                    .offset(x: width * fraction(for: s) - (isThis ? 2.5 : 1.5))
+                                    .onTapGesture { seek(toEpoch: s + 0.5) }
+                            }
                         }
                     }
 
@@ -168,8 +216,8 @@ struct RecordingContextPlayerView: View {
                         .shadow(color: .black.opacity(0.5), radius: 3)
                         .offset(x: width * playheadFraction - 8)
 
-                    // Scrub-preview thumbnail bubble.
-                    if isSliding, let url = scrubPreviewURL {
+                    // Scrub-preview thumbnail bubble — Full mode only.
+                    if mode == .full, isSliding, let url = scrubPreviewURL {
                         VStack(spacing: 3) {
                             RemoteImage(url: url, contentMode: .fill, maxPixelSize: 260)
                                 .frame(width: 128, height: 72)
@@ -194,7 +242,7 @@ struct RecordingContextPlayerView: View {
                             isSliding = true
                             let frac = min(max(v.location.x / width, 0), 1)
                             currentTime = Double(frac) * max(duration, 1)
-                            updateScrubPreview()
+                            if mode == .full { updateScrubPreview() }
                         }
                         .onEnded { v in
                             let frac = min(max(v.location.x / width, 0), 1)
@@ -204,13 +252,10 @@ struct RecordingContextPlayerView: View {
                 )
             }
             .frame(height: 44)
-            // VoiceOver: the scrubber is a gesture-only track (drag + tap markers) a VoiceOver user
-            // can't operate. Expose it as one adjustable element so it's movable via the rotor, the
-            // way the camera's recording timeline already is.
             .accessibilityElement()
-            .accessibilityLabel("Playback timeline")
+            .accessibilityLabel(mode == .event ? "Event playback timeline" : "Recording timeline")
             .accessibilityValue("\(Int((playheadFraction * 100).rounded())) percent")
-            .accessibilityHint("Swipe up or down to scrub through the recording")
+            .accessibilityHint("Swipe up or down to scrub")
             .accessibilityAdjustableAction { direction in
                 let step = max(duration, 1) * 0.02
                 switch direction {
@@ -220,13 +265,13 @@ struct RecordingContextPlayerView: View {
                 }
             }
 
-            // Time axis.
+            // Time axis — spans the current mode's window, so it always matches the scrubber.
             HStack {
-                Text(formatTime(windowStart)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                Text(formatTime(spanStart)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
                 Spacer()
-                Text(formatTime(windowStart + displaySeconds / 2)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                Text(formatTime(spanStart + displaySeconds / 2)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
                 Spacer()
-                Text(formatTime(windowStart + displaySeconds)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
+                Text(formatTime(spanStart + displaySeconds)).font(.caption2.monospacedDigit()).foregroundStyle(GlassTheme.tertiary)
             }
         }
     }
@@ -251,33 +296,58 @@ struct RecordingContextPlayerView: View {
                 Text(formatTime(playheadEpoch))
                     .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(GlassTheme.primary)
-                Text("\(windowEvents.count) event\(windowEvents.count == 1 ? "" : "s") in ±5 min")
+                Text(subtitle)
                     .font(.caption2).foregroundStyle(GlassTheme.tertiary)
             }
 
             Spacer(minLength: GlassTheme.Space.s)
 
-            if let es = eventStart {
-                Button { seek(toEpoch: es + 0.5); model.play() } label: {
-                    Label("This Event", systemImage: "scope")
-                        .font(.footnote.weight(.semibold)).labelStyle(.titleAndIcon)
-                        .foregroundStyle(GlassTheme.accent)
-                }
-                .buttonStyle(GlassButtonStyle())
-            }
+            modeButton
         }
+    }
+
+    /// The single mode switch: Event mode offers "Full recording"; Full mode offers a jump back to
+    /// the tracked event. One button, so the primary action is always obvious and uncluttered.
+    private var modeButton: some View {
+        Button {
+            Haptics.select()
+            if mode == .event {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { mode = .full }
+            } else {
+                if let es = eventStart { seek(toEpoch: es) }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { mode = .event }
+            }
+        } label: {
+            Label(mode == .event ? "Full recording" : "Tracked event",
+                  systemImage: mode == .event ? "timeline.selection" : "scope")
+                .font(.footnote.weight(.semibold)).labelStyle(.titleAndIcon)
+                .foregroundStyle(GlassTheme.accent)
+        }
+        .buttonStyle(GlassButtonStyle())
+        .accessibilityHint(mode == .event
+            ? "Switches to the full recording so you can scrub before and after the event"
+            : "Returns to the tracked event clip")
+    }
+
+    private var subtitle: String {
+        if mode == .event {
+            let secs = max(1, Int(eventClipEnd - eventClipStart))
+            return "Tracked event · \(secs)s"
+        }
+        return "\(windowEvents.count) event\(windowEvents.count == 1 ? "" : "s") in ±5 min"
     }
 
     // MARK: - Helpers
 
-    private func seek(to windowRelative: Double) {
-        currentTime = windowRelative
-        model.player?.seek(to: CMTime(seconds: windowRelative, preferredTimescale: 600),
+    private func seek(to spanRelative: Double) {
+        currentTime = spanRelative
+        model.player?.seek(to: CMTime(seconds: spanRelative, preferredTimescale: 600),
                            toleranceBefore: seekTolerance, toleranceAfter: seekTolerance)
     }
     private func seek(toEpoch epoch: Double) {
         Haptics.select()
-        seek(to: max(0, epoch - windowStart))
+        seek(to: max(0, epoch - spanStart))
+        model.play()
     }
 
     private func updateScrubPreview() {

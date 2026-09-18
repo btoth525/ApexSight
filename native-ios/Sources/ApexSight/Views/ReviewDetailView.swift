@@ -173,8 +173,12 @@ struct ReviewDetailView: View {
                         } else { mediaPlaceholder }
                     case .history:
                         if let startTime = review.startTime {
+                            // Bound the Event clip to the PRIMARY detection's own window, not the
+                            // bundled review span — so "tracked event" is the one object the row was
+                            // captioned with. Falls back to the review window until it resolves.
                             RecordingContextPlayerView(camera: review.camera, centerTime: startTime,
-                                                       eventStart: review.startTime, eventEnd: review.endTime,
+                                                       eventStart: primaryEvent?.startTime ?? review.startTime,
+                                                       eventEnd: primaryEvent?.endTime ?? review.endTime,
                                                        frameAspect: mediaAspect)
                                 .frame(maxWidth: .infinity)
                         } else if let url = snapshotURL {
