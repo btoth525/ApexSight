@@ -107,21 +107,17 @@ struct CamerasTab: View {
                             .frame(maxWidth: .infinity)
                     }
                 } else {
-                    // Index-keyed rows: the row container is reused and the inner ForEach diffs
-                    // tiles by camera.id, so unchanged tiles in a row are reused. (Content-keying
-                    // the row rebuilds the whole HStack — including unchanged tiles — on any change.)
-                    // iPad/regular-width only.
-                    ForEach(Array(cameraRows.enumerated()), id: \.offset) { _, row in
-                        HStack(spacing: GlassTheme.Space.m) {
-                            ForEach(row) { camera in
-                                LiveCameraTile(camera: camera)
-                                    .frame(maxWidth: .infinity)
-                            }
-                            if row.count < columns {
-                                ForEach(0..<(columns - row.count), id: \.self) { _ in
-                                    Color.clear.frame(maxWidth: .infinity)
-                                }
-                            }
+                    // Flat per-camera identity in a grid (iPad/regular width). The old index-keyed
+                    // rows moved a reordered/hidden camera between two DIFFERENT inner ForEachs, and
+                    // SwiftUI can't migrate a view across containers — so it tore the tile down and
+                    // rebuilt its persistent HLS player (reconnect + black flash). A single flat grid
+                    // keeps every tile's identity at any column count.
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(), spacing: GlassTheme.Space.m), count: columns),
+                        spacing: GlassTheme.Space.m
+                    ) {
+                        ForEach(visibleCameras) { camera in
+                            LiveCameraTile(camera: camera)
                         }
                     }
                 }
@@ -171,12 +167,6 @@ struct CamerasTab: View {
         }
     }
 
-    private var cameraRows: [[FrigateCamera]] {
-        let cams = visibleCameras
-        return stride(from: 0, to: cams.count, by: columns).map { start in
-            Array(cams[start..<min(start + columns, cams.count)])
-        }
-    }
 
     // MARK: - Arrange / reorder mode
 
